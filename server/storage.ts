@@ -12,6 +12,7 @@ import {
   researchConsents,
   aiResearchReports,
   educationalProgress,
+  counselingSessions,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -38,6 +39,8 @@ import {
   type InsertAIResearchReport,
   type EducationalProgress,
   type InsertEducationalProgress,
+  type CounselingSession,
+  type InsertCounselingSession,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -103,6 +106,12 @@ export interface IStorage {
   // Educational progress operations
   getEducationalProgress(patientId: string): Promise<EducationalProgress[]>;
   upsertEducationalProgress(progress: InsertEducationalProgress): Promise<EducationalProgress>;
+  
+  // Counseling session operations
+  getCounselingSessions(userId: string): Promise<CounselingSession[]>;
+  createCounselingSession(session: InsertCounselingSession): Promise<CounselingSession>;
+  updateCounselingSession(id: string, data: Partial<CounselingSession>): Promise<CounselingSession | undefined>;
+  deleteCounselingSession(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -469,6 +478,40 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return progress;
+  }
+
+  // Counseling session operations
+  async getCounselingSessions(userId: string): Promise<CounselingSession[]> {
+    const sessions = await db
+      .select()
+      .from(counselingSessions)
+      .where(eq(counselingSessions.userId, userId))
+      .orderBy(desc(counselingSessions.sessionDate));
+    return sessions;
+  }
+
+  async createCounselingSession(sessionData: InsertCounselingSession): Promise<CounselingSession> {
+    const [session] = await db
+      .insert(counselingSessions)
+      .values(sessionData)
+      .returning();
+    return session;
+  }
+
+  async updateCounselingSession(id: string, data: Partial<CounselingSession>): Promise<CounselingSession | undefined> {
+    const [session] = await db
+      .update(counselingSessions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(counselingSessions.id, id))
+      .returning();
+    return session;
+  }
+
+  async deleteCounselingSession(id: string): Promise<boolean> {
+    const result = await db
+      .delete(counselingSessions)
+      .where(eq(counselingSessions.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
   }
 }
 
