@@ -1,8 +1,9 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Apple, Smartphone } from "lucide-react";
-import { SiGoogleplay } from "react-icons/si";
+import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot } from "lucide-react";
+import appStoreBadge from "@assets/stock_images/apple_app_store_down_a3189b22.jpg";
+import googlePlayBadge from "@assets/stock_images/google_play_store_do_60dd571a.jpg";
 
 export default function Landing() {
   const handlePatientSignup = () => {
@@ -71,27 +72,33 @@ export default function Landing() {
                 Access your health data on the go. Track vitals, chat with Agent Clona, and manage medications 
                 from your iOS or Android device.
               </p>
-              <div className="flex gap-4 justify-center flex-wrap">
-                <Button 
-                  size="lg" 
-                  variant="outline" 
-                  className="gap-2"
-                  data-testid="button-download-ios"
-                  onClick={() => window.open('https://apps.apple.com', '_blank')}
+              <div className="flex gap-6 justify-center flex-wrap items-center">
+                <a 
+                  href="https://apps.apple.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  data-testid="link-download-ios"
+                  className="hover-elevate active-elevate-2 transition-transform rounded-lg overflow-hidden"
                 >
-                  <Apple className="h-5 w-5" />
-                  Download on App Store
-                </Button>
-                <Button 
-                  size="lg" 
-                  variant="outline" 
-                  className="gap-2"
-                  data-testid="button-download-android"
-                  onClick={() => window.open('https://play.google.com', '_blank')}
+                  <img 
+                    src={appStoreBadge} 
+                    alt="Download on the App Store" 
+                    className="h-14 w-auto"
+                  />
+                </a>
+                <a 
+                  href="https://play.google.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  data-testid="link-download-android"
+                  className="hover-elevate active-elevate-2 transition-transform rounded-lg overflow-hidden"
                 >
-                  <SiGoogleplay className="h-5 w-5" />
-                  Get it on Google Play
-                </Button>
+                  <img 
+                    src={googlePlayBadge} 
+                    alt="Get it on Google Play" 
+                    className="h-14 w-auto"
+                  />
+                </a>
               </div>
               <p className="text-sm text-muted-foreground mt-4">
                 Coming Soon • iOS 15+ and Android 10+ required
