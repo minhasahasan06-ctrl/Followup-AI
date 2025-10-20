@@ -3,8 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles, ClipboardList, BarChart3, FileText, Bell, Lock, Brain, Leaf, Zap, Award, Globe } from "lucide-react";
 import { SiLinkedin, SiX } from "react-icons/si";
-import appStoreBadge from "@assets/stock_images/apple_app_store_down_a3189b22.jpg";
-import googlePlayBadge from "@assets/stock_images/google_play_store_do_60dd571a.jpg";
 
 export default function Landing() {
   const handlePatientSignup = () => {
@@ -677,19 +675,19 @@ export default function Landing() {
         <section className="py-12 px-6">
           <div className="max-w-4xl mx-auto text-center">
             <h3 className="text-2xl font-semibold mb-4">Download Our Mobile App</h3>
-            <div className="flex gap-4 justify-center flex-wrap items-center">
-              <Link href="/coming-soon" data-testid="link-download-ios" className="hover-elevate active-elevate-2 transition-transform rounded-lg overflow-hidden block">
+            <div className="flex gap-6 justify-center flex-wrap items-center">
+              <Link href="/coming-soon" data-testid="link-download-ios" className="hover-elevate active-elevate-2 transition-transform block">
                 <img 
-                  src={appStoreBadge} 
+                  src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83&amp;releaseDate=1440979200"
                   alt="Download on the App Store" 
-                  className="h-12 w-auto"
+                  className="h-14 w-auto"
                 />
               </Link>
-              <Link href="/coming-soon" data-testid="link-download-android" className="hover-elevate active-elevate-2 transition-transform rounded-lg overflow-hidden block">
+              <Link href="/coming-soon" data-testid="link-download-android" className="hover-elevate active-elevate-2 transition-transform block">
                 <img 
-                  src={googlePlayBadge} 
+                  src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png"
                   alt="Get it on Google Play" 
-                  className="h-12 w-auto"
+                  className="h-[60px] w-auto"
                 />
               </Link>
             </div>
