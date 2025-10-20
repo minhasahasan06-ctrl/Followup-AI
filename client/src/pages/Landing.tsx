@@ -720,7 +720,9 @@ export default function Landing() {
                   </Link>
                 </li>
                 <li>
-                  <span className="text-sm text-muted-foreground">Agent Clona</span>
+                  <Link href="/agent-clona" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-clona">
+                    Agent Clona
+                  </Link>
                 </li>
                 <li>
                   <Link href="/assistant-lysa" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-lysa">
