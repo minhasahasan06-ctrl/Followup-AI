@@ -13,6 +13,7 @@ import {
   Users,
   Beaker,
   LogOut,
+  MessageCircle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -49,6 +50,11 @@ const patientItems = [
     icon: Wind,
   },
   {
+    title: "Counseling",
+    url: "/counseling",
+    icon: MessageCircle,
+  },
+  {
     title: "Medical Files",
     url: "/files",
     icon: FileText,
@@ -76,6 +82,11 @@ const doctorItems = [
     url: "/chat",
     icon: Bot,
     badge: "AI",
+  },
+  {
+    title: "Counseling",
+    url: "/counseling",
+    icon: MessageCircle,
   },
   {
     title: "Profile",
