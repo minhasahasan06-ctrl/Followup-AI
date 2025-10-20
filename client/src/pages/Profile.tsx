@@ -1,0 +1,276 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { User, Shield, Bell, Heart } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { PatientProfile, DoctorProfile } from "@shared/schema";
+
+export default function Profile() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const isPatient = user?.role === "patient";
+
+  const { data: patientProfile } = useQuery<PatientProfile>({
+    queryKey: ["/api/patient/profile"],
+    enabled: isPatient,
+  });
+
+  const { data: doctorProfile } = useQuery<DoctorProfile>({
+    queryKey: ["/api/doctor/profile"],
+    enabled: !isPatient,
+  });
+
+  const updatePatientProfileMutation = useMutation({
+    mutationFn: async (data: Partial<PatientProfile>) => {
+      return await apiRequest("POST", "/api/patient/profile", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/patient/profile"] });
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been updated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateDoctorProfileMutation = useMutation({
+    mutationFn: async (data: Partial<DoctorProfile>) => {
+      return await apiRequest("POST", "/api/doctor/profile", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctor/profile"] });
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been updated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const getInitials = (firstName?: string | null, lastName?: string | null) => {
+    return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "?";
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-4xl font-semibold mb-2">Profile Settings</h1>
+        <p className="text-muted-foreground">Manage your account information and preferences</p>
+      </div>
+
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-4">
+            <Avatar className="h-20 w-20">
+              <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
+                {getInitials(user?.firstName, user?.lastName)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1">
+              <h2 className="text-2xl font-semibold" data-testid="text-user-name">
+                {user?.firstName} {user?.lastName}
+              </h2>
+              <p className="text-muted-foreground">{user?.email}</p>
+              <div className="flex gap-2 mt-2">
+                <Badge variant="secondary" data-testid="badge-user-role">
+                  {user?.role === "patient" ? "Patient" : "Doctor"}
+                </Badge>
+                {user?.role === "doctor" && user?.licenseVerified && (
+                  <Badge variant="secondary">
+                    <Shield className="h-3 w-3 mr-1" />
+                    Verified
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="account" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="account" data-testid="tab-account">
+            <User className="h-4 w-4 mr-2" />
+            Account
+          </TabsTrigger>
+          <TabsTrigger value="medical" data-testid="tab-medical">
+            <Heart className="h-4 w-4 mr-2" />
+            {isPatient ? "Medical Info" : "Professional Info"}
+          </TabsTrigger>
+          <TabsTrigger value="notifications" data-testid="tab-notifications">
+            <Bell className="h-4 w-4 mr-2" />
+            Notifications
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="account">
+          <Card>
+            <CardHeader>
+              <CardTitle>Account Information</CardTitle>
+              <CardDescription>Update your basic account details</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input
+                    id="firstName"
+                    defaultValue={user?.firstName || ""}
+                    data-testid="input-first-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input
+                    id="lastName"
+                    defaultValue={user?.lastName || ""}
+                    data-testid="input-last-name"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" defaultValue={user?.email || ""} disabled />
+                <p className="text-xs text-muted-foreground">Email cannot be changed</p>
+              </div>
+              <Button data-testid="button-save-account">Save Changes</Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="medical">
+          {isPatient ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Medical Information</CardTitle>
+                <CardDescription>Manage your health profile and medical history</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="condition">Immunocompromised Condition</Label>
+                  <Input
+                    id="condition"
+                    placeholder="e.g., Primary immunodeficiency"
+                    defaultValue={patientProfile?.immunocompromisedCondition || ""}
+                    data-testid="input-condition"
+                  />
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="city">City</Label>
+                    <Input
+                      id="city"
+                      placeholder="Your city"
+                      defaultValue={patientProfile?.city || ""}
+                      data-testid="input-city"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="state">State</Label>
+                    <Input
+                      id="state"
+                      placeholder="State"
+                      defaultValue={patientProfile?.state || ""}
+                      data-testid="input-state"
+                    />
+                  </div>
+                </div>
+                <Button data-testid="button-save-medical">Save Medical Information</Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Professional Information</CardTitle>
+                <CardDescription>Manage your medical credentials and specialties</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="license">Medical License Number</Label>
+                  <Input
+                    id="license"
+                    defaultValue={user?.medicalLicenseNumber || ""}
+                    disabled
+                    data-testid="input-license"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    License number cannot be changed. Contact support for updates.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bio">Bio</Label>
+                  <Input
+                    id="bio"
+                    placeholder="Brief professional bio"
+                    defaultValue={doctorProfile?.bio || ""}
+                    data-testid="input-bio"
+                  />
+                </div>
+                <Button data-testid="button-save-professional">Save Professional Information</Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="notifications">
+          <Card>
+            <CardHeader>
+              <CardTitle>Notification Preferences</CardTitle>
+              <CardDescription>Manage how you receive updates and alerts</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Email Notifications</p>
+                  <p className="text-sm text-muted-foreground">Receive updates via email</p>
+                </div>
+                <Button variant="outline" size="sm" data-testid="button-toggle-email">
+                  Enabled
+                </Button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Daily Reminders</p>
+                  <p className="text-sm text-muted-foreground">Get daily follow-up reminders</p>
+                </div>
+                <Button variant="outline" size="sm" data-testid="button-toggle-reminders">
+                  Enabled
+                </Button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Research Updates</p>
+                  <p className="text-sm text-muted-foreground">Notifications about research participation</p>
+                </div>
+                <Button variant="outline" size="sm" data-testid="button-toggle-research">
+                  Disabled
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

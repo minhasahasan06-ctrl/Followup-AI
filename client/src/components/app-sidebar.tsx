@@ -10,6 +10,8 @@ import {
   Stethoscope,
   User,
   Wind,
+  Users,
+  Beaker,
 } from "lucide-react";
 import {
   Sidebar,
@@ -25,6 +27,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/useAuth";
 
 const patientItems = [
   {
@@ -33,61 +36,57 @@ const patientItems = [
     icon: Home,
   },
   {
-    title: "AI Chat",
+    title: "Chat with Agent Clona",
     url: "/chat",
     icon: Bot,
-    badge: "New",
+    badge: "AI",
   },
   {
-    title: "Health Timeline",
-    url: "/timeline",
-    icon: Activity,
-  },
-  {
-    title: "Medications",
-    url: "/medications",
-    icon: Pill,
-  },
-  {
-    title: "Follow-ups",
-    url: "/follow-ups",
-    icon: Calendar,
+    title: "Wellness",
+    url: "/wellness",
+    icon: Wind,
   },
   {
     title: "Medical Files",
     url: "/files",
     icon: FileText,
   },
-];
-
-const wellnessItems = [
-  {
-    title: "Meditation",
-    url: "/wellness/meditation",
-    icon: Wind,
-  },
-  {
-    title: "Exercise",
-    url: "/wellness/exercise",
-    icon: Heart,
-  },
-];
-
-const settingsItems = [
   {
     title: "Profile",
     url: "/profile",
     icon: User,
   },
+];
+
+const doctorItems = [
   {
-    title: "Settings",
-    url: "/settings",
-    icon: Settings,
+    title: "All Patients",
+    url: "/",
+    icon: Users,
+  },
+  {
+    title: "Research Center",
+    url: "/research",
+    icon: Beaker,
+  },
+  {
+    title: "Chat with Assistant Lysa",
+    url: "/chat",
+    icon: Bot,
+    badge: "AI",
+  },
+  {
+    title: "Profile",
+    url: "/profile",
+    icon: User,
   },
 ];
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const { user } = useAuth();
+  const isDoctor = user?.role === "doctor";
+  const menuItems = isDoctor ? doctorItems : patientItems;
 
   return (
     <Sidebar>
@@ -97,17 +96,19 @@ export function AppSidebar() {
             <Stethoscope className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-base font-semibold">HealthAI</h2>
-            <p className="text-xs text-muted-foreground">Patient Portal</p>
+            <h2 className="text-base font-semibold">Followup AI</h2>
+            <p className="text-xs text-muted-foreground">
+              {isDoctor ? "Doctor Portal" : "Patient Portal"}
+            </p>
           </div>
         </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Medical</SidebarGroupLabel>
+          <SidebarGroupLabel>{isDoctor ? "Tools" : "Health"}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {patientItems.map((item) => (
+              {menuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
@@ -124,49 +125,6 @@ export function AppSidebar() {
                           {item.badge}
                         </Badge>
                       )}
-                    </a>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Wellness</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {wellnessItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location === item.url}
-                    data-testid={`link-wellness-${item.title.toLowerCase()}`}
-                  >
-                    <a href={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </a>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {settingsItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location === item.url}
-                    data-testid={`link-${item.title.toLowerCase()}`}
-                  >
-                    <a href={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
                     </a>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
