@@ -283,6 +283,164 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* Why Followup AI Section - Enhanced */}
+        <section className="py-20 px-6 bg-gradient-to-b from-background via-primary/5 to-background">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-16">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
+                <Award className="h-4 w-4" />
+                <span className="text-sm font-medium">What Sets Us Apart</span>
+              </div>
+              <h3 className="text-4xl font-bold mb-4">The Followup AI Advantage</h3>
+              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+                Cutting-edge technology meets compassionate care—designed specifically for the unique challenges 
+                faced by immunocompromised patients and their healthcare teams.
+              </p>
+            </div>
+
+            {/* Top 3 Features Grid */}
+            <div className="grid md:grid-cols-3 gap-6 mb-12">
+              <Card className="hover-elevate transition-all duration-300 group" data-testid="card-feature-security">
+                <CardHeader>
+                  <div className="flex items-center justify-between mb-4">
+                    <Shield className="h-12 w-12 text-primary group-hover:scale-110 transition-transform" />
+                    <Lock className="h-5 w-5 text-primary/60" />
+                  </div>
+                  <CardTitle className="text-xl">Military-Grade Security</CardTitle>
+                  <CardDescription>HIPAA compliant with zero compromises</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">End-to-end AES-256 encryption for all data in transit and at rest</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Full HIPAA compliance with regular third-party security audits</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Patient-controlled data sharing with granular consent management</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Secure cloud infrastructure with automatic backups and disaster recovery</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="hover-elevate transition-all duration-300 group" data-testid="card-feature-ai">
+                <CardHeader>
+                  <div className="flex items-center justify-between mb-4">
+                    <Brain className="h-12 w-12 text-primary group-hover:scale-110 transition-transform" />
+                    <Zap className="h-5 w-5 text-primary/60" />
+                  </div>
+                  <CardTitle className="text-xl">Advanced AI Intelligence</CardTitle>
+                  <CardDescription>GPT-4 powered medical insights</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Medical entity recognition to identify symptoms, medications, and conditions</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Real-time sentiment analysis to detect emotional distress and mental health concerns</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Pattern recognition across thousands of daily check-ins to predict complications</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Context-aware responses that remember your history and preferences</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="hover-elevate transition-all duration-300 group" data-testid="card-feature-holistic">
+                <CardHeader>
+                  <div className="flex items-center justify-between mb-4">
+                    <Leaf className="h-12 w-12 text-primary group-hover:scale-110 transition-transform" />
+                    <Heart className="h-5 w-5 text-primary/60" />
+                  </div>
+                  <CardTitle className="text-xl">Whole-Person Care</CardTitle>
+                  <CardDescription>Beyond symptoms—supporting your well-being</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Guided meditation and breathing exercises for stress management</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Auto-generated health journals that track behavioral patterns and triggers</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Professional psychological counseling for patients and doctors</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">Wellness activities tailored to your energy levels and physical capabilities</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Additional Features Row */}
+            <div className="grid md:grid-cols-3 gap-6">
+              <Card className="hover-elevate transition-all duration-300" data-testid="card-feature-research">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <Globe className="h-5 w-5 text-primary" />
+                    </div>
+                    <CardTitle className="text-lg">Research-Backed</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Access to global health data from PubMed, WHO, and PhysioNet for evidence-based care and doctor-driven AI research.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="hover-elevate transition-all duration-300" data-testid="card-feature-integration">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <Activity className="h-5 w-5 text-primary" />
+                    </div>
+                    <CardTitle className="text-lg">Wearable Integration</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Seamlessly connect Fitbit, Apple Health, and other devices with patient-controlled consent for comprehensive tracking.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="hover-elevate transition-all duration-300" data-testid="card-feature-emergency">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <Bell className="h-5 w-5 text-primary" />
+                    </div>
+                    <CardTitle className="text-lg">Emergency Response</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Intelligent alerts notify doctors of critical changes, ensuring rapid intervention when you need it most.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </section>
+
         {/* Doctor Section */}
         <section className="py-20 px-6 bg-muted/50">
           <div className="max-w-7xl mx-auto">
@@ -515,164 +673,6 @@ export default function Landing() {
                       </Button>
                     </Link>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* Why Followup AI Section - Enhanced */}
-        <section className="py-20 px-6 bg-gradient-to-b from-background via-primary/5 to-background">
-          <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-16">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
-                <Award className="h-4 w-4" />
-                <span className="text-sm font-medium">What Sets Us Apart</span>
-              </div>
-              <h3 className="text-4xl font-bold mb-4">The Followup AI Advantage</h3>
-              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-                Cutting-edge technology meets compassionate care—designed specifically for the unique challenges 
-                faced by immunocompromised patients and their healthcare teams.
-              </p>
-            </div>
-
-            {/* Top 3 Features Grid */}
-            <div className="grid md:grid-cols-3 gap-6 mb-12">
-              <Card className="hover-elevate transition-all duration-300 group" data-testid="card-feature-security">
-                <CardHeader>
-                  <div className="flex items-center justify-between mb-4">
-                    <Shield className="h-12 w-12 text-primary group-hover:scale-110 transition-transform" />
-                    <Lock className="h-5 w-5 text-primary/60" />
-                  </div>
-                  <CardTitle className="text-xl">Military-Grade Security</CardTitle>
-                  <CardDescription>HIPAA compliant with zero compromises</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">End-to-end AES-256 encryption for all data in transit and at rest</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Full HIPAA compliance with regular third-party security audits</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Patient-controlled data sharing with granular consent management</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Secure cloud infrastructure with automatic backups and disaster recovery</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="hover-elevate transition-all duration-300 group" data-testid="card-feature-ai">
-                <CardHeader>
-                  <div className="flex items-center justify-between mb-4">
-                    <Brain className="h-12 w-12 text-primary group-hover:scale-110 transition-transform" />
-                    <Zap className="h-5 w-5 text-primary/60" />
-                  </div>
-                  <CardTitle className="text-xl">Advanced AI Intelligence</CardTitle>
-                  <CardDescription>GPT-4 powered medical insights</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Medical entity recognition to identify symptoms, medications, and conditions</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Real-time sentiment analysis to detect emotional distress and mental health concerns</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Pattern recognition across thousands of daily check-ins to predict complications</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Context-aware responses that remember your history and preferences</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="hover-elevate transition-all duration-300 group" data-testid="card-feature-holistic">
-                <CardHeader>
-                  <div className="flex items-center justify-between mb-4">
-                    <Leaf className="h-12 w-12 text-primary group-hover:scale-110 transition-transform" />
-                    <Heart className="h-5 w-5 text-primary/60" />
-                  </div>
-                  <CardTitle className="text-xl">Whole-Person Care</CardTitle>
-                  <CardDescription>Beyond symptoms—supporting your well-being</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Guided meditation and breathing exercises for stress management</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Auto-generated health journals that track behavioral patterns and triggers</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Professional psychological counseling for patients and doctors</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">Wellness activities tailored to your energy levels and physical capabilities</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Additional Features Row */}
-            <div className="grid md:grid-cols-3 gap-6">
-              <Card className="hover-elevate transition-all duration-300" data-testid="card-feature-research">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <Globe className="h-5 w-5 text-primary" />
-                    </div>
-                    <CardTitle className="text-lg">Research-Backed</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    Access to global health data from PubMed, WHO, and PhysioNet for evidence-based care and doctor-driven AI research.
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="hover-elevate transition-all duration-300" data-testid="card-feature-integration">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <Activity className="h-5 w-5 text-primary" />
-                    </div>
-                    <CardTitle className="text-lg">Wearable Integration</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    Seamlessly connect Fitbit, Apple Health, and other devices with patient-controlled consent for comprehensive tracking.
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="hover-elevate transition-all duration-300" data-testid="card-feature-emergency">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <Bell className="h-5 w-5 text-primary" />
-                    </div>
-                    <CardTitle className="text-lg">Emergency Response</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    Intelligent alerts notify doctors of critical changes, ensuring rapid intervention when you need it most.
-                  </p>
                 </CardContent>
               </Card>
             </div>
