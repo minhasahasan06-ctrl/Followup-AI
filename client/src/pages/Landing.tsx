@@ -50,7 +50,7 @@ export default function Landing() {
         <section className="py-20 px-6">
           <div className="max-w-6xl mx-auto text-center">
             <h2 className="text-5xl font-bold tracking-tight mb-6">
-              AI-Powered Health Monitoring for Immunocompromised Patients
+              Personalized AI for Immunocompromised Patients
             </h2>
             <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto leading-relaxed">
               Advanced daily follow-ups with Agent Clona, comprehensive health tracking, and research-backed insights 
