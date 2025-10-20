@@ -1,16 +1,24 @@
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot } from "lucide-react";
+import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Apple, Smartphone } from "lucide-react";
+import { SiGoogleplay } from "react-icons/si";
 
 export default function Landing() {
-  const handleLogin = () => {
-    window.location.href = "/api/login";
+  const handlePatientSignup = () => {
+    // Will redirect to Replit Auth with patient context
+    window.location.href = "/api/login?role=patient&type=signup";
+  };
+
+  const handlePatientLogin = () => {
+    // Will redirect to Replit Auth with patient context
+    window.location.href = "/api/login?role=patient&type=login";
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted">
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Stethoscope className="h-6 w-6" />
@@ -20,13 +28,24 @@ export default function Landing() {
               <p className="text-xs text-muted-foreground">HIPAA-Compliant Health Platform</p>
             </div>
           </div>
-          <Button onClick={handleLogin} data-testid="button-login">
-            Sign In
-          </Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Link href="/doctor-portal">
+              <Button variant="ghost" data-testid="button-doctor-portal">
+                Doctor Portal
+              </Button>
+            </Link>
+            <Button variant="outline" onClick={handlePatientLogin} data-testid="button-patient-login">
+              Patient Login
+            </Button>
+            <Button onClick={handlePatientSignup} data-testid="button-patient-signup">
+              Patient Sign Up
+            </Button>
+          </div>
         </div>
       </header>
 
       <main>
+        {/* Hero Section */}
         <section className="py-20 px-6">
           <div className="max-w-6xl mx-auto text-center">
             <h2 className="text-5xl font-bold tracking-tight mb-6">
@@ -36,17 +55,52 @@ export default function Landing() {
               Advanced daily follow-ups with Agent Clona, comprehensive health tracking, and research-backed insights 
               to help you manage your health with confidence.
             </p>
-            <div className="flex gap-4 justify-center">
-              <Button size="lg" onClick={handleLogin} data-testid="button-get-started">
-                Get Started
+            <div className="flex gap-4 justify-center flex-wrap mb-12">
+              <Button size="lg" onClick={handlePatientSignup} data-testid="button-get-started">
+                Get Started Free
               </Button>
-              <Button size="lg" variant="outline" data-testid="button-learn-more">
-                Learn More
+              <Button size="lg" variant="outline" onClick={handlePatientLogin} data-testid="button-patient-login-hero">
+                Sign In
               </Button>
+            </div>
+
+            {/* App Download Section */}
+            <div className="mt-16 pt-16 border-t">
+              <h3 className="text-2xl font-semibold mb-6">Download Our Mobile App</h3>
+              <p className="text-muted-foreground mb-8 max-w-2xl mx-auto">
+                Access your health data on the go. Track vitals, chat with Agent Clona, and manage medications 
+                from your iOS or Android device.
+              </p>
+              <div className="flex gap-4 justify-center flex-wrap">
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className="gap-2"
+                  data-testid="button-download-ios"
+                  onClick={() => window.open('https://apps.apple.com', '_blank')}
+                >
+                  <Apple className="h-5 w-5" />
+                  Download on App Store
+                </Button>
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className="gap-2"
+                  data-testid="button-download-android"
+                  onClick={() => window.open('https://play.google.com', '_blank')}
+                >
+                  <SiGoogleplay className="h-5 w-5" />
+                  Get it on Google Play
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground mt-4">
+                Coming Soon • iOS 15+ and Android 10+ required
+              </p>
             </div>
           </div>
         </section>
 
+        {/* Who We Serve Section */}
         <section className="py-16 px-6 bg-muted/50">
           <div className="max-w-7xl mx-auto">
             <h3 className="text-3xl font-semibold text-center mb-12">Who We Serve</h3>
@@ -63,7 +117,7 @@ export default function Landing() {
                     Comprehensive health monitoring tailored for immunocompromised individuals
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-4">
                   <div className="flex items-start gap-2">
                     <Bot className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
                     <div>
@@ -85,6 +139,16 @@ export default function Landing() {
                       <p className="text-sm text-muted-foreground">Meditation, breathing exercises, and gentle movement</p>
                     </div>
                   </div>
+                  <div className="pt-4 border-t">
+                    <div className="flex gap-3">
+                      <Button onClick={handlePatientSignup} className="flex-1" data-testid="button-patient-signup-card">
+                        Sign Up
+                      </Button>
+                      <Button onClick={handlePatientLogin} variant="outline" className="flex-1" data-testid="button-patient-login-card">
+                        Login
+                      </Button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -100,7 +164,7 @@ export default function Landing() {
                     Advanced tools for patient management and epidemiological research
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-4">
                   <div className="flex items-start gap-2">
                     <Bot className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
                     <div>
@@ -122,12 +186,20 @@ export default function Landing() {
                       <p className="text-sm text-muted-foreground">AI-powered epidemiological analysis and reporting</p>
                     </div>
                   </div>
+                  <div className="pt-4 border-t">
+                    <Link href="/doctor-portal">
+                      <Button className="w-full" data-testid="button-doctor-portal-card">
+                        Access Doctor Portal
+                      </Button>
+                    </Link>
+                  </div>
                 </CardContent>
               </Card>
             </div>
           </div>
         </section>
 
+        {/* Why Followup AI Section */}
         <section className="py-16 px-6">
           <div className="max-w-7xl mx-auto">
             <h3 className="text-3xl font-semibold text-center mb-12">Why Followup AI?</h3>

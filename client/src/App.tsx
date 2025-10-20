@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
+import DoctorPortal from "@/pages/DoctorPortal";
 import RoleSelection from "@/pages/RoleSelection";
 import Dashboard from "@/pages/Dashboard";
 import Chat from "@/pages/Chat";
@@ -65,8 +66,15 @@ function AuthenticatedApp() {
     );
   }
 
+  // Public routes accessible without authentication
   if (!user) {
-    return <Landing />;
+    return (
+      <Switch>
+        <Route path="/doctor-portal" component={DoctorPortal} />
+        <Route path="/" component={Landing} />
+        <Route component={Landing} />
+      </Switch>
+    );
   }
 
   if (!user.role) {
