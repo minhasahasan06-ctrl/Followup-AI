@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot } from "lucide-react";
+import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles } from "lucide-react";
 import appStoreBadge from "@assets/stock_images/apple_app_store_down_a3189b22.jpg";
 import googlePlayBadge from "@assets/stock_images/google_play_store_do_60dd571a.jpg";
 
@@ -63,6 +63,187 @@ export default function Landing() {
               <Button size="lg" variant="outline" onClick={handlePatientLogin} data-testid="button-patient-login-hero">
                 Sign In
               </Button>
+            </div>
+          </div>
+        </section>
+
+        {/* Daily Follow-Ups Section */}
+        <section className="py-20 px-6 bg-gradient-to-br from-primary/5 via-background to-primary/5">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-16">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
+                <Sparkles className="h-4 w-4" />
+                <span className="text-sm font-medium">Your Daily Health Companion</span>
+              </div>
+              <h3 className="text-4xl font-bold mb-4">What Are Daily Follow-Ups?</h3>
+              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+                A personalized check-in every day with Agent Clona to monitor your health, catch early warning signs, 
+                and keep you on track—because consistent care makes all the difference.
+              </p>
+            </div>
+
+            {/* Interactive Timeline */}
+            <div className="grid md:grid-cols-3 gap-6 mb-12">
+              <Card className="hover-elevate transition-all duration-300 group" data-testid="card-followup-step-1">
+                <CardHeader>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                      <Calendar className="h-7 w-7 text-primary" />
+                    </div>
+                    <span className="text-sm font-semibold text-primary">Step 1</span>
+                  </div>
+                  <CardTitle className="text-xl">Morning Check-In</CardTitle>
+                  <CardDescription className="text-base">
+                    Start your day with a quick health snapshot
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <p className="text-sm">How did you sleep?</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <p className="text-sm">Any new symptoms?</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <p className="text-sm">Energy levels and mood</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="hover-elevate transition-all duration-300 group" data-testid="card-followup-step-2">
+                <CardHeader>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                      <Camera className="h-7 w-7 text-primary" />
+                    </div>
+                    <span className="text-sm font-semibold text-primary">Step 2</span>
+                  </div>
+                  <CardTitle className="text-xl">Visual Assessment</CardTitle>
+                  <CardDescription className="text-base">
+                    AI-powered analysis for early detection
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <p className="text-sm">Skin changes or rashes</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <p className="text-sm">Wound healing progress</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <p className="text-sm">Inflammation monitoring</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="hover-elevate transition-all duration-300 group" data-testid="card-followup-step-3">
+                <CardHeader>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                      <Activity className="h-7 w-7 text-primary" />
+                    </div>
+                    <span className="text-sm font-semibold text-primary">Step 3</span>
+                  </div>
+                  <CardTitle className="text-xl">AI Insights</CardTitle>
+                  <CardDescription className="text-base">
+                    Personalized recommendations from Agent Clona
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <p className="text-sm">Pattern recognition</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <p className="text-sm">Medication reminders</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <p className="text-sm">Actionable next steps</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Why It Matters for Immunocompromised Patients */}
+            <div className="bg-card rounded-lg p-8 border">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                  <Heart className="h-6 w-6 text-primary" />
+                </div>
+                <h4 className="text-2xl font-semibold">Why This Matters for You</h4>
+              </div>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <ArrowRight className="h-5 w-5 text-primary" />
+                    </div>
+                  </div>
+                  <div>
+                    <h5 className="font-semibold mb-2">Early Infection Detection</h5>
+                    <p className="text-muted-foreground">
+                      Catch subtle changes before they become serious. Your compromised immune system needs vigilant monitoring 
+                      to detect infections at their earliest stages.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <ArrowRight className="h-5 w-5 text-primary" />
+                    </div>
+                  </div>
+                  <div>
+                    <h5 className="font-semibold mb-2">Medication Adherence</h5>
+                    <p className="text-muted-foreground">
+                      Stay on track with your immunosuppressants and other critical medications. Consistency is vital 
+                      for maintaining your health stability.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <ArrowRight className="h-5 w-5 text-primary" />
+                    </div>
+                  </div>
+                  <div>
+                    <h5 className="font-semibold mb-2">Symptom Tracking</h5>
+                    <p className="text-muted-foreground">
+                      Document patterns over time. Agent Clona learns your baseline and alerts you to deviations that 
+                      might indicate complications.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <ArrowRight className="h-5 w-5 text-primary" />
+                    </div>
+                  </div>
+                  <div>
+                    <h5 className="font-semibold mb-2">Peace of Mind</h5>
+                    <p className="text-muted-foreground">
+                      Know that you're being monitored daily by AI that never sleeps. Reduce anxiety with consistent 
+                      check-ins and expert guidance.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-8 text-center">
+                <Button size="lg" onClick={handlePatientSignup} className="gap-2" data-testid="button-start-followups">
+                  Start Your Daily Follow-Ups
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </section>
