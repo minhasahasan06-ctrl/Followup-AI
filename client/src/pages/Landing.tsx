@@ -30,17 +30,14 @@ export default function Landing() {
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            <Button onClick={handlePatientSignup} data-testid="button-patient-portal">
+              Patient Portal
+            </Button>
             <Link href="/doctor-portal">
-              <Button variant="ghost" data-testid="button-doctor-portal">
+              <Button variant="outline" data-testid="button-doctor-portal">
                 Doctor Portal
               </Button>
             </Link>
-            <Button variant="outline" onClick={handlePatientLogin} data-testid="button-patient-login">
-              Patient Login
-            </Button>
-            <Button onClick={handlePatientSignup} data-testid="button-patient-signup">
-              Patient Sign Up
-            </Button>
           </div>
         </div>
       </header>
@@ -57,12 +54,14 @@ export default function Landing() {
               to help you manage your health with confidence.
             </p>
             <div className="flex gap-4 justify-center flex-wrap">
-              <Button size="lg" onClick={handlePatientSignup} data-testid="button-get-started">
-                Get Started Free
+              <Button size="lg" onClick={handlePatientSignup} data-testid="button-patient-portal-hero">
+                Patient Portal
               </Button>
-              <Button size="lg" variant="outline" onClick={handlePatientLogin} data-testid="button-patient-login-hero">
-                Sign In
-              </Button>
+              <Link href="/doctor-portal">
+                <Button size="lg" variant="outline" data-testid="button-doctor-portal-hero">
+                  Doctor Portal
+                </Button>
+              </Link>
             </div>
           </div>
         </section>
