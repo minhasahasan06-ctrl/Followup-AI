@@ -28,7 +28,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/user/select-role', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { role, medicalLicenseNumber } = req.body;
+      const { role, medicalLicenseNumber, termsAccepted } = req.body;
       
       if (!role || (role !== 'patient' && role !== 'doctor')) {
         return res.status(400).json({ message: "Invalid role" });
@@ -38,7 +38,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Medical license number required for doctors" });
       }
       
-      const user = await storage.updateUserRole(userId, role, medicalLicenseNumber);
+      if (!termsAccepted) {
+        return res.status(400).json({ message: "Terms and conditions must be accepted" });
+      }
+      
+      const user = await storage.updateUserRole(userId, role, medicalLicenseNumber, termsAccepted);
       res.json(user);
     } catch (error) {
       console.error("Error updating role:", error);

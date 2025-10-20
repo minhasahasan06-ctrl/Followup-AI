@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Heart, Users, Stethoscope } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -14,9 +15,10 @@ export default function RoleSelection() {
   const { toast } = useToast();
   const [selectedRole, setSelectedRole] = useState<"patient" | "doctor" | null>(null);
   const [medicalLicenseNumber, setMedicalLicenseNumber] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const selectRoleMutation = useMutation({
-    mutationFn: async (data: { role: string; medicalLicenseNumber?: string }) => {
+    mutationFn: async (data: { role: string; medicalLicenseNumber?: string; termsAccepted: boolean }) => {
       return await apiRequest("POST", "/api/user/select-role", data);
     },
     onSuccess: () => {
@@ -59,9 +61,19 @@ export default function RoleSelection() {
       return;
     }
 
+    if (!termsAccepted) {
+      toast({
+        title: "Terms acceptance required",
+        description: "Please accept the Terms and Conditions to continue",
+        variant: "destructive",
+      });
+      return;
+    }
+
     selectRoleMutation.mutate({
       role: selectedRole,
       medicalLicenseNumber: selectedRole === "doctor" ? medicalLicenseNumber : undefined,
+      termsAccepted,
     });
   };
 
@@ -161,11 +173,53 @@ export default function RoleSelection() {
           </Card>
         )}
 
+        {selectedRole && (
+          <Card className="mb-6" data-testid="card-terms-conditions">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="terms"
+                  checked={termsAccepted}
+                  onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
+                  data-testid="checkbox-terms"
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="terms" className="text-sm font-normal cursor-pointer">
+                    I agree to the{" "}
+                    <a
+                      href="/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline font-medium"
+                      data-testid="link-terms"
+                    >
+                      Terms and Conditions
+                    </a>{" "}
+                    and{" "}
+                    <a
+                      href="/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline font-medium"
+                      data-testid="link-privacy"
+                    >
+                      Privacy Policy
+                    </a>
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    By accepting, you acknowledge that you have read and understood our HIPAA-compliant privacy practices and terms of service.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="flex justify-center">
           <Button
             size="lg"
             onClick={handleSubmit}
-            disabled={!selectedRole || selectRoleMutation.isPending}
+            disabled={!selectedRole || !termsAccepted || selectRoleMutation.isPending}
             data-testid="button-continue"
           >
             {selectRoleMutation.isPending ? "Setting up your account..." : "Continue"}
