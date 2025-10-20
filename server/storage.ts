@@ -55,7 +55,7 @@ export interface IStorage {
   // User operations (required for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
-  updateUserRole(id: string, role: string, medicalLicenseNumber?: string): Promise<User | undefined>;
+  updateUserRole(id: string, role: string, medicalLicenseNumber?: string, termsAccepted?: boolean): Promise<User | undefined>;
   
   // Patient profile operations
   getPatientProfile(userId: string): Promise<PatientProfile | undefined>;
@@ -156,10 +156,21 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUserRole(id: string, role: string, medicalLicenseNumber?: string): Promise<User | undefined> {
+  async updateUserRole(id: string, role: string, medicalLicenseNumber?: string, termsAccepted?: boolean): Promise<User | undefined> {
+    const updateData: any = { 
+      role, 
+      medicalLicenseNumber, 
+      updatedAt: new Date() 
+    };
+    
+    if (termsAccepted) {
+      updateData.termsAccepted = true;
+      updateData.termsAcceptedAt = new Date();
+    }
+    
     const [user] = await db
       .update(users)
-      .set({ role, medicalLicenseNumber, updatedAt: new Date() })
+      .set(updateData)
       .where(eq(users.id, id))
       .returning();
     return user;

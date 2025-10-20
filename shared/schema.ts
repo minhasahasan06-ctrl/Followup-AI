@@ -34,6 +34,8 @@ export const users = pgTable("users", {
   role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient' or 'doctor'
   medicalLicenseNumber: varchar("medical_license_number"),
   licenseVerified: boolean("license_verified").default(false),
+  termsAccepted: boolean("terms_accepted").default(false),
+  termsAcceptedAt: timestamp("terms_accepted_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
