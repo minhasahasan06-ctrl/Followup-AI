@@ -546,7 +546,7 @@ export default function Landing() {
                     <h5 className="font-semibold">Oncology Patients</h5>
                   </div>
                   <ul className="space-y-2 text-sm text-muted-foreground ml-7">
-                    <li>• Neutropenia detection</li>
+                    <li>• Infection pattern analysis</li>
                     <li>• Treatment side effects</li>
                     <li>• Energy level patterns</li>
                     <li>• Nutrition tracking</li>
