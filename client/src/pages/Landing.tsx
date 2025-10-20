@@ -820,7 +820,7 @@ export default function Landing() {
               </p>
             </div>
             <p className="text-xs text-muted-foreground text-center md:text-left mt-4">
-              This platform provides health monitoring and wellness support. For exact medical advice, diagnosis, or treatment decisions, always consult with your doctor or qualified healthcare provider.
+              Seek your doctor's advice for any medical concerns.
             </p>
           </div>
         </div>
