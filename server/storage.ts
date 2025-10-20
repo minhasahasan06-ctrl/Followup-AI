@@ -1,38 +1,475 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import {
+  users,
+  patientProfiles,
+  doctorProfiles,
+  dailyFollowups,
+  chatMessages,
+  medications,
+  dynamicTasks,
+  autoJournals,
+  calmActivities,
+  behavioralInsights,
+  researchConsents,
+  aiResearchReports,
+  educationalProgress,
+  type User,
+  type UpsertUser,
+  type PatientProfile,
+  type InsertPatientProfile,
+  type DoctorProfile,
+  type InsertDoctorProfile,
+  type DailyFollowup,
+  type InsertDailyFollowup,
+  type ChatMessage,
+  type InsertChatMessage,
+  type Medication,
+  type InsertMedication,
+  type DynamicTask,
+  type InsertDynamicTask,
+  type AutoJournal,
+  type InsertAutoJournal,
+  type CalmActivity,
+  type InsertCalmActivity,
+  type BehavioralInsight,
+  type InsertBehavioralInsight,
+  type ResearchConsent,
+  type InsertResearchConsent,
+  type AIResearchReport,
+  type InsertAIResearchReport,
+  type EducationalProgress,
+  type InsertEducationalProgress,
+} from "@shared/schema";
+import { db } from "./db";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
+  // User operations (required for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  upsertUser(user: UpsertUser): Promise<User>;
+  updateUserRole(id: string, role: string, medicalLicenseNumber?: string): Promise<User | undefined>;
+  
+  // Patient profile operations
+  getPatientProfile(userId: string): Promise<PatientProfile | undefined>;
+  upsertPatientProfile(profile: InsertPatientProfile): Promise<PatientProfile>;
+  
+  // Doctor profile operations
+  getDoctorProfile(userId: string): Promise<DoctorProfile | undefined>;
+  upsertDoctorProfile(profile: InsertDoctorProfile): Promise<DoctorProfile>;
+  getAllPatients(): Promise<Array<User & { profile?: PatientProfile }>>;
+  
+  // Daily followup operations
+  getDailyFollowup(patientId: string, date: Date): Promise<DailyFollowup | undefined>;
+  getRecentFollowups(patientId: string, limit?: number): Promise<DailyFollowup[]>;
+  createDailyFollowup(followup: InsertDailyFollowup): Promise<DailyFollowup>;
+  updateDailyFollowup(id: string, data: Partial<DailyFollowup>): Promise<DailyFollowup | undefined>;
+  
+  // Chat operations
+  getChatMessages(userId: string, agentType: string, limit?: number): Promise<ChatMessage[]>;
+  createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
+  
+  // Medication operations
+  getActiveMedications(patientId: string): Promise<Medication[]>;
+  createMedication(medication: InsertMedication): Promise<Medication>;
+  updateMedication(id: string, data: Partial<Medication>): Promise<Medication | undefined>;
+  
+  // Dynamic task operations
+  getActiveTasks(patientId: string): Promise<DynamicTask[]>;
+  createDynamicTask(task: InsertDynamicTask): Promise<DynamicTask>;
+  completeTask(id: string): Promise<DynamicTask | undefined>;
+  
+  // Auto journal operations
+  getRecentJournals(patientId: string, limit?: number): Promise<AutoJournal[]>;
+  createAutoJournal(journal: InsertAutoJournal): Promise<AutoJournal>;
+  
+  // Calm activity operations
+  getCalmActivities(patientId: string): Promise<CalmActivity[]>;
+  createCalmActivity(activity: InsertCalmActivity): Promise<CalmActivity>;
+  updateCalmActivityEffectiveness(id: string, effectiveness: number): Promise<CalmActivity | undefined>;
+  
+  // Behavioral insight operations
+  getRecentInsights(patientId: string, limit?: number): Promise<BehavioralInsight[]>;
+  createBehavioralInsight(insight: InsertBehavioralInsight): Promise<BehavioralInsight>;
+  
+  // Research consent operations
+  getResearchConsent(patientId: string): Promise<ResearchConsent | undefined>;
+  getPendingConsents(): Promise<ResearchConsent[]>;
+  createResearchConsent(consent: InsertResearchConsent): Promise<ResearchConsent>;
+  updateConsentStatus(id: string, status: string, verifiedBy: string): Promise<ResearchConsent | undefined>;
+  
+  // AI research report operations
+  getResearchReports(doctorId: string): Promise<AIResearchReport[]>;
+  createResearchReport(report: InsertAIResearchReport): Promise<AIResearchReport>;
+  
+  // Educational progress operations
+  getEducationalProgress(patientId: string): Promise<EducationalProgress[]>;
+  upsertEducationalProgress(progress: InsertEducationalProgress): Promise<EducationalProgress>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
-  }
-
+export class DatabaseStorage implements IStorage {
+  // User operations
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
+  }
+
+  async updateUserRole(id: string, role: string, medicalLicenseNumber?: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ role, medicalLicenseNumber, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  // Patient profile operations
+  async getPatientProfile(userId: string): Promise<PatientProfile | undefined> {
+    const [profile] = await db
+      .select()
+      .from(patientProfiles)
+      .where(eq(patientProfiles.userId, userId));
+    return profile;
+  }
+
+  async upsertPatientProfile(profileData: InsertPatientProfile): Promise<PatientProfile> {
+    const [profile] = await db
+      .insert(patientProfiles)
+      .values(profileData)
+      .onConflictDoUpdate({
+        target: patientProfiles.userId,
+        set: {
+          ...profileData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return profile;
+  }
+
+  // Doctor profile operations
+  async getDoctorProfile(userId: string): Promise<DoctorProfile | undefined> {
+    const [profile] = await db
+      .select()
+      .from(doctorProfiles)
+      .where(eq(doctorProfiles.userId, userId));
+    return profile;
+  }
+
+  async upsertDoctorProfile(profileData: InsertDoctorProfile): Promise<DoctorProfile> {
+    const [profile] = await db
+      .insert(doctorProfiles)
+      .values(profileData)
+      .onConflictDoUpdate({
+        target: doctorProfiles.userId,
+        set: {
+          ...profileData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return profile;
+  }
+
+  async getAllPatients(): Promise<Array<User & { profile?: PatientProfile }>> {
+    const patientsData = await db
+      .select()
+      .from(users)
+      .leftJoin(patientProfiles, eq(users.id, patientProfiles.userId))
+      .where(eq(users.role, 'patient'));
+    
+    return patientsData.map(row => ({
+      ...row.users,
+      profile: row.patient_profiles || undefined,
+    }));
+  }
+
+  // Daily followup operations
+  async getDailyFollowup(patientId: string, date: Date): Promise<DailyFollowup | undefined> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const [followup] = await db
+      .select()
+      .from(dailyFollowups)
+      .where(
+        and(
+          eq(dailyFollowups.patientId, patientId),
+          sql`${dailyFollowups.date} >= ${startOfDay}`,
+          sql`${dailyFollowups.date} <= ${endOfDay}`
+        )
+      );
+    return followup;
+  }
+
+  async getRecentFollowups(patientId: string, limit: number = 30): Promise<DailyFollowup[]> {
+    const followups = await db
+      .select()
+      .from(dailyFollowups)
+      .where(eq(dailyFollowups.patientId, patientId))
+      .orderBy(desc(dailyFollowups.date))
+      .limit(limit);
+    return followups;
+  }
+
+  async createDailyFollowup(followupData: InsertDailyFollowup): Promise<DailyFollowup> {
+    const [followup] = await db
+      .insert(dailyFollowups)
+      .values(followupData)
+      .returning();
+    return followup;
+  }
+
+  async updateDailyFollowup(id: string, data: Partial<DailyFollowup>): Promise<DailyFollowup | undefined> {
+    const [followup] = await db
+      .update(dailyFollowups)
+      .set(data)
+      .where(eq(dailyFollowups.id, id))
+      .returning();
+    return followup;
+  }
+
+  // Chat operations
+  async getChatMessages(userId: string, agentType: string, limit: number = 50): Promise<ChatMessage[]> {
+    const messages = await db
+      .select()
+      .from(chatMessages)
+      .where(and(eq(chatMessages.userId, userId), eq(chatMessages.agentType, agentType)))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(limit);
+    return messages.reverse();
+  }
+
+  async createChatMessage(messageData: InsertChatMessage): Promise<ChatMessage> {
+    const [message] = await db
+      .insert(chatMessages)
+      .values(messageData)
+      .returning();
+    return message;
+  }
+
+  // Medication operations
+  async getActiveMedications(patientId: string): Promise<Medication[]> {
+    const meds = await db
+      .select()
+      .from(medications)
+      .where(and(eq(medications.patientId, patientId), eq(medications.active, true)))
+      .orderBy(medications.name);
+    return meds;
+  }
+
+  async createMedication(medicationData: InsertMedication): Promise<Medication> {
+    const [medication] = await db
+      .insert(medications)
+      .values(medicationData)
+      .returning();
+    return medication;
+  }
+
+  async updateMedication(id: string, data: Partial<Medication>): Promise<Medication | undefined> {
+    const [medication] = await db
+      .update(medications)
+      .set(data)
+      .where(eq(medications.id, id))
+      .returning();
+    return medication;
+  }
+
+  // Dynamic task operations
+  async getActiveTasks(patientId: string): Promise<DynamicTask[]> {
+    const tasks = await db
+      .select()
+      .from(dynamicTasks)
+      .where(and(eq(dynamicTasks.patientId, patientId), eq(dynamicTasks.completed, false)))
+      .orderBy(dynamicTasks.dueDate);
+    return tasks;
+  }
+
+  async createDynamicTask(taskData: InsertDynamicTask): Promise<DynamicTask> {
+    const [task] = await db
+      .insert(dynamicTasks)
+      .values(taskData)
+      .returning();
+    return task;
+  }
+
+  async completeTask(id: string): Promise<DynamicTask | undefined> {
+    const [task] = await db
+      .update(dynamicTasks)
+      .set({ completed: true, completedAt: new Date() })
+      .where(eq(dynamicTasks.id, id))
+      .returning();
+    return task;
+  }
+
+  // Auto journal operations
+  async getRecentJournals(patientId: string, limit: number = 7): Promise<AutoJournal[]> {
+    const journals = await db
+      .select()
+      .from(autoJournals)
+      .where(eq(autoJournals.patientId, patientId))
+      .orderBy(desc(autoJournals.date))
+      .limit(limit);
+    return journals;
+  }
+
+  async createAutoJournal(journalData: InsertAutoJournal): Promise<AutoJournal> {
+    const [journal] = await db
+      .insert(autoJournals)
+      .values(journalData)
+      .returning();
+    return journal;
+  }
+
+  // Calm activity operations
+  async getCalmActivities(patientId: string): Promise<CalmActivity[]> {
+    const activities = await db
+      .select()
+      .from(calmActivities)
+      .where(eq(calmActivities.patientId, patientId))
+      .orderBy(desc(calmActivities.effectiveness));
+    return activities;
+  }
+
+  async createCalmActivity(activityData: InsertCalmActivity): Promise<CalmActivity> {
+    const [activity] = await db
+      .insert(calmActivities)
+      .values(activityData)
+      .returning();
+    return activity;
+  }
+
+  async updateCalmActivityEffectiveness(id: string, effectiveness: number): Promise<CalmActivity | undefined> {
+    const [activity] = await db
+      .update(calmActivities)
+      .set({ 
+        effectiveness, 
+        timesUsed: sql`${calmActivities.timesUsed} + 1`,
+        lastUsed: new Date() 
+      })
+      .where(eq(calmActivities.id, id))
+      .returning();
+    return activity;
+  }
+
+  // Behavioral insight operations
+  async getRecentInsights(patientId: string, limit: number = 30): Promise<BehavioralInsight[]> {
+    const insights = await db
+      .select()
+      .from(behavioralInsights)
+      .where(eq(behavioralInsights.patientId, patientId))
+      .orderBy(desc(behavioralInsights.date))
+      .limit(limit);
+    return insights;
+  }
+
+  async createBehavioralInsight(insightData: InsertBehavioralInsight): Promise<BehavioralInsight> {
+    const [insight] = await db
+      .insert(behavioralInsights)
+      .values(insightData)
+      .returning();
+    return insight;
+  }
+
+  // Research consent operations
+  async getResearchConsent(patientId: string): Promise<ResearchConsent | undefined> {
+    const [consent] = await db
+      .select()
+      .from(researchConsents)
+      .where(eq(researchConsents.patientId, patientId))
+      .orderBy(desc(researchConsents.createdAt))
+      .limit(1);
+    return consent;
+  }
+
+  async getPendingConsents(): Promise<ResearchConsent[]> {
+    const consents = await db
+      .select()
+      .from(researchConsents)
+      .where(eq(researchConsents.status, 'pending'))
+      .orderBy(desc(researchConsents.createdAt));
+    return consents;
+  }
+
+  async createResearchConsent(consentData: InsertResearchConsent): Promise<ResearchConsent> {
+    const [consent] = await db
+      .insert(researchConsents)
+      .values(consentData)
+      .returning();
+    return consent;
+  }
+
+  async updateConsentStatus(id: string, status: string, verifiedBy: string): Promise<ResearchConsent | undefined> {
+    const [consent] = await db
+      .update(researchConsents)
+      .set({ 
+        status, 
+        verifiedBy, 
+        verificationDate: new Date(),
+        dataAnonymized: status === 'approved' 
+      })
+      .where(eq(researchConsents.id, id))
+      .returning();
+    return consent;
+  }
+
+  // AI research report operations
+  async getResearchReports(doctorId: string): Promise<AIResearchReport[]> {
+    const reports = await db
+      .select()
+      .from(aiResearchReports)
+      .where(eq(aiResearchReports.createdBy, doctorId))
+      .orderBy(desc(aiResearchReports.createdAt));
+    return reports;
+  }
+
+  async createResearchReport(reportData: InsertAIResearchReport): Promise<AIResearchReport> {
+    const [report] = await db
+      .insert(aiResearchReports)
+      .values(reportData)
+      .returning();
+    return report;
+  }
+
+  // Educational progress operations
+  async getEducationalProgress(patientId: string): Promise<EducationalProgress[]> {
+    const progress = await db
+      .select()
+      .from(educationalProgress)
+      .where(eq(educationalProgress.patientId, patientId))
+      .orderBy(desc(educationalProgress.updatedAt));
+    return progress;
+  }
+
+  async upsertEducationalProgress(progressData: InsertEducationalProgress): Promise<EducationalProgress> {
+    const [progress] = await db
+      .insert(educationalProgress)
+      .values(progressData)
+      .onConflictDoUpdate({
+        target: [educationalProgress.patientId, educationalProgress.moduleId],
+        set: {
+          ...progressData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return progress;
+  }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
