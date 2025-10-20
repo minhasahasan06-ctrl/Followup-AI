@@ -9,6 +9,7 @@ interface ReminderCardProps {
   title: string;
   time: string;
   description: string;
+  testId?: string;
 }
 
 const reminderConfig = {
@@ -34,18 +35,18 @@ const reminderConfig = {
   },
 };
 
-export function ReminderCard({ type, title, time, description }: ReminderCardProps) {
+export function ReminderCard({ type, title, time, description, testId }: ReminderCardProps) {
   const [completed, setCompleted] = useState(false);
   const config = reminderConfig[type];
   const Icon = config.icon;
 
   if (completed) {
     return (
-      <Card className="border-l-4 border-l-chart-2">
+      <Card className="border-l-4 border-l-chart-2" data-testid={testId ? `${testId}-completed` : undefined}>
         <CardContent className="flex items-center gap-3 p-4">
           <CheckCircle2 className="h-5 w-5 text-chart-2" />
           <div className="flex-1">
-            <p className="text-sm font-medium line-through text-muted-foreground">
+            <p className="text-sm font-medium line-through text-muted-foreground" data-testid={testId ? `${testId}-title` : undefined}>
               {title}
             </p>
           </div>
@@ -55,17 +56,17 @@ export function ReminderCard({ type, title, time, description }: ReminderCardPro
   }
 
   return (
-    <Card className="hover-elevate">
+    <Card className="hover-elevate" data-testid={testId}>
       <CardContent className="flex items-start gap-3 p-4">
         <div className={cn("rounded-md p-2", config.bg)}>
           <Icon className={cn("h-5 w-5", config.color)} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2 mb-1">
-            <h3 className="font-medium text-sm">{title}</h3>
-            <span className="text-xs text-muted-foreground whitespace-nowrap">{time}</span>
+            <h3 className="font-medium text-sm" data-testid={testId ? `${testId}-title` : undefined}>{title}</h3>
+            <span className="text-xs text-muted-foreground whitespace-nowrap" data-testid={testId ? `${testId}-time` : undefined}>{time}</span>
           </div>
-          <p className="text-sm text-muted-foreground mb-3">{description}</p>
+          <p className="text-sm text-muted-foreground mb-3" data-testid={testId ? `${testId}-description` : undefined}>{description}</p>
           <Button
             size="sm"
             variant="outline"
@@ -73,7 +74,7 @@ export function ReminderCard({ type, title, time, description }: ReminderCardPro
               setCompleted(true);
               console.log("Reminder completed:", title);
             }}
-            data-testid={`button-complete-${type}`}
+            data-testid={testId ? `${testId}-button-complete` : `button-complete-${type}`}
           >
             Mark Complete
           </Button>

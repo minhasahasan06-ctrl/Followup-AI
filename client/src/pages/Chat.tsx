@@ -42,26 +42,26 @@ export default function Chat() {
         <div className="flex items-center gap-3 mb-2">
           <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
             isDoctor ? "bg-accent" : "bg-primary"
-          } text-primary-foreground`}>
+          } text-primary-foreground`} data-testid="avatar-ai-agent">
             <Bot className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold">{agentName}</h1>
-            <p className="text-sm text-muted-foreground">
+            <h1 className="text-2xl font-semibold" data-testid="text-agent-name">{agentName}</h1>
+            <p className="text-sm text-muted-foreground" data-testid="text-agent-description">
               Powered by GPT-4 {isDoctor ? "- Clinical Insights" : "- Health Support"}
             </p>
           </div>
         </div>
       </div>
 
-      <Card className="flex-1 flex flex-col min-h-0">
+      <Card className="flex-1 flex flex-col min-h-0" data-testid="card-chat">
         <CardHeader className="border-b">
-          <CardTitle className="text-base">Chat with {agentName}</CardTitle>
+          <CardTitle className="text-base" data-testid="text-chat-title">Chat with {agentName}</CardTitle>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col p-0 min-h-0">
-          <ScrollArea className="flex-1 p-4">
+          <ScrollArea className="flex-1 p-4" data-testid="scroll-messages">
             {isLoading ? (
-              <div className="flex items-center justify-center py-8">
+              <div className="flex items-center justify-center py-8" data-testid="loading-messages">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
               </div>
             ) : (
@@ -75,24 +75,25 @@ export default function Chat() {
                       timestamp={new Date(msg.createdAt).toLocaleTimeString()}
                       isGP={msg.role === "assistant"}
                       entities={msg.medicalEntities}
+                      testId={`message-${msg.id}`}
                     />
                   ))
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
+                  <div className="text-center py-8 text-muted-foreground" data-testid="text-no-messages">
                     <p>Start a conversation with {agentName}</p>
                   </div>
                 )}
                 {sendMessageMutation.isPending && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="indicator-typing">
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                    <span>{agentName} is typing...</span>
+                    <span data-testid="text-typing">{agentName} is typing...</span>
                   </div>
                 )}
               </div>
             )}
           </ScrollArea>
           
-          <div className="border-t p-4">
+          <div className="border-t p-4" data-testid="section-message-input">
             <div className="flex gap-2">
               <Textarea
                 placeholder="Describe your symptoms or ask a question..."
@@ -118,7 +119,7 @@ export default function Chat() {
                 <Send className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
+            <p className="text-xs text-muted-foreground mt-2" data-testid="text-disclaimer">
               {isDoctor 
                 ? "AI-powered clinical insights. Always use professional judgment."
                 : "This AI assistant provides general health information. Always consult your doctor for medical decisions."}

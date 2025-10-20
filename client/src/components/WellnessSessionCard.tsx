@@ -12,6 +12,7 @@ interface WellnessSessionCardProps {
   type: "meditation" | "exercise";
   recommended?: boolean;
   onStart?: () => void;
+  testId?: string;
 }
 
 export function WellnessSessionCard({
@@ -22,6 +23,7 @@ export function WellnessSessionCard({
   type,
   recommended,
   onStart,
+  testId,
 }: WellnessSessionCardProps) {
   const difficultyColors = {
     Easy: "bg-chart-2/20 text-chart-2",
@@ -34,35 +36,35 @@ export function WellnessSessionCard({
     : "bg-gradient-to-br from-destructive/5 to-destructive/10";
 
   return (
-    <Card className={cn("font-wellness hover-elevate", gradientBg)}>
+    <Card className={cn("font-wellness hover-elevate", gradientBg)} data-testid={testId}>
       <CardHeader className="space-y-2">
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-lg">{title}</CardTitle>
+          <CardTitle className="text-lg" data-testid={testId ? `${testId}-title` : undefined}>{title}</CardTitle>
           {recommended && (
-            <Badge variant="default" className="text-xs">
+            <Badge variant="default" className="text-xs" data-testid={testId ? `${testId}-badge-recommended` : undefined}>
               Recommended
             </Badge>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="secondary" className={cn("text-xs", difficultyColors[difficulty])}>
+          <Badge variant="secondary" className={cn("text-xs", difficultyColors[difficulty])} data-testid={testId ? `${testId}-difficulty` : undefined}>
             {difficulty}
           </Badge>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground" data-testid={testId ? `${testId}-duration` : undefined}>
             <Clock className="h-3 w-3" />
             {duration}
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <p className="text-sm text-muted-foreground" data-testid={testId ? `${testId}-description` : undefined}>{description}</p>
         <Button
           className="w-full"
           onClick={() => {
             console.log(`Starting ${title}`);
             onStart?.();
           }}
-          data-testid={`button-start-${title.toLowerCase().replace(/\s+/g, "-")}`}
+          data-testid={testId ? `${testId}-button-start` : `button-start-${title.toLowerCase().replace(/\s+/g, "-")}`}
         >
           <Play className="h-4 w-4 mr-2" />
           Start Session

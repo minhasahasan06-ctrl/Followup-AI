@@ -4,7 +4,7 @@ import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot } from "lucide-react
 
 export default function Landing() {
   const handleLogin = () => {
-    window.location.href = "/auth/login";
+    window.location.href = "/api/login";
   };
 
   return (

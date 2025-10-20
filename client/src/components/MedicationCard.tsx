@@ -12,6 +12,7 @@ interface MedicationCardProps {
   status: "taken" | "pending" | "missed";
   aiSuggestion?: string;
   isOTC?: boolean;
+  testId?: string;
 }
 
 export function MedicationCard({
@@ -22,6 +23,7 @@ export function MedicationCard({
   status,
   aiSuggestion,
   isOTC,
+  testId,
 }: MedicationCardProps) {
   const statusConfig = {
     taken: {
@@ -44,21 +46,21 @@ export function MedicationCard({
   const StatusIcon = statusConfig[status].icon;
 
   return (
-    <Card className="hover-elevate">
+    <Card className="hover-elevate" data-testid={testId}>
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-3">
         <div className="flex items-start gap-3">
           <div className={cn("rounded-md p-2", statusConfig[status].bg)}>
             <Pill className={cn("h-4 w-4", statusConfig[status].color)} />
           </div>
           <div>
-            <h3 className="font-semibold" data-testid={`medication-${name.toLowerCase().replace(/\s+/g, "-")}`}>
+            <h3 className="font-semibold" data-testid={testId ? `${testId}-name` : `medication-${name.toLowerCase().replace(/\s+/g, "-")}`}>
               {name}
             </h3>
-            <p className="text-sm text-muted-foreground">{dosage}</p>
+            <p className="text-sm text-muted-foreground" data-testid={testId ? `${testId}-dosage` : undefined}>{dosage}</p>
           </div>
         </div>
         {isOTC && (
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="secondary" className="text-xs" data-testid={testId ? `${testId}-otc-badge` : undefined}>
             OTC
           </Badge>
         )}
@@ -66,17 +68,17 @@ export function MedicationCard({
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Frequency</span>
-          <span className="font-medium">{frequency}</span>
+          <span className="font-medium" data-testid={testId ? `${testId}-frequency` : undefined}>{frequency}</span>
         </div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Next Dose</span>
           <div className="flex items-center gap-1">
             <StatusIcon className={cn("h-3 w-3", statusConfig[status].color)} />
-            <span className="font-medium">{nextDose}</span>
+            <span className="font-medium" data-testid={testId ? `${testId}-next-dose` : undefined}>{nextDose}</span>
           </div>
         </div>
         {aiSuggestion && (
-          <div className="rounded-md bg-primary/5 p-2 text-xs">
+          <div className="rounded-md bg-primary/5 p-2 text-xs" data-testid={testId ? `${testId}-ai-suggestion` : undefined}>
             <p className="flex items-start gap-1">
               <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0 text-primary" />
               <span className="text-muted-foreground">
@@ -90,7 +92,7 @@ export function MedicationCard({
           <Button
             size="sm"
             className="w-full"
-            data-testid="button-mark-taken"
+            data-testid={testId ? `${testId}-button-mark-taken` : "button-mark-taken"}
             onClick={() => console.log("Marked as taken")}
           >
             Mark as Taken

@@ -14,6 +14,7 @@ interface ChatMessageProps {
   timestamp: string;
   entities?: MedicalEntity[];
   isGP?: boolean;
+  testId?: string;
 }
 
 export function ChatMessage({
@@ -22,6 +23,7 @@ export function ChatMessage({
   timestamp,
   entities,
   isGP,
+  testId,
 }: ChatMessageProps) {
   const entityColors = {
     medication: "bg-chart-2/20 text-chart-2 border-chart-2/30",
@@ -36,7 +38,7 @@ export function ChatMessage({
         "flex gap-3 mb-4",
         role === "user" && "flex-row-reverse"
       )}
-      data-testid={`message-${role}`}
+      data-testid={testId || `message-${role}`}
     >
       <Avatar className="h-8 w-8 flex-shrink-0">
         <AvatarFallback className={cn(
@@ -55,20 +57,21 @@ export function ChatMessage({
           role === "assistant" && "bg-card border border-card-border"
         )}>
           {isGP && (
-            <Badge variant="default" className="mb-2 text-xs">
+            <Badge variant="default" className="mb-2 text-xs" data-testid={testId ? `${testId}-badge-ai` : undefined}>
               AI GP Agent
             </Badge>
           )}
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+          <p className="text-sm leading-relaxed whitespace-pre-wrap" data-testid={testId ? `${testId}-content` : undefined}>
             {content}
           </p>
           {entities && entities.length > 0 && (
-            <div className="mt-3 pt-3 border-t flex flex-wrap gap-1.5">
+            <div className="mt-3 pt-3 border-t flex flex-wrap gap-1.5" data-testid={testId ? `${testId}-entities` : undefined}>
               {entities.map((entity, idx) => (
                 <Badge
                   key={idx}
                   variant="outline"
                   className={cn("text-xs font-normal", entityColors[entity.type])}
+                  data-testid={testId ? `${testId}-entity-${idx}` : undefined}
                 >
                   {entity.text}
                 </Badge>
@@ -76,7 +79,7 @@ export function ChatMessage({
             </div>
           )}
         </div>
-        <p className="text-xs text-muted-foreground px-1">{timestamp}</p>
+        <p className="text-xs text-muted-foreground px-1" data-testid={testId ? `${testId}-timestamp` : undefined}>{timestamp}</p>
       </div>
     </div>
   );
