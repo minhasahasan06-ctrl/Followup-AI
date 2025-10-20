@@ -45,7 +45,7 @@ Preferred communication style: Simple, everyday language.
   - `/doctor-portal` - Doctor-focused landing page with professional features
 - Authentication flow: Landing/Doctor Portal → Sign Up/Login → Replit Auth → Role Selection → Dashboard
 - Role-based routing: separate router components for patients vs. doctors
-- Patient routes: Dashboard, Chat, Wellness, Counseling, Files, Profile
+- Patient routes: Dashboard, Chat, Wellness, Counseling, App Connections (Consent Management), Files, Profile
 - Doctor routes: Doctor Dashboard, Patient Review, Research Center, Chat, Counseling, Profile
 - Protected routes requiring authentication via Replit Auth
 
@@ -98,8 +98,17 @@ Preferred communication style: Simple, everyday language.
 - PubMed E-utilities API integration for accessing research articles and medical literature
 - PhysioNet dataset access for physiological signal databases (ECG, clinical notes, etc.)
 - Kaggle API integration for public medical datasets with authentication
+- WHO Global Health Observatory (GHO) API for accessing 2000+ health indicators including mortality rates, infectious diseases, environmental health, and global health statistics
 - Training dataset management system for storing and organizing medical research data
 - Doctor-exclusive feature for AI model training and research
+
+**Health Insight Consent Management:**
+- Patient-controlled data sharing permissions for third-party health apps
+- Granular control over data types shared (heart rate, blood pressure, steps, medications, etc.)
+- Configurable sharing frequency (real-time, daily, weekly)
+- Consent tracking with creation, revocation, and sync status
+- Support for popular health apps (Fitbit, Apple Health, Google Fit, MyFitnessPal, etc.)
+- HIPAA-compliant audit trail for all consent changes
 
 ### Database Architecture
 
@@ -121,7 +130,8 @@ Preferred communication style: Simple, everyday language.
 - Research consent and AI-generated research reports
 - Educational progress tracking
 - Psychological counseling sessions (for both patients and doctors)
-- Training datasets from public sources (PubMed, PhysioNet, Kaggle)
+- Training datasets from public sources (PubMed, PhysioNet, Kaggle, WHO)
+- Health insight consents for third-party app data sharing permissions
 
 **Data Relationships:**
 - One-to-one: Users to PatientProfile/DoctorProfile
@@ -189,6 +199,7 @@ Preferred communication style: Simple, everyday language.
 - PubMed E-utilities (no auth required) for medical literature access
 - PhysioNet WFDB library for physiological datasets
 - Kaggle API with credential-based authentication for public medical datasets
+- WHO Global Health Observatory API (no auth required) for global health statistics and indicators
 
 **Security & Compliance:**
 - HIPAA-compliant session storage
