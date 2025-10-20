@@ -13,6 +13,7 @@ import {
   aiResearchReports,
   educationalProgress,
   counselingSessions,
+  trainingDatasets,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -41,6 +42,8 @@ import {
   type InsertEducationalProgress,
   type CounselingSession,
   type InsertCounselingSession,
+  type TrainingDataset,
+  type InsertTrainingDataset,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -112,6 +115,12 @@ export interface IStorage {
   createCounselingSession(session: InsertCounselingSession): Promise<CounselingSession>;
   updateCounselingSession(id: string, data: Partial<CounselingSession>): Promise<CounselingSession | undefined>;
   deleteCounselingSession(id: string): Promise<boolean>;
+  
+  // Training dataset operations
+  getTrainingDatasets(userId: string): Promise<TrainingDataset[]>;
+  createTrainingDataset(dataset: InsertTrainingDataset): Promise<TrainingDataset>;
+  updateTrainingDataset(id: string, data: Partial<TrainingDataset>): Promise<TrainingDataset | undefined>;
+  deleteTrainingDataset(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -511,6 +520,40 @@ export class DatabaseStorage implements IStorage {
     const result = await db
       .delete(counselingSessions)
       .where(eq(counselingSessions.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Training dataset operations
+  async getTrainingDatasets(userId: string): Promise<TrainingDataset[]> {
+    const datasets = await db
+      .select()
+      .from(trainingDatasets)
+      .where(eq(trainingDatasets.uploadedBy, userId))
+      .orderBy(desc(trainingDatasets.createdAt));
+    return datasets;
+  }
+
+  async createTrainingDataset(datasetData: InsertTrainingDataset): Promise<TrainingDataset> {
+    const [dataset] = await db
+      .insert(trainingDatasets)
+      .values(datasetData)
+      .returning();
+    return dataset;
+  }
+
+  async updateTrainingDataset(id: string, data: Partial<TrainingDataset>): Promise<TrainingDataset | undefined> {
+    const [dataset] = await db
+      .update(trainingDatasets)
+      .set(data)
+      .where(eq(trainingDatasets.id, id))
+      .returning();
+    return dataset;
+  }
+
+  async deleteTrainingDataset(id: string): Promise<boolean> {
+    const result = await db
+      .delete(trainingDatasets)
+      .where(eq(trainingDatasets.id, id));
     return result.rowCount !== null && result.rowCount > 0;
   }
 }

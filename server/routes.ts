@@ -2,6 +2,7 @@ import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, isDoctor } from "./replitAuth";
+import { pubmedService, physionetService, kaggleService } from "./dataIntegration";
 import OpenAI from "openai";
 import Sentiment from "sentiment";
 
@@ -563,6 +564,141 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting counseling session:", error);
       res.status(500).json({ message: "Failed to delete counseling session" });
+    }
+  });
+
+  // Training dataset routes (doctor only)
+  app.get('/api/training/datasets', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const datasets = await storage.getTrainingDatasets(userId);
+      res.json(datasets);
+    } catch (error) {
+      console.error("Error fetching training datasets:", error);
+      res.status(500).json({ message: "Failed to fetch training datasets" });
+    }
+  });
+
+  app.post('/api/training/datasets', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const dataset = await storage.createTrainingDataset({
+        uploadedBy: userId,
+        ...req.body,
+      });
+      res.json(dataset);
+    } catch (error) {
+      console.error("Error creating training dataset:", error);
+      res.status(500).json({ message: "Failed to create training dataset" });
+    }
+  });
+
+  app.patch('/api/training/datasets/:id', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const dataset = await storage.updateTrainingDataset(id, req.body);
+      if (!dataset) {
+        return res.status(404).json({ message: "Dataset not found" });
+      }
+      res.json(dataset);
+    } catch (error) {
+      console.error("Error updating training dataset:", error);
+      res.status(500).json({ message: "Failed to update training dataset" });
+    }
+  });
+
+  app.delete('/api/training/datasets/:id', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteTrainingDataset(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Dataset not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting training dataset:", error);
+      res.status(500).json({ message: "Failed to delete training dataset" });
+    }
+  });
+
+  // Public data source integration routes (doctor only)
+  app.get('/api/data-sources/pubmed/search', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { query, maxResults } = req.query;
+      const result = await pubmedService.search(query as string, parseInt(maxResults as string) || 100);
+      res.json(result);
+    } catch (error) {
+      console.error("Error searching PubMed:", error);
+      res.status(500).json({ message: "Failed to search PubMed" });
+    }
+  });
+
+  app.post('/api/data-sources/pubmed/fetch', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { ids } = req.body;
+      const articles = await pubmedService.fetchArticles(ids);
+      res.json(articles);
+    } catch (error) {
+      console.error("Error fetching PubMed articles:", error);
+      res.status(500).json({ message: "Failed to fetch PubMed articles" });
+    }
+  });
+
+  app.get('/api/data-sources/physionet/search', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { query } = req.query;
+      const datasets = await physionetService.searchDatasets(query as string || "");
+      res.json(datasets);
+    } catch (error) {
+      console.error("Error searching PhysioNet:", error);
+      res.status(500).json({ message: "Failed to search PhysioNet" });
+    }
+  });
+
+  app.get('/api/data-sources/physionet/dataset/:id', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const dataset = await physionetService.getDatasetInfo(id);
+      if (!dataset) {
+        return res.status(404).json({ message: "Dataset not found" });
+      }
+      res.json(dataset);
+    } catch (error) {
+      console.error("Error fetching PhysioNet dataset:", error);
+      res.status(500).json({ message: "Failed to fetch PhysioNet dataset" });
+    }
+  });
+
+  app.get('/api/data-sources/kaggle/search', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { query, page } = req.query;
+      const datasets = await kaggleService.searchDatasets(query as string, parseInt(page as string) || 1);
+      res.json(datasets);
+    } catch (error) {
+      console.error("Error searching Kaggle:", error);
+      res.status(500).json({ message: "Failed to search Kaggle" });
+    }
+  });
+
+  app.get('/api/data-sources/kaggle/dataset/:owner/:name', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { owner, name } = req.params;
+      const metadata = await kaggleService.getDatasetMetadata(owner, name);
+      res.json(metadata);
+    } catch (error) {
+      console.error("Error fetching Kaggle dataset:", error);
+      res.status(500).json({ message: "Failed to fetch Kaggle dataset" });
+    }
+  });
+
+  app.get('/api/data-sources/kaggle/dataset/:owner/:name/files', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { owner, name } = req.params;
+      const files = await kaggleService.listDatasetFiles(owner, name);
+      res.json(files);
+    } catch (error) {
+      console.error("Error listing Kaggle dataset files:", error);
+      res.status(500).json({ message: "Failed to list Kaggle dataset files" });
     }
   });
 

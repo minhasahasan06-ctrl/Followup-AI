@@ -364,3 +364,36 @@ export const insertCounselingSessionSchema = createInsertSchema(counselingSessio
 
 export type InsertCounselingSession = z.infer<typeof insertCounselingSessionSchema>;
 export type CounselingSession = typeof counselingSessions.$inferSelect;
+
+// Training datasets from public sources (PubMed, PhysioNet, Kaggle)
+export const trainingDatasets = pgTable("training_datasets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
+  source: varchar("source").notNull(), // 'pubmed', 'physionet', 'kaggle'
+  sourceId: varchar("source_id"), // External ID from source platform
+  title: varchar("title").notNull(),
+  description: text("description"),
+  dataType: varchar("data_type"), // 'ecg', 'clinical_notes', 'lab_results', 'imaging', 'research_paper', etc.
+  recordCount: integer("record_count"),
+  fileSize: integer("file_size"), // bytes
+  filePath: varchar("file_path"), // local storage path
+  metadata: jsonb("metadata").$type<{ 
+    authors?: string[];
+    publicationDate?: string;
+    doi?: string;
+    tags?: string[];
+    version?: string;
+    license?: string;
+  }>(),
+  downloadStatus: varchar("download_status").default("pending"), // 'pending', 'downloading', 'completed', 'failed'
+  usedForTraining: boolean("used_for_training").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTrainingDatasetSchema = createInsertSchema(trainingDatasets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTrainingDataset = z.infer<typeof insertTrainingDatasetSchema>;
+export type TrainingDataset = typeof trainingDatasets.$inferSelect;

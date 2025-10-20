@@ -45,8 +45,8 @@ Preferred communication style: Simple, everyday language.
   - `/doctor-portal` - Doctor-focused landing page with professional features
 - Authentication flow: Landing/Doctor Portal → Sign Up/Login → Replit Auth → Role Selection → Dashboard
 - Role-based routing: separate router components for patients vs. doctors
-- Patient routes: Dashboard, Chat, Wellness, Files, Profile
-- Doctor routes: Doctor Dashboard, Patient Review, Research Center, Chat, Profile
+- Patient routes: Dashboard, Chat, Wellness, Counseling, Files, Profile
+- Doctor routes: Doctor Dashboard, Patient Review, Research Center, Chat, Counseling, Profile
 - Protected routes requiring authentication via Replit Auth
 
 **Landing Page Features:**
@@ -94,6 +94,13 @@ Preferred communication style: Simple, everyday language.
 - Context-aware responses based on user role (patient vs. doctor)
 - Medical entity extraction from chat messages
 
+**Public Medical Data Integration:**
+- PubMed E-utilities API integration for accessing research articles and medical literature
+- PhysioNet dataset access for physiological signal databases (ECG, clinical notes, etc.)
+- Kaggle API integration for public medical datasets with authentication
+- Training dataset management system for storing and organizing medical research data
+- Doctor-exclusive feature for AI model training and research
+
 ### Database Architecture
 
 **Database Technology:**
@@ -113,6 +120,8 @@ Preferred communication style: Simple, everyday language.
 - Wellness activities (meditation, exercise)
 - Research consent and AI-generated research reports
 - Educational progress tracking
+- Psychological counseling sessions (for both patients and doctors)
+- Training datasets from public sources (PubMed, PhysioNet, Kaggle)
 
 **Data Relationships:**
 - One-to-one: Users to PatientProfile/DoctorProfile
@@ -175,6 +184,11 @@ Preferred communication style: Simple, everyday language.
 - TypeScript for type safety
 - Drizzle Kit for database migrations
 - esbuild for production builds
+
+**Data Integration APIs:**
+- PubMed E-utilities (no auth required) for medical literature access
+- PhysioNet WFDB library for physiological datasets
+- Kaggle API with credential-based authentication for public medical datasets
 
 **Security & Compliance:**
 - HIPAA-compliant session storage
