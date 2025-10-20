@@ -72,7 +72,7 @@ export default function ConsentManagement() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: ConsentFormValues) => apiRequest("/api/consents", "POST", data),
+    mutationFn: (data: ConsentFormValues) => apiRequest("POST", "/api/consents", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/consents"] });
       toast({
@@ -93,7 +93,7 @@ export default function ConsentManagement() {
 
   const revokeMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      apiRequest(`/api/consents/${id}/revoke`, "POST", { reason }),
+      apiRequest("POST", `/api/consents/${id}/revoke`, { reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/consents"] });
       toast({
@@ -114,7 +114,7 @@ export default function ConsentManagement() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/consents/${id}`, "DELETE"),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/consents/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/consents"] });
       toast({
