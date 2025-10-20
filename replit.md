@@ -40,10 +40,26 @@ Preferred communication style: Simple, everyday language.
 - Query invalidation patterns for optimistic UI updates
 
 **Routing Strategy:**
+- Public routes (unauthenticated access):
+  - `/` - Patient-focused landing page with app download options
+  - `/doctor-portal` - Doctor-focused landing page with professional features
+- Authentication flow: Landing/Doctor Portal → Sign Up/Login → Replit Auth → Role Selection → Dashboard
 - Role-based routing: separate router components for patients vs. doctors
 - Patient routes: Dashboard, Chat, Wellness, Files, Profile
 - Doctor routes: Doctor Dashboard, Patient Review, Research Center, Chat, Profile
 - Protected routes requiring authentication via Replit Auth
+
+**Landing Page Features:**
+- Separate "Patient Sign Up" and "Patient Login" buttons
+- iOS and Android app download section
+- Link to Doctor Portal for healthcare providers
+- Feature showcase for both patient and doctor experiences
+
+**Doctor Portal Features:**
+- Dedicated sign-up and login flows for doctors
+- Medical license verification information
+- Professional features showcase (Assistant Lysa, Research Center, etc.)
+- Link back to patient landing page
 
 ### Backend Architecture
 
