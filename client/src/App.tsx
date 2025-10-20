@@ -21,6 +21,7 @@ import Profile from "@/pages/Profile";
 import DoctorDashboard from "@/pages/DoctorDashboard";
 import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
+import Counseling from "@/pages/Counseling";
 
 function PatientRouter() {
   return (
@@ -28,6 +29,7 @@ function PatientRouter() {
       <Route path="/" component={Dashboard} />
       <Route path="/chat" component={Chat} />
       <Route path="/wellness/:type?" component={Wellness} />
+      <Route path="/counseling" component={Counseling} />
       <Route path="/files" component={Files} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
@@ -42,6 +44,7 @@ function DoctorRouter() {
       <Route path="/doctor/patient/:id" component={PatientReview} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/chat" component={Chat} />
+      <Route path="/counseling" component={Counseling} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
     </Switch>
