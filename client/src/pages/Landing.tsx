@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles } from "lucide-react";
+import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles, ClipboardList, BarChart3, FileText, Bell } from "lucide-react";
 import appStoreBadge from "@assets/stock_images/apple_app_store_down_a3189b22.jpg";
 import googlePlayBadge from "@assets/stock_images/google_play_store_do_60dd571a.jpg";
 
@@ -77,8 +77,9 @@ export default function Landing() {
               </div>
               <h3 className="text-4xl font-bold mb-4">What Are Daily Follow-Ups?</h3>
               <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-                A personalized check-in every day with Agent Clona to monitor your health, catch early warning signs, 
-                and keep you on track—because consistent care makes all the difference.
+                A personalized check-in every day with Agent Clona, tailored to <strong>your specific condition</strong>—whether you're 
+                managing post-transplant care, autoimmune disorders, cancer treatment, or HIV/AIDS. Agent Clona learns your unique 
+                health patterns and adapts questions to what matters most for you.
               </p>
             </div>
 
@@ -172,6 +173,40 @@ export default function Landing() {
               </Card>
             </div>
 
+            {/* Personalization Based on Condition */}
+            <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-lg p-8 border-2 border-primary/20 mb-12">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
+                  <Sparkles className="h-6 w-6 text-primary" />
+                </div>
+                <h4 className="text-2xl font-semibold">Personalized to Your Condition</h4>
+              </div>
+              <p className="text-muted-foreground mb-6">
+                Agent Clona adapts daily follow-ups based on your specific immunocompromised condition, ensuring every question and recommendation 
+                is relevant to your unique health journey.
+              </p>
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="bg-background/60 backdrop-blur rounded-lg p-4">
+                  <h5 className="font-semibold mb-2">Post-Transplant Patients</h5>
+                  <p className="text-sm text-muted-foreground">
+                    Monitors rejection signs, immunosuppressant levels, and infection risks specific to transplant recipients.
+                  </p>
+                </div>
+                <div className="bg-background/60 backdrop-blur rounded-lg p-4">
+                  <h5 className="font-semibold mb-2">Cancer Treatment</h5>
+                  <p className="text-sm text-muted-foreground">
+                    Tracks chemotherapy side effects, neutropenia symptoms, and energy levels during treatment cycles.
+                  </p>
+                </div>
+                <div className="bg-background/60 backdrop-blur rounded-lg p-4">
+                  <h5 className="font-semibold mb-2">Autoimmune Disorders</h5>
+                  <p className="text-sm text-muted-foreground">
+                    Monitors flare-ups, medication efficacy, and inflammatory markers tailored to your specific condition.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Why It Matters for Immunocompromised Patients */}
             <div className="bg-card rounded-lg p-8 border">
               <div className="flex items-center gap-3 mb-6">
@@ -242,6 +277,145 @@ export default function Landing() {
                 <Button size="lg" onClick={handlePatientSignup} className="gap-2" data-testid="button-start-followups">
                   Start Your Daily Follow-Ups
                   <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Doctor Section */}
+        <section className="py-20 px-6 bg-muted/50">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-16">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
+                <Stethoscope className="h-4 w-4" />
+                <span className="text-sm font-medium">For Healthcare Providers</span>
+              </div>
+              <h3 className="text-4xl font-bold mb-4">Empower Your Practice with Assistant Lysa</h3>
+              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+                Manage your immunocompromised patients more effectively with AI-powered insights, automated monitoring, 
+                and comprehensive patient timelines—all while reducing your administrative burden.
+              </p>
+            </div>
+
+            {/* Doctor Features Grid */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+              <Card className="hover-elevate transition-all duration-300" data-testid="card-doctor-feature-1">
+                <CardHeader>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4">
+                    <ClipboardList className="h-7 w-7 text-primary" />
+                  </div>
+                  <CardTitle className="text-lg">Patient Review Dashboard</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    See all your immunocompromised patients in one view with AI-flagged concerns and priority alerts.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="hover-elevate transition-all duration-300" data-testid="card-doctor-feature-2">
+                <CardHeader>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4">
+                    <Bell className="h-7 w-7 text-primary" />
+                  </div>
+                  <CardTitle className="text-lg">Smart Alerts</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Get notified when patients show early signs of infection, medication non-adherence, or deterioration.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="hover-elevate transition-all duration-300" data-testid="card-doctor-feature-3">
+                <CardHeader>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4">
+                    <BarChart3 className="h-7 w-7 text-primary" />
+                  </div>
+                  <CardTitle className="text-lg">Research Center</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Generate epidemiological reports and train AI models using public medical datasets (PubMed, WHO, PhysioNet).
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="hover-elevate transition-all duration-300" data-testid="card-doctor-feature-4">
+                <CardHeader>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4">
+                    <FileText className="h-7 w-7 text-primary" />
+                  </div>
+                  <CardTitle className="text-lg">Comprehensive Timelines</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Review complete patient histories with daily follow-ups, vitals, medications, and visual assessments in one place.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Condition-Specific Monitoring */}
+            <div className="bg-card rounded-lg p-8 border">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                  <Activity className="h-6 w-6 text-primary" />
+                </div>
+                <h4 className="text-2xl font-semibold">Condition-Specific Patient Monitoring</h4>
+              </div>
+              <p className="text-muted-foreground mb-8">
+                Assistant Lysa tailors monitoring protocols based on each patient's immunocompromised condition, 
+                helping you catch complications early and intervene proactively.
+              </p>
+              <div className="grid md:grid-cols-3 gap-6">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />
+                    <h5 className="font-semibold">Transplant Recipients</h5>
+                  </div>
+                  <ul className="space-y-2 text-sm text-muted-foreground ml-7">
+                    <li>• Rejection marker tracking</li>
+                    <li>• Immunosuppressant monitoring</li>
+                    <li>• Infection risk assessment</li>
+                    <li>• Organ-specific vitals</li>
+                  </ul>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />
+                    <h5 className="font-semibold">Oncology Patients</h5>
+                  </div>
+                  <ul className="space-y-2 text-sm text-muted-foreground ml-7">
+                    <li>• Neutropenia detection</li>
+                    <li>• Treatment side effects</li>
+                    <li>• Energy level patterns</li>
+                    <li>• Nutrition tracking</li>
+                  </ul>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />
+                    <h5 className="font-semibold">Autoimmune Care</h5>
+                  </div>
+                  <ul className="space-y-2 text-sm text-muted-foreground ml-7">
+                    <li>• Flare-up prediction</li>
+                    <li>• Medication efficacy trends</li>
+                    <li>• Inflammatory markers</li>
+                    <li>• Quality of life metrics</li>
+                  </ul>
+                </div>
+              </div>
+              <div className="mt-8 flex gap-4 justify-center flex-wrap">
+                <Link href="/doctor-portal">
+                  <Button size="lg" className="gap-2" data-testid="button-doctor-portal-cta">
+                    Access Doctor Portal
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+                <Button size="lg" variant="outline" onClick={() => window.location.href = "/api/login?role=doctor&type=signup"} data-testid="button-doctor-signup">
+                  Sign Up as Doctor
                 </Button>
               </div>
             </div>
