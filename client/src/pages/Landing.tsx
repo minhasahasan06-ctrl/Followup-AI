@@ -758,22 +758,22 @@ export default function Landing() {
               <h4 className="font-semibold mb-4">Company</h4>
               <ul className="space-y-3">
                 <li>
-                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-terms">
+                  <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-terms">
                     Terms & Conditions
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-privacy">
+                  <Link href="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-privacy">
                     Privacy Policy
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-hipaa">
+                  <Link href="/hipaa" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-hipaa">
                     HIPAA Compliance
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-contact">
+                  <a href="mailto:t@followupai.io" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-contact">
                     Contact Us
                   </a>
                 </li>

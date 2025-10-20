@@ -14,6 +14,9 @@ import Landing from "@/pages/Landing";
 import DoctorPortal from "@/pages/DoctorPortal";
 import RoleSelection from "@/pages/RoleSelection";
 import ComingSoon from "@/pages/ComingSoon";
+import Terms from "@/pages/Terms";
+import Privacy from "@/pages/Privacy";
+import HIPAACompliance from "@/pages/HIPAACompliance";
 import Dashboard from "@/pages/Dashboard";
 import Chat from "@/pages/Chat";
 import Wellness from "@/pages/Wellness";
@@ -74,11 +77,14 @@ function AuthenticatedApp() {
   }
 
   // Allow access to public routes even when authenticated
-  if (!user || location === "/doctor-portal" || location === "/coming-soon") {
+  if (!user || location === "/doctor-portal" || location === "/coming-soon" || location === "/terms" || location === "/privacy" || location === "/hipaa") {
     return (
       <Switch>
         <Route path="/doctor-portal" component={DoctorPortal} />
         <Route path="/coming-soon" component={ComingSoon} />
+        <Route path="/terms" component={Terms} />
+        <Route path="/privacy" component={Privacy} />
+        <Route path="/hipaa" component={HIPAACompliance} />
         <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>
