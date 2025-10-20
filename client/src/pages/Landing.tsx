@@ -580,6 +580,99 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* Hospital Admin / Enterprise Section */}
+        <section className="py-20 px-6 bg-gradient-to-br from-primary/10 via-primary/5 to-background">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-12 items-center">
+              <div>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
+                  <Users className="h-4 w-4" />
+                  <span className="text-sm font-medium">Enterprise Solutions</span>
+                </div>
+                <h3 className="text-4xl font-bold mb-6">Transform Your Hospital's Immunocompromised Patient Care</h3>
+                <p className="text-lg text-muted-foreground mb-6">
+                  Deploy Followup AI across your entire healthcare system. Reduce readmissions, improve patient outcomes, 
+                  and empower your clinical teams with AI-powered monitoring and insights.
+                </p>
+                <div className="space-y-4 mb-8">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h5 className="font-semibold mb-1">Enterprise SSO & Admin Controls</h5>
+                      <p className="text-sm text-muted-foreground">Seamless integration with your existing EHR and identity management systems</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h5 className="font-semibold mb-1">Dedicated Support & Training</h5>
+                      <p className="text-sm text-muted-foreground">White-glove onboarding, staff training, and 24/7 technical support</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h5 className="font-semibold mb-1">Custom Analytics & Reporting</h5>
+                      <p className="text-sm text-muted-foreground">Population health dashboards and outcome tracking tailored to your institution</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h5 className="font-semibold mb-1">On-Premise Deployment Options</h5>
+                      <p className="text-sm text-muted-foreground">Meet your data sovereignty requirements with flexible hosting</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <Card className="p-8">
+                <CardHeader>
+                  <CardTitle className="text-2xl">Contact Sales</CardTitle>
+                  <CardDescription>
+                    Schedule a demo or speak with our enterprise team to learn how Followup AI can transform patient care at your institution.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                        <Bell className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-semibold">Email Sales Team</p>
+                        <a href="mailto:sales@followupai.com" className="text-sm text-primary hover:underline">
+                          sales@followupai.com
+                        </a>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                        <Users className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-semibold">Schedule a Demo</p>
+                        <a href="#" className="text-sm text-primary hover:underline">
+                          Book a meeting
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-6 border-t">
+                    <Button size="lg" className="w-full gap-2" data-testid="button-contact-sales">
+                      Request Enterprise Information
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Trusted by leading hospitals and transplant centers
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </section>
+
         {/* App Download Section */}
         <section className="py-12 px-6">
           <div className="max-w-4xl mx-auto text-center">
