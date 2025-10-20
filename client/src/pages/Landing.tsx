@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles, ClipboardList, BarChart3, FileText, Bell, Lock, Brain, Leaf, Zap, Award, Globe } from "lucide-react";
 import { SiLinkedin, SiX } from "react-icons/si";
+import appBadges from "@assets/app-badges.png";
 
 export default function Landing() {
   const handlePatientSignup = () => {
@@ -677,18 +678,24 @@ export default function Landing() {
             <h3 className="text-2xl font-semibold mb-4">Download Our Mobile App</h3>
             <div className="flex gap-6 justify-center flex-wrap items-center">
               <Link href="/coming-soon" data-testid="link-download-ios" className="hover-elevate active-elevate-2 transition-transform block">
-                <img 
-                  src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83&amp;releaseDate=1440979200"
-                  alt="Download on the App Store" 
-                  className="h-14 w-auto"
-                />
+                <div className="relative w-[119px] h-[40px] overflow-hidden">
+                  <img 
+                    src={appBadges}
+                    alt="Download on the App Store" 
+                    className="absolute top-0 left-0 h-full w-auto"
+                    style={{ objectFit: 'none', objectPosition: '0 0' }}
+                  />
+                </div>
               </Link>
               <Link href="/coming-soon" data-testid="link-download-android" className="hover-elevate active-elevate-2 transition-transform block">
-                <img 
-                  src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png"
-                  alt="Get it on Google Play" 
-                  className="h-[60px] w-auto"
-                />
+                <div className="relative w-[135px] h-[40px] overflow-hidden">
+                  <img 
+                    src={appBadges}
+                    alt="Get it on Google Play" 
+                    className="absolute top-0 h-full w-auto"
+                    style={{ objectFit: 'none', left: '-257px' }}
+                  />
+                </div>
               </Link>
             </div>
           </div>
