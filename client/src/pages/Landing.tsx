@@ -581,44 +581,25 @@ export default function Landing() {
         </section>
 
         {/* App Download Section */}
-        <section className="py-16 px-6 bg-muted/50">
-          <div className="max-w-6xl mx-auto text-center">
-            <h3 className="text-3xl font-semibold mb-6">Download Our Mobile App</h3>
-            <p className="text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Access your health data on the go. Track vitals, chat with Agent Clona, and manage medications 
-              from your iOS or Android device.
-            </p>
-            <div className="flex gap-6 justify-center flex-wrap items-center">
-              <a 
-                href="https://apps.apple.com" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                data-testid="link-download-ios"
-                className="hover-elevate active-elevate-2 transition-transform rounded-lg overflow-hidden"
-              >
+        <section className="py-12 px-6">
+          <div className="max-w-4xl mx-auto text-center">
+            <h3 className="text-2xl font-semibold mb-4">Download Our Mobile App</h3>
+            <div className="flex gap-4 justify-center flex-wrap items-center">
+              <Link href="/coming-soon" data-testid="link-download-ios" className="hover-elevate active-elevate-2 transition-transform rounded-lg overflow-hidden block">
                 <img 
                   src={appStoreBadge} 
                   alt="Download on the App Store" 
-                  className="h-14 w-auto"
+                  className="h-12 w-auto"
                 />
-              </a>
-              <a 
-                href="https://play.google.com" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                data-testid="link-download-android"
-                className="hover-elevate active-elevate-2 transition-transform rounded-lg overflow-hidden"
-              >
+              </Link>
+              <Link href="/coming-soon" data-testid="link-download-android" className="hover-elevate active-elevate-2 transition-transform rounded-lg overflow-hidden block">
                 <img 
                   src={googlePlayBadge} 
                   alt="Get it on Google Play" 
-                  className="h-14 w-auto"
+                  className="h-12 w-auto"
                 />
-              </a>
+              </Link>
             </div>
-            <p className="text-sm text-muted-foreground mt-4">
-              Coming Soon • iOS 15+ and Android 10+ required
-            </p>
           </div>
         </section>
       </main>

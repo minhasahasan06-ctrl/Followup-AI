@@ -13,6 +13,7 @@ import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import DoctorPortal from "@/pages/DoctorPortal";
 import RoleSelection from "@/pages/RoleSelection";
+import ComingSoon from "@/pages/ComingSoon";
 import Dashboard from "@/pages/Dashboard";
 import Chat from "@/pages/Chat";
 import Wellness from "@/pages/Wellness";
@@ -73,10 +74,11 @@ function AuthenticatedApp() {
   }
 
   // Allow access to public routes even when authenticated
-  if (!user || location === "/doctor-portal") {
+  if (!user || location === "/doctor-portal" || location === "/coming-soon") {
     return (
       <Switch>
         <Route path="/doctor-portal" component={DoctorPortal} />
+        <Route path="/coming-soon" component={ComingSoon} />
         <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>
