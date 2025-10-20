@@ -19,6 +19,7 @@ import Privacy from "@/pages/Privacy";
 import HIPAACompliance from "@/pages/HIPAACompliance";
 import EnterpriseContact from "@/pages/EnterpriseContact";
 import AssistantLysa from "@/pages/AssistantLysa";
+import AgentClona from "@/pages/AgentClona";
 import Dashboard from "@/pages/Dashboard";
 import Chat from "@/pages/Chat";
 import Wellness from "@/pages/Wellness";
@@ -79,7 +80,7 @@ function AuthenticatedApp() {
   }
 
   // Allow access to public routes even when authenticated
-  if (!user || location === "/doctor-portal" || location === "/coming-soon" || location === "/terms" || location === "/privacy" || location === "/hipaa" || location === "/enterprise-contact" || location === "/assistant-lysa") {
+  if (!user || location === "/doctor-portal" || location === "/coming-soon" || location === "/terms" || location === "/privacy" || location === "/hipaa" || location === "/enterprise-contact" || location === "/assistant-lysa" || location === "/agent-clona") {
     return (
       <Switch>
         <Route path="/doctor-portal" component={DoctorPortal} />
@@ -89,6 +90,7 @@ function AuthenticatedApp() {
         <Route path="/hipaa" component={HIPAACompliance} />
         <Route path="/enterprise-contact" component={EnterpriseContact} />
         <Route path="/assistant-lysa" component={AssistantLysa} />
+        <Route path="/agent-clona" component={AgentClona} />
         <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>
