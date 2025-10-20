@@ -163,10 +163,16 @@ export default function ResearchCenter() {
                   <CardContent className="p-4">
                     <h4 className="font-medium mb-2 text-sm">Data Sources</h4>
                     <div className="space-y-1 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground">Patient Data</p>
                       <p>• Daily follow-up assessments (150 patients)</p>
                       <p>• Medication adherence records</p>
                       <p>• Vital signs and wearable data</p>
                       <p>• Behavioral insights and sentiment analysis</p>
+                      <p className="font-medium text-foreground mt-2">Public Medical Datasets</p>
+                      <p>• PubMed research articles and clinical studies</p>
+                      <p>• PhysioNet physiological datasets (ECG, clinical notes)</p>
+                      <p>• Kaggle public medical datasets</p>
+                      <p>• WHO Global Health Observatory (2000+ health indicators)</p>
                     </div>
                   </CardContent>
                 </Card>
