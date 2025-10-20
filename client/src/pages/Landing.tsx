@@ -2,6 +2,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles, ClipboardList, BarChart3, FileText, Bell, Lock, Brain, Leaf, Zap, Award, Globe } from "lucide-react";
+import { SiLinkedin, SiX } from "react-icons/si";
 import appStoreBadge from "@assets/stock_images/apple_app_store_down_a3189b22.jpg";
 import googlePlayBadge from "@assets/stock_images/google_play_store_do_60dd571a.jpg";
 
@@ -603,15 +604,134 @@ export default function Landing() {
         </section>
       </main>
 
-      <footer className="border-t py-8 px-6 bg-muted/30">
-        <div className="max-w-7xl mx-auto text-center">
-          <div className="flex items-center justify-center gap-2 mb-3">
-            <div className="h-2 w-2 rounded-full bg-chart-2" />
-            <span className="text-sm text-muted-foreground">HIPAA Compliant • FDA/CE Pending</span>
+      <footer className="border-t py-12 px-6 bg-gradient-to-b from-muted/50 to-muted/80">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
+            {/* Product Column */}
+            <div>
+              <h4 className="font-semibold mb-4">Product</h4>
+              <ul className="space-y-3">
+                <li>
+                  <button onClick={handlePatientSignup} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-patient">
+                    Patient Portal
+                  </button>
+                </li>
+                <li>
+                  <Link href="/doctor-portal" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-doctor">
+                    Doctor Portal
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/coming-soon" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-mobile">
+                    Mobile Apps
+                  </Link>
+                </li>
+                <li>
+                  <span className="text-sm text-muted-foreground">Agent Clona</span>
+                </li>
+                <li>
+                  <span className="text-sm text-muted-foreground">Assistant Lysa</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Resources Column */}
+            <div>
+              <h4 className="font-semibold mb-4">Resources</h4>
+              <ul className="space-y-3">
+                <li>
+                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-faq">
+                    FAQ
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-pricing">
+                    Pricing
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-documentation">
+                    Documentation
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-api">
+                    API
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            {/* Company Column */}
+            <div>
+              <h4 className="font-semibold mb-4">Company</h4>
+              <ul className="space-y-3">
+                <li>
+                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-terms">
+                    Terms & Conditions
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-privacy">
+                    Privacy Policy
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-hipaa">
+                    HIPAA Compliance
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-contact">
+                    Contact Us
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            {/* Social Column */}
+            <div>
+              <h4 className="font-semibold mb-4">Social</h4>
+              <div className="flex gap-3">
+                <a 
+                  href="https://twitter.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex h-9 w-9 items-center justify-center rounded-md bg-muted hover-elevate active-elevate-2 transition-all"
+                  data-testid="link-footer-twitter"
+                  aria-label="Twitter"
+                >
+                  <SiX className="h-4 w-4" />
+                </a>
+                <a 
+                  href="https://linkedin.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex h-9 w-9 items-center justify-center rounded-md bg-muted hover-elevate active-elevate-2 transition-all"
+                  data-testid="link-footer-linkedin"
+                  aria-label="LinkedIn"
+                >
+                  <SiLinkedin className="h-4 w-4" />
+                </a>
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            © 2025 Followup AI. This platform provides health information and is not a substitute for professional medical advice.
-          </p>
+
+          {/* Bottom Section */}
+          <div className="pt-8 border-t border-border">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-chart-2" />
+                <span className="text-sm text-muted-foreground">HIPAA Compliant • FDA/CE Pending</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Followup AI © 2025. All rights reserved.
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground text-center md:text-left mt-4">
+              This platform provides health information and is not a substitute for professional medical advice.
+            </p>
+          </div>
         </div>
       </footer>
     </div>
