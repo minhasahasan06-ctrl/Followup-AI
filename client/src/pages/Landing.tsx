@@ -635,31 +635,33 @@ export default function Landing() {
                   <div className="space-y-4">
                     <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                        <Bell className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-semibold">Email Sales Team</p>
-                        <a href="mailto:sales@followupai.com" className="text-sm text-primary hover:underline">
-                          sales@followupai.com
-                        </a>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
                         <Users className="h-5 w-5 text-primary" />
                       </div>
                       <div>
                         <p className="font-semibold">Schedule a Demo</p>
-                        <a href="#" className="text-sm text-primary hover:underline">
+                        <a 
+                          href="https://calendly.com/t-followupai/1-on-1" 
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary hover:underline"
+                          data-testid="link-schedule-demo"
+                        >
                           Book a meeting
                         </a>
                       </div>
                     </div>
                   </div>
                   <div className="pt-6 border-t">
-                    <Button size="lg" className="w-full gap-2" data-testid="button-contact-sales">
-                      Request Enterprise Information
-                      <ArrowRight className="h-4 w-4" />
+                    <Button 
+                      size="lg" 
+                      className="w-full gap-2" 
+                      data-testid="button-contact-sales"
+                      asChild
+                    >
+                      <a href="mailto:t@followupai.io">
+                        Request Enterprise Information
+                        <ArrowRight className="h-4 w-4" />
+                      </a>
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground text-center">
