@@ -14,6 +14,7 @@ import {
   educationalProgress,
   counselingSessions,
   trainingDatasets,
+  healthInsightConsents,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -44,6 +45,8 @@ import {
   type InsertCounselingSession,
   type TrainingDataset,
   type InsertTrainingDataset,
+  type HealthInsightConsent,
+  type InsertHealthInsightConsent,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -121,6 +124,14 @@ export interface IStorage {
   createTrainingDataset(dataset: InsertTrainingDataset): Promise<TrainingDataset>;
   updateTrainingDataset(id: string, data: Partial<TrainingDataset>): Promise<TrainingDataset | undefined>;
   deleteTrainingDataset(id: string): Promise<boolean>;
+  
+  // Health insight consent operations
+  getHealthInsightConsents(userId: string): Promise<HealthInsightConsent[]>;
+  getActiveConsents(userId: string): Promise<HealthInsightConsent[]>;
+  createHealthInsightConsent(consent: InsertHealthInsightConsent): Promise<HealthInsightConsent>;
+  updateHealthInsightConsent(id: string, data: Partial<HealthInsightConsent>): Promise<HealthInsightConsent | undefined>;
+  revokeConsent(id: string, reason?: string): Promise<HealthInsightConsent | undefined>;
+  deleteHealthInsightConsent(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -554,6 +565,70 @@ export class DatabaseStorage implements IStorage {
     const result = await db
       .delete(trainingDatasets)
       .where(eq(trainingDatasets.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Health insight consent operations
+  async getHealthInsightConsents(userId: string): Promise<HealthInsightConsent[]> {
+    const consents = await db
+      .select()
+      .from(healthInsightConsents)
+      .where(eq(healthInsightConsents.userId, userId))
+      .orderBy(desc(healthInsightConsents.createdAt));
+    return consents;
+  }
+
+  async getActiveConsents(userId: string): Promise<HealthInsightConsent[]> {
+    const consents = await db
+      .select()
+      .from(healthInsightConsents)
+      .where(
+        and(
+          eq(healthInsightConsents.userId, userId),
+          eq(healthInsightConsents.consentGranted, true),
+          eq(healthInsightConsents.syncStatus, "active")
+        )
+      )
+      .orderBy(desc(healthInsightConsents.createdAt));
+    return consents;
+  }
+
+  async createHealthInsightConsent(consentData: InsertHealthInsightConsent): Promise<HealthInsightConsent> {
+    const [consent] = await db
+      .insert(healthInsightConsents)
+      .values(consentData)
+      .returning();
+    return consent;
+  }
+
+  async updateHealthInsightConsent(id: string, data: Partial<HealthInsightConsent>): Promise<HealthInsightConsent | undefined> {
+    const [consent] = await db
+      .update(healthInsightConsents)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(healthInsightConsents.id, id))
+      .returning();
+    return consent;
+  }
+
+  async revokeConsent(id: string, reason?: string): Promise<HealthInsightConsent | undefined> {
+    const [consent] = await db
+      .update(healthInsightConsents)
+      .set({
+        consentGranted: false,
+        syncStatus: "revoked",
+        revokedAt: new Date(),
+        revokedReason: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(healthInsightConsents.id, id))
+      .returning();
+    return consent;
+  }
+
+  async deleteHealthInsightConsent(id: string): Promise<boolean> {
+    const result = await db
+      .delete(healthInsightConsents)
+      .where(eq(healthInsightConsents.id, id));
     return result.rowCount !== null && result.rowCount > 0;
   }
 }

@@ -2,7 +2,7 @@ import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, isDoctor } from "./replitAuth";
-import { pubmedService, physionetService, kaggleService } from "./dataIntegration";
+import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
 import OpenAI from "openai";
 import Sentiment from "sentiment";
 
@@ -699,6 +699,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error listing Kaggle dataset files:", error);
       res.status(500).json({ message: "Failed to list Kaggle dataset files" });
+    }
+  });
+
+  // WHO data integration routes (doctor only)
+  app.get('/api/data-sources/who/indicators', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const indicators = await whoService.listIndicators();
+      res.json(indicators);
+    } catch (error) {
+      console.error("Error listing WHO indicators:", error);
+      res.status(500).json({ message: "Failed to list WHO indicators" });
+    }
+  });
+
+  app.get('/api/data-sources/who/indicators/popular', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const indicators = whoService.getPopularIndicators();
+      res.json(indicators);
+    } catch (error) {
+      console.error("Error getting popular WHO indicators:", error);
+      res.status(500).json({ message: "Failed to get popular WHO indicators" });
+    }
+  });
+
+  app.get('/api/data-sources/who/indicators/search', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { query } = req.query;
+      const indicators = await whoService.searchIndicators(query as string);
+      res.json(indicators);
+    } catch (error) {
+      console.error("Error searching WHO indicators:", error);
+      res.status(500).json({ message: "Failed to search WHO indicators" });
+    }
+  });
+
+  app.get('/api/data-sources/who/data/:code', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { code } = req.params;
+      const { country, year, sex } = req.query;
+      const filters: any = {};
+      if (country) filters.country = country;
+      if (year) filters.year = parseInt(year as string);
+      if (sex) filters.sex = sex;
+      
+      const data = await whoService.getIndicatorData(code, filters);
+      res.json(data);
+    } catch (error) {
+      console.error("Error getting WHO indicator data:", error);
+      res.status(500).json({ message: "Failed to get WHO indicator data" });
+    }
+  });
+
+  app.get('/api/data-sources/who/countries', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const countries = await whoService.getCountries();
+      res.json(countries);
+    } catch (error) {
+      console.error("Error getting WHO countries:", error);
+      res.status(500).json({ message: "Failed to get WHO countries" });
+    }
+  });
+
+  // Health insight consent routes
+  app.get('/api/consents', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const consents = await storage.getHealthInsightConsents(userId);
+      res.json(consents);
+    } catch (error) {
+      console.error("Error fetching consents:", error);
+      res.status(500).json({ message: "Failed to fetch consents" });
+    }
+  });
+
+  app.get('/api/consents/active', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const consents = await storage.getActiveConsents(userId);
+      res.json(consents);
+    } catch (error) {
+      console.error("Error fetching active consents:", error);
+      res.status(500).json({ message: "Failed to fetch active consents" });
+    }
+  });
+
+  app.post('/api/consents', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const consent = await storage.createHealthInsightConsent({
+        userId,
+        ...req.body,
+      });
+      res.json(consent);
+    } catch (error) {
+      console.error("Error creating consent:", error);
+      res.status(500).json({ message: "Failed to create consent" });
+    }
+  });
+
+  app.patch('/api/consents/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const consent = await storage.updateHealthInsightConsent(id, req.body);
+      if (!consent) {
+        return res.status(404).json({ message: "Consent not found" });
+      }
+      res.json(consent);
+    } catch (error) {
+      console.error("Error updating consent:", error);
+      res.status(500).json({ message: "Failed to update consent" });
+    }
+  });
+
+  app.post('/api/consents/:id/revoke', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const consent = await storage.revokeConsent(id, reason);
+      if (!consent) {
+        return res.status(404).json({ message: "Consent not found" });
+      }
+      res.json(consent);
+    } catch (error) {
+      console.error("Error revoking consent:", error);
+      res.status(500).json({ message: "Failed to revoke consent" });
+    }
+  });
+
+  app.delete('/api/consents/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteHealthInsightConsent(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Consent not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting consent:", error);
+      res.status(500).json({ message: "Failed to delete consent" });
     }
   });
 

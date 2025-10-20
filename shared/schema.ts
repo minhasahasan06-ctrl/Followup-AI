@@ -369,7 +369,7 @@ export type CounselingSession = typeof counselingSessions.$inferSelect;
 export const trainingDatasets = pgTable("training_datasets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
-  source: varchar("source").notNull(), // 'pubmed', 'physionet', 'kaggle'
+  source: varchar("source").notNull(), // 'pubmed', 'physionet', 'kaggle', 'who'
   sourceId: varchar("source_id"), // External ID from source platform
   title: varchar("title").notNull(),
   description: text("description"),
@@ -397,3 +397,36 @@ export const insertTrainingDatasetSchema = createInsertSchema(trainingDatasets).
 
 export type InsertTrainingDataset = z.infer<typeof insertTrainingDatasetSchema>;
 export type TrainingDataset = typeof trainingDatasets.$inferSelect;
+
+// Health insight consent for third-party app integration
+export const healthInsightConsents = pgTable("health_insight_consents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  appName: varchar("app_name").notNull(), // e.g., "Fitbit", "Apple Health", "Google Fit", "MyFitnessPal"
+  appCategory: varchar("app_category"), // 'fitness', 'nutrition', 'mental_health', 'sleep', 'medication'
+  consentGranted: boolean("consent_granted").notNull().default(true),
+  dataTypes: jsonb("data_types").$type<string[]>(), // ['heart_rate', 'steps', 'sleep', 'weight', 'blood_pressure']
+  purpose: text("purpose"), // Why the consent is needed
+  sharingFrequency: varchar("sharing_frequency").default("real-time"), // 'real-time', 'daily', 'weekly'
+  expiryDate: timestamp("expiry_date"), // When consent expires (null = no expiry)
+  revokedAt: timestamp("revoked_at"),
+  revokedReason: text("revoked_reason"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  syncStatus: varchar("sync_status").default("active"), // 'active', 'paused', 'error', 'revoked'
+  metadata: jsonb("metadata").$type<{
+    apiVersion?: string;
+    permissions?: string[];
+    scopes?: string[];
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHealthInsightConsentSchema = createInsertSchema(healthInsightConsents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHealthInsightConsent = z.infer<typeof insertHealthInsightConsentSchema>;
+export type HealthInsightConsent = typeof healthInsightConsents.$inferSelect;
