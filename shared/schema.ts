@@ -336,3 +336,31 @@ export const insertEducationalProgressSchema = createInsertSchema(educationalPro
 
 export type InsertEducationalProgress = z.infer<typeof insertEducationalProgressSchema>;
 export type EducationalProgress = typeof educationalProgress.$inferSelect;
+
+// Psychological counseling sessions
+export const counselingSessions = pgTable("counseling_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  sessionDate: timestamp("session_date").notNull(),
+  duration: integer("duration"), // minutes
+  counselorName: varchar("counselor_name"),
+  sessionType: varchar("session_type"), // 'individual', 'group', 'family', 'emergency'
+  sessionMode: varchar("session_mode"), // 'in-person', 'video', 'phone'
+  mainConcerns: text("main_concerns").array(),
+  sessionNotes: text("session_notes"),
+  followUpRequired: boolean("follow_up_required").default(false),
+  followUpDate: timestamp("follow_up_date"),
+  status: varchar("status").default("scheduled"), // 'scheduled', 'completed', 'cancelled', 'no-show'
+  effectiveness: integer("effectiveness"), // 1-10 scale, rated after session
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertCounselingSessionSchema = createInsertSchema(counselingSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCounselingSession = z.infer<typeof insertCounselingSessionSchema>;
+export type CounselingSession = typeof counselingSessions.$inferSelect;
