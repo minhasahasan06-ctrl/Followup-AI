@@ -658,10 +658,10 @@ export default function Landing() {
                       data-testid="button-contact-sales"
                       asChild
                     >
-                      <a href="mailto:t@followupai.io">
+                      <Link href="/enterprise-contact">
                         Request Enterprise Information
                         <ArrowRight className="h-4 w-4" />
-                      </a>
+                      </Link>
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground text-center">
