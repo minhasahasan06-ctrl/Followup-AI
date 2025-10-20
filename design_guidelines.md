@@ -1,196 +1,215 @@
-# Design Guidelines: AI Health Assistant for Immunocompromised Patients
+# Design Guidelines: Followup AI - HIPAA-Compliant Health Platform
 
 ## Design Approach
-**Hybrid Approach**: Medical Design System + Wellness App Aesthetics
-- Primary inspiration: Apple Health (data clarity), MyChart (medical professionalism), Headspace (calming wellness sections)
-- Design System: Custom healthcare system balancing clinical precision with patient comfort
-- Core principle: Trust through clarity - every element must feel medically sound yet approachable
+**Hybrid Medical-Wellness System**
+- Primary References: Apple Health (data clarity), MyChart (clinical trust), Headspace (calming wellness)
+- Core Principle: Professional healthcare meets approachable wellness through clean layouts, generous whitespace, and soothing color harmony
+- AI Agents: Agent Clona (patient support) and Assistant Lysa (doctor assistance) with distinct visual identities
 
 ## Color Palette
 
-### Primary Colors (Clinical Interface)
-- **Primary Medical Blue**: 210 100% 45% (trust, professionalism)
-- **Deep Navy**: 215 25% 20% (headers, critical text)
-- **Soft White/Clinical**: 0 0% 98% (backgrounds, cards)
+### Primary Clinical Colors
+- **Medical Teal**: 180 45% 45% (primary brand, trust, clinical actions)
+- **Deep Ocean**: 200 30% 25% (headers, navigation, authority)
+- **Soft Cloud**: 0 0% 98% (backgrounds, spacious cards)
+- **Clinical White**: 0 0% 100% (primary surfaces)
 
-### Wellness Colors (Meditation/Exercise Sections)
-- **Calming Sage**: 150 25% 55% (meditation, breathing exercises)
-- **Warm Peach**: 25 70% 85% (wellness encouragement, gentle alerts)
+### Wellness & Support Colors
+- **Calming Sage**: 155 30% 60% (Agent Clona, meditation, breathing exercises)
+- **Warm Mint**: 165 35% 75% (wellness encouragement, gentle backgrounds)
+- **Soft Lavender**: 250 25% 85% (Assistant Lysa, doctor insights)
 
-### Status & Alert Colors
-- **Success Green**: 145 65% 45% (medication adherence, completed tasks)
-- **Warning Amber**: 35 85% 55% (health alerts, follow-up reminders)
-- **Critical Red**: 0 75% 50% (emergency symptoms, urgent actions)
-- **Neutral Gray**: 210 10% 60% (secondary text, borders)
+### Status System
+- **Success Teal**: 170 60% 45% (adherence, completed tasks, healthy vitals)
+- **Warning Coral**: 25 75% 60% (attention needed, follow-ups due)
+- **Critical Rose**: 0 70% 55% (urgent symptoms, emergency)
+- **Neutral Slate**: 200 15% 55% (secondary text, subtle borders)
 
-### Dark Mode (HIPAA-compliant healthcare dark theme)
-- Background: 215 25% 12%
-- Cards: 215 20% 18%
-- Text: 0 0% 95%
-- Maintain color ratios for accessibility
+### Dark Mode
+- Background: 200 25% 10%
+- Cards: 200 20% 15%
+- Text: 0 0% 96%
+- Borders: 200 15% 25%
+- All status colors maintain contrast ratios
 
 ## Typography
 
-**Font Families**
-- Primary: Inter (clinical clarity, excellent readability for health data)
-- Wellness Sections: Lexend (gentle, calming for meditation/exercise)
-- Medical Data: SF Mono / JetBrains Mono (test results, numerical data)
+**Font Stack**
+- Primary: Inter (all clinical data, dashboard, forms - via Google Fonts CDN)
+- Wellness: Lexend (meditation, exercise modules, calming sections)
+- Monospace: JetBrains Mono (lab results, numeric data, timestamps)
 
-**Hierarchy**
-- Hero/Dashboard: text-4xl font-semibold (medical professional authority)
+**Scale & Hierarchy**
+- Hero Dashboard: text-5xl font-bold tracking-tight
+- AI Agent Names: text-3xl font-semibold with letter-spacing
+- Health Metrics: text-4xl font-bold (vital statistics prominence)
 - Section Headers: text-2xl font-semibold
-- Health Metrics: text-3xl font-bold (vital statistics prominence)
-- Body Text: text-base leading-relaxed (comfortable reading for lengthy medical info)
-- Captions/Labels: text-sm text-gray-600 (subtle guidance)
+- Body Text: text-base leading-relaxed
+- Metadata: text-sm text-slate-600
+- Captions: text-xs text-slate-500
 
 ## Layout System
 
-**Spacing Primitives**: 2, 4, 8, 12, 16 (tailwind units)
-- Tight medical data: p-2, gap-2
-- Card padding: p-4 to p-6
-- Section spacing: py-8 to py-12
-- Dashboard gaps: gap-4 (compact information density)
+**Spacing Primitives**: 2, 4, 6, 8, 12, 16
+- Tight medical data: gap-2, p-2
+- Standard cards: p-6 to p-8
+- Section vertical rhythm: py-12 to py-16
+- Dashboard spacing: gap-6
+- Generous margins: Container px-6 md:px-12
 
-**Grid Structure**
-- Dashboard: 3-column grid (lg:grid-cols-3, md:grid-cols-2, grid-cols-1)
-- Health metrics: 2-4 column responsive grids
-- Chat interface: Single column max-w-4xl centered
-- Doctor console: 2-column split (patient data left, diagnostic tools right)
+**Grid Architecture**
+- Patient Dashboard: 3-column (lg:grid-cols-3 md:grid-cols-2)
+- Vital Signs: 4-column metrics grid (lg:grid-cols-4)
+- Chat Interface: Single column max-w-4xl
+- Doctor Portal: 2-column split 60/40 (patient data/AI insights)
+- Follow-up Cards: 2-column masonry grid
 
-**Container Max-widths**
-- Chat/Conversation: max-w-4xl
-- Dashboard: max-w-7xl
-- Medical forms: max-w-2xl
-- Full-width data visualizations: w-full with inner max-w-6xl
+**Container Strategy**
+- Dashboard: max-w-7xl mx-auto
+- Chat/Conversations: max-w-4xl
+- Medical Forms: max-w-3xl
+- Doctor Research Tools: max-w-6xl
+- Full-width visualizations: w-full with inner max-w-7xl
 
 ## Component Library
 
-### Core Medical Components
+### Patient Dashboard Components
 
-**Patient Dashboard Card**
-- White card with subtle shadow (shadow-md)
-- Border-l-4 with status color coding (blue: stable, amber: attention needed, red: urgent)
-- Health metric display: Large numbers (text-3xl) with unit labels (text-sm)
-- Trend indicators: Small arrows with percentage changes
+**Enhanced Daily Follow-up Cards**
+- Large cards with 8px left border (status color-coded)
+- Card header: Date + Patient name + AI summary badge
+- Content sections: Vitals, medications taken, symptoms, AI insights
+- Bottom action bar: "Mark Complete" button + "Chat with Clona" link
+- Hover state: Subtle shadow elevation
 
-**Chat Interface**
-- Patient messages: Right-aligned, soft blue background (210 100% 95%)
-- AI responses: Left-aligned, white with border
-- Medical entity highlights: Inline colored pills (medications: green, symptoms: amber, diagnoses: blue)
-- Timestamp: text-xs text-gray-500
+**Vital Signs Tracking Module**
+- 4-column grid: Heart Rate, BP, Temp, SpO2
+- Large metric display (text-4xl) with trend arrows
+- Micro-charts: 7-day sparklines below each metric
+- Color-coded thresholds: Green (normal), Coral (watch), Rose (alert)
+- Real-time sync indicator: Pulsing teal dot for connected wearables
 
-**Clinical Assessment Module**
-- Camera viewfinder: Full-width with overlay guides
-- Assessment results: Card grid showing detected conditions (anemia, jaundice, edema)
-- Confidence scores: Progress bars with percentage
-- Historical comparison: Side-by-side before/after thumbnails
+**Medication Management Panel**
+- Timeline view: Vertical axis with time markers
+- Drug cards: Image placeholder, name, dosage, status badge
+- "Take Now" primary button for due medications
+- AI dosage suggestions: Lavender notification with Assistant Lysa avatar
+- OTC recommendations: Soft mint badge with "AI Suggested"
 
-**Medication Manager**
-- Drug cards: Image placeholder, name (font-semibold), dosage, frequency
-- OTC suggestion badge: Small green pill-shaped label
-- AI dosage adjustment indicator: Subtle amber notification dot
-- Schedule timeline: Vertical timeline with taken/missed states
+### Chat Interface (Agent Clona)
 
-**Wearable Data Integration**
-- Real-time sync status indicator (pulsing green dot when active)
-- Data source badges: Small device icons (Apple Watch, Fitbit, etc.)
-- Graph visualizations: Line charts with 7-day/30-day toggles
-- Metric cards: Heart rate, steps, sleep, SpO2 in 2x2 grid
+**Message Bubbles**
+- Patient: Right-aligned, soft teal background (180 45% 95%), rounded-2xl
+- Agent Clona: Left-aligned, white with border, rounded-2xl, sage avatar
+- Medical entities: Inline colored pills (medications: teal, symptoms: coral, conditions: ocean)
+- Timestamps: text-xs text-slate-500, subtle
+- Voice input button: Microphone icon for accessibility
 
-**File Upload Zone**
-- Dashed border drag-and-drop area
-- Supported formats: Medical imaging (DICOM, JPEG), lab reports (PDF)
-- Upload preview: Thumbnail grid with file names
-- AI processing status: Loading spinner → Success checkmark
+**AI Context Cards**
+- Embedded cards in chat for recommendations
+- Header with Clona avatar + "Based on your data"
+- Content: Relevant health tips, exercise suggestions, reminders
+- Action buttons: "Schedule" or "Learn More"
 
-### Wellness Components
-
-**Meditation/Mindfulness Section**
-- Soft sage green background gradient
-- Circular session cards with duration and type
-- "Start Session" button: Rounded-full with calming hover states
-- Guided audio player: Clean minimalist controls
-
-**Exercise Module**
-- Video demonstration preview (16:9 ratio)
-- Difficulty badges: Easy/Moderate/Intense with color coding
-- Personalized recommendations: "Recommended for your condition" tag
-- Completion tracker: Circular progress rings
-
-**Reminder System**
-- Non-intrusive notification cards (top-right toast)
-- Water intake: Glass icon with fill animation
-- Exercise: Calendar icon with time
-- Medication: Pill icon with urgency level
-
-### Doctor Agent Interface
+### Doctor Portal (Assistant Lysa)
 
 **Patient Review Dashboard**
-- Split view: Patient timeline (left 60%) | AI insights (right 40%)
-- Medical history accordion: Expandable sections by date
-- AI suggestions panel: Highlighted recommendations with confidence scores
-- Consultation notes: Rich text editor with medical autocomplete
+- Left panel (60%): Scrollable patient timeline with accordion sections
+- Right panel (40%): Sticky AI insights panel with Lysa avatar
+- Timeline cards: Date headers, vital snapshots, medication adherence
+- AI highlights: Yellow marker for Lysa's flagged concerns
 
-**Doctor Verification Portal**
-- Research consent requests: Card-based approval queue
-- Patient data summary: Key metrics and AI-generated brief
-- Approve/Reject actions: Large, distinct button pair
-- Audit trail: Timestamped log of all verifications
+**Data Visualization Suite**
+- Multi-metric comparison: Line charts with toggles (7d/30d/90d)
+- Correlation heatmaps: Symptom patterns vs vital changes
+- Patient progress rings: Circular progress for adherence goals
+- Export functionality: Download as PDF for research
 
-### Emergency Features
+**Research Consent Queue**
+- Card-based queue with patient summaries
+- Preview panel: Patient demographics, relevant conditions
+- Large approve/decline buttons with confirmation modal
+- Audit trail timestamp log at bottom
+
+### Wellness Modules
+
+**Meditation Section**
+- Soft sage gradient background (155 30% 95% to 155 30% 98%)
+- Circular session cards: Duration, type (breathing, mindfulness)
+- Large "Begin Session" button: rounded-full, teal
+- Audio player: Clean controls with waveform visualization
+
+**Exercise Library**
+- Video preview cards: 16:9 aspect ratio with play overlay
+- Difficulty badges: Color-coded (teal: easy, coral: moderate, rose: intense)
+- "Recommended for You" tag: Mint background with sparkle icon
+- Progress tracker: Circular completion rings
+
+### System-Wide Components
+
+**Navigation**
+- Desktop: Fixed left sidebar (w-64) with icons + labels
+- Mobile: Bottom tab bar with 5 primary actions
+- Active state: Teal background with filled icon
+- Notification badges: Rose dot for alerts, number for messages
+- Role toggle: Top-right dropdown (Patient/Doctor views)
 
 **Critical Alert Banner**
-- Full-width red banner at top (z-50)
-- Large icon + urgent message
-- "Call 911" button: Oversized, high-contrast
-- Auto-scroll to top when triggered
+- Full-width rose gradient banner (z-50)
+- Large alert icon + urgent message
+- "Emergency Actions" button: High-contrast white on rose
+- Dismiss only after action taken
 
-**Symptom Checker Modal**
-- Overlay with symptom input
-- Real-time severity assessment
-- Emergency escalation: Red zone triggers ambulance dispatch
-- Non-urgent: Schedules doctor consultation
-
-## Navigation
-
-**Main Navigation**
-- Sidebar: Fixed left navigation (desktop), bottom tabs (mobile)
-- Icons: Clear medical symbols (dashboard, chat, wellness, settings)
-- Active state: Filled icon + accent color background
-- Badge notifications: Red dot for alerts, number for unread messages
-
-**Role Switching**
-- Toggle between Patient View / Doctor Agent View
-- Visual indicator: Top-right user role badge
-- Seamless context preservation
+**Loading States**
+- Skeleton screens: Animated pulse for cards/lists
+- Medical cross spinner for data processing
+- Progress bars for file uploads with percentage
 
 ## Animations
 
-**Use Sparingly**
-- Health metric updates: Count-up number animation (fast, 0.5s)
-- Chat message appearance: Gentle slide-in from appropriate side
-- Notification toasts: Slide-in from top-right
-- Loading states: Medical cross spinner or pulsing dot
-- NO decorative animations - only functional feedback
+**Functional Feedback Only**
+- Health metric updates: Count-up animation (0.6s ease-out)
+- Chat messages: Slide-in from sender side (0.3s)
+- Card hover: Subtle shadow lift (0.2s)
+- Notification toasts: Slide-down from top (0.4s)
+- Page transitions: Gentle fade (0.2s)
+- NO decorative animations
 
 ## Images
 
-**Hero Section**: Medical professional with immunocompromised patient (diverse, warm, reassuring) - NOT stock photo aesthetic, authentic healthcare setting
-**Wellness Section Headers**: Calming nature scenes (meditation: forest, exercise: sunrise)
-**Doctor Dashboard**: Abstract medical visualization (DNA helix, cellular imagery) as subtle background
-**Empty States**: Friendly illustrations for no data yet (first-time user guidance)
+### Hero Section (Dashboard Landing)
+- Large hero image (h-96): Diverse medical professional reviewing tablet with immunocompromised patient, warm natural lighting, modern clinic setting
+- Overlay: Soft gradient from bottom for text legibility
+- CTA buttons on image: variant="outline" with backdrop-blur-sm
 
-## Accessibility
+### Wellness Section Headers
+- Meditation module: Calming forest path with soft focus (h-48)
+- Exercise module: Sunrise yoga scene (h-48)
 
-**HIPAA Visual Compliance**
+### Doctor Portal Background
+- Subtle abstract medical visualization: DNA helix or cellular structure at 10% opacity as page background
+
+### Empty States
+- Friendly illustrations for no data scenarios
+- First-time user: Welcome illustration with Agent Clona/Lysa characters
+- No medications: Simple pill bottle icon with encouraging text
+
+### AI Agent Avatars
+- Agent Clona: Circular avatar with sage background, friendly abstract icon
+- Assistant Lysa: Circular avatar with lavender background, professional abstract icon
+- Use consistently across all chat/insight components
+
+## Accessibility & HIPAA Compliance
+
+**Visual Security Indicators**
 - Lock icons on sensitive data cards
-- "Encrypted" badges on file uploads
-- Consent status clearly visible
-- Role-based access visual indicators (different header colors)
+- "Encrypted" badge on file uploads (shield icon + text)
+- Role-based headers: Different color accents (patient: teal, doctor: lavender)
+- Consent status: Clear visual checkmarks/pending icons
 
 **Medical Accessibility**
-- High contrast for all medical data (WCAG AAA)
-- Color-blind safe status indicators (icons + color)
-- Large touch targets (min 44px) for immunocompromised patients with dexterity issues
-- Clear medication instructions (large text, simple language)
-- Emergency features: Voice-activated option for critical moments
+- WCAG AAA contrast for all medical data
+- Color-blind safe: Icons + color for status (✓ + green, ! + coral, ⚠ + rose)
+- Large touch targets: min 44px for all interactive elements
+- Voice input for emergency features
+- Screen reader optimized: Proper ARIA labels for medical terminology
