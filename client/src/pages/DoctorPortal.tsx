@@ -1,9 +1,13 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Stethoscope, Users, Bot, TrendingUp, Shield, CheckCircle, FileText } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Stethoscope, Users, Bot, TrendingUp, Shield, CheckCircle, FileText, Info } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function DoctorPortal() {
+  const { user } = useAuth();
+
   const handleDoctorSignup = () => {
     // Will redirect to Replit Auth with doctor context
     window.location.href = "/api/login?role=doctor&type=signup";
@@ -46,6 +50,22 @@ export default function DoctorPortal() {
       </header>
 
       <main>
+        {/* Alert for already logged in users */}
+        {user && (
+          <section className="py-6 px-6">
+            <div className="max-w-6xl mx-auto">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  You're currently logged in as a {user.role === "doctor" ? "doctor" : "patient"}. 
+                  {user.role === "patient" && " To access the doctor portal, please log out first using the button in the sidebar, then sign up or log in as a doctor."}
+                  {user.role === "doctor" && " You already have access to all doctor features through your dashboard."}
+                </AlertDescription>
+              </Alert>
+            </div>
+          </section>
+        )}
+
         {/* Hero Section */}
         <section className="py-20 px-6">
           <div className="max-w-6xl mx-auto text-center">
