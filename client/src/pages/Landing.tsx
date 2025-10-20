@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles, ClipboardList, BarChart3, FileText, Bell, Lock, Brain, Leaf, Zap, Award, Globe } from "lucide-react";
-import { SiLinkedin, SiX } from "react-icons/si";
+import { SiLinkedin, SiX, SiDiscord } from "react-icons/si";
 
 export default function Landing() {
   const handlePatientSignup = () => {
@@ -793,6 +793,16 @@ export default function Landing() {
                   aria-label="Twitter"
                 >
                   <SiX className="h-4 w-4" />
+                </a>
+                <a 
+                  href="https://discord.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex h-9 w-9 items-center justify-center rounded-md bg-muted hover-elevate active-elevate-2 transition-all"
+                  data-testid="link-footer-discord"
+                  aria-label="Discord"
+                >
+                  <SiDiscord className="h-4 w-4" />
                 </a>
                 <a 
                   href="https://linkedin.com" 
