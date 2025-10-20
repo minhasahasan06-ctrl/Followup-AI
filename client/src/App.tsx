@@ -22,6 +22,7 @@ import DoctorDashboard from "@/pages/DoctorDashboard";
 import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
 import Counseling from "@/pages/Counseling";
+import ConsentManagement from "@/pages/ConsentManagement";
 
 function PatientRouter() {
   return (
@@ -30,6 +31,7 @@ function PatientRouter() {
       <Route path="/chat" component={Chat} />
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/counseling" component={Counseling} />
+      <Route path="/consents" component={ConsentManagement} />
       <Route path="/files" component={Files} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />

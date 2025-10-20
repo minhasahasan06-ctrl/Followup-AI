@@ -14,6 +14,7 @@ import {
   Beaker,
   LogOut,
   MessageCircle,
+  Link as LinkIcon,
 } from "lucide-react";
 import {
   Sidebar,
@@ -53,6 +54,11 @@ const patientItems = [
     title: "Counseling",
     url: "/counseling",
     icon: MessageCircle,
+  },
+  {
+    title: "App Connections",
+    url: "/consents",
+    icon: LinkIcon,
   },
   {
     title: "Medical Files",
