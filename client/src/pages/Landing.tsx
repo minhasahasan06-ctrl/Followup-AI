@@ -723,7 +723,9 @@ export default function Landing() {
                   <span className="text-sm text-muted-foreground">Agent Clona</span>
                 </li>
                 <li>
-                  <span className="text-sm text-muted-foreground">Assistant Lysa</span>
+                  <Link href="/assistant-lysa" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-lysa">
+                    Assistant Lysa
+                  </Link>
                 </li>
               </ul>
             </div>
