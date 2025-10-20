@@ -216,6 +216,114 @@ export class KaggleService {
   }
 }
 
+// WHO Global Health Observatory (GHO) API integration
+export class WHOService {
+  private baseUrl = "https://ghoapi.azureedge.net/api";
+
+  async listIndicators() {
+    try {
+      const response = await axios.get(`${this.baseUrl}/Indicator`, {
+        params: {
+          $format: "json",
+        },
+      });
+
+      return response.data.value || [];
+    } catch (error) {
+      console.error("WHO list indicators error:", error);
+      throw new Error("Failed to list WHO indicators");
+    }
+  }
+
+  async searchIndicators(query: string) {
+    try {
+      const response = await axios.get(`${this.baseUrl}/Indicator`, {
+        params: {
+          $filter: `contains(IndicatorName,'${query}')`,
+          $format: "json",
+        },
+      });
+
+      return response.data.value || [];
+    } catch (error) {
+      console.error("WHO search indicators error:", error);
+      throw new Error("Failed to search WHO indicators");
+    }
+  }
+
+  async getIndicatorData(indicatorCode: string, filters?: {
+    country?: string;
+    year?: number;
+    sex?: string;
+  }) {
+    try {
+      let filterString = "";
+      const filterParts: string[] = [];
+
+      if (filters?.country) {
+        filterParts.push(`SpatialDim eq '${filters.country}'`);
+      }
+      if (filters?.sex) {
+        filterParts.push(`Dim1 eq '${filters.sex}'`);
+      }
+      if (filters?.year) {
+        filterParts.push(`TimeDim eq ${filters.year}`);
+      }
+
+      if (filterParts.length > 0) {
+        filterString = `?$filter=${filterParts.join(" and ")}`;
+      }
+
+      const response = await axios.get(
+        `${this.baseUrl}/${indicatorCode}${filterString}`,
+        {
+          params: {
+            $format: "json",
+          },
+        }
+      );
+
+      return response.data.value || [];
+    } catch (error) {
+      console.error("WHO get indicator data error:", error);
+      throw new Error("Failed to fetch WHO indicator data");
+    }
+  }
+
+  async getCountries() {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/DIMENSION/COUNTRY/DimensionValues`,
+        {
+          params: {
+            $format: "json",
+          },
+        }
+      );
+
+      return response.data.value || [];
+    } catch (error) {
+      console.error("WHO get countries error:", error);
+      throw new Error("Failed to fetch WHO countries");
+    }
+  }
+
+  // Popular health indicators for immunocompromised patients
+  getPopularIndicators() {
+    return [
+      { code: "WHOSIS_000001", name: "Life expectancy at birth" },
+      { code: "HIV_0000000001", name: "HIV prevalence" },
+      { code: "WHS4_543", name: "Tuberculosis incidence" },
+      { code: "NCDMORT3070", name: "NCD mortality rate (30-70 years)" },
+      { code: "MDG_0000000001", name: "Infant mortality rate" },
+      { code: "AIR_10", name: "Ambient air pollution deaths" },
+      { code: "HWF_0001", name: "Medical doctors per 10,000 population" },
+      { code: "GHED_CHE_PC_PPP_SHA2011", name: "Current health expenditure per capita" },
+    ];
+  }
+}
+
 export const pubmedService = new PubMedService();
 export const physionetService = new PhysioNetService();
 export const kaggleService = new KaggleService();
+export const whoService = new WHOService();
