@@ -12,6 +12,7 @@ import {
   Wind,
   Users,
   Beaker,
+  LogOut,
 } from "lucide-react";
 import {
   Sidebar,
@@ -26,6 +27,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -133,7 +135,16 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="p-4 border-t">
+      <SidebarFooter className="p-4 border-t space-y-3">
+        <Button 
+          variant="outline" 
+          className="w-full justify-start gap-2"
+          onClick={() => window.location.href = "/api/logout"}
+          data-testid="button-logout"
+        >
+          <LogOut className="h-4 w-4" />
+          <span>Log Out</span>
+        </Button>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <div className="h-2 w-2 rounded-full bg-chart-2" />
           <span>HIPAA Compliant</span>
