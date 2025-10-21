@@ -9,13 +9,13 @@ export default function DoctorPortal() {
   const { user } = useAuth();
 
   const handleDoctorSignup = () => {
-    // Will redirect to Replit Auth with doctor context
-    window.location.href = "/api/login?role=doctor&type=signup";
+    // Will redirect to Replit Auth with doctor context and return to doctor portal
+    window.location.href = "/api/login?returnTo=/doctor-portal";
   };
 
   const handleDoctorLogin = () => {
-    // Will redirect to Replit Auth with doctor context
-    window.location.href = "/api/login?role=doctor&type=login";
+    // Will redirect to Replit Auth with doctor context and return to doctor portal
+    window.location.href = "/api/login?returnTo=/doctor-portal";
   };
 
   return (
