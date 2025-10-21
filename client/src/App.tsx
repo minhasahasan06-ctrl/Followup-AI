@@ -34,12 +34,14 @@ import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
 import Counseling from "@/pages/Counseling";
 import ConsentManagement from "@/pages/ConsentManagement";
+import PreviousSessions from "@/pages/PreviousSessions";
 
 function PatientRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/chat" component={Chat} />
+      <Route path="/previous-sessions" component={PreviousSessions} />
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/counseling" component={Counseling} />
       <Route path="/consents" component={ConsentManagement} />

@@ -15,6 +15,7 @@ import {
   LogOut,
   MessageCircle,
   Link as LinkIcon,
+  History,
 } from "lucide-react";
 import {
   Sidebar,
@@ -44,6 +45,11 @@ const patientItems = [
     url: "/chat",
     icon: Bot,
     badge: "AI",
+  },
+  {
+    title: "Previous Sessions",
+    url: "/previous-sessions",
+    icon: History,
   },
   {
     title: "Wellness",
