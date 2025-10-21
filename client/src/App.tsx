@@ -76,7 +76,7 @@ function AuthenticatedApp() {
   };
 
   // Public routes that don't require auth
-  const publicRoutes = ["/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/"];
+  const publicRoutes = ["/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/", "/role-selection"];
   const isPublicRoute = publicRoutes.includes(location);
 
   // Only show loading on authenticated routes
@@ -95,6 +95,7 @@ function AuthenticatedApp() {
   if (!user || isPublicRoute) {
     return (
       <Switch>
+        <Route path="/role-selection" component={RoleSelection} />
         <Route path="/doctor-portal" component={DoctorPortal} />
         <Route path="/coming-soon" component={ComingSoon} />
         <Route path="/terms" component={Terms} />
