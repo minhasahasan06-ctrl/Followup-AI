@@ -169,7 +169,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const { content, agentType } = req.body;
 
+      let session = await storage.getActiveSession(userId, agentType);
+      
+      if (!session) {
+        const sessionTitle = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+        session = await storage.createSession({
+          patientId: userId,
+          agentType,
+          sessionTitle,
+        });
+      }
+
       await storage.createChatMessage({
+        sessionId: session.id,
         userId,
         role: 'user',
         content,
@@ -188,8 +200,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
            Provide clinical insights, pattern recognition, and evidence-based recommendations. 
            Assist with epidemiological analysis.`;
 
-      const chatHistory = await storage.getChatMessages(userId, agentType);
-      const recentMessages = chatHistory.slice(-10).map(msg => ({
+      const sessionMessages = await storage.getSessionMessages(session.id);
+      const recentMessages = sessionMessages.slice(-10).map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       }));
@@ -209,7 +221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const extractMedicalEntities = (text: string) => {
         const entities: Array<{ text: string; type: string }> = [];
-        const symptoms = ['fever', 'cough', 'headache', 'pain', 'nausea', 'fatigue', 'dizziness'];
+        const symptoms = ['fever', 'cough', 'headache', 'pain', 'nausea', 'fatigue', 'dizziness', 'sore throat', 'chills', 'shortness of breath'];
         const medications = ['aspirin', 'ibuprofen', 'acetaminophen', 'antibiotic'];
         
         symptoms.forEach(symptom => {
@@ -227,18 +239,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return entities;
       };
 
+      const userEntities = extractMedicalEntities(content);
+      const assistantEntities = extractMedicalEntities(assistantMessage);
+      const allSymptoms = [...userEntities, ...assistantEntities]
+        .filter(e => e.type === 'symptom')
+        .map(e => e.text);
+
+      await storage.updateSessionMetadata(session.id, {
+        messageCount: (session.messageCount || 0) + 2,
+        symptomsDiscussed: Array.from(new Set([...(session.symptomsDiscussed || []), ...allSymptoms])),
+      });
+
       const savedMessage = await storage.createChatMessage({
+        sessionId: session.id,
         userId,
         role: 'assistant',
         content: assistantMessage,
         agentType,
-        medicalEntities: extractMedicalEntities(assistantMessage),
+        medicalEntities: assistantEntities,
       });
 
       res.json(savedMessage);
     } catch (error) {
       console.error("Error in chat:", error);
       res.status(500).json({ message: "Failed to process chat message" });
+    }
+  });
+
+  // Chat session routes
+  app.get('/api/chat/sessions', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const agentType = req.query.agent as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const sessions = await storage.getPatientSessions(userId, agentType, limit);
+      res.json(sessions);
+    } catch (error) {
+      console.error("Error fetching chat sessions:", error);
+      res.status(500).json({ message: "Failed to fetch chat sessions" });
+    }
+  });
+
+  app.get('/api/chat/sessions/:sessionId', isAuthenticated, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const messages = await storage.getSessionMessages(sessionId);
+      res.json(messages);
+    } catch (error) {
+      console.error("Error fetching session messages:", error);
+      res.status(500).json({ message: "Failed to fetch session messages" });
+    }
+  });
+
+  app.post('/api/chat/sessions/:sessionId/end', isAuthenticated, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const messages = await storage.getSessionMessages(sessionId);
+      
+      const conversationText = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+      
+      const summaryCompletion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content: `You are a medical AI summarizing a patient-doctor chat session. Extract:
+            1. Key symptoms mentioned
+            2. Recommendations given
+            3. Concerns raised
+            4. Any vital signs or measurements discussed
+            Keep it concise and clinical.`
+          },
+          {
+            role: "user",
+            content: `Summarize this medical conversation:\n\n${conversationText}`
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 400,
+      });
+
+      const aiSummary = summaryCompletion.choices[0].message.content || "";
+      
+      const symptoms = Array.from(new Set(
+        messages.flatMap(m => {
+          const entities = m.medicalEntities || [];
+          return entities.filter((e: any) => e.type === 'symptom').map((e: any) => e.text);
+        })
+      ));
+
+      const healthInsights = {
+        keySymptoms: symptoms,
+        conversationSummary: aiSummary
+      };
+
+      const session = await storage.endSession(sessionId, aiSummary, healthInsights);
+      res.json(session);
+    } catch (error) {
+      console.error("Error ending session:", error);
+      res.status(500).json({ message: "Failed to end session" });
+    }
+  });
+
+  app.get('/api/doctor/patient-sessions/:patientId', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const oneMonthAgo = new Date();
+      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+      const now = new Date();
+      
+      const sessions = await storage.getSessionsInDateRange(patientId, oneMonthAgo, now, 'clona');
+      res.json(sessions);
+    } catch (error) {
+      console.error("Error fetching patient sessions:", error);
+      res.status(500).json({ message: "Failed to fetch patient sessions" });
     }
   });
 
