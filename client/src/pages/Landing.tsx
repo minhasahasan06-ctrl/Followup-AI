@@ -882,6 +882,11 @@ export default function Landing() {
               <h4 className="font-semibold mb-4">Resources</h4>
               <ul className="space-y-3">
                 <li>
+                  <Link href="/blog" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-blog">
+                    Blog
+                  </Link>
+                </li>
+                <li>
                   <Link href="/faq" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-faq">
                     FAQ
                   </Link>
