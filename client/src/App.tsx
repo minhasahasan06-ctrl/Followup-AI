@@ -75,7 +75,12 @@ function AuthenticatedApp() {
     "--sidebar-width-icon": "3rem",
   };
 
-  if (isLoading) {
+  // Public routes that don't require auth
+  const publicRoutes = ["/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/"];
+  const isPublicRoute = publicRoutes.includes(location);
+
+  // Only show loading on authenticated routes
+  if (isLoading && !isPublicRoute) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
@@ -87,7 +92,7 @@ function AuthenticatedApp() {
   }
 
   // Allow access to public routes even when authenticated
-  if (!user || location === "/doctor-portal" || location === "/coming-soon" || location === "/terms" || location === "/privacy" || location === "/hipaa" || location === "/enterprise-contact" || location === "/assistant-lysa" || location === "/agent-clona" || location === "/pricing" || location === "/faq" || location === "/documentation" || location === "/api" || location === "/blog") {
+  if (!user || isPublicRoute) {
     return (
       <Switch>
         <Route path="/doctor-portal" component={DoctorPortal} />
