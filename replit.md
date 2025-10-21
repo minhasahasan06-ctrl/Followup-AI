@@ -45,8 +45,8 @@ Preferred communication style: Simple, everyday language.
   - `/doctor-portal` - Doctor-focused landing page with professional features
 - Authentication flow: Landing/Doctor Portal → Sign Up/Login → Replit Auth → Role Selection → Dashboard
 - Role-based routing: separate router components for patients vs. doctors
-- Patient routes: Dashboard, Chat, Wellness, Counseling, App Connections (Consent Management), Files, Profile
-- Doctor routes: Doctor Dashboard, Patient Review, Research Center, Chat, Counseling, Profile
+- Patient routes: Dashboard, Chat, Previous Sessions (Medical History), Wellness, Counseling, App Connections (Consent Management), Files, Profile
+- Doctor routes: Doctor Dashboard, Patient Review (with Chat Sessions tab), Research Center, Chat, Counseling, Profile
 - Protected routes requiring authentication via Replit Auth
 
 **Landing Page Features:**
@@ -89,10 +89,12 @@ Preferred communication style: Simple, everyday language.
 - Transaction support for complex operations
 
 **AI Integration:**
-- OpenAI API for chat functionality with Agent Clona and Assistant Lysa
+- OpenAI API (gpt-4o model) for chat functionality with Agent Clona and Assistant Lysa
 - Sentiment analysis using `sentiment` library for emotional context
 - Context-aware responses based on user role (patient vs. doctor)
-- Medical entity extraction from chat messages
+- Medical entity extraction from chat messages (symptoms, medications)
+- AI-generated session summaries for medical history tracking
+- Automatic health insights generation from conversation patterns
 
 **Public Medical Data Integration:**
 - PubMed E-utilities API integration for accessing research articles and medical literature
@@ -123,6 +125,13 @@ Preferred communication style: Simple, everyday language.
 - Doctor profiles with license verification
 - Daily follow-ups for visual health assessments
 - Medication tracking with AI suggestions
+- Chat sessions with comprehensive medical history tracking:
+  - Session metadata (start/end time, message count, agent type)
+  - Symptoms discussed (array of extracted medical entities)
+  - Recommendations provided (AI-generated guidance)
+  - Health insights (structured medical data)
+  - AI-generated summaries for each completed session
+  - Doctor notes capability for collaborative care
 - Dynamic task management
 - Chat message storage for AI conversations
 - Auto-journaling for behavioral insights
