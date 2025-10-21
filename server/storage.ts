@@ -55,10 +55,16 @@ import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
-  // User operations (required for Replit Auth)
+  // User operations
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: Partial<User>): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
   updateUserRole(id: string, role: string, medicalLicenseNumber?: string, termsAccepted?: boolean): Promise<User | undefined>;
+  updateVerificationToken(userId: string, token: string, expires: Date): Promise<User | undefined>;
+  verifyEmail(token: string): Promise<User | undefined>;
+  updateResetToken(userId: string, token: string, expires: Date): Promise<User | undefined>;
+  resetPassword(token: string, newPasswordHash: string): Promise<User | undefined>;
   
   // Patient profile operations
   getPatientProfile(userId: string): Promise<PatientProfile | undefined>;
@@ -168,6 +174,16 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createUser(userData: Partial<User>): Promise<User> {
+    const [user] = await db.insert(users).values(userData as any).returning();
+    return user;
+  }
+
   async updateUserRole(id: string, role: string, medicalLicenseNumber?: string, termsAccepted?: boolean): Promise<User | undefined> {
     const updateData: any = { 
       role, 
@@ -186,6 +202,78 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return user;
+  }
+
+  async updateVerificationToken(userId: string, token: string, expires: Date): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        verificationToken: token,
+        verificationTokenExpires: expires,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async verifyEmail(token: string): Promise<User | undefined> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.verificationToken, token));
+
+    if (!user || !user.verificationTokenExpires || user.verificationTokenExpires < new Date()) {
+      return undefined;
+    }
+
+    const [verifiedUser] = await db
+      .update(users)
+      .set({
+        emailVerified: true,
+        verificationToken: null,
+        verificationTokenExpires: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id))
+      .returning();
+    return verifiedUser;
+  }
+
+  async updateResetToken(userId: string, token: string, expires: Date): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        resetToken: token,
+        resetTokenExpires: expires,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async resetPassword(token: string, newPasswordHash: string): Promise<User | undefined> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.resetToken, token));
+
+    if (!user || !user.resetTokenExpires || user.resetTokenExpires < new Date()) {
+      return undefined;
+    }
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        passwordHash: newPasswordHash,
+        resetToken: null,
+        resetTokenExpires: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id))
+      .returning();
+    return updatedUser;
   }
 
   // Patient profile operations

@@ -1,21 +1,332 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, isDoctor } from "./replitAuth";
+import { setupAuth, isAuthenticated, isDoctor, hashPassword, comparePassword, generateToken, sendVerificationEmail, sendPasswordResetEmail } from "./auth";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
 import OpenAI from "openai";
 import Sentiment from "sentiment";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
 
-export async function registerRoutes(app: Express): Promise<Server> {
-  await setupAuth(app);
+// Configure multer for file uploads (KYC photos)
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const uploadPath = path.join(process.cwd(), 'uploads', 'kyc');
+      fs.mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, 'kyc-' + uniqueSuffix + path.extname(file.originalname));
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|pdf/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    if (extname && mimetype) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .jpg, .jpeg, .png, and .pdf files are allowed'));
+    }
+  }
+});
 
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+export async function registerRoutes(app: Express): Promise<Server> {
+  setupAuth(app);
+
+  // ============== AUTHENTICATION ROUTES ==============
+  
+  // Doctor signup
+  app.post('/api/auth/signup/doctor', upload.single('kycPhoto'), async (req, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const { email, password, firstName, lastName, organization, medicalLicenseNumber, licenseCountry, termsAccepted } = req.body;
+      
+      // Validation
+      if (!email || !password || !firstName || !lastName || !organization || !medicalLicenseNumber || !licenseCountry) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+      
+      if (!termsAccepted || termsAccepted !== 'true') {
+        return res.status(400).json({ message: "You must accept the terms and conditions" });
+      }
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: "Email already registered" });
+      }
+      
+      // Hash password
+      const passwordHash = await hashPassword(password);
+      
+      // Generate verification token
+      const verificationToken = generateToken();
+      const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      // Get KYC photo URL if uploaded
+      const kycPhotoUrl = req.file ? `/uploads/kyc/${req.file.filename}` : undefined;
+      
+      // Create user
+      const user = await storage.createUser({
+        email,
+        passwordHash,
+        firstName,
+        lastName,
+        role: 'doctor',
+        organization,
+        medicalLicenseNumber,
+        licenseCountry,
+        kycPhotoUrl,
+        emailVerified: false,
+        verificationToken,
+        verificationTokenExpires,
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+        creditBalance: 0,
+      });
+      
+      // Send verification email
+      try {
+        await sendVerificationEmail(email, verificationToken, firstName);
+      } catch (emailError) {
+        console.error("Error sending verification email:", emailError);
+        // Don't fail signup if email fails
+      }
+      
+      res.json({
+        message: "Account created successfully. Please check your email to verify your account.",
+        userId: user.id,
+      });
+    } catch (error) {
+      console.error("Error in doctor signup:", error);
+      res.status(500).json({ message: "Failed to create account" });
+    }
+  });
+  
+  // Patient signup
+  app.post('/api/auth/signup/patient', async (req, res) => {
+    try {
+      const { email, password, firstName, lastName, ehrImportMethod, ehrPlatform, termsAccepted } = req.body;
+      
+      // Validation
+      if (!email || !password || !firstName || !lastName || !ehrImportMethod) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+      
+      if (!termsAccepted) {
+        return res.status(400).json({ message: "You must accept the terms and conditions" });
+      }
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: "Email already registered" });
+      }
+      
+      // Hash password
+      const passwordHash = await hashPassword(password);
+      
+      // Generate verification token
+      const verificationToken = generateToken();
+      const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      // Start 7-day free trial
+      const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      
+      // Create user
+      const user = await storage.createUser({
+        email,
+        passwordHash,
+        firstName,
+        lastName,
+        role: 'patient',
+        ehrImportMethod,
+        ehrPlatform,
+        emailVerified: false,
+        verificationToken,
+        verificationTokenExpires,
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+        subscriptionStatus: 'trialing',
+        trialEndsAt,
+        creditBalance: 20, // 20 free consultation credits during trial
+      });
+      
+      // Send verification email
+      try {
+        await sendVerificationEmail(email, verificationToken, firstName);
+      } catch (emailError) {
+        console.error("Error sending verification email:", emailError);
+      }
+      
+      res.json({
+        message: "Account created successfully. Please check your email to verify your account. Your 7-day free trial has started!",
+        userId: user.id,
+      });
+    } catch (error) {
+      console.error("Error in patient signup:", error);
+      res.status(500).json({ message: "Failed to create account" });
+    }
+  });
+  
+  // Login
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { email, password, rememberMe } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+      
+      // Get user by email
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      
+      // Compare password
+      const isPasswordValid = await comparePassword(password, user.passwordHash!);
+      if (!isPasswordValid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      
+      // Check if email is verified
+      if (!user.emailVerified) {
+        return res.status(403).json({ message: "Please verify your email before logging in" });
+      }
+      
+      // Set session
+      (req.session as any).userId = user.id;
+      
+      // Extend session if remember me is checked
+      if (rememberMe) {
+        req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+      }
+      
+      // Save session to ensure TTL is updated in the store
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      
+      res.json({
+        message: "Login successful",
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+        },
+      });
+    } catch (error) {
+      console.error("Error in login:", error);
+      res.status(500).json({ message: "Failed to log in" });
+    }
+  });
+  
+  // Logout
+  app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Failed to log out" });
+      }
+      res.json({ message: "Logged out successfully" });
+    });
+  });
+  
+  // Verify email
+  app.get('/api/auth/verify-email', async (req, res) => {
+    try {
+      const { token } = req.query;
+      
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ message: "Invalid verification token" });
+      }
+      
+      const user = await storage.verifyEmail(token);
+      if (!user) {
+        return res.status(400).json({ message: "Invalid or expired verification token" });
+      }
+      
+      res.json({ message: "Email verified successfully. You can now log in." });
+    } catch (error) {
+      console.error("Error verifying email:", error);
+      res.status(500).json({ message: "Failed to verify email" });
+    }
+  });
+  
+  // Request password reset
+  app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        // Don't reveal if email exists
+        return res.json({ message: "If that email is registered, you will receive a password reset link" });
+      }
+      
+      // Generate reset token
+      const resetToken = generateToken();
+      const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      
+      await storage.updateResetToken(user.id, resetToken, resetTokenExpires);
+      
+      // Send reset email
+      try {
+        await sendPasswordResetEmail(user.email!, resetToken, user.firstName!);
+      } catch (emailError) {
+        console.error("Error sending password reset email:", emailError);
+      }
+      
+      res.json({ message: "If that email is registered, you will receive a password reset link" });
+    } catch (error) {
+      console.error("Error in forgot password:", error);
+      res.status(500).json({ message: "Failed to process request" });
+    }
+  });
+  
+  // Reset password
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+      
+      if (!token || !newPassword) {
+        return res.status(400).json({ message: "Token and new password are required" });
+      }
+      
+      const passwordHash = await hashPassword(newPassword);
+      const user = await storage.resetPassword(token, passwordHash);
+      
+      if (!user) {
+        return res.status(400).json({ message: "Invalid or expired reset token" });
+      }
+      
+      res.json({ message: "Password reset successfully. You can now log in with your new password." });
+    } catch (error) {
+      console.error("Error resetting password:", error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Get current user
+  app.get('/api/auth/user', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
       const user = await storage.getUser(userId);
       res.json(user);
     } catch (error) {
@@ -24,36 +335,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // User role selection
-  app.post('/api/user/select-role', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { role, medicalLicenseNumber, termsAccepted } = req.body;
-      
-      if (!role || (role !== 'patient' && role !== 'doctor')) {
-        return res.status(400).json({ message: "Invalid role" });
-      }
-      
-      if (role === 'doctor' && !medicalLicenseNumber) {
-        return res.status(400).json({ message: "Medical license number required for doctors" });
-      }
-      
-      if (!termsAccepted) {
-        return res.status(400).json({ message: "Terms and conditions must be accepted" });
-      }
-      
-      const user = await storage.updateUserRole(userId, role, medicalLicenseNumber, termsAccepted);
-      res.json(user);
-    } catch (error) {
-      console.error("Error updating role:", error);
-      res.status(500).json({ message: "Failed to update role" });
-    }
-  });
-
   // Patient profile routes
   app.get('/api/patient/profile', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const profile = await storage.getPatientProfile(userId);
       res.json(profile || null);
     } catch (error) {
@@ -64,7 +349,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/patient/profile', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const profile = await storage.upsertPatientProfile({
         userId,
         ...req.body,
@@ -79,7 +364,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Doctor profile routes
   app.get('/api/doctor/profile', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const profile = await storage.getDoctorProfile(userId);
       res.json(profile || null);
     } catch (error) {
@@ -90,7 +375,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/doctor/profile', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const profile = await storage.upsertDoctorProfile({
         userId,
         ...req.body,
@@ -105,7 +390,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Daily followup routes
   app.get('/api/daily-followup/today', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const followup = await storage.getDailyFollowup(userId, new Date());
       res.json(followup || null);
     } catch (error) {
@@ -116,7 +401,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/daily-followup/history', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 30;
       const followups = await storage.getRecentFollowups(userId, limit);
       res.json(followups);
@@ -128,7 +413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/daily-followup', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const followup = await storage.createDailyFollowup({
         patientId: userId,
         ...req.body,
@@ -154,7 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Chat routes (Agent Clona & Assistant Lysa)
   app.get('/api/chat/messages', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const agentType = req.query.agent as string;
       const messages = await storage.getChatMessages(userId, agentType);
       res.json(messages);
@@ -166,7 +451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/chat/send', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const { content, agentType } = req.body;
 
       let session = await storage.getActiveSession(userId, agentType);
@@ -269,7 +554,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Chat session routes
   app.get('/api/chat/sessions', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const agentType = req.query.agent as string | undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
       const sessions = await storage.getPatientSessions(userId, agentType, limit);
@@ -359,7 +644,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Medication routes
   app.get('/api/medications', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const medications = await storage.getActiveMedications(userId);
       res.json(medications);
     } catch (error) {
@@ -370,7 +655,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/medications', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const medication = await storage.createMedication({
         patientId: userId,
         ...req.body,
@@ -385,7 +670,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dynamic tasks
   app.get('/api/tasks', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const tasks = await storage.getActiveTasks(userId);
       res.json(tasks);
     } catch (error) {
@@ -396,7 +681,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/tasks', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const task = await storage.createDynamicTask({
         patientId: userId,
         ...req.body,
@@ -422,7 +707,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auto journals
   app.get('/api/journals', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const journals = await storage.getRecentJournals(userId);
       res.json(journals);
     } catch (error) {
@@ -433,7 +718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/journals/auto-generate', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const followups = await storage.getRecentFollowups(userId, 1);
       const tasks = await storage.getActiveTasks(userId);
       
@@ -470,7 +755,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Calm activities
   app.get('/api/calm-activities', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const activities = await storage.getCalmActivities(userId);
       res.json(activities);
     } catch (error) {
@@ -494,7 +779,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Behavioral insights
   app.get('/api/behavioral-insights', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const insights = await storage.getRecentInsights(userId);
       res.json(insights);
     } catch (error) {
@@ -505,7 +790,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/behavioral-insights', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const insight = await storage.createBehavioralInsight({
         patientId: userId,
         ...req.body,
@@ -540,7 +825,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/doctor/research-consents/:id/review', isDoctor, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const { id } = req.params;
       const { status } = req.body;
       const consent = await storage.updateConsentStatus(id, status, userId);
@@ -553,7 +838,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/doctor/research-reports', isDoctor, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const reports = await storage.getResearchReports(userId);
       res.json(reports);
     } catch (error) {
@@ -564,7 +849,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/doctor/research-reports', isDoctor, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",
@@ -608,7 +893,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Educational content
   app.get('/api/education/progress', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const progress = await storage.getEducationalProgress(userId);
       res.json(progress);
     } catch (error) {
@@ -619,7 +904,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/education/progress', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const progress = await storage.upsertEducationalProgress({
         patientId: userId,
         ...req.body,
@@ -634,7 +919,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Psychological counseling session routes
   app.get('/api/counseling/sessions', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const sessions = await storage.getCounselingSessions(userId);
       res.json(sessions);
     } catch (error) {
@@ -645,7 +930,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/counseling/sessions', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const session = await storage.createCounselingSession({
         userId,
         ...req.body,
@@ -688,7 +973,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Training dataset routes (doctor only)
   app.get('/api/training/datasets', isAuthenticated, isDoctor, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const datasets = await storage.getTrainingDatasets(userId);
       res.json(datasets);
     } catch (error) {
@@ -699,7 +984,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/training/datasets', isAuthenticated, isDoctor, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const dataset = await storage.createTrainingDataset({
         uploadedBy: userId,
         ...req.body,
@@ -882,7 +1167,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Health insight consent routes
   app.get('/api/consents', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const consents = await storage.getHealthInsightConsents(userId);
       res.json(consents);
     } catch (error) {
@@ -893,7 +1178,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/consents/active', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const consents = await storage.getActiveConsents(userId);
       res.json(consents);
     } catch (error) {
@@ -904,7 +1189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/consents', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user!.id;
       const consent = await storage.createHealthInsightConsent({
         userId,
         ...req.body,
