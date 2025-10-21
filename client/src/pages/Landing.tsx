@@ -737,24 +737,24 @@ export default function Landing() {
               <h4 className="font-semibold mb-4">Resources</h4>
               <ul className="space-y-3">
                 <li>
-                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-faq">
+                  <Link href="/faq" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-faq">
                     FAQ
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-pricing">
+                  <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-pricing">
                     Pricing
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-documentation">
+                  <Link href="/documentation" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-documentation">
                     Documentation
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-api">
+                  <Link href="/api" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-footer-api">
                     API
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </div>
