@@ -76,11 +76,29 @@ export default function Privacy() {
               <li>Wearable device data (if you connect external health apps)</li>
             </ul>
 
+            <h3 className="text-lg font-semibold mt-6 mb-3">Chat Session Storage</h3>
+            <p className="text-muted-foreground leading-relaxed mb-3">
+              All conversations with Agent Clona are automatically saved as medical history sessions. This includes:
+            </p>
+            <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
+              <li>Complete message transcripts between you and Agent Clona</li>
+              <li>AI-generated session summaries for quick review</li>
+              <li>Extracted medical entities (symptoms, medications discussed)</li>
+              <li>Recommendations and health insights provided during conversations</li>
+              <li>Consultation requests made during chat sessions</li>
+            </ul>
+            <p className="text-muted-foreground leading-relaxed mt-3">
+              These sessions are stored securely with end-to-end encryption and can be reviewed by you and your assigned 
+              doctors (with your consent). You can export or delete your chat history at any time from your profile settings.
+            </p>
+
             <h3 className="text-lg font-semibold mt-6 mb-3">Account Information</h3>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li>Email address and authentication credentials</li>
               <li>Name and profile information</li>
               <li>For doctors: Medical license number and verification details</li>
+              <li>Subscription and billing information (for premium plans)</li>
+              <li>Credit balance and transaction history (for consultation services)</li>
             </ul>
           </section>
 
@@ -114,8 +132,17 @@ export default function Privacy() {
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li><strong>With Your Consent:</strong> When you explicitly authorize data sharing</li>
               <li><strong>Healthcare Providers:</strong> With doctors you've assigned or authorized</li>
+              <li>
+                <strong>Consultation Services:</strong> When you request a paid consultation, your relevant chat history 
+                and health data are shared with the consulting doctor for the duration of the session
+              </li>
+              <li>
+                <strong>Doctor-to-Doctor Consultations:</strong> If your primary doctor requests a consultation with another 
+                specialist, we require your explicit consent before sharing any health information with the consulting physician
+              </li>
               <li><strong>Legal Requirements:</strong> When required by law or to protect health and safety</li>
               <li><strong>Service Providers:</strong> HIPAA-compliant vendors who help us operate the platform</li>
+              <li><strong>Payment Processing:</strong> Stripe processes payments securely; they do not have access to your health data</li>
             </ul>
           </section>
 
@@ -144,6 +171,25 @@ export default function Privacy() {
               <li>HIPAA-compliant infrastructure and backup systems</li>
               <li>Employee training on privacy and security practices</li>
             </ul>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">Consultation and Payment Services</h2>
+            <h3 className="text-lg font-semibold mt-4 mb-3">Credit System</h3>
+            <p className="text-muted-foreground leading-relaxed mb-3">
+              Premium Agent Clona subscribers ($20/month) receive 20 consultation credits. Each 10-minute doctor consultation 
+              costs 20 credits. Credits are non-refundable and expire with subscription cancellation.
+            </p>
+            <h3 className="text-lg font-semibold mt-4 mb-3">Doctor Earnings</h3>
+            <p className="text-muted-foreground leading-relaxed mb-3">
+              Doctors earn credits from patient consultations, which are securely stored in their account. Doctors can 
+              withdraw earnings through Stripe payment gateway. All transactions are encrypted and HIPAA-compliant.
+            </p>
+            <h3 className="text-lg font-semibold mt-4 mb-3">Free Trial</h3>
+            <p className="text-muted-foreground leading-relaxed">
+              New users receive a 7-day free trial of premium features. Your payment method will be charged $20/month 
+              after the trial unless you cancel. No data collected during your trial will be deleted upon cancellation.
+            </p>
           </section>
 
           <section>
