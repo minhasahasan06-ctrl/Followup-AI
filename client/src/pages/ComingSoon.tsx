@@ -36,8 +36,8 @@ export default function ComingSoon() {
               Back to Home
             </Button>
           </Link>
-          <Link href="/">
-            <Button size="lg" onClick={() => window.location.href = "/api/login?role=patient&type=signup"} data-testid="button-signup-web">
+          <Link href="/signup/patient">
+            <Button size="lg" data-testid="button-signup-web">
               Sign Up for Web Platform
             </Button>
           </Link>

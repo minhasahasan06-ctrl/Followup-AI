@@ -5,7 +5,7 @@ import { ArrowLeft, Stethoscope, Check, TrendingUp, BarChart3 } from "lucide-rea
 
 export default function Pricing() {
   const handlePatientSignup = () => {
-    window.location.href = "/api/login";
+    window.location.href = "/signup/patient";
   };
 
   return (
