@@ -120,19 +120,30 @@ export async function setupAuth(app: Express) {
   });
 
   app.get("/api/callback", (req, res, next) => {
-    passport.authenticate(`replitauth:${req.hostname}`, (err: any, user: any) => {
+    passport.authenticate(`replitauth:${req.hostname}`, async (err: any, user: any) => {
       if (err) {
         return next(err);
       }
       if (!user) {
         return res.redirect("/api/login");
       }
-      req.logIn(user, (err) => {
+      req.logIn(user, async (err) => {
         if (err) {
           return next(err);
         }
-        // Redirect to stored returnTo or default to home
-        const returnTo = req.session.returnTo || "/";
+        
+        // Check if user has selected a role
+        const userId = user.claims.sub;
+        const dbUser = await storage.getUser(userId);
+        
+        // If no role selected, redirect to role selection
+        if (!dbUser?.role) {
+          return res.redirect("/role-selection");
+        }
+        
+        // Redirect to stored returnTo or default based on role
+        const defaultRedirect = dbUser.role === 'doctor' ? '/doctor-dashboard' : '/dashboard';
+        const returnTo = req.session.returnTo || defaultRedirect;
         delete req.session.returnTo;
         return res.redirect(returnTo);
       });
