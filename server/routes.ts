@@ -207,7 +207,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }));
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4",
+        model: "gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
           ...recentMessages,
@@ -299,7 +299,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const conversationText = messages.map(m => `${m.role}: ${m.content}`).join('\n');
       
       const summaryCompletion = await openai.chat.completions.create({
-        model: "gpt-4",
+        model: "gpt-4o",
         messages: [
           {
             role: "system",
@@ -440,7 +440,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const context = `Recent health data: ${followups.length > 0 ? JSON.stringify(followups[0]) : 'No data'}. Active tasks: ${tasks.map(t => t.title).join(', ')}`;
       
       const completion = await openai.chat.completions.create({
-        model: "gpt-4",
+        model: "gpt-4o",
         messages: [
           { role: "system", content: "You are a health journal assistant. Create a brief, empathetic health journal entry based on the patient's data." },
           { role: "user", content: context },
@@ -567,7 +567,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       
       const completion = await openai.chat.completions.create({
-        model: "gpt-4",
+        model: "gpt-4o",
         messages: [
           { role: "system", content: "You are an AI Research Agent. Generate medical research findings based on patient data patterns." },
           { role: "user", content: `Analyze: ${req.body.analysisType}. Generate research findings.` },

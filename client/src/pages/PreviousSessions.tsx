@@ -45,7 +45,7 @@ export default function PreviousSessions() {
   });
 
   const { data: messages } = useQuery<ChatMessage[]>({
-    queryKey: ['/api/chat/sessions', selectedSessionId],
+    queryKey: [`/api/chat/sessions/${selectedSessionId}`],
     enabled: !!selectedSessionId,
   });
 
