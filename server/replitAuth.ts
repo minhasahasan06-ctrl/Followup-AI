@@ -132,20 +132,8 @@ export async function setupAuth(app: Express) {
           return next(err);
         }
         
-        // Check if user has selected a role
-        const userId = user.claims.sub;
-        const dbUser = await storage.getUser(userId);
-        
-        // If no role selected, redirect to role selection
-        if (!dbUser?.role) {
-          return res.redirect("/role-selection");
-        }
-        
-        // Redirect to stored returnTo or default based on role
-        const defaultRedirect = dbUser.role === 'doctor' ? '/doctor-dashboard' : '/dashboard';
-        const returnTo = req.session.returnTo || defaultRedirect;
-        delete req.session.returnTo;
-        return res.redirect(returnTo);
+        // Always redirect to root and let React handle routing based on user state
+        return res.redirect("/");
       });
     })(req, res, next);
   });
