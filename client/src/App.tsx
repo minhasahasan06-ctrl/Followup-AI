@@ -12,6 +12,12 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import DoctorPortal from "@/pages/DoctorPortal";
+import Login from "@/pages/Login";
+import DoctorSignup from "@/pages/DoctorSignup";
+import PatientSignup from "@/pages/PatientSignup";
+import VerifyEmail from "@/pages/VerifyEmail";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import RoleSelection from "@/pages/RoleSelection";
 import ComingSoon from "@/pages/ComingSoon";
 import Terms from "@/pages/Terms";
@@ -75,8 +81,8 @@ function AuthenticatedApp() {
     "--sidebar-width-icon": "3rem",
   };
 
-  // Public routes that don't require auth (including role-selection)
-  const publicRoutes = ["/role-selection", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/"];
+  // Public routes that don't require auth
+  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/"];
   const isPublicRoute = publicRoutes.includes(location);
 
   // Only show loading on authenticated routes
@@ -95,7 +101,12 @@ function AuthenticatedApp() {
   if (!user || isPublicRoute) {
     return (
       <Switch>
-        <Route path="/role-selection" component={RoleSelection} />
+        <Route path="/login" component={Login} />
+        <Route path="/signup/doctor" component={DoctorSignup} />
+        <Route path="/signup/patient" component={PatientSignup} />
+        <Route path="/verify-email" component={VerifyEmail} />
+        <Route path="/forgot-password" component={ForgotPassword} />
+        <Route path="/reset-password" component={ResetPassword} />
         <Route path="/doctor-portal" component={DoctorPortal} />
         <Route path="/coming-soon" component={ComingSoon} />
         <Route path="/terms" component={Terms} />
@@ -113,11 +124,6 @@ function AuthenticatedApp() {
         <Route component={Landing} />
       </Switch>
     );
-  }
-
-  // Authenticated users without a role - redirect to role selection
-  if (!user.role) {
-    return <RoleSelection />;
   }
 
   const isDoctor = user.role === "doctor";

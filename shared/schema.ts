@@ -27,13 +27,34 @@ export const sessions = pgTable(
 // Users table with role-based access
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(),
-  firstName: varchar("first_name"),
-  lastName: varchar("last_name"),
+  email: varchar("email").unique().notNull(),
+  passwordHash: varchar("password_hash").notNull(),
+  firstName: varchar("first_name").notNull(),
+  lastName: varchar("last_name").notNull(),
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient' or 'doctor'
+  
+  // Doctor-specific fields
+  organization: varchar("organization"), // Hospital/clinic name for doctors
   medicalLicenseNumber: varchar("medical_license_number"),
+  licenseCountry: varchar("license_country"), // Country where license was issued
   licenseVerified: boolean("license_verified").default(false),
+  kycPhotoUrl: varchar("kyc_photo_url"), // KYC document/photo
+  
+  // Patient-specific fields
+  ehrPlatform: varchar("ehr_platform"), // Patient's chosen EHR platform
+  ehrImportMethod: varchar("ehr_import_method"), // 'manual', 'hospital', 'platform'
+  
+  // Email verification
+  emailVerified: boolean("email_verified").default(false),
+  verificationToken: varchar("verification_token"),
+  verificationTokenExpires: timestamp("verification_token_expires"),
+  
+  // Password reset
+  resetToken: varchar("reset_token"),
+  resetTokenExpires: timestamp("reset_token_expires"),
+  
+  // Terms and conditions
   termsAccepted: boolean("terms_accepted").default(false),
   termsAcceptedAt: timestamp("terms_accepted_at"),
   
