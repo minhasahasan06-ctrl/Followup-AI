@@ -6,13 +6,13 @@ import { SiLinkedin, SiX, SiDiscord } from "react-icons/si";
 
 export default function Landing() {
   const handlePatientSignup = () => {
-    // Will redirect to Replit Auth with patient context
-    window.location.href = "/api/login?role=patient&type=signup";
+    // Will redirect to Replit Auth and return to home page after login
+    window.location.href = "/api/login";
   };
 
   const handlePatientLogin = () => {
-    // Will redirect to Replit Auth with patient context
-    window.location.href = "/api/login?role=patient&type=login";
+    // Will redirect to Replit Auth and return to home page after login
+    window.location.href = "/api/login";
   };
 
   return (

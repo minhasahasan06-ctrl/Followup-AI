@@ -8,6 +8,13 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
+// Extend session data to include returnTo
+declare module 'express-session' {
+  interface SessionData {
+    returnTo?: string;
+  }
+}
+
 if (!process.env.REPLIT_DOMAINS) {
   throw new Error("Environment variable REPLIT_DOMAINS not provided");
 }
@@ -102,6 +109,10 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
+    // Store the returnTo parameter for redirect after login
+    if (req.query.returnTo && typeof req.query.returnTo === 'string') {
+      req.session.returnTo = req.query.returnTo;
+    }
     passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
@@ -109,9 +120,22 @@ export async function setupAuth(app: Express) {
   });
 
   app.get("/api/callback", (req, res, next) => {
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      successReturnToOrRedirect: "/",
-      failureRedirect: "/api/login",
+    passport.authenticate(`replitauth:${req.hostname}`, (err: any, user: any) => {
+      if (err) {
+        return next(err);
+      }
+      if (!user) {
+        return res.redirect("/api/login");
+      }
+      req.logIn(user, (err) => {
+        if (err) {
+          return next(err);
+        }
+        // Redirect to stored returnTo or default to home
+        const returnTo = req.session.returnTo || "/";
+        delete req.session.returnTo;
+        return res.redirect(returnTo);
+      });
     })(req, res, next);
   });
 

@@ -36,6 +36,16 @@ export const users = pgTable("users", {
   licenseVerified: boolean("license_verified").default(false),
   termsAccepted: boolean("terms_accepted").default(false),
   termsAcceptedAt: timestamp("terms_accepted_at"),
+  
+  // Stripe integration for subscriptions
+  stripeCustomerId: varchar("stripe_customer_id").unique(),
+  stripeSubscriptionId: varchar("stripe_subscription_id"),
+  subscriptionStatus: varchar("subscription_status"), // 'active', 'past_due', 'canceled', 'trialing'
+  trialEndsAt: timestamp("trial_ends_at"),
+  
+  // Credit balance (for consultations)
+  creditBalance: integer("credit_balance").default(0),
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -475,3 +485,123 @@ export const insertHealthInsightConsentSchema = createInsertSchema(healthInsight
 
 export type InsertHealthInsightConsent = z.infer<typeof insertHealthInsightConsentSchema>;
 export type HealthInsightConsent = typeof healthInsightConsents.$inferSelect;
+
+// Consultation requests and sessions
+export const consultations = pgTable("consultations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  doctorId: varchar("doctor_id").references(() => users.id),
+  sessionId: varchar("session_id").references(() => chatSessions.id), // Link to chat session that prompted consultation
+  
+  // Request details
+  requestReason: text("request_reason").notNull(),
+  urgencyLevel: varchar("urgency_level").default("normal"), // 'low', 'normal', 'high', 'urgent'
+  status: varchar("status").default("pending"), // 'pending', 'accepted', 'in_progress', 'completed', 'cancelled', 'rejected'
+  
+  // Financial
+  creditsCharged: integer("credits_charged").default(20), // 20 credits = 1 consultation
+  creditsPaid: boolean("credits_paid").default(false),
+  
+  // Session timing
+  duration: integer("duration").default(10), // minutes (default 10min)
+  scheduledAt: timestamp("scheduled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Notes and outcomes
+  doctorNotes: text("doctor_notes"),
+  recommendations: text("recommendations").array(),
+  followUpRequired: boolean("follow_up_required").default(false),
+  followUpDate: timestamp("follow_up_date"),
+  
+  // Ratings
+  patientRating: integer("patient_rating"), // 1-5 stars
+  patientFeedback: text("patient_feedback"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertConsultationSchema = createInsertSchema(consultations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertConsultation = z.infer<typeof insertConsultationSchema>;
+export type Consultation = typeof consultations.$inferSelect;
+
+// Doctor-to-doctor consultation consents
+export const doctorConsultationConsents = pgTable("doctor_consultation_consents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  requestingDoctorId: varchar("requesting_doctor_id").notNull().references(() => users.id),
+  consultingDoctorId: varchar("consulting_doctor_id").notNull().references(() => users.id),
+  
+  // Consent details
+  purpose: text("purpose").notNull(), // Why the consultation is needed
+  dataToShare: jsonb("data_to_share").$type<{
+    medicalHistory?: boolean;
+    labResults?: boolean;
+    medications?: boolean;
+    chatSessions?: boolean;
+    specificSessionIds?: string[];
+  }>(),
+  
+  // Consent status
+  consentStatus: varchar("consent_status").default("pending"), // 'pending', 'approved', 'denied', 'revoked'
+  consentGrantedAt: timestamp("consent_granted_at"),
+  consentRevokedAt: timestamp("consent_revoked_at"),
+  revokeReason: text("revoke_reason"),
+  
+  // Consultation details
+  consultationCompleted: boolean("consultation_completed").default(false),
+  consultationDate: timestamp("consultation_date"),
+  consultationNotes: text("consultation_notes"),
+  
+  // Expiry
+  expiresAt: timestamp("expires_at"), // Auto-revoke after certain time
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDoctorConsultationConsentSchema = createInsertSchema(doctorConsultationConsents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorConsultationConsent = z.infer<typeof insertDoctorConsultationConsentSchema>;
+export type DoctorConsultationConsent = typeof doctorConsultationConsents.$inferSelect;
+
+// Credit transactions log
+export const creditTransactions = pgTable("credit_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  transactionType: varchar("transaction_type").notNull(), // 'earned', 'spent', 'purchased', 'refunded', 'withdrawn'
+  amount: integer("amount").notNull(), // Can be negative for spending
+  balanceAfter: integer("balance_after").notNull(),
+  
+  // References
+  consultationId: varchar("consultation_id").references(() => consultations.id),
+  stripePaymentId: varchar("stripe_payment_id"), // For withdrawal transactions
+  
+  description: text("description"),
+  metadata: jsonb("metadata").$type<{
+    subscriptionPeriod?: string;
+    withdrawalAmount?: number;
+    patientName?: string;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCreditTransactionSchema = createInsertSchema(creditTransactions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCreditTransaction = z.infer<typeof insertCreditTransactionSchema>;
+export type CreditTransaction = typeof creditTransactions.$inferSelect;

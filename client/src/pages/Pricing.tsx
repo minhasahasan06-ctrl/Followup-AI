@@ -5,7 +5,7 @@ import { ArrowLeft, Stethoscope, Check, TrendingUp, BarChart3 } from "lucide-rea
 
 export default function Pricing() {
   const handlePatientSignup = () => {
-    window.location.href = "/api/auth/login";
+    window.location.href = "/api/login";
   };
 
   return (
@@ -51,11 +51,11 @@ export default function Pricing() {
               <TrendingUp className="h-5 w-5" />
               <span className="font-semibold">Patient Care Plans</span>
             </div>
-            <h2 className="text-3xl font-bold mb-3">Agent Clona & Assistant Lysa</h2>
-            <p className="text-muted-foreground">AI-powered health companions for patients</p>
+            <h2 className="text-3xl font-bold mb-3">Agent Clona Premium</h2>
+            <p className="text-muted-foreground">AI-powered health companion for immunocompromised patients</p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8 mb-16">
+          <div className="grid md:grid-cols-2 gap-8 mb-16">
             {/* Agent Clona Basic */}
             <Card className="relative">
               <CardHeader>
@@ -91,30 +91,35 @@ export default function Pricing() {
                 <CardTitle className="text-center">
                   <div className="text-sm font-semibold text-muted-foreground mb-2">AGENT CLONA</div>
                   <div className="text-lg font-bold mb-3">Premium</div>
-                  <div className="text-4xl font-bold mb-2">$19.99<span className="text-lg font-normal text-muted-foreground">/month</span></div>
+                  <div className="text-4xl font-bold mb-2">$20<span className="text-lg font-normal text-muted-foreground">/month</span></div>
+                  <div className="text-sm text-primary font-semibold">7-day free trial</div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-3 mb-6">
                   <li className="flex items-start gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Regular follow-up</span>
+                    <span className="text-sm"><strong>20 consultation credits/month</strong> (1 doctor consultation)</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Real time diagnosis and treatment plans</span>
+                    <span className="text-sm">Unlimited AI chat with Agent Clona</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Personalized recommendation on medication, nutrition & lifestyle</span>
+                    <span className="text-sm">Daily health follow-ups and monitoring</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Disease outcome prediction and prognosis counseling</span>
+                    <span className="text-sm">Personalized medication and lifestyle recommendations</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Review the treatment by patients consultant</span>
+                    <span className="text-sm">Wellness programs and counseling</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                    <span className="text-sm">AI-generated health summaries</span>
                   </li>
                 </ul>
                 <Button className="w-full" onClick={handlePatientSignup} data-testid="button-premium-signup">
@@ -123,49 +128,6 @@ export default function Pricing() {
               </CardContent>
             </Card>
 
-            {/* Assistant Lysa Premium */}
-            <Card className="relative">
-              <CardHeader>
-                <CardTitle className="text-center">
-                  <div className="text-sm font-semibold text-muted-foreground mb-2">ASSISTANT LYSA</div>
-                  <div className="text-lg font-bold mb-3">Premium</div>
-                  <div className="text-3xl font-bold mb-2">10%<span className="text-lg font-normal text-muted-foreground"> of consultation fee</span></div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3 mb-6">
-                  <li className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-chart-2 flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Unlimited chat with patients</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-chart-2 flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Free medical documentation</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-chart-2 flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Unlimited communication with consultants</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-chart-2 flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Access advanced searching or researching</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-chart-2 flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Keep up with latest guidelines</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-chart-2 flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">Early diagnosis assistance with accurate, guideline-based evaluation</span>
-                  </li>
-                </ul>
-                <Link href="/doctor-portal">
-                  <Button className="w-full" data-testid="button-lysa-signup">
-                    Get Started
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </section>
@@ -312,8 +274,8 @@ export default function Pricing() {
               <CardContent className="pt-6">
                 <h3 className="font-semibold mb-2">Is there a free trial for premium plans?</h3>
                 <p className="text-sm text-muted-foreground">
-                  We offer a 14-day free trial for Agent Clona Premium. Research Center plans include 
-                  a demo upon request. Contact our sales team to get started.
+                  Yes! Agent Clona Premium includes a 7-day free trial. You can cancel anytime during the trial 
+                  without being charged. Research Center plans include a demo upon request.
                 </p>
               </CardContent>
             </Card>
@@ -328,10 +290,21 @@ export default function Pricing() {
             </Card>
             <Card>
               <CardContent className="pt-6">
-                <h3 className="font-semibold mb-2">How does the consultation fee model work for Assistant Lysa?</h3>
+                <h3 className="font-semibold mb-2">How do consultation credits work?</h3>
                 <p className="text-sm text-muted-foreground">
-                  Assistant Lysa Premium charges 10% of each consultation fee. This aligns our success 
-                  with yours—the more patients you help, the more value we provide.
+                  Agent Clona Premium subscribers receive 20 consultation credits each month, which can be used 
+                  for one 10-minute consultation with a licensed doctor. Credits expire when you cancel your subscription 
+                  and don't roll over to the next billing period.
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <h3 className="font-semibold mb-2">What about doctors?</h3>
+                <p className="text-sm text-muted-foreground">
+                  Doctors can access Assistant Lysa and all doctor features completely free. Doctors earn credits 
+                  from patient consultations ($18 per 10-minute session) which can be withdrawn via Stripe. The platform 
+                  retains a 10% fee to cover operational costs.
                 </p>
               </CardContent>
             </Card>
