@@ -141,9 +141,52 @@ export const insertDailyFollowupSchema = createInsertSchema(dailyFollowups).omit
 export type InsertDailyFollowup = z.infer<typeof insertDailyFollowupSchema>;
 export type DailyFollowup = typeof dailyFollowups.$inferSelect;
 
-// Chat messages
+// Chat sessions - groups related messages together as medical history
+export const chatSessions = pgTable("chat_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  agentType: varchar("agent_type", { length: 20 }).notNull(), // 'clona' or 'lysa'
+  sessionTitle: varchar("session_title"), // Auto-generated or user-set title
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  endedAt: timestamp("ended_at"),
+  messageCount: integer("message_count").default(0),
+  
+  // Medical History Metadata
+  symptomsDiscussed: text("symptoms_discussed").array(), // List of symptoms mentioned
+  healthInsights: jsonb("health_insights").$type<{
+    keySymptoms?: string[];
+    recommendations?: string[];
+    concerns?: string[];
+    vitalSigns?: { type: string; value: string; status: string }[];
+    medications?: string[];
+  }>(),
+  aiSummary: text("ai_summary"), // AI-generated summary of the session
+  urgencyLevel: varchar("urgency_level"), // 'low', 'moderate', 'high', 'critical'
+  alertsGenerated: boolean("alerts_generated").default(false),
+  
+  // Doctor Review
+  reviewedByDoctor: boolean("reviewed_by_doctor").default(false),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  doctorNotes: text("doctor_notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
+export type ChatSession = typeof chatSessions.$inferSelect;
+
+// Chat messages - now linked to sessions
 export const chatMessages = pgTable("chat_messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id),
   userId: varchar("user_id").notNull().references(() => users.id),
   role: varchar("role", { length: 10 }).notNull(), // 'user' or 'assistant'
   content: text("content").notNull(),
