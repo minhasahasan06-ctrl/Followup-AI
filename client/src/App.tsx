@@ -20,6 +20,10 @@ import HIPAACompliance from "@/pages/HIPAACompliance";
 import EnterpriseContact from "@/pages/EnterpriseContact";
 import AssistantLysa from "@/pages/AssistantLysa";
 import AgentClona from "@/pages/AgentClona";
+import Pricing from "@/pages/Pricing";
+import FAQ from "@/pages/FAQ";
+import Documentation from "@/pages/Documentation";
+import API from "@/pages/API";
 import Dashboard from "@/pages/Dashboard";
 import Chat from "@/pages/Chat";
 import Wellness from "@/pages/Wellness";
@@ -80,7 +84,7 @@ function AuthenticatedApp() {
   }
 
   // Allow access to public routes even when authenticated
-  if (!user || location === "/doctor-portal" || location === "/coming-soon" || location === "/terms" || location === "/privacy" || location === "/hipaa" || location === "/enterprise-contact" || location === "/assistant-lysa" || location === "/agent-clona") {
+  if (!user || location === "/doctor-portal" || location === "/coming-soon" || location === "/terms" || location === "/privacy" || location === "/hipaa" || location === "/enterprise-contact" || location === "/assistant-lysa" || location === "/agent-clona" || location === "/pricing" || location === "/faq" || location === "/documentation" || location === "/api") {
     return (
       <Switch>
         <Route path="/doctor-portal" component={DoctorPortal} />
@@ -91,6 +95,10 @@ function AuthenticatedApp() {
         <Route path="/enterprise-contact" component={EnterpriseContact} />
         <Route path="/assistant-lysa" component={AssistantLysa} />
         <Route path="/agent-clona" component={AgentClona} />
+        <Route path="/pricing" component={Pricing} />
+        <Route path="/faq" component={FAQ} />
+        <Route path="/documentation" component={Documentation} />
+        <Route path="/api" component={API} />
         <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>
