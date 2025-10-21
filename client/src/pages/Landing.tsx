@@ -6,13 +6,11 @@ import { SiLinkedin, SiX, SiDiscord } from "react-icons/si";
 
 export default function Landing() {
   const handlePatientSignup = () => {
-    // Will redirect to Replit Auth and return to home page after login
-    window.location.href = "/api/login";
+    window.location.href = "/signup/patient";
   };
 
   const handlePatientLogin = () => {
-    // Will redirect to Replit Auth and return to home page after login
-    window.location.href = "/api/login";
+    window.location.href = "/login";
   };
 
   return (
@@ -715,7 +713,7 @@ export default function Landing() {
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
-                <Button size="lg" variant="outline" onClick={() => window.location.href = "/api/login?role=doctor&type=signup"} data-testid="button-doctor-signup">
+                <Button size="lg" variant="outline" onClick={() => window.location.href = "/signup/doctor"} data-testid="button-doctor-signup">
                   Sign Up as Doctor
                 </Button>
               </div>
