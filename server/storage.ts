@@ -3,6 +3,7 @@ import {
   patientProfiles,
   doctorProfiles,
   dailyFollowups,
+  chatSessions,
   chatMessages,
   medications,
   dynamicTasks,
@@ -23,6 +24,8 @@ import {
   type InsertDoctorProfile,
   type DailyFollowup,
   type InsertDailyFollowup,
+  type ChatSession,
+  type InsertChatSession,
   type ChatMessage,
   type InsertChatMessage,
   type Medication,
@@ -71,6 +74,15 @@ export interface IStorage {
   getRecentFollowups(patientId: string, limit?: number): Promise<DailyFollowup[]>;
   createDailyFollowup(followup: InsertDailyFollowup): Promise<DailyFollowup>;
   updateDailyFollowup(id: string, data: Partial<DailyFollowup>): Promise<DailyFollowup | undefined>;
+  
+  // Chat session operations
+  getActiveSession(patientId: string, agentType: string): Promise<ChatSession | undefined>;
+  getPatientSessions(patientId: string, agentType?: string, limit?: number): Promise<ChatSession[]>;
+  getSessionsInDateRange(patientId: string, startDate: Date, endDate: Date, agentType?: string): Promise<ChatSession[]>;
+  createSession(session: InsertChatSession): Promise<ChatSession>;
+  endSession(sessionId: string, aiSummary?: string, healthInsights?: any): Promise<ChatSession | undefined>;
+  updateSessionMetadata(sessionId: string, data: Partial<ChatSession>): Promise<ChatSession | undefined>;
+  getSessionMessages(sessionId: string): Promise<ChatMessage[]>;
   
   // Chat operations
   getChatMessages(userId: string, agentType: string, limit?: number): Promise<ChatMessage[]>;
@@ -282,6 +294,109 @@ export class DatabaseStorage implements IStorage {
       .where(eq(dailyFollowups.id, id))
       .returning();
     return followup;
+  }
+
+  // Chat session operations
+  async getActiveSession(patientId: string, agentType: string): Promise<ChatSession | undefined> {
+    const [session] = await db
+      .select()
+      .from(chatSessions)
+      .where(
+        and(
+          eq(chatSessions.patientId, patientId),
+          eq(chatSessions.agentType, agentType),
+          sql`${chatSessions.endedAt} IS NULL`
+        )
+      )
+      .orderBy(desc(chatSessions.startedAt))
+      .limit(1);
+    return session;
+  }
+
+  async getPatientSessions(patientId: string, agentType?: string, limit: number = 50): Promise<ChatSession[]> {
+    const conditions = [eq(chatSessions.patientId, patientId)];
+    if (agentType) {
+      conditions.push(eq(chatSessions.agentType, agentType));
+    }
+    
+    const sessions = await db
+      .select()
+      .from(chatSessions)
+      .where(and(...conditions))
+      .orderBy(desc(chatSessions.startedAt))
+      .limit(limit);
+    return sessions;
+  }
+
+  async getSessionsInDateRange(
+    patientId: string,
+    startDate: Date,
+    endDate: Date,
+    agentType?: string
+  ): Promise<ChatSession[]> {
+    const conditions = [
+      eq(chatSessions.patientId, patientId),
+      sql`${chatSessions.startedAt} >= ${startDate}`,
+      sql`${chatSessions.startedAt} <= ${endDate}`
+    ];
+    
+    if (agentType) {
+      conditions.push(eq(chatSessions.agentType, agentType));
+    }
+    
+    const sessions = await db
+      .select()
+      .from(chatSessions)
+      .where(and(...conditions))
+      .orderBy(desc(chatSessions.startedAt));
+    return sessions;
+  }
+
+  async createSession(sessionData: InsertChatSession): Promise<ChatSession> {
+    const [session] = await db
+      .insert(chatSessions)
+      .values(sessionData)
+      .returning();
+    return session;
+  }
+
+  async endSession(sessionId: string, aiSummary?: string, healthInsights?: any): Promise<ChatSession | undefined> {
+    const updateData: any = { 
+      endedAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    if (aiSummary) {
+      updateData.aiSummary = aiSummary;
+    }
+    if (healthInsights) {
+      updateData.healthInsights = healthInsights;
+    }
+    
+    const [session] = await db
+      .update(chatSessions)
+      .set(updateData)
+      .where(eq(chatSessions.id, sessionId))
+      .returning();
+    return session;
+  }
+
+  async updateSessionMetadata(sessionId: string, data: Partial<ChatSession>): Promise<ChatSession | undefined> {
+    const [session] = await db
+      .update(chatSessions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(chatSessions.id, sessionId))
+      .returning();
+    return session;
+  }
+
+  async getSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+    const messages = await db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.sessionId, sessionId))
+      .orderBy(chatMessages.createdAt);
+    return messages;
   }
 
   // Chat operations
