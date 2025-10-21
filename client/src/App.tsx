@@ -75,14 +75,9 @@ function AuthenticatedApp() {
     "--sidebar-width-icon": "3rem",
   };
 
-  // Public routes that don't require auth
-  const publicRoutes = ["/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/"];
+  // Public routes that don't require auth (including role-selection)
+  const publicRoutes = ["/role-selection", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/"];
   const isPublicRoute = publicRoutes.includes(location);
-
-  // Role selection is a special case - always accessible
-  if (location === "/role-selection") {
-    return <RoleSelection />;
-  }
 
   // Only show loading on authenticated routes
   if (isLoading && !isPublicRoute) {
@@ -96,10 +91,11 @@ function AuthenticatedApp() {
     );
   }
 
-  // Public routes for unauthenticated users
-  if (!user) {
+  // All routes available for unauthenticated users and public routes
+  if (!user || isPublicRoute) {
     return (
       <Switch>
+        <Route path="/role-selection" component={RoleSelection} />
         <Route path="/doctor-portal" component={DoctorPortal} />
         <Route path="/coming-soon" component={ComingSoon} />
         <Route path="/terms" component={Terms} />
@@ -119,7 +115,7 @@ function AuthenticatedApp() {
     );
   }
 
-  // Authenticated users without a role
+  // Authenticated users without a role - redirect to role selection
   if (!user.role) {
     return <RoleSelection />;
   }
