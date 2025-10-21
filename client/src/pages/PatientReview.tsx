@@ -15,8 +15,28 @@ import {
   Bot,
   AlertCircle,
   CheckCircle,
+  MessageSquare,
+  Clock,
+  FileText,
 } from "lucide-react";
 import type { User, DailyFollowup, Medication, ChatMessage } from "@shared/schema";
+
+interface ChatSession {
+  id: string;
+  patientId: string;
+  agentType: string;
+  sessionTitle: string | null;
+  startedAt: Date;
+  endedAt: Date | null;
+  messageCount: number | null;
+  symptomsDiscussed: string[] | null;
+  recommendations: string[] | null;
+  healthInsights: any;
+  aiSummary: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  doctorNotes: string | null;
+}
 
 export default function PatientReview() {
   const params = useParams();
@@ -36,6 +56,10 @@ export default function PatientReview() {
 
   const { data: aiInsights } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat/messages", { agent: "lysa", patientId }],
+  });
+
+  const { data: chatSessions } = useQuery<ChatSession[]>({
+    queryKey: [`/api/doctor/patient-sessions/${patientId}`],
   });
 
   const getInitials = (firstName?: string | null, lastName?: string | null) => {
@@ -74,7 +98,7 @@ export default function PatientReview() {
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Tabs defaultValue="timeline" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="timeline" data-testid="tab-timeline">
                 <Calendar className="h-4 w-4 mr-2" />
                 Timeline
@@ -86,6 +110,10 @@ export default function PatientReview() {
               <TabsTrigger value="medications" data-testid="tab-medications">
                 <Droplet className="h-4 w-4 mr-2" />
                 Medications
+              </TabsTrigger>
+              <TabsTrigger value="sessions" data-testid="tab-sessions">
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Chat Sessions
               </TabsTrigger>
             </TabsList>
 
@@ -235,6 +263,87 @@ export default function PatientReview() {
                       <p>No medications recorded</p>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="sessions">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Chat Sessions (Last Month)</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Recent conversations with Agent Clona
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[600px] pr-4">
+                    <div className="space-y-4">
+                      {chatSessions && chatSessions.length > 0 ? (
+                        chatSessions.map((session) => (
+                          <Card key={session.id} className="border-l-4 border-l-chart-2">
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between mb-3">
+                                <div>
+                                  <p className="font-medium mb-1">
+                                    {session.sessionTitle || "Untitled Session"}
+                                  </p>
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <Clock className="h-3 w-3" />
+                                    {new Date(session.startedAt).toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </div>
+                                </div>
+                                {session.messageCount && (
+                                  <Badge variant="secondary">
+                                    {session.messageCount} messages
+                                  </Badge>
+                                )}
+                              </div>
+
+                              {session.symptomsDiscussed && session.symptomsDiscussed.length > 0 && (
+                                <div className="mb-3">
+                                  <p className="text-xs font-medium text-muted-foreground mb-1">
+                                    Symptoms Discussed:
+                                  </p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {session.symptomsDiscussed.map((symptom, idx) => (
+                                      <Badge key={idx} variant="outline" className="text-xs">
+                                        {symptom}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {session.aiSummary && (
+                                <div className="mt-3 pt-3 border-t">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <FileText className="h-3 w-3 text-muted-foreground" />
+                                    <p className="text-xs font-medium text-muted-foreground">
+                                      AI Summary:
+                                    </p>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                    {session.aiSummary}
+                                  </p>
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                          <p>No chat sessions in the last month</p>
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
                 </CardContent>
               </Card>
             </TabsContent>
