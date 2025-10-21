@@ -24,6 +24,7 @@ import Pricing from "@/pages/Pricing";
 import FAQ from "@/pages/FAQ";
 import Documentation from "@/pages/Documentation";
 import API from "@/pages/API";
+import Blog from "@/pages/Blog";
 import Dashboard from "@/pages/Dashboard";
 import Chat from "@/pages/Chat";
 import Wellness from "@/pages/Wellness";
@@ -86,7 +87,7 @@ function AuthenticatedApp() {
   }
 
   // Allow access to public routes even when authenticated
-  if (!user || location === "/doctor-portal" || location === "/coming-soon" || location === "/terms" || location === "/privacy" || location === "/hipaa" || location === "/enterprise-contact" || location === "/assistant-lysa" || location === "/agent-clona" || location === "/pricing" || location === "/faq" || location === "/documentation" || location === "/api") {
+  if (!user || location === "/doctor-portal" || location === "/coming-soon" || location === "/terms" || location === "/privacy" || location === "/hipaa" || location === "/enterprise-contact" || location === "/assistant-lysa" || location === "/agent-clona" || location === "/pricing" || location === "/faq" || location === "/documentation" || location === "/api" || location === "/blog") {
     return (
       <Switch>
         <Route path="/doctor-portal" component={DoctorPortal} />
@@ -101,6 +102,7 @@ function AuthenticatedApp() {
         <Route path="/faq" component={FAQ} />
         <Route path="/documentation" component={Documentation} />
         <Route path="/api" component={API} />
+        <Route path="/blog" component={Blog} />
         <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>
