@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles, ClipboardList, BarChart3, FileText, Bell, Lock, Brain, Leaf, Zap, Award, Globe } from "lucide-react";
+import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles, ClipboardList, BarChart3, FileText, Bell, Lock, Brain, Leaf, Zap, Award, Globe, Pill, AlertTriangle } from "lucide-react";
 import { SiLinkedin, SiX, SiDiscord } from "react-icons/si";
 
 export default function Landing() {
@@ -61,6 +61,151 @@ export default function Landing() {
                   Doctor Portal
                 </Button>
               </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* Who We Serve - Immunocompromised Patients */}
+        <section className="py-20 px-6 bg-gradient-to-b from-background via-accent/5 to-background">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-16">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
+                <Users className="h-4 w-4" />
+                <span className="text-sm font-medium">Built for You</span>
+              </div>
+              <h3 className="text-4xl font-bold mb-4">Understanding Immunocompromised Health</h3>
+              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+                When your immune system isn't working at full strength, everyday health management becomes more complex—and more critical. 
+                That's where Followup AI comes in.
+              </p>
+            </div>
+
+            {/* What Does Immunocompromised Mean */}
+            <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-lg p-8 border-2 border-primary/20 mb-12">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
+                  <Shield className="h-6 w-6 text-primary" />
+                </div>
+                <h4 className="text-2xl font-semibold">What Does "Immunocompromised" Mean?</h4>
+              </div>
+              <p className="text-muted-foreground mb-6 text-lg">
+                Being immunocompromised means your body's natural defense system—your immune system—has been weakened or suppressed, 
+                making it harder to fight off infections, heal from injuries, or ward off illnesses that others might shake off easily. 
+                This can happen for many reasons, from medical treatments to underlying conditions.
+              </p>
+              <div className="bg-background/60 backdrop-blur rounded-lg p-6 border">
+                <p className="text-muted-foreground">
+                  <strong className="text-foreground">The Reality:</strong> Simple infections can become serious. Minor symptoms can signal major problems. 
+                  Medication timing matters more than ever. That's why daily monitoring isn't just helpful—it's essential for staying healthy and safe.
+                </p>
+              </div>
+            </div>
+
+            {/* Who Are Immunocompromised Patients */}
+            <div className="mb-12">
+              <h4 className="text-2xl font-semibold text-center mb-8">Who Are Immunocompromised Patients?</h4>
+              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card className="hover-elevate transition-all duration-300 group" data-testid="card-patient-type-transplant">
+                  <CardHeader>
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4 group-hover:bg-primary/20 transition-colors">
+                      <Heart className="h-7 w-7 text-primary" />
+                    </div>
+                    <CardTitle className="text-lg">Transplant Recipients</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      Organ, bone marrow, or stem cell transplant patients taking immunosuppressant medications to prevent rejection. 
+                      Your new organ is a gift—monitoring keeps it safe.
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="hover-elevate transition-all duration-300 group" data-testid="card-patient-type-cancer">
+                  <CardHeader>
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4 group-hover:bg-primary/20 transition-colors">
+                      <Activity className="h-7 w-7 text-primary" />
+                    </div>
+                    <CardTitle className="text-lg">Cancer Patients</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      Undergoing chemotherapy, radiation, or other cancer treatments that temporarily weaken the immune system. 
+                      Treatment is tough—we help you track side effects and stay strong.
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="hover-elevate transition-all duration-300 group" data-testid="card-patient-type-autoimmune">
+                  <CardHeader>
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4 group-hover:bg-primary/20 transition-colors">
+                      <Zap className="h-7 w-7 text-primary" />
+                    </div>
+                    <CardTitle className="text-lg">Autoimmune Conditions</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      Living with lupus, rheumatoid arthritis, Crohn's disease, or other autoimmune disorders requiring immune-suppressing medications. 
+                      Flare-ups are unpredictable—early detection changes everything.
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="hover-elevate transition-all duration-300 group" data-testid="card-patient-type-chronic">
+                  <CardHeader>
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4 group-hover:bg-primary/20 transition-colors">
+                      <Pill className="h-7 w-7 text-primary" />
+                    </div>
+                    <CardTitle className="text-lg">Chronic Conditions</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      Managing HIV/AIDS, primary immunodeficiency disorders, or taking long-term corticosteroids. 
+                      Your condition is lifelong—our support is too.
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+
+            {/* The Challenge */}
+            <div className="bg-card rounded-lg p-8 border">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                  <AlertTriangle className="h-6 w-6 text-primary" />
+                </div>
+                <h4 className="text-2xl font-semibold">The Daily Challenge</h4>
+              </div>
+              <div className="grid md:grid-cols-2 gap-6 mb-8">
+                <div className="space-y-4">
+                  <p className="text-muted-foreground">
+                    <strong className="text-foreground">You face unique risks:</strong> A common cold can become pneumonia. 
+                    A small cut can turn into a serious infection. Missed medication doses can have consequences.
+                  </p>
+                  <p className="text-muted-foreground">
+                    <strong className="text-foreground">Traditional healthcare falls short:</strong> Doctor visits are weeks apart. 
+                    Symptoms appear between appointments. By the time you see your doctor, problems may have escalated.
+                  </p>
+                </div>
+                <div className="space-y-4">
+                  <p className="text-muted-foreground">
+                    <strong className="text-foreground">The anxiety is real:</strong> Constant worry about infections. 
+                    Uncertainty about which symptoms matter. Fear of making the wrong call.
+                  </p>
+                  <p className="text-muted-foreground">
+                    <strong className="text-foreground">You need something better:</strong> Daily monitoring without daily doctor visits. 
+                    AI that learns your patterns and catches changes early. Support that's always there when you need it.
+                  </p>
+                </div>
+              </div>
+              <div className="text-center pt-6 border-t">
+                <p className="text-lg font-medium mb-4">
+                  That's exactly what Followup AI provides—personalized, intelligent, daily health monitoring designed specifically for immunocompromised patients.
+                </p>
+                <Button size="lg" onClick={handlePatientSignup} className="gap-2" data-testid="button-get-started-immunocompromised">
+                  Start Your Free Trial
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </section>
