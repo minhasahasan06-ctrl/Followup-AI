@@ -30,6 +30,14 @@ Preferred communication style: Simple, everyday language.
 **Component Architecture:**
 - Atomic design pattern with reusable UI components in `/client/src/components/ui`
 - Feature-specific components for health metrics, medications, chat, wellness activities
+- Dynamic Welcome Screen component for patient dashboard:
+  - Time-based personalized greetings (morning, afternoon, evening, night)
+  - 10 rotating inspirational quotes for motivation
+  - 8 calming nature images from Unsplash for visual serenity
+  - Health insights customized to patient data
+  - Music notes for ambient suggestions
+  - Content varies on each visit for continued engagement
+  - Smooth animations using framer-motion
 - Context-based theming with `ThemeProvider`
 - Sidebar navigation with role-based menu items
 
@@ -45,8 +53,8 @@ Preferred communication style: Simple, everyday language.
   - `/doctor-portal` - Doctor-focused landing page with professional features
 - Authentication flow: Landing/Doctor Portal → Sign Up/Login → Replit Auth → Role Selection → Dashboard
 - Role-based routing: separate router components for patients vs. doctors
-- Patient routes: Dashboard, Chat, Previous Sessions (Medical History), Wellness, Counseling, App Connections (Consent Management), EHR Integrations, Wearable Devices, Referrals, Wallet, Files, Profile
-- Doctor routes: Doctor Dashboard, Patient Review (with Chat Sessions tab), Research Center, Chat, Counseling, Referrals, Wallet, Admin Verification (admin only), Profile
+- Patient routes: Dashboard (with Dynamic Welcome), Chat, Previous Sessions (Medical History), Wellness, Counseling, App Connections (Consent Management), EHR Integrations, Wearable Devices, Referrals, Wallet, Files, Two-Factor Auth, Profile
+- Doctor routes: Doctor Dashboard, Patient Review (with Chat Sessions tab), Research Center, Chat, Counseling, Referrals, Wallet, Admin Verification (admin only), Two-Factor Auth, Profile
 - Protected routes requiring authentication via Replit Auth
 
 **Landing Page Features:**
@@ -78,6 +86,12 @@ Preferred communication style: Simple, everyday language.
 **Authentication & Authorization:**
 - Replit Auth with OpenID Connect (OIDC) integration
 - Passport.js strategy for authentication flow
+- Two-Factor Authentication (2FA) system:
+  - TOTP-based authentication using speakeasy library
+  - QR code generation for easy mobile app setup (Google Authenticator, Authy, etc.)
+  - 10 backup codes for account recovery
+  - Enable/disable capability for both patients and doctors
+  - Verification flow integrated into settings page
 - Role-based access control (patient vs. doctor)
 - Session management with PostgreSQL-backed session store
 - Medical license verification for doctor accounts
@@ -90,6 +104,14 @@ Preferred communication style: Simple, everyday language.
 
 **AI Integration:**
 - OpenAI API (gpt-4o model) for chat functionality with Agent Clona and Assistant Lysa
+- Agent Clona personality optimized for elderly immunocompromised patients:
+  - Warm, friendly, and conversational tone (like a caring friend)
+  - Always greets users warmly and asks how they're feeling
+  - Empathetic and encouraging - celebrates small health wins
+  - Uses simple, everyday language instead of medical jargon
+  - Patient and understanding for elderly users
+  - Engaging in genuine dialogue, not just Q&A
+  - Ends conversations with warm wishes and gentle reminders
 - Sentiment analysis using `sentiment` library for emotional context
 - Context-aware responses based on user role (patient vs. doctor)
 - Medical entity extraction from chat messages (symptoms, medications)
