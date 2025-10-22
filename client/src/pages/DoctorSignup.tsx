@@ -249,6 +249,12 @@ export default function DoctorSignup() {
                 />
               </div>
 
+              <div className="p-3 border border-primary/30 bg-primary/5 rounded-md">
+                <p className="text-sm text-muted-foreground">
+                  <strong className="text-foreground">License Verification:</strong> Your medical license will be manually verified by our administrators against your country's professional medical registry. This process typically takes 2-3 business days. You'll receive an email notification once verification is complete.
+                </p>
+              </div>
+
               <FormField
                 control={form.control}
                 name="kycPhoto"
