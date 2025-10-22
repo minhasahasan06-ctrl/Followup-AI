@@ -3,6 +3,7 @@ import { MedicationCard } from "@/components/MedicationCard";
 import { FollowUpCard } from "@/components/FollowUpCard";
 import { ReminderCard } from "@/components/ReminderCard";
 import { EmergencyAlert } from "@/components/EmergencyAlert";
+import DynamicWelcome from "@/components/DynamicWelcome";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -46,9 +47,12 @@ export default function Dashboard() {
         />
       )}
 
+      {/* Dynamic Welcome Screen */}
+      <DynamicWelcome userName={user?.firstName} />
+
       <div>
-        <h1 className="text-4xl font-semibold mb-2" data-testid="text-welcome-message">Welcome back, {user?.firstName || "Patient"}</h1>
-        <p className="text-muted-foreground" data-testid="text-summary-subtitle">Here's your health summary for today</p>
+        <h2 className="text-2xl font-semibold mb-2" data-testid="text-health-summary">Today's Health Summary</h2>
+        <p className="text-muted-foreground" data-testid="text-summary-subtitle">Your daily metrics and activities</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" data-testid="grid-health-metrics">

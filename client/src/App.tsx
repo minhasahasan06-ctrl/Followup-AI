@@ -47,6 +47,7 @@ import WearableDevices from "@/pages/WearableDevices";
 import Referrals from "@/pages/Referrals";
 import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
+import TwoFactorAuth from "@/pages/TwoFactorAuth";
 
 function PatientRouter() {
   return (
@@ -62,6 +63,7 @@ function PatientRouter() {
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/files" component={Files} />
+      <Route path="/security/2fa" component={TwoFactorAuth} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
     </Switch>
@@ -79,6 +81,7 @@ function DoctorRouter() {
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/admin/verify-doctors" component={AdminVerification} />
+      <Route path="/security/2fa" component={TwoFactorAuth} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
     </Switch>
