@@ -110,7 +110,7 @@ export async function sendVerificationEmail(email: string, token: string, firstN
     const verificationUrl = `${process.env.APP_URL || 'http://localhost:5000'}/verify-email?token=${token}`;
     
     const result = await client.emails.send({
-      from: fromEmail || 'Followup AI <onboarding@resend.dev>',
+      from: 'Followup AI <onboarding@resend.dev>',
       to: email,
       subject: "Verify Your Followup AI Account",
       html: `
@@ -144,7 +144,7 @@ export async function sendPasswordResetEmail(email: string, token: string, first
   
   try {
     await client.emails.send({
-      from: fromEmail || 'Followup AI <onboarding@resend.dev>',
+      from: 'Followup AI <onboarding@resend.dev>',
       to: email,
       subject: "Reset Your Followup AI Password",
       html: `
