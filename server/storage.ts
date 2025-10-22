@@ -20,6 +20,7 @@ import {
   wearableIntegrations,
   referrals,
   creditTransactions,
+  twoFactorAuth,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -62,6 +63,8 @@ import {
   type InsertReferral,
   type CreditTransaction,
   type InsertCreditTransaction,
+  type TwoFactorAuth,
+  type InsertTwoFactorAuth,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -191,6 +194,12 @@ export interface IStorage {
   // Admin verification operations
   getPendingDoctorVerifications(): Promise<Array<User & { doctorProfile?: DoctorProfile }>>;
   verifyDoctorLicense(userId: string, verified: boolean, notes: string, verifiedBy: string): Promise<DoctorProfile | undefined>;
+  
+  // Two-Factor Authentication operations
+  get2FASettings(userId: string): Promise<TwoFactorAuth | undefined>;
+  create2FASettings(settings: InsertTwoFactorAuth): Promise<TwoFactorAuth>;
+  update2FASettings(userId: string, data: Partial<TwoFactorAuth>): Promise<TwoFactorAuth | undefined>;
+  delete2FASettings(userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1067,6 +1076,39 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     return updated;
+  }
+
+  // Two-Factor Authentication operations
+  async get2FASettings(userId: string): Promise<TwoFactorAuth | undefined> {
+    const [settings] = await db
+      .select()
+      .from(twoFactorAuth)
+      .where(eq(twoFactorAuth.userId, userId));
+    return settings;
+  }
+
+  async create2FASettings(settingsData: InsertTwoFactorAuth): Promise<TwoFactorAuth> {
+    const [settings] = await db
+      .insert(twoFactorAuth)
+      .values(settingsData)
+      .returning();
+    return settings;
+  }
+
+  async update2FASettings(userId: string, data: Partial<TwoFactorAuth>): Promise<TwoFactorAuth | undefined> {
+    const [settings] = await db
+      .update(twoFactorAuth)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(twoFactorAuth.userId, userId))
+      .returning();
+    return settings;
+  }
+
+  async delete2FASettings(userId: string): Promise<boolean> {
+    const result = await db
+      .delete(twoFactorAuth)
+      .where(eq(twoFactorAuth.userId, userId));
+    return !!result;
   }
 }
 

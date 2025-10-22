@@ -8,6 +8,9 @@ import Sentiment from "sentiment";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import speakeasy from "speakeasy";
+import QRCode from "qrcode";
+import crypto from "crypto";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
@@ -320,6 +323,222 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error resetting password:", error);
       res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // ============== TWO-FACTOR AUTHENTICATION ROUTES ==============
+  
+  // Get 2FA status
+  app.get('/api/2fa/status', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const settings = await storage.get2FASettings(userId);
+      
+      res.json({
+        enabled: settings?.enabled || false,
+        hasBackupCodes: (settings?.backupCodes?.length || 0) > 0,
+      });
+    } catch (error) {
+      console.error("Error fetching 2FA status:", error);
+      res.status(500).json({ message: "Failed to fetch 2FA status" });
+    }
+  });
+  
+  // Setup 2FA - Generate secret and QR code
+  app.post('/api/2fa/setup', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Check if 2FA is already enabled
+      const existing = await storage.get2FASettings(userId);
+      if (existing?.enabled) {
+        return res.status(400).json({ message: "2FA is already enabled" });
+      }
+      
+      // Generate secret
+      const secret = speakeasy.generateSecret({
+        name: `Followup AI (${user.email})`,
+        issuer: 'Followup AI',
+        length: 32,
+      });
+      
+      // Generate backup codes
+      const backupCodes = Array.from({ length: 10 }, () => 
+        crypto.randomBytes(4).toString('hex').toUpperCase()
+      );
+      
+      // Hash backup codes before storing
+      const hashedBackupCodes = await Promise.all(
+        backupCodes.map(code => hashPassword(code))
+      );
+      
+      // Create or update 2FA settings (not enabled yet)
+      if (existing) {
+        await storage.update2FASettings(userId, {
+          totpSecret: secret.base32,
+          backupCodes: hashedBackupCodes,
+          enabled: false,
+        });
+      } else {
+        await storage.create2FASettings({
+          userId,
+          totpSecret: secret.base32,
+          backupCodes: hashedBackupCodes,
+          enabled: false,
+        });
+      }
+      
+      // Generate QR code
+      const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url!);
+      
+      res.json({
+        secret: secret.base32,
+        qrCode: qrCodeUrl,
+        backupCodes, // Send plain text codes only once
+      });
+    } catch (error) {
+      console.error("Error setting up 2FA:", error);
+      res.status(500).json({ message: "Failed to setup 2FA" });
+    }
+  });
+  
+  // Enable 2FA - Verify token and enable
+  app.post('/api/2fa/enable', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ message: "Token is required" });
+      }
+      
+      const settings = await storage.get2FASettings(userId);
+      if (!settings) {
+        return res.status(400).json({ message: "2FA not set up. Please run setup first." });
+      }
+      
+      if (settings.enabled) {
+        return res.status(400).json({ message: "2FA is already enabled" });
+      }
+      
+      // Verify token
+      const verified = speakeasy.totp.verify({
+        secret: settings.totpSecret,
+        encoding: 'base32',
+        token,
+        window: 2,
+      });
+      
+      if (!verified) {
+        return res.status(400).json({ message: "Invalid token" });
+      }
+      
+      // Enable 2FA
+      await storage.update2FASettings(userId, {
+        enabled: true,
+        enabledAt: new Date(),
+      });
+      
+      res.json({ message: "2FA enabled successfully" });
+    } catch (error) {
+      console.error("Error enabling 2FA:", error);
+      res.status(500).json({ message: "Failed to enable 2FA" });
+    }
+  });
+  
+  // Disable 2FA
+  app.post('/api/2fa/disable', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { password } = req.body;
+      
+      if (!password) {
+        return res.status(400).json({ message: "Password is required" });
+      }
+      
+      // Verify password
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const validPassword = await comparePassword(password, user.passwordHash!);
+      if (!validPassword) {
+        return res.status(400).json({ message: "Invalid password" });
+      }
+      
+      // Delete 2FA settings
+      await storage.delete2FASettings(userId);
+      
+      res.json({ message: "2FA disabled successfully" });
+    } catch (error) {
+      console.error("Error disabling 2FA:", error);
+      res.status(500).json({ message: "Failed to disable 2FA" });
+    }
+  });
+  
+  // Verify 2FA token (for login or wallet operations)
+  app.post('/api/2fa/verify', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ message: "Token is required" });
+      }
+      
+      const settings = await storage.get2FASettings(userId);
+      if (!settings || !settings.enabled) {
+        return res.status(400).json({ message: "2FA is not enabled" });
+      }
+      
+      // Try TOTP verification
+      const totpVerified = speakeasy.totp.verify({
+        secret: settings.totpSecret,
+        encoding: 'base32',
+        token,
+        window: 2,
+      });
+      
+      if (totpVerified) {
+        await storage.update2FASettings(userId, {
+          lastUsedAt: new Date(),
+        });
+        return res.json({ verified: true });
+      }
+      
+      // Try backup code verification
+      if (settings.backupCodes && settings.backupCodes.length > 0) {
+        for (let i = 0; i < settings.backupCodes.length; i++) {
+          const isMatch = await comparePassword(token, settings.backupCodes[i]);
+          if (isMatch) {
+            // Remove used backup code
+            const newBackupCodes = [...settings.backupCodes];
+            newBackupCodes.splice(i, 1);
+            
+            await storage.update2FASettings(userId, {
+              backupCodes: newBackupCodes,
+              lastUsedAt: new Date(),
+            });
+            
+            return res.json({ 
+              verified: true,
+              backupCodeUsed: true,
+              remainingBackupCodes: newBackupCodes.length,
+            });
+          }
+        }
+      }
+      
+      res.status(400).json({ message: "Invalid token or backup code" });
+    } catch (error) {
+      console.error("Error verifying 2FA token:", error);
+      res.status(500).json({ message: "Failed to verify token" });
     }
   });
 
