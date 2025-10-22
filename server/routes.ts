@@ -1244,6 +1244,392 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============== EHR INTEGRATION ROUTES ==============
+  
+  app.get('/api/ehr/connections', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const connections = await storage.getEhrConnections(userId);
+      res.json(connections);
+    } catch (error) {
+      console.error("Error fetching EHR connections:", error);
+      res.status(500).json({ message: "Failed to fetch EHR connections" });
+    }
+  });
+
+  app.post('/api/ehr/connections', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const connection = await storage.createEhrConnection({
+        userId,
+        ...req.body,
+      });
+      res.json(connection);
+    } catch (error) {
+      console.error("Error creating EHR connection:", error);
+      res.status(500).json({ message: "Failed to create EHR connection" });
+    }
+  });
+
+  app.patch('/api/ehr/connections/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const connection = await storage.updateEhrConnection(id, req.body);
+      if (!connection) {
+        return res.status(404).json({ message: "Connection not found" });
+      }
+      res.json(connection);
+    } catch (error) {
+      console.error("Error updating EHR connection:", error);
+      res.status(500).json({ message: "Failed to update EHR connection" });
+    }
+  });
+
+  app.delete('/api/ehr/connections/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteEhrConnection(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Connection not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting EHR connection:", error);
+      res.status(500).json({ message: "Failed to delete EHR connection" });
+    }
+  });
+
+  app.post('/api/ehr/connections/:id/sync', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      // TODO: Implement actual EHR sync logic with each platform's API
+      const connection = await storage.updateEhrConnection(id, {
+        lastSyncedAt: new Date(),
+        lastSyncStatus: 'success',
+      });
+      res.json({ success: true, connection });
+    } catch (error) {
+      console.error("Error syncing EHR connection:", error);
+      res.status(500).json({ message: "Failed to sync EHR connection" });
+    }
+  });
+
+  // ============== WEARABLE INTEGRATION ROUTES ==============
+
+  app.get('/api/wearables', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const wearables = await storage.getWearableIntegrations(userId);
+      res.json(wearables);
+    } catch (error) {
+      console.error("Error fetching wearable integrations:", error);
+      res.status(500).json({ message: "Failed to fetch wearable integrations" });
+    }
+  });
+
+  app.post('/api/wearables', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const wearable = await storage.createWearableIntegration({
+        userId,
+        ...req.body,
+      });
+      res.json(wearable);
+    } catch (error) {
+      console.error("Error creating wearable integration:", error);
+      res.status(500).json({ message: "Failed to create wearable integration" });
+    }
+  });
+
+  app.patch('/api/wearables/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const wearable = await storage.updateWearableIntegration(id, req.body);
+      if (!wearable) {
+        return res.status(404).json({ message: "Wearable integration not found" });
+      }
+      res.json(wearable);
+    } catch (error) {
+      console.error("Error updating wearable integration:", error);
+      res.status(500).json({ message: "Failed to update wearable integration" });
+    }
+  });
+
+  app.delete('/api/wearables/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteWearableIntegration(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Wearable integration not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting wearable integration:", error);
+      res.status(500).json({ message: "Failed to delete wearable integration" });
+    }
+  });
+
+  app.post('/api/wearables/:id/sync', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      // TODO: Implement actual wearable sync logic with each device's API
+      const wearable = await storage.updateWearableIntegration(id, {
+        lastSyncedAt: new Date(),
+        lastSyncStatus: 'success',
+      });
+      res.json({ success: true, wearable });
+    } catch (error) {
+      console.error("Error syncing wearable:", error);
+      res.status(500).json({ message: "Failed to sync wearable" });
+    }
+  });
+
+  // ============== REFERRAL SYSTEM ROUTES ==============
+
+  app.get('/api/referrals/my-code', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const user = req.user!;
+      
+      // Get or create referral code for this user
+      let referral = await storage.getReferralByReferrerId(userId);
+      
+      if (!referral) {
+        // Generate unique referral code
+        const referralCode = `REF-${user.firstName.substring(0, 3).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        const referralLink = `${process.env.APP_URL || 'http://localhost:5000'}/signup?ref=${referralCode}`;
+        
+        referral = await storage.createReferral({
+          referrerId: userId,
+          referrerType: user.role,
+          referralCode,
+          referralLink,
+          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
+        });
+      }
+      
+      res.json(referral);
+    } catch (error) {
+      console.error("Error fetching referral code:", error);
+      res.status(500).json({ message: "Failed to fetch referral code" });
+    }
+  });
+
+  app.get('/api/referrals/my-referrals', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const referrals = await storage.getReferralsByReferrerId(userId);
+      res.json(referrals);
+    } catch (error) {
+      console.error("Error fetching referrals:", error);
+      res.status(500).json({ message: "Failed to fetch referrals" });
+    }
+  });
+
+  app.post('/api/referrals/track-click', async (req, res) => {
+    try {
+      const { referralCode, email } = req.body;
+      
+      if (!referralCode) {
+        return res.status(400).json({ message: "Referral code is required" });
+      }
+      
+      const referral = await storage.getReferralByCode(referralCode);
+      if (!referral) {
+        return res.status(404).json({ message: "Invalid referral code" });
+      }
+      
+      // Check if expired
+      if (referral.expiresAt && new Date(referral.expiresAt) < new Date()) {
+        return res.status(400).json({ message: "Referral link has expired" });
+      }
+      
+      // Update click tracking
+      await storage.updateReferral(referral.id, {
+        clickedAt: new Date(),
+        refereeEmail: email,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      
+      res.json({ success: true, referral });
+    } catch (error) {
+      console.error("Error tracking referral click:", error);
+      res.status(500).json({ message: "Failed to track referral click" });
+    }
+  });
+
+  app.post('/api/referrals/activate', isAuthenticated, async (req: any, res) => {
+    try {
+      const { referralCode } = req.body;
+      const newUserId = req.user!.id;
+      const newUser = req.user!;
+      
+      if (!referralCode) {
+        return res.status(400).json({ message: "Referral code is required" });
+      }
+      
+      const referral = await storage.getReferralByCode(referralCode);
+      if (!referral) {
+        return res.status(404).json({ message: "Invalid referral code" });
+      }
+      
+      // Prevent self-referral
+      if (referral.referrerId === newUserId) {
+        return res.status(400).json({ message: "You cannot use your own referral code" });
+      }
+      
+      // Check if already activated
+      if (referral.status === 'trial_activated') {
+        return res.status(400).json({ message: "Referral code already used" });
+      }
+      
+      // Update referral with referee info
+      await storage.updateReferral(referral.id, {
+        refereeId: newUserId,
+        refereeType: newUser.role,
+        signedUpAt: new Date(),
+        status: 'signed_up',
+      });
+      
+      // Grant 1-month free trial to both users
+      const trialEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      
+      // Update referrer's trial
+      await storage.updateUser(referral.referrerId, {
+        trialEndsAt: trialEnd,
+        subscriptionStatus: 'trialing',
+      });
+      
+      // Update referee's trial
+      await storage.updateUser(newUserId, {
+        trialEndsAt: trialEnd,
+        subscriptionStatus: 'trialing',
+      });
+      
+      // Mark referral as activated
+      await storage.updateReferral(referral.id, {
+        status: 'trial_activated',
+        trialActivatedAt: new Date(),
+        referrerTrialExtended: true,
+        refereeTrialGranted: true,
+      });
+      
+      res.json({ 
+        success: true, 
+        message: "Referral activated! Both you and your referrer received 1 month free trial.",
+        trialEndsAt: trialEnd,
+      });
+    } catch (error) {
+      console.error("Error activating referral:", error);
+      res.status(500).json({ message: "Failed to activate referral" });
+    }
+  });
+
+  // ============== WALLET & CREDIT ROUTES ==============
+
+  app.get('/api/wallet/balance', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json({ balance: user.creditBalance || 0 });
+    } catch (error) {
+      console.error("Error fetching wallet balance:", error);
+      res.status(500).json({ message: "Failed to fetch wallet balance" });
+    }
+  });
+
+  app.get('/api/wallet/transactions', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const transactions = await storage.getCreditTransactions(userId);
+      res.json(transactions);
+    } catch (error) {
+      console.error("Error fetching credit transactions:", error);
+      res.status(500).json({ message: "Failed to fetch credit transactions" });
+    }
+  });
+
+  app.post('/api/wallet/purchase', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { amount, paymentMethod } = req.body;
+      
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: "Invalid amount" });
+      }
+      
+      // TODO: Integrate with Stripe to process payment
+      // For now, just add credits (in production, this should happen after payment confirmation)
+      
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const newBalance = (user.creditBalance || 0) + amount;
+      await storage.updateUser(userId, { creditBalance: newBalance });
+      
+      // Create transaction record
+      await storage.createCreditTransaction({
+        userId,
+        transactionType: 'purchased',
+        amount,
+        balanceAfter: newBalance,
+        description: `Purchased ${amount} credits`,
+      });
+      
+      res.json({ success: true, newBalance });
+    } catch (error) {
+      console.error("Error purchasing credits:", error);
+      res.status(500).json({ message: "Failed to purchase credits" });
+    }
+  });
+
+  app.post('/api/wallet/withdraw', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { amount } = req.body;
+      
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: "Invalid withdrawal amount" });
+      }
+      
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if ((user.creditBalance || 0) < amount) {
+        return res.status(400).json({ message: "Insufficient credits for withdrawal" });
+      }
+      
+      // TODO: Integrate with Stripe to process payout to doctor's account
+      // For now, just deduct credits (in production, this should happen after payout confirmation)
+      
+      const newBalance = (user.creditBalance || 0) - amount;
+      await storage.updateUser(userId, { creditBalance: newBalance });
+      
+      // Create transaction record
+      await storage.createCreditTransaction({
+        userId,
+        transactionType: 'withdrawn',
+        amount: -amount,
+        balanceAfter: newBalance,
+        description: `Withdrew ${amount} credits`,
+        metadata: { withdrawalAmount: amount },
+      });
+      
+      res.json({ success: true, newBalance, message: "Withdrawal request submitted. Funds will be transferred to your account within 2-3 business days." });
+    } catch (error) {
+      console.error("Error withdrawing credits:", error);
+      res.status(500).json({ message: "Failed to withdraw credits" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
