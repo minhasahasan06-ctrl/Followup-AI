@@ -16,6 +16,9 @@ import {
   MessageCircle,
   Link as LinkIcon,
   History,
+  Watch,
+  Wallet as WalletIcon,
+  Gift,
 } from "lucide-react";
 import {
   Sidebar,
@@ -67,6 +70,26 @@ const patientItems = [
     icon: LinkIcon,
   },
   {
+    title: "EHR Integrations",
+    url: "/ehr-integrations",
+    icon: FileText,
+  },
+  {
+    title: "Wearable Devices",
+    url: "/wearables",
+    icon: Watch,
+  },
+  {
+    title: "Referrals",
+    url: "/referrals",
+    icon: Gift,
+  },
+  {
+    title: "Wallet",
+    url: "/wallet",
+    icon: WalletIcon,
+  },
+  {
     title: "Medical Files",
     url: "/files",
     icon: FileText,
@@ -99,6 +122,16 @@ const doctorItems = [
     title: "Counseling",
     url: "/counseling",
     icon: MessageCircle,
+  },
+  {
+    title: "Referrals",
+    url: "/referrals",
+    icon: Gift,
+  },
+  {
+    title: "Wallet",
+    url: "/wallet",
+    icon: WalletIcon,
   },
   {
     title: "Profile",
