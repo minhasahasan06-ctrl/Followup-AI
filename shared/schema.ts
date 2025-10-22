@@ -782,3 +782,32 @@ export const insertReferralSchema = createInsertSchema(referrals).omit({
 
 export type InsertReferral = z.infer<typeof insertReferralSchema>;
 export type Referral = typeof referrals.$inferSelect;
+
+// Two-Factor Authentication (2FA) Settings
+export const twoFactorAuth = pgTable("two_factor_auth", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").unique().notNull().references(() => users.id),
+  
+  // TOTP settings
+  totpSecret: varchar("totp_secret").notNull(), // Base32 encoded secret for TOTP
+  enabled: boolean("enabled").default(false),
+  
+  // Backup codes (hashed)
+  backupCodes: jsonb("backup_codes").$type<string[]>(), // Array of hashed backup codes
+  
+  // Tracking
+  enabledAt: timestamp("enabled_at"),
+  lastUsedAt: timestamp("last_used_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertTwoFactorAuthSchema = createInsertSchema(twoFactorAuth).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTwoFactorAuth = z.infer<typeof insertTwoFactorAuthSchema>;
+export type TwoFactorAuth = typeof twoFactorAuth.$inferSelect;
