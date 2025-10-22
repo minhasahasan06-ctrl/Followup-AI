@@ -42,6 +42,10 @@ import ResearchCenter from "@/pages/ResearchCenter";
 import Counseling from "@/pages/Counseling";
 import ConsentManagement from "@/pages/ConsentManagement";
 import PreviousSessions from "@/pages/PreviousSessions";
+import EHRIntegrations from "@/pages/EHRIntegrations";
+import WearableDevices from "@/pages/WearableDevices";
+import Referrals from "@/pages/Referrals";
+import Wallet from "@/pages/Wallet";
 
 function PatientRouter() {
   return (
@@ -52,6 +56,10 @@ function PatientRouter() {
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/counseling" component={Counseling} />
       <Route path="/consents" component={ConsentManagement} />
+      <Route path="/ehr-integrations" component={EHRIntegrations} />
+      <Route path="/wearables" component={WearableDevices} />
+      <Route path="/referrals" component={Referrals} />
+      <Route path="/wallet" component={Wallet} />
       <Route path="/files" component={Files} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
@@ -67,6 +75,8 @@ function DoctorRouter() {
       <Route path="/research" component={ResearchCenter} />
       <Route path="/chat" component={Chat} />
       <Route path="/counseling" component={Counseling} />
+      <Route path="/referrals" component={Referrals} />
+      <Route path="/wallet" component={Wallet} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
     </Switch>
