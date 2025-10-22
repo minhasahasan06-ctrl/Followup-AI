@@ -101,11 +101,15 @@ export async function comparePassword(password: string, hash: string): Promise<b
 
 // Send verification email
 export async function sendVerificationEmail(email: string, token: string, firstName: string) {
-  const { client, fromEmail } = await getUncachableResendClient();
-  const verificationUrl = `${process.env.APP_URL || 'http://localhost:5000'}/verify-email?token=${token}`;
+  console.log(`[EMAIL] Attempting to send verification email to: ${email}`);
   
   try {
-    await client.emails.send({
+    const { client, fromEmail } = await getUncachableResendClient();
+    console.log(`[EMAIL] Resend client initialized. From email: ${fromEmail || 'onboarding@resend.dev (fallback)'}`);
+    
+    const verificationUrl = `${process.env.APP_URL || 'http://localhost:5000'}/verify-email?token=${token}`;
+    
+    const result = await client.emails.send({
       from: fromEmail || 'Followup AI <onboarding@resend.dev>',
       to: email,
       subject: "Verify Your Followup AI Account",
@@ -124,8 +128,11 @@ export async function sendVerificationEmail(email: string, token: string, firstN
         </div>
       `,
     });
-  } catch (error) {
-    console.error("Error sending verification email:", error);
+    
+    console.log(`[EMAIL] ✓ Verification email sent successfully!`, result);
+  } catch (error: any) {
+    console.error("[EMAIL] ✗ Error sending verification email:", error);
+    console.error("[EMAIL] Error details:", JSON.stringify(error, null, 2));
     throw error;
   }
 }
