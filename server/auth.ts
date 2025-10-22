@@ -109,8 +109,13 @@ export async function sendVerificationEmail(email: string, token: string, firstN
     
     const verificationUrl = `${process.env.APP_URL || 'http://localhost:5000'}/verify-email?token=${token}`;
     
+    // Use custom domain if configured and verified, otherwise use test domain
+    const senderEmail = (fromEmail && !fromEmail.includes('resend.dev')) 
+      ? fromEmail 
+      : 'Followup AI <onboarding@resend.dev>';
+    
     const result = await client.emails.send({
-      from: 'Followup AI <onboarding@resend.dev>',
+      from: senderEmail,
       to: email,
       subject: "Verify Your Followup AI Account",
       html: `
@@ -143,8 +148,13 @@ export async function sendPasswordResetEmail(email: string, token: string, first
   const resetUrl = `${process.env.APP_URL || 'http://localhost:5000'}/reset-password?token=${token}`;
   
   try {
+    // Use custom domain if configured and verified, otherwise use test domain
+    const senderEmail = (fromEmail && !fromEmail.includes('resend.dev')) 
+      ? fromEmail 
+      : 'Followup AI <onboarding@resend.dev>';
+    
     await client.emails.send({
-      from: 'Followup AI <onboarding@resend.dev>',
+      from: senderEmail,
       to: email,
       subject: "Reset Your Followup AI Password",
       html: `
