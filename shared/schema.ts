@@ -626,3 +626,159 @@ export const insertCreditTransactionSchema = createInsertSchema(creditTransactio
 
 export type InsertCreditTransaction = z.infer<typeof insertCreditTransactionSchema>;
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
+
+// EHR System Connections (Epic, Oracle Cerner, Athena Health, etc.)
+export const ehrConnections = pgTable("ehr_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // EHR Platform details
+  ehrSystem: varchar("ehr_system").notNull(), // 'epic', 'cerner', 'athena', 'eclinicalworks', 'allscripts', 'advancedmd', 'meditech', 'nextgen', 'drchrono'
+  ehrSystemName: varchar("ehr_system_name").notNull(), // Display name
+  
+  // Connection details
+  connectionStatus: varchar("connection_status").default("pending"), // 'pending', 'connected', 'disconnected', 'error'
+  accessToken: varchar("access_token"), // OAuth token (encrypted)
+  refreshToken: varchar("refresh_token"), // OAuth refresh token (encrypted)
+  tokenExpiresAt: timestamp("token_expires_at"),
+  
+  // Patient identifiers in the EHR system
+  patientExternalId: varchar("patient_external_id"), // Patient ID in EHR system
+  facilityId: varchar("facility_id"), // Hospital/clinic ID
+  facilityName: varchar("facility_name"),
+  
+  // Sync settings
+  autoSync: boolean("auto_sync").default(true),
+  syncFrequency: varchar("sync_frequency").default("daily"), // 'real-time', 'hourly', 'daily', 'weekly'
+  lastSyncedAt: timestamp("last_synced_at"),
+  lastSyncStatus: varchar("last_sync_status"), // 'success', 'partial', 'failed'
+  lastSyncError: text("last_sync_error"),
+  
+  // Data types synced
+  syncedDataTypes: jsonb("synced_data_types").$type<string[]>(), // ['vitals', 'medications', 'lab_results', 'allergies', 'immunizations', 'conditions', 'procedures']
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    ehrVersion?: string;
+    fhirVersion?: string;
+    apiEndpoint?: string;
+    scopes?: string[];
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertEhrConnectionSchema = createInsertSchema(ehrConnections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEhrConnection = z.infer<typeof insertEhrConnectionSchema>;
+export type EhrConnection = typeof ehrConnections.$inferSelect;
+
+// Wearable Device Integrations (Amazfit, Garmin, Whoop, Samsung, Eko)
+export const wearableIntegrations = pgTable("wearable_integrations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Device details
+  deviceType: varchar("device_type").notNull(), // 'amazfit', 'garmin', 'whoop', 'samsung', 'eko'
+  deviceName: varchar("device_name").notNull(), // Display name
+  deviceModel: varchar("device_model"), // Specific model (e.g., "Amazfit GTR 3", "Garmin Forerunner 945")
+  
+  // Connection details
+  connectionStatus: varchar("connection_status").default("pending"), // 'pending', 'connected', 'disconnected', 'error'
+  accessToken: varchar("access_token"), // OAuth token (encrypted)
+  refreshToken: varchar("refresh_token"), // OAuth refresh token (encrypted)
+  tokenExpiresAt: timestamp("token_expires_at"),
+  
+  // Device identifiers
+  deviceId: varchar("device_id"), // Unique device identifier from manufacturer
+  
+  // Sync settings
+  autoSync: boolean("auto_sync").default(true),
+  syncFrequency: varchar("sync_frequency").default("real-time"), // 'real-time', 'hourly', 'daily'
+  lastSyncedAt: timestamp("last_synced_at"),
+  lastSyncStatus: varchar("last_sync_status"), // 'success', 'partial', 'failed'
+  lastSyncError: text("last_sync_error"),
+  
+  // Data types tracked
+  trackedMetrics: jsonb("tracked_metrics").$type<string[]>(), // ['heart_rate', 'steps', 'sleep', 'spo2', 'temperature', 'respiratory_rate', 'stress', 'hrv', 'ecg']
+  
+  // Battery and device health
+  batteryLevel: integer("battery_level"), // 0-100%
+  lastBatterySyncedAt: timestamp("last_battery_synced_at"),
+  firmwareVersion: varchar("firmware_version"),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    apiVersion?: string;
+    permissions?: string[];
+    scopes?: string[];
+    pairedAt?: string;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertWearableIntegrationSchema = createInsertSchema(wearableIntegrations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertWearableIntegration = z.infer<typeof insertWearableIntegrationSchema>;
+export type WearableIntegration = typeof wearableIntegrations.$inferSelect;
+
+// Referral System (for 1-month free trial incentive)
+export const referrals = pgTable("referrals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Referrer (person who shares the link)
+  referrerId: varchar("referrer_id").notNull().references(() => users.id),
+  referrerType: varchar("referrer_type").notNull(), // 'patient' or 'doctor'
+  
+  // Referee (person who signs up via the link)
+  refereeId: varchar("referee_id").references(() => users.id),
+  refereeType: varchar("referee_type"), // 'patient' or 'doctor'
+  refereeEmail: varchar("referee_email"), // Captured when they click the link
+  
+  // Referral code and tracking
+  referralCode: varchar("referral_code").unique().notNull(), // Unique code like "REF-ABC123"
+  referralLink: varchar("referral_link").notNull(), // Full URL with code
+  
+  // Status tracking
+  status: varchar("status").default("pending"), // 'pending', 'signed_up', 'trial_activated', 'trial_completed', 'expired'
+  clickedAt: timestamp("clicked_at"), // When referee clicked the link
+  signedUpAt: timestamp("signed_up_at"), // When referee completed signup
+  trialActivatedAt: timestamp("trial_activated_at"), // When both got their free month
+  
+  // Trial benefits
+  referrerTrialExtended: boolean("referrer_trial_extended").default(false), // 1-month free trial given to referrer
+  refereeTrialGranted: boolean("referee_trial_granted").default(false), // 1-month free trial given to referee
+  
+  // Tracking
+  ipAddress: varchar("ip_address"), // For fraud detection
+  userAgent: varchar("user_agent"),
+  utmSource: varchar("utm_source"),
+  utmMedium: varchar("utm_medium"),
+  utmCampaign: varchar("utm_campaign"),
+  
+  // Expiry
+  expiresAt: timestamp("expires_at"), // Referral link expiry (e.g., 90 days)
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertReferralSchema = createInsertSchema(referrals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertReferral = z.infer<typeof insertReferralSchema>;
+export type Referral = typeof referrals.$inferSelect;
