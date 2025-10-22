@@ -182,12 +182,13 @@ export default function Referrals() {
                 <div
                   key={referral.id}
                   className="flex items-center justify-between p-3 rounded-lg border hover-elevate"
+                  data-testid={`card-referral-${referral.id}`}
                 >
                   <div className="flex-1">
-                    <div className="font-medium">
+                    <div className="font-medium" data-testid={`text-referee-${referral.id}`}>
                       {referral.refereeEmail || referral.refereeId || "Unknown User"}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-sm text-muted-foreground" data-testid={`text-referral-date-${referral.id}`}>
                       {referral.signedUpAt
                         ? `Signed up ${new Date(referral.signedUpAt).toLocaleDateString()}`
                         : referral.clickedAt
@@ -196,9 +197,11 @@ export default function Referrals() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    {getStatusBadge(referral.status)}
+                    <div data-testid={`badge-referral-status-${referral.id}`}>
+                      {getStatusBadge(referral.status)}
+                    </div>
                     {referral.referrerTrialExtended && (
-                      <Badge variant="default" className="bg-green-600">
+                      <Badge variant="default" className="bg-green-600" data-testid={`badge-trial-bonus-${referral.id}`}>
                         +30 days
                       </Badge>
                     )}

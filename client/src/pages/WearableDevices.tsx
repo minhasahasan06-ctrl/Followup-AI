@@ -9,14 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Watch, CheckCircle2, XCircle, AlertCircle, Plus, Trash2, RefreshCw, Battery } from "lucide-react";
+import { Watch, CheckCircle2, XCircle, AlertCircle, Plus, Trash2, RefreshCw, Battery, Activity, Dumbbell, Zap, Smartphone, Stethoscope } from "lucide-react";
 
 const WEARABLE_DEVICES = [
-  { id: "amazfit", name: "Amazfit", description: "Smartwatches and fitness trackers", icon: "⌚" },
-  { id: "garmin", name: "Garmin", description: "Sports watches and fitness devices", icon: "🏃" },
-  { id: "whoop", name: "Whoop", description: "Performance optimization strap", icon: "💪" },
-  { id: "samsung", name: "Samsung Galaxy Watch", description: "Galaxy smartwatch series", icon: "⌚" },
-  { id: "eko", name: "Eko Stethoscope", description: "Digital stethoscope for heart sounds", icon: "🩺" },
+  { id: "amazfit", name: "Amazfit", description: "Smartwatches and fitness trackers", Icon: Watch },
+  { id: "garmin", name: "Garmin", description: "Sports watches and fitness devices", Icon: Activity },
+  { id: "whoop", name: "Whoop", description: "Performance optimization strap", Icon: Zap },
+  { id: "samsung", name: "Samsung Galaxy Watch", description: "Galaxy smartwatch series", Icon: Smartphone },
+  { id: "eko", name: "Eko Stethoscope", description: "Digital stethoscope for heart sounds", Icon: Stethoscope },
 ];
 
 export default function WearableDevices() {
@@ -162,19 +162,21 @@ export default function WearableDevices() {
       ) : devices && devices.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {devices.map((device: any) => (
-            <Card key={device.id} className="hover-elevate">
+            <Card key={device.id} className="hover-elevate" data-testid={`card-device-${device.id}`}>
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2" data-testid={`text-device-name-${device.id}`}>
                       {getStatusIcon(device.connectionStatus)}
                       {device.deviceName}
                     </CardTitle>
-                    <CardDescription className="mt-1">
+                    <CardDescription className="mt-1" data-testid={`text-device-model-${device.id}`}>
                       {device.deviceModel}
                     </CardDescription>
                   </div>
-                  {getStatusBadge(device.connectionStatus)}
+                  <div data-testid={`badge-status-${device.id}`}>
+                    {getStatusBadge(device.connectionStatus)}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -185,13 +187,13 @@ export default function WearableDevices() {
                         <Battery className="h-3 w-3" />
                         Battery:
                       </span>
-                      <span className="font-medium">{device.batteryLevel}%</span>
+                      <span className="font-medium" data-testid={`text-battery-${device.id}`}>{device.batteryLevel}%</span>
                     </div>
                   )}
                   {device.lastSyncedAt && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Last Synced:</span>
-                      <span>{new Date(device.lastSyncedAt).toLocaleDateString()}</span>
+                      <span data-testid={`text-last-synced-${device.id}`}>{new Date(device.lastSyncedAt).toLocaleDateString()}</span>
                     </div>
                   )}
                   {device.trackedMetrics && device.trackedMetrics.length > 0 && (
@@ -267,7 +269,7 @@ export default function WearableDevices() {
                   {WEARABLE_DEVICES.map((device) => (
                     <SelectItem key={device.id} value={device.id}>
                       <div className="flex items-center gap-2">
-                        <span>{device.icon}</span>
+                        <device.Icon className="h-4 w-4" />
                         <div>
                           <div className="font-medium">{device.name}</div>
                           <div className="text-xs text-muted-foreground">{device.description}</div>

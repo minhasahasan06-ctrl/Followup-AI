@@ -168,31 +168,33 @@ export default function EHRIntegrations() {
       ) : connections && connections.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {connections.map((connection: any) => (
-            <Card key={connection.id} className="hover-elevate">
+            <Card key={connection.id} className="hover-elevate" data-testid={`card-ehr-${connection.id}`}>
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2" data-testid={`text-ehr-name-${connection.id}`}>
                       {getStatusIcon(connection.connectionStatus)}
                       {connection.ehrSystemName}
                     </CardTitle>
-                    <CardDescription className="mt-1">
+                    <CardDescription className="mt-1" data-testid={`text-facility-${connection.id}`}>
                       {connection.facilityName}
                     </CardDescription>
                   </div>
-                  {getStatusBadge(connection.connectionStatus)}
+                  <div data-testid={`badge-status-${connection.id}`}>
+                    {getStatusBadge(connection.connectionStatus)}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Patient ID:</span>
-                    <span className="font-mono">{connection.patientExternalId}</span>
+                    <span className="font-mono" data-testid={`text-patient-id-${connection.id}`}>{connection.patientExternalId}</span>
                   </div>
                   {connection.lastSyncedAt && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Last Synced:</span>
-                      <span>{new Date(connection.lastSyncedAt).toLocaleDateString()}</span>
+                      <span data-testid={`text-last-synced-${connection.id}`}>{new Date(connection.lastSyncedAt).toLocaleDateString()}</span>
                     </div>
                   )}
                 </div>

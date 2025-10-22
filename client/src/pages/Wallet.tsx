@@ -156,7 +156,7 @@ export default function Wallet() {
           </CardHeader>
           <CardContent>
             <div className="flex items-baseline gap-2 mb-6">
-              <span className="text-5xl font-bold">{balance?.balance || 0}</span>
+              <span className="text-5xl font-bold" data-testid="text-credit-balance">{balance?.balance || 0}</span>
               <span className="text-2xl text-muted-foreground">credits</span>
             </div>
             <div className="flex gap-3">
@@ -240,27 +240,28 @@ export default function Wallet() {
                 <div
                   key={tx.id}
                   className="flex items-center justify-between p-3 rounded-lg border hover-elevate"
+                  data-testid={`card-transaction-${tx.id}`}
                 >
                   <div className="flex items-center gap-3 flex-1">
                     <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
                       {getTransactionIcon(tx.transactionType)}
                     </div>
                     <div className="flex-1">
-                      <div className="font-medium">
+                      <div className="font-medium" data-testid={`text-tx-description-${tx.id}`}>
                         {tx.description || tx.transactionType}
                       </div>
-                      <div className="text-sm text-muted-foreground">
+                      <div className="text-sm text-muted-foreground" data-testid={`text-tx-date-${tx.id}`}>
                         {new Date(tx.createdAt).toLocaleDateString()} at{" "}
                         {new Date(tx.createdAt).toLocaleTimeString()}
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className={`text-lg font-bold ${getTransactionColor(tx.transactionType)}`}>
+                    <div className={`text-lg font-bold ${getTransactionColor(tx.transactionType)}`} data-testid={`text-tx-amount-${tx.id}`}>
                       {tx.amount > 0 ? "+" : ""}
                       {tx.amount}
                     </div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-muted-foreground" data-testid={`text-tx-balance-${tx.id}`}>
                       Balance: {tx.balanceAfter}
                     </div>
                   </div>
