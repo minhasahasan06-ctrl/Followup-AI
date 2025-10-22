@@ -187,6 +187,10 @@ export interface IStorage {
   updateUser(userId: string, data: Partial<User>): Promise<User | undefined>;
   getCreditTransactions(userId: string): Promise<CreditTransaction[]>;
   createCreditTransaction(transaction: InsertCreditTransaction): Promise<CreditTransaction>;
+  
+  // Admin verification operations
+  getPendingDoctorVerifications(): Promise<Array<User & { doctorProfile?: DoctorProfile }>>;
+  verifyDoctorLicense(userId: string, verified: boolean, notes: string, verifiedBy: string): Promise<DoctorProfile | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1029,6 +1033,40 @@ export class DatabaseStorage implements IStorage {
       .values(transactionData)
       .returning();
     return transaction;
+  }
+
+  // Admin verification operations
+  async getPendingDoctorVerifications(): Promise<Array<User & { doctorProfile?: DoctorProfile }>> {
+    const doctors = await db
+      .select()
+      .from(users)
+      .leftJoin(doctorProfiles, eq(users.id, doctorProfiles.userId))
+      .where(
+        and(
+          eq(users.role, "doctor"),
+          eq(doctorProfiles.licenseVerified, false)
+        )
+      );
+
+    return doctors.map((row) => ({
+      ...row.users,
+      doctorProfile: row.doctor_profiles || undefined,
+    }));
+  }
+
+  async verifyDoctorLicense(userId: string, verified: boolean, notes: string, verifiedBy: string): Promise<DoctorProfile | undefined> {
+    const [updated] = await db
+      .update(doctorProfiles)
+      .set({
+        licenseVerified: verified,
+        verificationNotes: notes,
+        verifiedBy,
+        verifiedAt: new Date(),
+      })
+      .where(eq(doctorProfiles.userId, userId))
+      .returning();
+
+    return updated;
   }
 }
 

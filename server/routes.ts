@@ -1244,6 +1244,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============== ADMIN VERIFICATION ROUTES ==============
+  
+  // Middleware to check if user is admin (simplified - extend this based on your admin system)
+  const isAdmin = (req: any, res: any, next: any) => {
+    // For now, check if user email ends with specific domain or has admin role
+    // You can extend this to check a dedicated admin table or role field
+    if (req.user && (req.user.email?.includes('@followupai.io') || req.user.role === 'admin')) {
+      next();
+    } else {
+      res.status(403).json({ message: "Admin access required" });
+    }
+  };
+
+  // Get all pending doctor verifications
+  app.get('/api/admin/pending-doctors', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const pendingDoctors = await storage.getPendingDoctorVerifications();
+      res.json(pendingDoctors);
+    } catch (error) {
+      console.error("Error fetching pending doctors:", error);
+      res.status(500).json({ message: "Failed to fetch pending doctors" });
+    }
+  });
+
+  // Verify a doctor's license
+  app.post('/api/admin/verify-doctor/:id', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { notes } = req.body;
+      const verifiedDoctor = await storage.verifyDoctorLicense(id, true, notes, req.user!.id);
+      if (!verifiedDoctor) {
+        return res.status(404).json({ message: "Doctor not found" });
+      }
+      res.json({ success: true, doctor: verifiedDoctor });
+    } catch (error) {
+      console.error("Error verifying doctor:", error);
+      res.status(500).json({ message: "Failed to verify doctor" });
+    }
+  });
+
+  // Reject a doctor's license
+  app.post('/api/admin/reject-doctor/:id', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const rejectedDoctor = await storage.verifyDoctorLicense(id, false, reason, req.user!.id);
+      if (!rejectedDoctor) {
+        return res.status(404).json({ message: "Doctor not found" });
+      }
+      res.json({ success: true, doctor: rejectedDoctor });
+    } catch (error) {
+      console.error("Error rejecting doctor:", error);
+      res.status(500).json({ message: "Failed to reject doctor" });
+    }
+  });
+
   // ============== EHR INTEGRATION ROUTES ==============
   
   app.get('/api/ehr/connections', isAuthenticated, async (req: any, res) => {
