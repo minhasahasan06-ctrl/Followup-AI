@@ -4,7 +4,7 @@ import { type Express, type RequestHandler } from "express";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
-import nodemailer from "nodemailer";
+import { Resend } from 'resend';
 
 // Extend Express Request to include user
 declare global {
@@ -44,19 +44,44 @@ export function getSession(maxAge?: number) {
   });
 }
 
-// Email transporter (using nodemailer)
-const createEmailTransporter = () => {
-  // In development, you can use a service like Ethereal or configure SMTP
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: parseInt(process.env.SMTP_PORT || "587"),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-};
+// Resend client helper
+let connectionSettings: any;
+
+async function getCredentials() {
+  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME
+  const xReplitToken = process.env.REPL_IDENTITY 
+    ? 'repl ' + process.env.REPL_IDENTITY 
+    : process.env.WEB_REPL_RENEWAL 
+    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
+    : null;
+
+  if (!xReplitToken) {
+    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+  }
+
+  connectionSettings = await fetch(
+    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=resend',
+    {
+      headers: {
+        'Accept': 'application/json',
+        'X_REPLIT_TOKEN': xReplitToken
+      }
+    }
+  ).then(res => res.json()).then(data => data.items?.[0]);
+
+  if (!connectionSettings || (!connectionSettings.settings.api_key)) {
+    throw new Error('Resend not connected');
+  }
+  return {apiKey: connectionSettings.settings.api_key, fromEmail: connectionSettings.settings.from_email};
+}
+
+async function getUncachableResendClient() {
+  const credentials = await getCredentials();
+  return {
+    client: new Resend(credentials.apiKey),
+    fromEmail: credentials.fromEmail
+  };
+}
 
 // Generate verification token
 export function generateToken(): string {
@@ -76,31 +101,29 @@ export async function comparePassword(password: string, hash: string): Promise<b
 
 // Send verification email
 export async function sendVerificationEmail(email: string, token: string, firstName: string) {
-  const transporter = createEmailTransporter();
-  const verificationUrl = `${process.env.APP_URL || 'https://localhost:5000'}/verify-email?token=${token}`;
+  const { client, fromEmail } = await getUncachableResendClient();
+  const verificationUrl = `${process.env.APP_URL || 'http://localhost:5000'}/verify-email?token=${token}`;
   
-  const mailOptions = {
-    from: process.env.SMTP_FROM || '"Followup AI" <noreply@followupai.com>',
-    to: email,
-    subject: "Verify Your Followup AI Account",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #6366f1;">Welcome to Followup AI, ${firstName}!</h2>
-        <p>Thank you for signing up. Please verify your email address by clicking the link below:</p>
-        <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white; text-decoration: none; border-radius: 4px; margin: 16px 0;">
-          Verify Email Address
-        </a>
-        <p>Or copy and paste this link into your browser:</p>
-        <p style="color: #666; font-size: 14px;">${verificationUrl}</p>
-        <p style="margin-top: 24px; color: #666; font-size: 12px;">
-          This link will expire in 24 hours. If you didn't create an account, please ignore this email.
-        </p>
-      </div>
-    `,
-  };
-
   try {
-    await transporter.sendMail(mailOptions);
+    await client.emails.send({
+      from: fromEmail || 'Followup AI <onboarding@resend.dev>',
+      to: email,
+      subject: "Verify Your Followup AI Account",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #6366f1;">Welcome to Followup AI, ${firstName}!</h2>
+          <p>Thank you for signing up. Please verify your email address by clicking the link below:</p>
+          <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white; text-decoration: none; border-radius: 4px; margin: 16px 0;">
+            Verify Email Address
+          </a>
+          <p>Or copy and paste this link into your browser:</p>
+          <p style="color: #666; font-size: 14px;">${verificationUrl}</p>
+          <p style="margin-top: 24px; color: #666; font-size: 12px;">
+            This link will expire in 24 hours. If you didn't create an account, please ignore this email.
+          </p>
+        </div>
+      `,
+    });
   } catch (error) {
     console.error("Error sending verification email:", error);
     throw error;
@@ -109,32 +132,30 @@ export async function sendVerificationEmail(email: string, token: string, firstN
 
 // Send password reset email
 export async function sendPasswordResetEmail(email: string, token: string, firstName: string) {
-  const transporter = createEmailTransporter();
-  const resetUrl = `${process.env.APP_URL || 'https://localhost:5000'}/reset-password?token=${token}`;
+  const { client, fromEmail } = await getUncachableResendClient();
+  const resetUrl = `${process.env.APP_URL || 'http://localhost:5000'}/reset-password?token=${token}`;
   
-  const mailOptions = {
-    from: process.env.SMTP_FROM || '"Followup AI" <noreply@followupai.com>',
-    to: email,
-    subject: "Reset Your Followup AI Password",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #6366f1;">Password Reset Request</h2>
-        <p>Hello ${firstName},</p>
-        <p>We received a request to reset your password. Click the link below to create a new password:</p>
-        <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white; text-decoration: none; border-radius: 4px; margin: 16px 0;">
-          Reset Password
-        </a>
-        <p>Or copy and paste this link into your browser:</p>
-        <p style="color: #666; font-size: 14px;">${resetUrl}</p>
-        <p style="margin-top: 24px; color: #666; font-size: 12px;">
-          This link will expire in 1 hour. If you didn't request a password reset, please ignore this email.
-        </p>
-      </div>
-    `,
-  };
-
   try {
-    await transporter.sendMail(mailOptions);
+    await client.emails.send({
+      from: fromEmail || 'Followup AI <onboarding@resend.dev>',
+      to: email,
+      subject: "Reset Your Followup AI Password",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #6366f1;">Password Reset Request</h2>
+          <p>Hello ${firstName},</p>
+          <p>We received a request to reset your password. Click the link below to create a new password:</p>
+          <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white; text-decoration: none; border-radius: 4px; margin: 16px 0;">
+            Reset Password
+          </a>
+          <p>Or copy and paste this link into your browser:</p>
+          <p style="color: #666; font-size: 14px;">${resetUrl}</p>
+          <p style="margin-top: 24px; color: #666; font-size: 12px;">
+            This link will expire in 1 hour. If you didn't request a password reset, please ignore this email.
+          </p>
+        </div>
+      `,
+    });
   } catch (error) {
     console.error("Error sending password reset email:", error);
     throw error;
