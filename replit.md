@@ -45,8 +45,8 @@ Preferred communication style: Simple, everyday language.
   - `/doctor-portal` - Doctor-focused landing page with professional features
 - Authentication flow: Landing/Doctor Portal → Sign Up/Login → Replit Auth → Role Selection → Dashboard
 - Role-based routing: separate router components for patients vs. doctors
-- Patient routes: Dashboard, Chat, Previous Sessions (Medical History), Wellness, Counseling, App Connections (Consent Management), Files, Profile
-- Doctor routes: Doctor Dashboard, Patient Review (with Chat Sessions tab), Research Center, Chat, Counseling, Profile
+- Patient routes: Dashboard, Chat, Previous Sessions (Medical History), Wellness, Counseling, App Connections (Consent Management), EHR Integrations, Wearable Devices, Referrals, Wallet, Files, Profile
+- Doctor routes: Doctor Dashboard, Patient Review (with Chat Sessions tab), Research Center, Chat, Counseling, Referrals, Wallet, Admin Verification (admin only), Profile
 - Protected routes requiring authentication via Replit Auth
 
 **Landing Page Features:**
@@ -112,6 +112,42 @@ Preferred communication style: Simple, everyday language.
 - Support for popular health apps (Fitbit, Apple Health, Google Fit, MyFitnessPal, etc.)
 - HIPAA-compliant audit trail for all consent changes
 
+**EHR Integration System:**
+- FHIR-based integration with major EHR systems (Epic, Oracle Cerner, Athena Health, eClinicalWorks, Allscripts, AdvancedMD, Meditech, NextGen, DrChrono)
+- OAuth 2.0 authentication flow for secure EHR connections
+- Patient-controlled EHR data access and sync management
+- Connection status tracking with last sync timestamps
+- Disconnect/revoke capability for data privacy
+
+**Wearable Device Integration:**
+- Support for major wearable brands (Amazfit, Garmin, Whoop, Samsung, Eko)
+- Real-time health data sync for heart rate, blood pressure, steps, sleep, SpO2, ECG
+- OAuth-based device authentication
+- Connection management with device status tracking
+- Automatic data refresh from connected devices
+
+**Referral System:**
+- Unique referral code generation for both patients and doctors
+- Referral tracking with signup status monitoring
+- 1-month free trial incentive for both referrer and referee
+- Shareable referral links with copy-to-clipboard functionality
+- Referral history and analytics
+
+**Wallet & Credit System:**
+- Credit balance management for patients and doctors
+- Transaction history with detailed tracking
+- Patient-to-doctor credit transfer for consultations (20 credits per session)
+- Doctor credit withdrawal via Stripe integration
+- Real-time credit updates with optimistic UI
+
+**Admin Verification System:**
+- Manual doctor license verification workflow
+- Country-specific professional registry validation
+- KYC document review interface
+- Approve/reject capability with admin notes
+- Email notifications for verification status changes
+- Admin-only access control
+
 ### Database Architecture
 
 **Database Technology:**
@@ -141,6 +177,11 @@ Preferred communication style: Simple, everyday language.
 - Psychological counseling sessions (for both patients and doctors)
 - Training datasets from public sources (PubMed, PhysioNet, Kaggle, WHO)
 - Health insight consents for third-party app data sharing permissions
+- EHR connections with OAuth credentials and sync status
+- Wearable device integrations with connection metadata
+- Referrals with unique codes and tracking statistics
+- Wallet transactions and credit balances for users
+- Admin verification records for doctor license approval
 
 **Data Relationships:**
 - One-to-one: Users to PatientProfile/DoctorProfile
