@@ -16,6 +16,10 @@ import {
   counselingSessions,
   trainingDatasets,
   healthInsightConsents,
+  ehrConnections,
+  wearableIntegrations,
+  referrals,
+  creditTransactions,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -50,6 +54,14 @@ import {
   type InsertTrainingDataset,
   type HealthInsightConsent,
   type InsertHealthInsightConsent,
+  type EhrConnection,
+  type InsertEhrConnection,
+  type WearableIntegration,
+  type InsertWearableIntegration,
+  type Referral,
+  type InsertReferral,
+  type CreditTransaction,
+  type InsertCreditTransaction,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -150,6 +162,31 @@ export interface IStorage {
   updateHealthInsightConsent(id: string, data: Partial<HealthInsightConsent>): Promise<HealthInsightConsent | undefined>;
   revokeConsent(id: string, reason?: string): Promise<HealthInsightConsent | undefined>;
   deleteHealthInsightConsent(id: string): Promise<boolean>;
+  
+  // EHR connection operations
+  getEhrConnections(userId: string): Promise<EhrConnection[]>;
+  createEhrConnection(connection: InsertEhrConnection): Promise<EhrConnection>;
+  updateEhrConnection(id: string, data: Partial<EhrConnection>): Promise<EhrConnection | undefined>;
+  deleteEhrConnection(id: string): Promise<boolean>;
+  
+  // Wearable integration operations
+  getWearableIntegrations(userId: string): Promise<WearableIntegration[]>;
+  createWearableIntegration(integration: InsertWearableIntegration): Promise<WearableIntegration>;
+  updateWearableIntegration(id: string, data: Partial<WearableIntegration>): Promise<WearableIntegration | undefined>;
+  deleteWearableIntegration(id: string): Promise<boolean>;
+  
+  // Referral operations
+  getReferralByReferrerId(referrerId: string): Promise<Referral | undefined>;
+  getReferralsByReferrerId(referrerId: string): Promise<Referral[]>;
+  getReferralByCode(referralCode: string): Promise<Referral | undefined>;
+  createReferral(referral: InsertReferral): Promise<Referral>;
+  updateReferral(id: string, data: Partial<Referral>): Promise<Referral | undefined>;
+  
+  // Credit/wallet operations
+  getUserById(userId: string): Promise<User | undefined>;
+  updateUser(userId: string, data: Partial<User>): Promise<User | undefined>;
+  getCreditTransactions(userId: string): Promise<CreditTransaction[]>;
+  createCreditTransaction(transaction: InsertCreditTransaction): Promise<CreditTransaction>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -844,6 +881,154 @@ export class DatabaseStorage implements IStorage {
       .delete(healthInsightConsents)
       .where(eq(healthInsightConsents.id, id));
     return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // EHR connection operations
+  async getEhrConnections(userId: string): Promise<EhrConnection[]> {
+    const connections = await db
+      .select()
+      .from(ehrConnections)
+      .where(eq(ehrConnections.userId, userId))
+      .orderBy(desc(ehrConnections.createdAt));
+    return connections;
+  }
+
+  async createEhrConnection(connectionData: InsertEhrConnection): Promise<EhrConnection> {
+    const [connection] = await db
+      .insert(ehrConnections)
+      .values(connectionData)
+      .returning();
+    return connection;
+  }
+
+  async updateEhrConnection(id: string, data: Partial<EhrConnection>): Promise<EhrConnection | undefined> {
+    const [connection] = await db
+      .update(ehrConnections)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(ehrConnections.id, id))
+      .returning();
+    return connection;
+  }
+
+  async deleteEhrConnection(id: string): Promise<boolean> {
+    const result = await db
+      .delete(ehrConnections)
+      .where(eq(ehrConnections.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Wearable integration operations
+  async getWearableIntegrations(userId: string): Promise<WearableIntegration[]> {
+    const integrations = await db
+      .select()
+      .from(wearableIntegrations)
+      .where(eq(wearableIntegrations.userId, userId))
+      .orderBy(desc(wearableIntegrations.createdAt));
+    return integrations;
+  }
+
+  async createWearableIntegration(integrationData: InsertWearableIntegration): Promise<WearableIntegration> {
+    const [integration] = await db
+      .insert(wearableIntegrations)
+      .values(integrationData)
+      .returning();
+    return integration;
+  }
+
+  async updateWearableIntegration(id: string, data: Partial<WearableIntegration>): Promise<WearableIntegration | undefined> {
+    const [integration] = await db
+      .update(wearableIntegrations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(wearableIntegrations.id, id))
+      .returning();
+    return integration;
+  }
+
+  async deleteWearableIntegration(id: string): Promise<boolean> {
+    const result = await db
+      .delete(wearableIntegrations)
+      .where(eq(wearableIntegrations.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Referral operations
+  async getReferralByReferrerId(referrerId: string): Promise<Referral | undefined> {
+    const [referral] = await db
+      .select()
+      .from(referrals)
+      .where(eq(referrals.referrerId, referrerId))
+      .orderBy(desc(referrals.createdAt))
+      .limit(1);
+    return referral;
+  }
+
+  async getReferralsByReferrerId(referrerId: string): Promise<Referral[]> {
+    const referralList = await db
+      .select()
+      .from(referrals)
+      .where(eq(referrals.referrerId, referrerId))
+      .orderBy(desc(referrals.createdAt));
+    return referralList;
+  }
+
+  async getReferralByCode(referralCode: string): Promise<Referral | undefined> {
+    const [referral] = await db
+      .select()
+      .from(referrals)
+      .where(eq(referrals.referralCode, referralCode));
+    return referral;
+  }
+
+  async createReferral(referralData: InsertReferral): Promise<Referral> {
+    const [referral] = await db
+      .insert(referrals)
+      .values(referralData)
+      .returning();
+    return referral;
+  }
+
+  async updateReferral(id: string, data: Partial<Referral>): Promise<Referral | undefined> {
+    const [referral] = await db
+      .update(referrals)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(referrals.id, id))
+      .returning();
+    return referral;
+  }
+
+  // Credit/wallet operations
+  async getUserById(userId: string): Promise<User | undefined> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId));
+    return user;
+  }
+
+  async updateUser(userId: string, data: Partial<User>): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async getCreditTransactions(userId: string): Promise<CreditTransaction[]> {
+    const transactions = await db
+      .select()
+      .from(creditTransactions)
+      .where(eq(creditTransactions.userId, userId))
+      .orderBy(desc(creditTransactions.createdAt));
+    return transactions;
+  }
+
+  async createCreditTransaction(transactionData: InsertCreditTransaction): Promise<CreditTransaction> {
+    const [transaction] = await db
+      .insert(creditTransactions)
+      .values(transactionData)
+      .returning();
+    return transaction;
   }
 }
 
