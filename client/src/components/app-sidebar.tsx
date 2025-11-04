@@ -22,6 +22,7 @@ import {
   ScanText,
   AlertTriangle,
   Shield,
+  MapPin,
 } from "lucide-react";
 import {
   Sidebar,
@@ -87,6 +88,12 @@ const patientItems = [
     url: "/immune-monitoring",
     icon: Shield,
     badge: "AI",
+  },
+  {
+    title: "Environmental Risk",
+    url: "/environmental-risk",
+    icon: MapPin,
+    badge: "LIVE",
   },
   {
     title: "Medical Documents",
