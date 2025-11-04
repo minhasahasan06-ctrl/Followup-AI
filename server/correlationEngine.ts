@@ -27,12 +27,15 @@ export async function analyzeCorrelations(userId: string): Promise<void> {
     // 2. Use AI to detect patterns and correlations
     const patterns = await detectPatternsWithAI(healthData, userId);
     
-    // 3. Save detected patterns to database
+    // 3. Insert all detected patterns
+    // Note: Patterns accumulate over time, showing evolution of health correlations.
+    // Each pattern has firstObserved/lastObserved timestamps for tracking.
+    // Future enhancement: Add storage.deleteCorrelationPatterns() method for full replacement.
     for (const pattern of patterns) {
       await storage.createCorrelationPattern(pattern);
     }
     
-    console.log(`Created ${patterns.length} correlation patterns for user ${userId}`);
+    console.log(`Correlation analysis complete: ${patterns.length} patterns detected and stored`);
   } catch (error) {
     console.error("Error analyzing correlations:", error);
     throw error;
@@ -49,7 +52,7 @@ async function gatherHealthData(userId: string): Promise<HealthDataPoint[]> {
   for (const med of medications) {
     data.push({
       type: 'medication',
-      name: med.medicationName,
+      name: med.name,
       value: { dosage: med.dosage, frequency: med.frequency },
       timestamp: med.startDate || new Date(),
       metadata: { medicationId: med.id },
@@ -59,13 +62,14 @@ async function gatherHealthData(userId: string): Promise<HealthDataPoint[]> {
   // Get immune biomarkers (last 30 days)
   const biomarkers = await storage.getImmuneBiomarkers(userId, 50);
   for (const biomarker of biomarkers) {
-    if (biomarker.recordedAt && biomarker.recordedAt >= thirtyDaysAgo) {
-      if (biomarker.hrv !== null && biomarker.hrv !== undefined) {
+    const timestamp = biomarker.measuredAt;
+    if (timestamp >= thirtyDaysAgo) {
+      if (biomarker.hrvRmssd !== null && biomarker.hrvRmssd !== undefined) {
         data.push({
           type: 'biomarker',
           name: 'HRV',
-          value: biomarker.hrv,
-          timestamp: biomarker.recordedAt,
+          value: parseFloat(biomarker.hrvRmssd),
+          timestamp,
         });
       }
       if (biomarker.sleepQuality !== null && biomarker.sleepQuality !== undefined) {
@@ -73,7 +77,7 @@ async function gatherHealthData(userId: string): Promise<HealthDataPoint[]> {
           type: 'sleep',
           name: 'Sleep Quality',
           value: biomarker.sleepQuality,
-          timestamp: biomarker.recordedAt,
+          timestamp,
         });
       }
       if (biomarker.restingHeartRate !== null && biomarker.restingHeartRate !== undefined) {
@@ -81,7 +85,7 @@ async function gatherHealthData(userId: string): Promise<HealthDataPoint[]> {
           type: 'biomarker',
           name: 'Resting Heart Rate',
           value: biomarker.restingHeartRate,
-          timestamp: biomarker.recordedAt,
+          timestamp,
         });
       }
       if (biomarker.stressLevel !== null && biomarker.stressLevel !== undefined) {
@@ -89,7 +93,7 @@ async function gatherHealthData(userId: string): Promise<HealthDataPoint[]> {
           type: 'mood',
           name: 'Stress Level',
           value: biomarker.stressLevel,
-          timestamp: biomarker.recordedAt,
+          timestamp,
         });
       }
     }
@@ -98,13 +102,14 @@ async function gatherHealthData(userId: string): Promise<HealthDataPoint[]> {
   // Get immune digital twin data (predictions and immune scores)
   const digitalTwins = await storage.getImmuneDigitalTwins(userId, 30);
   for (const twin of digitalTwins) {
-    if (twin.analysisDate && twin.analysisDate >= thirtyDaysAgo) {
+    const timestamp = twin.predictedAt;
+    if (timestamp >= thirtyDaysAgo) {
       if (twin.immuneScore !== null && twin.immuneScore !== undefined) {
         data.push({
           type: 'biomarker',
           name: 'Immune Score',
           value: twin.immuneScore,
-          timestamp: twin.analysisDate,
+          timestamp,
         });
       }
     }
@@ -113,21 +118,22 @@ async function gatherHealthData(userId: string): Promise<HealthDataPoint[]> {
   // Get environmental risk data
   const environmentalData = await storage.getEnvironmentalRiskDataByUser(userId, 30);
   for (const env of environmentalData) {
-    if (env.measuredAt && env.measuredAt >= thirtyDaysAgo) {
-      if (env.airQualityIndex !== null && env.airQualityIndex !== undefined) {
+    const timestamp = env.measuredAt;
+    if (timestamp >= thirtyDaysAgo) {
+      if (env.aqi !== null && env.aqi !== undefined) {
         data.push({
           type: 'environment',
           name: 'Air Quality Index',
-          value: env.airQualityIndex,
-          timestamp: env.measuredAt,
+          value: env.aqi,
+          timestamp,
         });
       }
-      if (env.pathogenRisk) {
+      if (env.pathogenDetections) {
         data.push({
           type: 'environment',
           name: 'Pathogen Risk',
-          value: env.pathogenRisk,
-          timestamp: env.measuredAt,
+          value: env.pathogenDetections,
+          timestamp,
         });
       }
     }
@@ -136,21 +142,22 @@ async function gatherHealthData(userId: string): Promise<HealthDataPoint[]> {
   // Get daily followups for mood and symptoms
   const followups = await storage.getRecentFollowups(userId, 30);
   for (const followup of followups) {
-    if (followup.date && followup.date >= thirtyDaysAgo) {
-      if (followup.mood) {
+    const timestamp = followup.date;
+    if (timestamp >= thirtyDaysAgo) {
+      if (followup.moodRating !== null && followup.moodRating !== undefined) {
         data.push({
           type: 'mood',
           name: 'Daily Mood',
-          value: followup.mood,
-          timestamp: followup.date,
+          value: followup.moodRating,
+          timestamp,
         });
       }
-      if (followup.symptoms) {
+      if (followup.symptomSummary !== null && followup.symptomSummary !== undefined) {
         data.push({
           type: 'symptom',
           name: 'Symptoms',
-          value: followup.symptoms,
-          timestamp: followup.date,
+          value: followup.symptomSummary,
+          timestamp,
         });
       }
     }

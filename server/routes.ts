@@ -2943,6 +2943,52 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     }
   });
 
+  // Multi-Condition Correlation Engine routes
+  app.post('/api/correlations/analyze', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { analyzeCorrelations } = await import('./correlationEngine');
+      await analyzeCorrelations(userId);
+      res.json({ message: 'Correlation analysis completed successfully' });
+    } catch (error) {
+      console.error('Error analyzing correlations:', error);
+      res.status(500).json({ message: 'Failed to analyze correlations' });
+    }
+  });
+
+  app.get('/api/correlations', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { limit, type, severity } = req.query;
+      
+      let patterns;
+      if (type) {
+        patterns = await storage.getCorrelationPatternsByType(userId, type as string, limit ? parseInt(limit as string) : undefined);
+      } else if (severity) {
+        patterns = await storage.getHighSeverityCorrelationPatterns(userId, severity as string, limit ? parseInt(limit as string) : undefined);
+      } else {
+        patterns = await storage.getCorrelationPatterns(userId, limit ? parseInt(limit as string) : undefined);
+      }
+      
+      res.json(patterns);
+    } catch (error) {
+      console.error('Error fetching correlation patterns:', error);
+      res.status(500).json({ message: 'Failed to fetch correlation patterns' });
+    }
+  });
+
+  app.get('/api/correlations/report', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { generateCorrelationReport } = await import('./correlationEngine');
+      const report = await generateCorrelationReport(userId);
+      res.json(report);
+    } catch (error) {
+      console.error('Error generating correlation report:', error);
+      res.status(500).json({ message: 'Failed to generate correlation report' });
+    }
+  });
+
   // Risk alert routes
   app.get('/api/alerts/active', isAuthenticated, async (req: any, res) => {
     try {
