@@ -52,6 +52,7 @@ import MedicalDocuments from "@/pages/MedicalDocuments";
 import DrugInteractions from "@/pages/DrugInteractions";
 import ImmuneMonitoring from "@/pages/ImmuneMonitoring";
 import EnvironmentalRiskMap from "@/pages/EnvironmentalRiskMap";
+import CorrelationInsights from "@/pages/CorrelationInsights";
 
 function PatientRouter() {
   return (
@@ -66,6 +67,7 @@ function PatientRouter() {
       <Route path="/wearables" component={WearableDevices} />
       <Route path="/immune-monitoring" component={ImmuneMonitoring} />
       <Route path="/environmental-risk" component={EnvironmentalRiskMap} />
+      <Route path="/correlation-insights" component={CorrelationInsights} />
       <Route path="/medical-documents" component={MedicalDocuments} />
       <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/referrals" component={Referrals} />
