@@ -4,14 +4,24 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Bot } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Send, Bot, AlertTriangle, Shield, MapPin, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ChatMessage as ChatMessageType } from "@shared/schema";
 
+interface RiskAlert {
+  id: number;
+  alertType: string;
+  severity: string;
+  message: string;
+  status: string;
+}
+
 export default function Chat() {
   const [message, setMessage] = useState("");
+  const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
   const { user } = useAuth();
   const isDoctor = user?.role === "doctor";
   const agentType = isDoctor ? "lysa" : "clona";
@@ -19,6 +29,11 @@ export default function Chat() {
 
   const { data: chatMessages, isLoading } = useQuery<ChatMessageType[]>({
     queryKey: ["/api/chat/messages", { agent: agentType }],
+  });
+
+  const { data: riskAlerts } = useQuery<RiskAlert[]>({
+    queryKey: ["/api/risk/alerts"],
+    enabled: !isDoctor,
   });
 
   const sendMessageMutation = useMutation({
@@ -31,9 +46,42 @@ export default function Chat() {
     },
   });
 
+  const dismissAlertMutation = useMutation({
+    mutationFn: async (alertId: number) => {
+      return await apiRequest("POST", `/api/risk/alerts/${alertId}/dismiss`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/risk/alerts"] });
+    },
+  });
+
   const handleSend = () => {
     if (!message.trim() || sendMessageMutation.isPending) return;
     sendMessageMutation.mutate(message);
+  };
+
+  const handleDismissAlert = (alertId: number, temporary: boolean = false) => {
+    if (temporary) {
+      setDismissedAlerts([...dismissedAlerts, alertId]);
+    } else {
+      dismissAlertMutation.mutate(alertId);
+    }
+  };
+
+  const activeAlerts = riskAlerts?.filter(
+    (alert) => alert.status === "active" && !dismissedAlerts.includes(alert.id)
+  ) || [];
+
+  const getAlertIcon = (type: string) => {
+    if (type.includes("immune")) return Shield;
+    if (type.includes("environmental")) return MapPin;
+    return AlertTriangle;
+  };
+
+  const getAlertLink = (type: string) => {
+    if (type.includes("immune")) return "/immune-monitoring";
+    if (type.includes("environmental")) return "/environmental-risk";
+    return "#";
   };
 
   return (
@@ -54,6 +102,61 @@ export default function Chat() {
         </div>
       </div>
 
+      {!isDoctor && activeAlerts.length > 0 && (
+        <div className="mb-4 space-y-2" data-testid="section-active-alerts">
+          {activeAlerts.map((alert) => {
+            const AlertIcon = getAlertIcon(alert.alertType);
+            const alertLink = getAlertLink(alert.alertType);
+            
+            return (
+              <Card 
+                key={alert.id}
+                className="border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/20"
+                data-testid={`alert-banner-${alert.id}`}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertIcon className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="destructive" data-testid={`badge-alert-severity-${alert.severity}`}>
+                          {alert.severity}
+                        </Badge>
+                        <Badge variant="outline" data-testid={`badge-alert-type-${alert.alertType}`}>
+                          {alert.alertType}
+                        </Badge>
+                      </div>
+                      <p className="text-sm font-medium text-red-900 dark:text-red-100 mb-2" data-testid={`text-alert-message-${alert.id}`}>
+                        {alert.message}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => window.location.href = alertLink}
+                          data-testid={`button-view-details-${alert.id}`}
+                        >
+                          View Details
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => handleDismissAlert(alert.id, true)}
+                          data-testid={`button-dismiss-temp-${alert.id}`}
+                        >
+                          <X className="h-4 w-4 mr-1" />
+                          Hide
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
       <Card className="flex-1 flex flex-col min-h-0" data-testid="card-chat">
         <CardHeader className="border-b">
           <CardTitle className="text-base" data-testid="text-chat-title">Chat with {agentName}</CardTitle>
@@ -72,9 +175,9 @@ export default function Chat() {
                       key={msg.id}
                       role={msg.role as "user" | "assistant"}
                       content={msg.content}
-                      timestamp={new Date(msg.createdAt).toLocaleTimeString()}
+                      timestamp={msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString() : ""}
                       isGP={msg.role === "assistant"}
-                      entities={msg.medicalEntities}
+                      entities={msg.medicalEntities || undefined}
                       testId={`message-${msg.id}`}
                     />
                   ))
