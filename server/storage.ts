@@ -34,6 +34,12 @@ import {
   medicalHistories,
   differentialDiagnoses,
   userSettings,
+  correlationPatterns,
+  geneticVariants,
+  pharmacogenomicReports,
+  clinicalTrials,
+  trialMatchScores,
+  deteriorationPredictions,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -104,6 +110,18 @@ import {
   type InsertDifferentialDiagnosis,
   type UserSettings,
   type InsertUserSettings,
+  type CorrelationPattern,
+  type InsertCorrelationPattern,
+  type GeneticVariant,
+  type InsertGeneticVariant,
+  type PharmacogenomicReport,
+  type InsertPharmacogenomicReport,
+  type ClinicalTrial,
+  type InsertClinicalTrial,
+  type TrialMatchScore,
+  type InsertTrialMatchScore,
+  type DeteriorationPrediction,
+  type InsertDeteriorationPrediction,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -282,6 +300,7 @@ export interface IStorage {
   createImmuneDigitalTwin(digitalTwin: InsertImmuneDigitalTwin): Promise<ImmuneDigitalTwin>;
   
   // Environmental risk operations
+  getEnvironmentalRiskDataByUser(userId: string, limit?: number): Promise<EnvironmentalRiskData[]>;
   getLatestEnvironmentalRiskData(latitude: number, longitude: number): Promise<EnvironmentalRiskData | undefined>;
   getEnvironmentalRiskDataByLocation(zipCode: string, limit?: number): Promise<EnvironmentalRiskData[]>;
   createEnvironmentalRiskData(riskData: InsertEnvironmentalRiskData): Promise<EnvironmentalRiskData>;
@@ -293,6 +312,42 @@ export interface IStorage {
   acknowledgeRiskAlert(id: string): Promise<RiskAlert | undefined>;
   resolveRiskAlert(id: string): Promise<RiskAlert | undefined>;
   dismissRiskAlert(id: string): Promise<RiskAlert | undefined>;
+  
+  // Correlation pattern operations
+  getCorrelationPatterns(userId: string, limit?: number): Promise<CorrelationPattern[]>;
+  getCorrelationPatternsByType(userId: string, patternType: string): Promise<CorrelationPattern[]>;
+  getHighSeverityPatterns(userId: string): Promise<CorrelationPattern[]>;
+  createCorrelationPattern(pattern: InsertCorrelationPattern): Promise<CorrelationPattern>;
+  
+  // Genetic variant operations
+  getGeneticVariants(userId: string): Promise<GeneticVariant[]>;
+  getHighRiskVariants(userId: string): Promise<GeneticVariant[]>;
+  createGeneticVariant(variant: InsertGeneticVariant): Promise<GeneticVariant>;
+  
+  // Pharmacogenomic report operations
+  getPharmacogenomicReports(userId: string): Promise<PharmacogenomicReport[]>;
+  getPharmacogenomicReport(id: string): Promise<PharmacogenomicReport | undefined>;
+  createPharmacogenomicReport(report: InsertPharmacogenomicReport): Promise<PharmacogenomicReport>;
+  updatePharmacogenomicReportStatus(id: string, status: string, error?: string): Promise<PharmacogenomicReport | undefined>;
+  
+  // Clinical trial operations
+  getClinicalTrials(conditions?: string[], status?: string, limit?: number): Promise<ClinicalTrial[]>;
+  getClinicalTrial(id: string): Promise<ClinicalTrial | undefined>;
+  createClinicalTrial(trial: InsertClinicalTrial): Promise<ClinicalTrial>;
+  updateClinicalTrial(id: string, data: Partial<ClinicalTrial>): Promise<ClinicalTrial | undefined>;
+  
+  // Trial match score operations
+  getTrialMatchScores(userId: string, limit?: number): Promise<TrialMatchScore[]>;
+  getHighMatchTrials(userId: string, minScore?: number): Promise<TrialMatchScore[]>;
+  createTrialMatchScore(matchScore: InsertTrialMatchScore): Promise<TrialMatchScore>;
+  updateTrialMatchStatus(id: string, status: string, notes?: string): Promise<TrialMatchScore | undefined>;
+  
+  // Deterioration prediction operations
+  getDeteriorationPredictions(userId: string, limit?: number): Promise<DeteriorationPrediction[]>;
+  getLatestPrediction(userId: string): Promise<DeteriorationPrediction | undefined>;
+  getHighRiskPredictions(userId: string): Promise<DeteriorationPrediction[]>;
+  createDeteriorationPrediction(prediction: InsertDeteriorationPrediction): Promise<DeteriorationPrediction>;
+  updatePredictionOutcome(id: string, outcome: string, notes?: string): Promise<DeteriorationPrediction | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1622,6 +1677,16 @@ export class DatabaseStorage implements IStorage {
     return riskData;
   }
 
+  async getEnvironmentalRiskDataByUser(userId: string, limit: number = 30): Promise<EnvironmentalRiskData[]> {
+    const riskData = await db
+      .select()
+      .from(environmentalRiskData)
+      .where(eq(environmentalRiskData.userId, userId))
+      .orderBy(desc(environmentalRiskData.measuredAt))
+      .limit(limit);
+    return riskData;
+  }
+
   async getEnvironmentalRiskDataByLocation(zipCode: string, limit: number = 30): Promise<EnvironmentalRiskData[]> {
     const riskData = await db
       .select()
@@ -1709,6 +1774,272 @@ export class DatabaseStorage implements IStorage {
       .where(eq(riskAlerts.id, id))
       .returning();
     return alert;
+  }
+
+  // Correlation pattern operations
+  async getCorrelationPatterns(userId: string, limit: number = 50): Promise<CorrelationPattern[]> {
+    const patterns = await db
+      .select()
+      .from(correlationPatterns)
+      .where(eq(correlationPatterns.userId, userId))
+      .orderBy(desc(correlationPatterns.createdAt))
+      .limit(limit);
+    return patterns;
+  }
+
+  async getCorrelationPatternsByType(userId: string, patternType: string): Promise<CorrelationPattern[]> {
+    const patterns = await db
+      .select()
+      .from(correlationPatterns)
+      .where(
+        and(
+          eq(correlationPatterns.userId, userId),
+          eq(correlationPatterns.patternType, patternType)
+        )
+      )
+      .orderBy(desc(correlationPatterns.correlationStrength));
+    return patterns;
+  }
+
+  async getHighSeverityPatterns(userId: string): Promise<CorrelationPattern[]> {
+    const patterns = await db
+      .select()
+      .from(correlationPatterns)
+      .where(
+        and(
+          eq(correlationPatterns.userId, userId),
+          sql`${correlationPatterns.severity} IN ('high', 'critical')`
+        )
+      )
+      .orderBy(desc(correlationPatterns.createdAt));
+    return patterns;
+  }
+
+  async createCorrelationPattern(pattern: InsertCorrelationPattern): Promise<CorrelationPattern> {
+    const [newPattern] = await db
+      .insert(correlationPatterns)
+      .values(pattern)
+      .returning();
+    return newPattern;
+  }
+
+  // Genetic variant operations
+  async getGeneticVariants(userId: string): Promise<GeneticVariant[]> {
+    const variants = await db
+      .select()
+      .from(geneticVariants)
+      .where(eq(geneticVariants.userId, userId))
+      .orderBy(desc(geneticVariants.createdAt));
+    return variants;
+  }
+
+  async getHighRiskVariants(userId: string): Promise<GeneticVariant[]> {
+    const variants = await db
+      .select()
+      .from(geneticVariants)
+      .where(
+        and(
+          eq(geneticVariants.userId, userId),
+          sql`${geneticVariants.riskLevel} IN ('high', 'critical')`
+        )
+      )
+      .orderBy(desc(geneticVariants.createdAt));
+    return variants;
+  }
+
+  async createGeneticVariant(variant: InsertGeneticVariant): Promise<GeneticVariant> {
+    const [newVariant] = await db
+      .insert(geneticVariants)
+      .values(variant)
+      .returning();
+    return newVariant;
+  }
+
+  // Pharmacogenomic report operations
+  async getPharmacogenomicReports(userId: string): Promise<PharmacogenomicReport[]> {
+    const reports = await db
+      .select()
+      .from(pharmacogenomicReports)
+      .where(eq(pharmacogenomicReports.userId, userId))
+      .orderBy(desc(pharmacogenomicReports.testDate));
+    return reports;
+  }
+
+  async getPharmacogenomicReport(id: string): Promise<PharmacogenomicReport | undefined> {
+    const [report] = await db
+      .select()
+      .from(pharmacogenomicReports)
+      .where(eq(pharmacogenomicReports.id, id))
+      .limit(1);
+    return report;
+  }
+
+  async createPharmacogenomicReport(report: InsertPharmacogenomicReport): Promise<PharmacogenomicReport> {
+    const [newReport] = await db
+      .insert(pharmacogenomicReports)
+      .values(report)
+      .returning();
+    return newReport;
+  }
+
+  async updatePharmacogenomicReportStatus(id: string, status: string, error?: string): Promise<PharmacogenomicReport | undefined> {
+    const [report] = await db
+      .update(pharmacogenomicReports)
+      .set({
+        processingStatus: status,
+        processingError: error,
+        updatedAt: new Date(),
+      })
+      .where(eq(pharmacogenomicReports.id, id))
+      .returning();
+    return report;
+  }
+
+  // Clinical trial operations
+  async getClinicalTrials(conditions?: string[], status?: string, limit: number = 50): Promise<ClinicalTrial[]> {
+    let query = db.select().from(clinicalTrials);
+    
+    if (status) {
+      query = query.where(eq(clinicalTrials.status, status));
+    }
+    
+    const trials = await query
+      .orderBy(desc(clinicalTrials.lastUpdated))
+      .limit(limit);
+    
+    return trials;
+  }
+
+  async getClinicalTrial(id: string): Promise<ClinicalTrial | undefined> {
+    const [trial] = await db
+      .select()
+      .from(clinicalTrials)
+      .where(eq(clinicalTrials.id, id))
+      .limit(1);
+    return trial;
+  }
+
+  async createClinicalTrial(trial: InsertClinicalTrial): Promise<ClinicalTrial> {
+    const [newTrial] = await db
+      .insert(clinicalTrials)
+      .values(trial)
+      .returning();
+    return newTrial;
+  }
+
+  async updateClinicalTrial(id: string, data: Partial<ClinicalTrial>): Promise<ClinicalTrial | undefined> {
+    const [trial] = await db
+      .update(clinicalTrials)
+      .set({
+        ...data,
+        lastUpdated: new Date(),
+      })
+      .where(eq(clinicalTrials.id, id))
+      .returning();
+    return trial;
+  }
+
+  // Trial match score operations
+  async getTrialMatchScores(userId: string, limit: number = 50): Promise<TrialMatchScore[]> {
+    const matchScores = await db
+      .select()
+      .from(trialMatchScores)
+      .where(eq(trialMatchScores.userId, userId))
+      .orderBy(desc(trialMatchScores.overallScore))
+      .limit(limit);
+    return matchScores;
+  }
+
+  async getHighMatchTrials(userId: string, minScore: number = 0.7): Promise<TrialMatchScore[]> {
+    const matchScores = await db
+      .select()
+      .from(trialMatchScores)
+      .where(
+        and(
+          eq(trialMatchScores.userId, userId),
+          sql`${trialMatchScores.overallScore} >= ${minScore}`
+        )
+      )
+      .orderBy(desc(trialMatchScores.overallScore));
+    return matchScores;
+  }
+
+  async createTrialMatchScore(matchScore: InsertTrialMatchScore): Promise<TrialMatchScore> {
+    const [newMatchScore] = await db
+      .insert(trialMatchScores)
+      .values(matchScore)
+      .returning();
+    return newMatchScore;
+  }
+
+  async updateTrialMatchStatus(id: string, status: string, notes?: string): Promise<TrialMatchScore | undefined> {
+    const [matchScore] = await db
+      .update(trialMatchScores)
+      .set({
+        status,
+        notes,
+        updatedAt: new Date(),
+      })
+      .where(eq(trialMatchScores.id, id))
+      .returning();
+    return matchScore;
+  }
+
+  // Deterioration prediction operations
+  async getDeteriorationPredictions(userId: string, limit: number = 30): Promise<DeteriorationPrediction[]> {
+    const predictions = await db
+      .select()
+      .from(deteriorationPredictions)
+      .where(eq(deteriorationPredictions.userId, userId))
+      .orderBy(desc(deteriorationPredictions.predictionDate))
+      .limit(limit);
+    return predictions;
+  }
+
+  async getLatestPrediction(userId: string): Promise<DeteriorationPrediction | undefined> {
+    const [prediction] = await db
+      .select()
+      .from(deteriorationPredictions)
+      .where(eq(deteriorationPredictions.userId, userId))
+      .orderBy(desc(deteriorationPredictions.predictionDate))
+      .limit(1);
+    return prediction;
+  }
+
+  async getHighRiskPredictions(userId: string): Promise<DeteriorationPrediction[]> {
+    const predictions = await db
+      .select()
+      .from(deteriorationPredictions)
+      .where(
+        and(
+          eq(deteriorationPredictions.userId, userId),
+          sql`${deteriorationPredictions.riskLevel} IN ('high', 'critical')`
+        )
+      )
+      .orderBy(desc(deteriorationPredictions.predictionDate));
+    return predictions;
+  }
+
+  async createDeteriorationPrediction(prediction: InsertDeteriorationPrediction): Promise<DeteriorationPrediction> {
+    const [newPrediction] = await db
+      .insert(deteriorationPredictions)
+      .values(prediction)
+      .returning();
+    return newPrediction;
+  }
+
+  async updatePredictionOutcome(id: string, outcome: string, notes?: string): Promise<DeteriorationPrediction | undefined> {
+    const [prediction] = await db
+      .update(deteriorationPredictions)
+      .set({
+        actualOutcome: outcome,
+        outcomeNotes: notes,
+        outcomeDate: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(deteriorationPredictions.id, id))
+      .returning();
+    return prediction;
   }
 }
 
