@@ -30,6 +30,19 @@ Preferred communication style: Simple, everyday language.
 - **Drug Knowledge Base:** Comprehensive database with FDA warnings, black box alerts, mechanism of action, CYP450 metabolism pathways, and immunocompromised safety ratings.
 - **Pharmacogenomic Integration:** Supports drug-gene interaction warnings based on patient genetic profiles.
 - **Real-Time Checking:** Automatically analyzes interactions when patients add new medications.
+**Real-Time Immune Function Monitoring (NEW):** AI-powered digital biomarker tracking system that creates "immune digital twins" for personalized immune health prediction. Features:
+- **Wearable Data Integration:** Syncs with Fitbit, Apple Health, Google Fit, Amazfit, and Garmin devices for continuous biomarker collection (HRV, sleep, activity, temperature, stress, recovery scores).
+- **Immune Biomarker Analysis:** Uses machine learning to analyze 12+ biomarkers including HRV (RMSSD), resting heart rate, sleep quality, deep sleep duration, stress levels, recovery scores, body temperature, SpO2, and activity metrics.
+- **Immune Digital Twin:** AI generates personalized immune function predictions with immune scores (0-100), infection risk levels (low/moderate/high/critical), trend analysis, and contributing factors identification.
+- **Predictive Analytics:** Detects declining immune function trends 24-48 hours before symptoms appear, enabling proactive interventions.
+- **Real-Time Alerts:** Automatically creates risk alerts when immune function drops below safe thresholds or shows concerning patterns.
+**Environmental Pathogen Risk Mapping (NEW):** Location-based real-time environmental health monitoring with comprehensive risk assessment. Features:
+- **Air Quality Monitoring:** Real-time AQI tracking via OpenWeatherMap API with PM2.5, PM10, O3, NO2, SO2, and CO measurements. Immune-compromised risk scoring with enhanced sensitivity thresholds.
+- **Outbreak Tracking:** CDC-integrated disease surveillance monitoring local and regional outbreaks (flu, COVID-19, RSV, measles, etc.) with severity classification and proximity alerts.
+- **Wastewater Surveillance:** Pathogen detection via Biobot Analytics integration, tracking viral loads and emerging pathogen trends in municipal wastewater systems.
+- **Pollen & UV Index:** Allergen monitoring and UV exposure tracking for immunocompromised safety.
+- **Safety Recommendations:** AI-generated location-specific recommendations (indoor/outdoor safety, mask requirements, activity restrictions) based on combined environmental factors.
+- **Pathogen Risk Maps:** Visual geospatial risk assessment with heat mapping, outbreak zone identification, and safe zone recommendations.
 **Twilio Integration:** Multi-channel (SMS, voice) verification system and customizable SMS notifications for medication reminders, appointments, daily check-ins, and critical alerts.
 **AWS Healthcare Services:** S3 for HIPAA-compliant encrypted document storage, Textract for OCR processing of medical documents, and Comprehend Medical for medical entity extraction.
 **Health Insight Consent:** Patient-controlled granular data sharing permissions for third-party health apps (Fitbit, Apple Health, Google Fit).

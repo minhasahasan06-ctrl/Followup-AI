@@ -233,3 +233,70 @@ export function assessCombinedRisk(
 
   return { overallRisk, riskScore, primaryFactors: factors };
 }
+
+/**
+ * Sync wearable data from various devices
+ * Returns simulated data for demo purposes when API keys aren't available
+ */
+export async function syncWearableData(userId: string, deviceType: string) {
+  const { storage } = await import('./storage');
+  
+  // Check if wearable integration exists
+  const integrations = await storage.getWearableIntegrations(userId);
+  const integration = integrations.find(i => i.deviceType.toLowerCase() === deviceType.toLowerCase());
+  
+  if (!integration) {
+    throw new Error(`No ${deviceType} integration found for user`);
+  }
+  
+  // For demo: Generate simulated biomarker data
+  // In production, this would call actual wearable APIs (Fitbit, Apple Health, etc.)
+  const biomarker = generateSimulatedBiomarker(userId, integration.id);
+  const savedBiomarker = await storage.createImmuneBiomarker(biomarker);
+  
+  return {
+    success: true,
+    message: `Successfully synced data from ${deviceType}`,
+    biomarker: savedBiomarker,
+  };
+}
+
+/**
+ * Analyze immune biomarkers and generate digital twin prediction
+ */
+export async function analyzeImmuneBiomarkers(userId: string) {
+  const { storage } = await import('./storage');
+  
+  // Fetch recent biomarkers
+  const biomarkers = await storage.getImmuneBiomarkers(userId, 30);
+  
+  if (biomarkers.length === 0) {
+    return {
+      success: false,
+      message: 'No biomarker data available. Please sync your wearable device first.',
+    };
+  }
+  
+  // Get patient context
+  const user = await storage.getUser(userId);
+  const patientProfile = await storage.getPatientProfile(userId);
+  const medications = await storage.getActiveMedications(userId);
+  
+  const patientContext = {
+    immunocompromisedCondition: patientProfile?.immunocompromisedCondition || undefined,
+    medications: medications.map(m => m.name),
+    age: patientProfile?.dateOfBirth ? 
+      Math.floor((Date.now() - new Date(patientProfile.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 
+      undefined,
+  };
+  
+  // Generate digital twin prediction
+  const digitalTwinData = await generateImmuneDigitalTwin(userId, biomarkers, patientContext);
+  const digitalTwin = await storage.createImmuneDigitalTwin(digitalTwinData);
+  
+  return {
+    success: true,
+    digitalTwin,
+    biomarkersAnalyzed: biomarkers.length,
+  };
+}

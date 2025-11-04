@@ -2827,6 +2827,179 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     }
   });
 
+  // Immune monitoring routes
+  app.get('/api/immune/biomarkers', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 30;
+      const biomarkers = await storage.getImmuneBiomarkers(userId, limit);
+      res.json(biomarkers);
+    } catch (error) {
+      console.error('Error fetching immune biomarkers:', error);
+      res.status(500).json({ message: 'Failed to fetch biomarkers' });
+    }
+  });
+
+  app.get('/api/immune/digital-twin', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const digitalTwin = await storage.getLatestImmuneDigitalTwin(userId);
+      res.json(digitalTwin);
+    } catch (error) {
+      console.error('Error fetching immune digital twin:', error);
+      res.status(500).json({ message: 'Failed to fetch digital twin' });
+    }
+  });
+
+  app.post('/api/immune/sync-wearable', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { deviceType } = req.body;
+      
+      if (!deviceType) {
+        return res.status(400).json({ message: 'Device type is required' });
+      }
+
+      const { syncWearableData } = await import('./immuneMonitoring');
+      const result = await syncWearableData(userId, deviceType);
+      
+      res.json(result);
+    } catch (error) {
+      console.error('Error syncing wearable data:', error);
+      res.status(500).json({ message: 'Failed to sync wearable data' });
+    }
+  });
+
+  app.post('/api/immune/analyze', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { analyzeImmuneBiomarkers } = await import('./immuneMonitoring');
+      const analysis = await analyzeImmuneBiomarkers(userId);
+      res.json(analysis);
+    } catch (error) {
+      console.error('Error analyzing immune biomarkers:', error);
+      res.status(500).json({ message: 'Failed to analyze biomarkers' });
+    }
+  });
+
+  // Environmental risk routes
+  app.get('/api/environmental/risk', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const user = await storage.getUser(userId);
+      const patientProfile = await storage.getPatientProfile(userId);
+      
+      if (!patientProfile?.zipCode) {
+        return res.status(400).json({ message: 'User location (zip code) is required' });
+      }
+
+      const riskData = await storage.getEnvironmentalRiskDataByLocation(patientProfile.zipCode, 1);
+      
+      if (riskData.length > 0) {
+        res.json(riskData[0]);
+      } else {
+        res.json({ message: 'No environmental risk data available for this location' });
+      }
+    } catch (error) {
+      console.error('Error fetching environmental risk data:', error);
+      res.status(500).json({ message: 'Failed to fetch environmental risk data' });
+    }
+  });
+
+  app.post('/api/environmental/update', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const patientProfile = await storage.getPatientProfile(userId);
+      
+      if (!patientProfile?.zipCode) {
+        return res.status(400).json({ message: 'User location (zip code) is required' });
+      }
+
+      const { fetchEnvironmentalRiskData } = await import('./environmentalRisk');
+      const riskData = await fetchEnvironmentalRiskData(patientProfile.zipCode);
+      
+      res.json(riskData);
+    } catch (error) {
+      console.error('Error updating environmental risk data:', error);
+      res.status(500).json({ message: 'Failed to update environmental risk data' });
+    }
+  });
+
+  app.get('/api/environmental/pathogen-map', isAuthenticated, async (req: any, res) => {
+    try {
+      const { zipCode } = req.query;
+      
+      if (!zipCode) {
+        return res.status(400).json({ message: 'Zip code is required' });
+      }
+
+      const { generatePathogenRiskMap } = await import('./environmentalRisk');
+      const riskMap = await generatePathogenRiskMap(zipCode as string);
+      
+      res.json(riskMap);
+    } catch (error) {
+      console.error('Error generating pathogen risk map:', error);
+      res.status(500).json({ message: 'Failed to generate risk map' });
+    }
+  });
+
+  // Risk alert routes
+  app.get('/api/alerts/active', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const alerts = await storage.getActiveRiskAlerts(userId);
+      res.json(alerts);
+    } catch (error) {
+      console.error('Error fetching active alerts:', error);
+      res.status(500).json({ message: 'Failed to fetch alerts' });
+    }
+  });
+
+  app.get('/api/alerts/all', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const alerts = await storage.getAllRiskAlerts(userId, limit);
+      res.json(alerts);
+    } catch (error) {
+      console.error('Error fetching alerts:', error);
+      res.status(500).json({ message: 'Failed to fetch alerts' });
+    }
+  });
+
+  app.post('/api/alerts/:id/acknowledge', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const alert = await storage.acknowledgeRiskAlert(id);
+      res.json(alert);
+    } catch (error) {
+      console.error('Error acknowledging alert:', error);
+      res.status(500).json({ message: 'Failed to acknowledge alert' });
+    }
+  });
+
+  app.post('/api/alerts/:id/resolve', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const alert = await storage.resolveRiskAlert(id);
+      res.json(alert);
+    } catch (error) {
+      console.error('Error resolving alert:', error);
+      res.status(500).json({ message: 'Failed to resolve alert' });
+    }
+  });
+
+  app.post('/api/alerts/:id/dismiss', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const alert = await storage.dismissRiskAlert(id);
+      res.json(alert);
+    } catch (error) {
+      console.error('Error dismissing alert:', error);
+      res.status(500).json({ message: 'Failed to dismiss alert' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
