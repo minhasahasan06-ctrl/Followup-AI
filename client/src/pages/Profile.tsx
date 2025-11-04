@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { PatientProfile, DoctorProfile } from "@shared/schema";
+import PhoneVerification from "@/components/PhoneVerification";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -234,41 +235,45 @@ export default function Profile() {
         </TabsContent>
 
         <TabsContent value="notifications">
-          <Card>
-            <CardHeader>
-              <CardTitle>Notification Preferences</CardTitle>
-              <CardDescription>Manage how you receive updates and alerts</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Email Notifications</p>
-                  <p className="text-sm text-muted-foreground">Receive updates via email</p>
+          <div className="space-y-6">
+            <PhoneVerification />
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Email Notification Preferences</CardTitle>
+                <CardDescription>Manage email updates and alerts</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Email Notifications</p>
+                    <p className="text-sm text-muted-foreground">Receive updates via email</p>
+                  </div>
+                  <Button variant="outline" size="sm" data-testid="button-toggle-email">
+                    Enabled
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm" data-testid="button-toggle-email">
-                  Enabled
-                </Button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Daily Reminders</p>
-                  <p className="text-sm text-muted-foreground">Get daily follow-up reminders</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Daily Reminders</p>
+                    <p className="text-sm text-muted-foreground">Get daily follow-up reminders</p>
+                  </div>
+                  <Button variant="outline" size="sm" data-testid="button-toggle-reminders">
+                    Enabled
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm" data-testid="button-toggle-reminders">
-                  Enabled
-                </Button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Research Updates</p>
-                  <p className="text-sm text-muted-foreground">Notifications about research participation</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Research Updates</p>
+                    <p className="text-sm text-muted-foreground">Notifications about research participation</p>
+                  </div>
+                  <Button variant="outline" size="sm" data-testid="button-toggle-research">
+                    Disabled
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm" data-testid="button-toggle-research">
-                  Disabled
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

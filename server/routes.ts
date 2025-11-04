@@ -289,6 +289,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Send SMS verification code
+  app.post('/api/auth/send-phone-verification', isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const { phoneNumber, channel } = req.body;
+      
+      if (!phoneNumber) {
+        return res.status(400).json({ message: "Phone number is required" });
+      }
+      
+      const { sendVerificationCode } = await import('./twilio');
+      const result = await sendVerificationCode({ to: phoneNumber, channel: channel || 'sms' });
+      
+      if (!result.success) {
+        return res.status(500).json({ message: "Failed to send verification code" });
+      }
+      
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      await storage.updatePhoneVerificationCode(userId, phoneNumber, result.code!, expiresAt);
+      
+      res.json({ message: `Verification code sent via ${channel || 'SMS'}` });
+    } catch (error) {
+      console.error("Error sending phone verification:", error);
+      res.status(500).json({ message: "Failed to send verification code" });
+    }
+  });
+  
+  // Verify phone number
+  app.post('/api/auth/verify-phone', isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const { code } = req.body;
+      
+      if (!code) {
+        return res.status(400).json({ message: "Verification code is required" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (!user.phoneVerificationCode || !user.phoneVerificationExpires) {
+        return res.status(400).json({ message: "No verification code found. Please request a new code." });
+      }
+      
+      if (new Date() > user.phoneVerificationExpires) {
+        return res.status(400).json({ message: "Verification code expired. Please request a new code." });
+      }
+      
+      if (user.phoneVerificationCode !== code) {
+        return res.status(400).json({ message: "Invalid verification code" });
+      }
+      
+      await storage.verifyPhoneNumber(userId);
+      
+      const { sendWelcomeSMS } = await import('./twilio');
+      if (user.phoneNumber && user.smsNotificationsEnabled) {
+        await sendWelcomeSMS(user.phoneNumber, user.firstName!);
+      }
+      
+      res.json({ message: "Phone number verified successfully" });
+    } catch (error) {
+      console.error("Error verifying phone:", error);
+      res.status(500).json({ message: "Failed to verify phone number" });
+    }
+  });
+  
+  // Update SMS preferences
+  app.post('/api/auth/sms-preferences', isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const {
+        smsNotificationsEnabled,
+        smsMedicationReminders,
+        smsAppointmentReminders,
+        smsDailyFollowups,
+        smsHealthAlerts,
+      } = req.body;
+      
+      await storage.updateSmsPreferences(userId, {
+        smsNotificationsEnabled,
+        smsMedicationReminders,
+        smsAppointmentReminders,
+        smsDailyFollowups,
+        smsHealthAlerts,
+      });
+      
+      res.json({ message: "SMS preferences updated successfully" });
+    } catch (error) {
+      console.error("Error updating SMS preferences:", error);
+      res.status(500).json({ message: "Failed to update SMS preferences" });
+    }
+  });
+  
   // Request password reset
   app.post('/api/auth/forgot-password', async (req, res) => {
     try {
@@ -1030,10 +1125,24 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
   app.post('/api/medications', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user!.id;
+      const user = await storage.getUser(userId);
+      
       const medication = await storage.createMedication({
         patientId: userId,
         ...req.body,
       });
+      
+      if (user?.phoneNumber && user?.phoneVerified && user?.smsMedicationReminders) {
+        const { sendMedicationReminder } = await import('./twilio');
+        const time = req.body.timeOfDay || 'scheduled time';
+        await sendMedicationReminder(
+          user.phoneNumber,
+          req.body.name || 'Medication',
+          req.body.dosage || '',
+          time
+        );
+      }
+      
       res.json(medication);
     } catch (error) {
       console.error("Error creating medication:", error);
