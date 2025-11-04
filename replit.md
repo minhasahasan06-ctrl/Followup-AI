@@ -118,6 +118,25 @@ Preferred communication style: Simple, everyday language.
 - AI-generated session summaries for medical history tracking
 - Automatic health insights generation from conversation patterns
 
+**AWS Healthcare Services Integration:**
+- AWS S3 for HIPAA-compliant encrypted medical document storage (AES256 server-side encryption)
+- AWS Textract for asynchronous OCR processing:
+  - Supports large documents up to 20MB and 500 pages
+  - Exponential backoff polling with 33-minute timeout
+  - Full pagination support via NextToken for multi-page documents
+  - Extracts all text blocks from medical PDFs, images (JPG, PNG)
+- AWS Comprehend Medical for medical entity extraction:
+  - Intelligent text chunking (19KB batches) to handle large documents
+  - Extracts medications, medical conditions, procedures
+  - Deduplication of entities across chunks
+  - Sequential processing with rate limiting
+- Medical Document Management UI:
+  - Drag-and-drop file upload with progress tracking
+  - Real-time processing status monitoring
+  - OCR results viewer with extracted text display
+  - Medical entity categorization and badges
+  - Document type classification (lab results, prescriptions, imaging reports, etc.)
+
 **Public Medical Data Integration:**
 - PubMed E-utilities API integration for accessing research articles and medical literature
 - PhysioNet dataset access for physiological signal databases (ECG, clinical notes, etc.)
