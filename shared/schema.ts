@@ -1395,3 +1395,308 @@ export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({
 
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
 export type UserSettings = typeof userSettings.$inferSelect;
+
+// Multi-Condition Correlation Engine
+export const correlationPatterns = pgTable("correlation_patterns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Pattern metadata
+  patternName: varchar("pattern_name").notNull(), // e.g., "High stress → Poor sleep → Immune decline"
+  patternType: varchar("pattern_type").notNull(), // 'positive', 'negative', 'neutral'
+  
+  // Correlated factors
+  factors: jsonb("factors").$type<Array<{
+    type: string; // 'medication', 'environment', 'mood', 'sleep', 'biomarker', 'symptom'
+    name: string;
+    value?: any;
+    timestamp?: string;
+  }>>(),
+  
+  // Statistical analysis
+  correlationStrength: decimal("correlation_strength", { precision: 3, scale: 2 }), // -1.00 to 1.00
+  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  sampleSize: integer("sample_size"), // Number of data points analyzed
+  
+  // Time-based analysis
+  timeWindow: varchar("time_window"), // e.g., "7 days", "30 days", "6 months"
+  firstObserved: timestamp("first_observed"),
+  lastObserved: timestamp("last_observed"),
+  frequency: integer("frequency"), // How often this pattern occurs
+  
+  // AI-generated insights
+  insight: text("insight"), // Human-readable explanation
+  recommendation: text("recommendation"), // Actionable advice
+  severity: varchar("severity"), // 'low', 'moderate', 'high', 'critical'
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertCorrelationPatternSchema = createInsertSchema(correlationPatterns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCorrelationPattern = z.infer<typeof insertCorrelationPatternSchema>;
+export type CorrelationPattern = typeof correlationPatterns.$inferSelect;
+
+// Genomic Risk Profiling
+export const geneticVariants = pgTable("genetic_variants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Genetic information
+  gene: varchar("gene").notNull(), // e.g., "CYP2D6", "CYP3A4", "SLCO1B1"
+  variant: varchar("variant").notNull(), // e.g., "*1/*2", "rs4149056"
+  genotype: varchar("genotype"), // e.g., "AA", "AG", "GG"
+  phenotype: varchar("phenotype"), // e.g., "poor metabolizer", "normal metabolizer", "ultrarapid metabolizer"
+  
+  // Clinical significance
+  clinicalSignificance: varchar("clinical_significance"), // 'pathogenic', 'likely_pathogenic', 'uncertain', 'likely_benign', 'benign'
+  affectedDrugs: jsonb("affected_drugs").$type<string[]>(), // Drugs affected by this variant
+  
+  // Risk assessment
+  riskLevel: varchar("risk_level"), // 'low', 'moderate', 'high', 'critical'
+  recommendations: text("recommendations"),
+  
+  // Source information
+  testingProvider: varchar("testing_provider"), // e.g., "23andMe", "AncestryDNA", "Hospital Lab"
+  testDate: timestamp("test_date"),
+  reportUrl: varchar("report_url"), // S3 URL for uploaded report
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertGeneticVariantSchema = createInsertSchema(geneticVariants).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertGeneticVariant = z.infer<typeof insertGeneticVariantSchema>;
+export type GeneticVariant = typeof geneticVariants.$inferSelect;
+
+export const pharmacogenomicReports = pgTable("pharmacogenomic_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Report metadata
+  reportName: varchar("report_name").notNull(),
+  testingProvider: varchar("testing_provider").notNull(),
+  testDate: timestamp("test_date").notNull(),
+  reportFileUrl: varchar("report_file_url"), // S3 URL for full report
+  
+  // Extracted insights
+  processedVariants: integer("processed_variants"), // Count of variants analyzed
+  highRiskDrugs: jsonb("high_risk_drugs").$type<string[]>(),
+  recommendations: jsonb("recommendations").$type<Array<{
+    medication: string;
+    recommendation: string;
+    reasoning: string;
+  }>>(),
+  
+  // Processing status
+  processingStatus: varchar("processing_status").default("pending"), // 'pending', 'processing', 'completed', 'error'
+  processingError: text("processing_error"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertPharmacogenomicReportSchema = createInsertSchema(pharmacogenomicReports).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPharmacogenomicReport = z.infer<typeof insertPharmacogenomicReportSchema>;
+export type PharmacogenomicReport = typeof pharmacogenomicReports.$inferSelect;
+
+// Clinical Trial Matchmaking
+export const clinicalTrials = pgTable("clinical_trials", {
+  id: varchar("id").primaryKey(), // NCT number from ClinicalTrials.gov
+  
+  // Basic trial information
+  title: text("title").notNull(),
+  officialTitle: text("official_title"),
+  briefSummary: text("brief_summary"),
+  detailedDescription: text("detailed_description"),
+  
+  // Trial status
+  status: varchar("status").notNull(), // 'recruiting', 'active', 'completed', 'suspended', 'terminated'
+  phase: varchar("phase"), // 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'N/A'
+  studyType: varchar("study_type"), // 'Interventional', 'Observational'
+  
+  // Conditions and interventions
+  conditions: jsonb("conditions").$type<string[]>(),
+  interventions: jsonb("interventions").$type<Array<{
+    type: string;
+    name: string;
+  }>>(),
+  
+  // Eligibility
+  eligibilityCriteria: text("eligibility_criteria"),
+  minAge: integer("min_age"), // Age in years
+  maxAge: integer("max_age"),
+  gender: varchar("gender"), // 'All', 'Male', 'Female'
+  healthyVolunteers: boolean("healthy_volunteers"),
+  
+  // Location and contact
+  locations: jsonb("locations").$type<Array<{
+    facility: string;
+    city: string;
+    state: string;
+    country: string;
+    zipCode?: string;
+    status?: string;
+    contacts?: Array<{
+      name: string;
+      phone?: string;
+      email?: string;
+    }>;
+  }>>(),
+  
+  // Sponsor and dates
+  sponsor: varchar("sponsor"),
+  collaborators: jsonb("collaborators").$type<string[]>(),
+  startDate: timestamp("start_date"),
+  completionDate: timestamp("completion_date"),
+  
+  // URLs
+  clinicalTrialsGovUrl: varchar("clinical_trials_gov_url"),
+  
+  // Metadata
+  lastUpdated: timestamp("last_updated"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertClinicalTrialSchema = createInsertSchema(clinicalTrials).omit({
+  createdAt: true,
+});
+
+export type InsertClinicalTrial = z.infer<typeof insertClinicalTrialSchema>;
+export type ClinicalTrial = typeof clinicalTrials.$inferSelect;
+
+export const trialMatchScores = pgTable("trial_match_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  trialId: varchar("trial_id").notNull().references(() => clinicalTrials.id),
+  
+  // Match scoring
+  overallScore: decimal("overall_score", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  conditionMatch: decimal("condition_match", { precision: 3, scale: 2 }),
+  locationMatch: decimal("location_match", { precision: 3, scale: 2 }),
+  eligibilityMatch: decimal("eligibility_match", { precision: 3, scale: 2 }),
+  
+  // Detailed analysis
+  matchingCriteria: jsonb("matching_criteria").$type<Array<{
+    criterion: string;
+    matched: boolean;
+    reasoning: string;
+  }>>(),
+  disqualifyingFactors: jsonb("disqualifying_factors").$type<string[]>(),
+  
+  // Distance calculation
+  nearestLocationDistance: decimal("nearest_location_distance", { precision: 6, scale: 2 }), // miles
+  nearestLocationCity: varchar("nearest_location_city"),
+  nearestLocationState: varchar("nearest_location_state"),
+  
+  // AI-generated insights
+  recommendation: varchar("recommendation"), // 'highly_recommended', 'recommended', 'consider', 'not_recommended'
+  reasoning: text("reasoning"),
+  
+  // User actions
+  status: varchar("status").default("new"), // 'new', 'interested', 'contacted', 'enrolled', 'declined'
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertTrialMatchScoreSchema = createInsertSchema(trialMatchScores).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTrialMatchScore = z.infer<typeof insertTrialMatchScoreSchema>;
+export type TrialMatchScore = typeof trialMatchScores.$inferSelect;
+
+// Predictive Hospitalization Prevention
+export const deteriorationPredictions = pgTable("deterioration_predictions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Prediction metadata
+  predictionDate: timestamp("prediction_date").notNull().defaultNow(),
+  predictionHorizon: integer("prediction_horizon").default(72), // hours (72-hour default)
+  
+  // Risk assessment
+  hospitalizationRisk: decimal("hospitalization_risk", { precision: 3, scale: 2 }).notNull(), // 0.00 to 1.00
+  riskLevel: varchar("risk_level").notNull(), // 'low', 'moderate', 'high', 'critical'
+  riskTrend: varchar("risk_trend"), // 'improving', 'stable', 'worsening', 'rapidly_worsening'
+  
+  // Contributing factors
+  primaryRiskFactors: jsonb("primary_risk_factors").$type<Array<{
+    factor: string;
+    type: string; // 'biomarker', 'symptom', 'medication', 'environmental', 'behavioral'
+    value: any;
+    impact: 'high' | 'moderate' | 'low';
+    trend: 'improving' | 'stable' | 'worsening';
+  }>>(),
+  
+  // Biomarker-based indicators
+  immuneScoreTrend: decimal("immune_score_trend", { precision: 5, scale: 2 }), // Change in immune score
+  hrvTrend: decimal("hrv_trend", { precision: 5, scale: 2 }), // Change in HRV
+  sleepQualityTrend: decimal("sleep_quality_trend", { precision: 5, scale: 2 }),
+  restingHeartRateTrend: decimal("resting_heart_rate_trend", { precision: 5, scale: 2 }),
+  temperatureTrend: decimal("temperature_trend", { precision: 5, scale: 2 }),
+  
+  // Environmental factors
+  environmentalRiskScore: decimal("environmental_risk_score", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  airQualityImpact: varchar("air_quality_impact"), // 'none', 'low', 'moderate', 'high'
+  pathogenExposureRisk: varchar("pathogen_exposure_risk"), // 'low', 'moderate', 'high'
+  
+  // AI-generated insights
+  earlyWarningSignals: jsonb("early_warning_signals").$type<string[]>(),
+  preventionRecommendations: jsonb("prevention_recommendations").$type<Array<{
+    action: string;
+    priority: 'immediate' | 'high' | 'moderate' | 'low';
+    category: string; // 'medication', 'lifestyle', 'environmental', 'medical_attention'
+    reasoning: string;
+  }>>(),
+  
+  // Clinical guidance
+  recommendedActions: jsonb("recommended_actions").$type<Array<{
+    action: string;
+    urgency: 'immediate' | 'within_24h' | 'within_72h' | 'routine';
+    description: string;
+  }>>(),
+  shouldContactDoctor: boolean("should_contact_doctor").default(false),
+  shouldSeekEmergencyCare: boolean("should_seek_emergency_care").default(false),
+  
+  // Model metadata
+  modelVersion: varchar("model_version"),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  dataQualityScore: decimal("data_quality_score", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  
+  // Outcome tracking
+  actualOutcome: varchar("actual_outcome"), // 'prevented', 'hospitalized', 'false_alarm', null if too early
+  outcomeNotes: text("outcome_notes"),
+  outcomeDate: timestamp("outcome_date"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDeteriorationPredictionSchema = createInsertSchema(deteriorationPredictions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeteriorationPrediction = z.infer<typeof insertDeteriorationPredictionSchema>;
+export type DeteriorationPrediction = typeof deteriorationPredictions.$inferSelect;
