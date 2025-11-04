@@ -11,6 +11,14 @@ import {
   interactionAlerts,
   pharmacogenomicProfiles,
   drugGeneInteractions,
+  medicationSchedules,
+  medicationAdherence,
+  dietaryPreferences,
+  mealPlans,
+  meals,
+  nutritionEntries,
+  companionCheckIns,
+  companionEngagement,
   dynamicTasks,
   autoJournals,
   calmActivities,
@@ -64,6 +72,22 @@ import {
   type InsertPharmacogenomicProfile,
   type DrugGeneInteraction,
   type InsertDrugGeneInteraction,
+  type MedicationSchedule,
+  type InsertMedicationSchedule,
+  type MedicationAdherence,
+  type InsertMedicationAdherence,
+  type DietaryPreference,
+  type InsertDietaryPreference,
+  type MealPlan,
+  type InsertMealPlan,
+  type Meal,
+  type InsertMeal,
+  type NutritionEntry,
+  type InsertNutritionEntry,
+  type CompanionCheckIn,
+  type InsertCompanionCheckIn,
+  type CompanionEngagement,
+  type InsertCompanionEngagement,
   type DynamicTask,
   type InsertDynamicTask,
   type AutoJournal,
@@ -348,6 +372,52 @@ export interface IStorage {
   getHighRiskPredictions(userId: string): Promise<DeteriorationPrediction[]>;
   createDeteriorationPrediction(prediction: InsertDeteriorationPrediction): Promise<DeteriorationPrediction>;
   updatePredictionOutcome(id: string, outcome: string, notes?: string): Promise<DeteriorationPrediction | undefined>;
+  
+  // Medication schedule operations
+  getMedicationSchedules(medicationId: string): Promise<MedicationSchedule[]>;
+  getPatientMedicationSchedules(patientId: string, activeOnly?: boolean): Promise<MedicationSchedule[]>;
+  createMedicationSchedule(schedule: InsertMedicationSchedule): Promise<MedicationSchedule>;
+  updateMedicationSchedule(id: string, data: Partial<MedicationSchedule>): Promise<MedicationSchedule | undefined>;
+  
+  // Medication adherence operations
+  getMedicationAdherence(medicationId: string, limit?: number): Promise<MedicationAdherence[]>;
+  getPatientAdherence(patientId: string, limit?: number): Promise<MedicationAdherence[]>;
+  getPendingMedications(patientId: string): Promise<MedicationAdherence[]>;
+  createMedicationAdherence(adherence: InsertMedicationAdherence): Promise<MedicationAdherence>;
+  updateMedicationAdherence(id: string, data: Partial<MedicationAdherence>): Promise<MedicationAdherence | undefined>;
+  
+  // Dietary preference operations
+  getDietaryPreferences(patientId: string): Promise<DietaryPreference | undefined>;
+  upsertDietaryPreferences(preferences: InsertDietaryPreference): Promise<DietaryPreference>;
+  
+  // Meal plan operations
+  getMealPlans(patientId: string, activeOnly?: boolean): Promise<MealPlan[]>;
+  getActiveMealPlan(patientId: string): Promise<MealPlan | undefined>;
+  createMealPlan(mealPlan: InsertMealPlan): Promise<MealPlan>;
+  updateMealPlan(id: string, data: Partial<MealPlan>): Promise<MealPlan | undefined>;
+  
+  // Meal operations
+  getMeals(patientId: string, mealPlanId?: string, limit?: number): Promise<Meal[]>;
+  getMealsByDateRange(patientId: string, startDate: Date, endDate: Date): Promise<Meal[]>;
+  getTodaysMeals(patientId: string): Promise<Meal[]>;
+  createMeal(meal: InsertMeal): Promise<Meal>;
+  updateMeal(id: string, data: Partial<Meal>): Promise<Meal | undefined>;
+  
+  // Nutrition entry operations
+  getNutritionEntries(mealId: string): Promise<NutritionEntry[]>;
+  getPatientNutritionEntries(patientId: string, limit?: number): Promise<NutritionEntry[]>;
+  createNutritionEntry(entry: InsertNutritionEntry): Promise<NutritionEntry>;
+  
+  // Companion check-in operations
+  getCompanionCheckIns(patientId: string, limit?: number): Promise<CompanionCheckIn[]>;
+  getCheckInsByType(patientId: string, checkInType: string, limit?: number): Promise<CompanionCheckIn[]>;
+  getRecentCheckIns(patientId: string, days: number): Promise<CompanionCheckIn[]>;
+  createCompanionCheckIn(checkIn: InsertCompanionCheckIn): Promise<CompanionCheckIn>;
+  
+  // Companion engagement operations
+  getCompanionEngagement(patientId: string): Promise<CompanionEngagement | undefined>;
+  upsertCompanionEngagement(engagement: InsertCompanionEngagement): Promise<CompanionEngagement>;
+  updateCompanionEngagement(patientId: string, data: Partial<CompanionEngagement>): Promise<CompanionEngagement | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2040,6 +2110,354 @@ export class DatabaseStorage implements IStorage {
       .where(eq(deteriorationPredictions.id, id))
       .returning();
     return prediction;
+  }
+
+  // Medication schedule operations
+  async getMedicationSchedules(medicationId: string): Promise<MedicationSchedule[]> {
+    const schedules = await db
+      .select()
+      .from(medicationSchedules)
+      .where(eq(medicationSchedules.medicationId, medicationId));
+    return schedules;
+  }
+
+  async getPatientMedicationSchedules(patientId: string, activeOnly: boolean = true): Promise<MedicationSchedule[]> {
+    if (activeOnly) {
+      const schedules = await db
+        .select()
+        .from(medicationSchedules)
+        .where(
+          and(
+            eq(medicationSchedules.patientId, patientId),
+            eq(medicationSchedules.active, true)
+          )
+        );
+      return schedules;
+    } else {
+      const schedules = await db
+        .select()
+        .from(medicationSchedules)
+        .where(eq(medicationSchedules.patientId, patientId));
+      return schedules;
+    }
+  }
+
+  async createMedicationSchedule(schedule: InsertMedicationSchedule): Promise<MedicationSchedule> {
+    const [newSchedule] = await db
+      .insert(medicationSchedules)
+      .values(schedule)
+      .returning();
+    return newSchedule;
+  }
+
+  async updateMedicationSchedule(id: string, data: Partial<MedicationSchedule>): Promise<MedicationSchedule | undefined> {
+    const [schedule] = await db
+      .update(medicationSchedules)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(medicationSchedules.id, id))
+      .returning();
+    return schedule;
+  }
+
+  // Medication adherence operations
+  async getMedicationAdherence(medicationId: string, limit: number = 100): Promise<MedicationAdherence[]> {
+    const adherence = await db
+      .select()
+      .from(medicationAdherence)
+      .where(eq(medicationAdherence.medicationId, medicationId))
+      .orderBy(desc(medicationAdherence.scheduledTime))
+      .limit(limit);
+    return adherence;
+  }
+
+  async getPatientAdherence(patientId: string, limit: number = 100): Promise<MedicationAdherence[]> {
+    const adherence = await db
+      .select()
+      .from(medicationAdherence)
+      .where(eq(medicationAdherence.patientId, patientId))
+      .orderBy(desc(medicationAdherence.scheduledTime))
+      .limit(limit);
+    return adherence;
+  }
+
+  async getPendingMedications(patientId: string): Promise<MedicationAdherence[]> {
+    const pending = await db
+      .select()
+      .from(medicationAdherence)
+      .where(
+        and(
+          eq(medicationAdherence.patientId, patientId),
+          eq(medicationAdherence.status, "pending")
+        )
+      )
+      .orderBy(medicationAdherence.scheduledTime);
+    return pending;
+  }
+
+  async createMedicationAdherence(adherence: InsertMedicationAdherence): Promise<MedicationAdherence> {
+    const [newAdherence] = await db
+      .insert(medicationAdherence)
+      .values(adherence)
+      .returning();
+    return newAdherence;
+  }
+
+  async updateMedicationAdherence(id: string, data: Partial<MedicationAdherence>): Promise<MedicationAdherence | undefined> {
+    const [adherence] = await db
+      .update(medicationAdherence)
+      .set(data)
+      .where(eq(medicationAdherence.id, id))
+      .returning();
+    return adherence;
+  }
+
+  // Dietary preference operations
+  async getDietaryPreferences(patientId: string): Promise<DietaryPreference | undefined> {
+    const [preferences] = await db
+      .select()
+      .from(dietaryPreferences)
+      .where(eq(dietaryPreferences.patientId, patientId));
+    return preferences;
+  }
+
+  async upsertDietaryPreferences(preferences: InsertDietaryPreference): Promise<DietaryPreference> {
+    const [upserted] = await db
+      .insert(dietaryPreferences)
+      .values(preferences)
+      .onConflictDoUpdate({
+        target: dietaryPreferences.patientId,
+        set: { ...preferences, updatedAt: new Date() },
+      })
+      .returning();
+    return upserted;
+  }
+
+  // Meal plan operations
+  async getMealPlans(patientId: string, activeOnly: boolean = false): Promise<MealPlan[]> {
+    if (activeOnly) {
+      const plans = await db
+        .select()
+        .from(mealPlans)
+        .where(
+          and(
+            eq(mealPlans.patientId, patientId),
+            eq(mealPlans.active, true)
+          )
+        )
+        .orderBy(desc(mealPlans.weekStartDate));
+      return plans;
+    } else {
+      const plans = await db
+        .select()
+        .from(mealPlans)
+        .where(eq(mealPlans.patientId, patientId))
+        .orderBy(desc(mealPlans.weekStartDate));
+      return plans;
+    }
+  }
+
+  async getActiveMealPlan(patientId: string): Promise<MealPlan | undefined> {
+    const [plan] = await db
+      .select()
+      .from(mealPlans)
+      .where(
+        and(
+          eq(mealPlans.patientId, patientId),
+          eq(mealPlans.active, true)
+        )
+      )
+      .orderBy(desc(mealPlans.weekStartDate))
+      .limit(1);
+    return plan;
+  }
+
+  async createMealPlan(mealPlan: InsertMealPlan): Promise<MealPlan> {
+    const [newPlan] = await db
+      .insert(mealPlans)
+      .values(mealPlan)
+      .returning();
+    return newPlan;
+  }
+
+  async updateMealPlan(id: string, data: Partial<MealPlan>): Promise<MealPlan | undefined> {
+    const [plan] = await db
+      .update(mealPlans)
+      .set(data)
+      .where(eq(mealPlans.id, id))
+      .returning();
+    return plan;
+  }
+
+  // Meal operations
+  async getMeals(patientId: string, mealPlanId?: string, limit: number = 100): Promise<Meal[]> {
+    if (mealPlanId) {
+      const mealsData = await db
+        .select()
+        .from(meals)
+        .where(
+          and(
+            eq(meals.patientId, patientId),
+            eq(meals.mealPlanId, mealPlanId)
+          )
+        )
+        .orderBy(desc(meals.scheduledTime))
+        .limit(limit);
+      return mealsData;
+    } else {
+      const mealsData = await db
+        .select()
+        .from(meals)
+        .where(eq(meals.patientId, patientId))
+        .orderBy(desc(meals.scheduledTime))
+        .limit(limit);
+      return mealsData;
+    }
+  }
+
+  async getMealsByDateRange(patientId: string, startDate: Date, endDate: Date): Promise<Meal[]> {
+    const mealsData = await db
+      .select()
+      .from(meals)
+      .where(
+        and(
+          eq(meals.patientId, patientId),
+          sql`${meals.scheduledTime} BETWEEN ${startDate} AND ${endDate}`
+        )
+      )
+      .orderBy(meals.scheduledTime);
+    return mealsData;
+  }
+
+  async getTodaysMeals(patientId: string): Promise<Meal[]> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return this.getMealsByDateRange(patientId, today, tomorrow);
+  }
+
+  async createMeal(meal: InsertMeal): Promise<Meal> {
+    const [newMeal] = await db
+      .insert(meals)
+      .values(meal)
+      .returning();
+    return newMeal;
+  }
+
+  async updateMeal(id: string, data: Partial<Meal>): Promise<Meal | undefined> {
+    const [meal] = await db
+      .update(meals)
+      .set(data)
+      .where(eq(meals.id, id))
+      .returning();
+    return meal;
+  }
+
+  // Nutrition entry operations
+  async getNutritionEntries(mealId: string): Promise<NutritionEntry[]> {
+    const entries = await db
+      .select()
+      .from(nutritionEntries)
+      .where(eq(nutritionEntries.mealId, mealId));
+    return entries;
+  }
+
+  async getPatientNutritionEntries(patientId: string, limit: number = 100): Promise<NutritionEntry[]> {
+    const entries = await db
+      .select()
+      .from(nutritionEntries)
+      .where(eq(nutritionEntries.patientId, patientId))
+      .orderBy(desc(nutritionEntries.createdAt))
+      .limit(limit);
+    return entries;
+  }
+
+  async createNutritionEntry(entry: InsertNutritionEntry): Promise<NutritionEntry> {
+    const [newEntry] = await db
+      .insert(nutritionEntries)
+      .values(entry)
+      .returning();
+    return newEntry;
+  }
+
+  // Companion check-in operations
+  async getCompanionCheckIns(patientId: string, limit: number = 100): Promise<CompanionCheckIn[]> {
+    const checkIns = await db
+      .select()
+      .from(companionCheckIns)
+      .where(eq(companionCheckIns.patientId, patientId))
+      .orderBy(desc(companionCheckIns.checkedInAt))
+      .limit(limit);
+    return checkIns;
+  }
+
+  async getCheckInsByType(patientId: string, checkInType: string, limit: number = 50): Promise<CompanionCheckIn[]> {
+    const checkIns = await db
+      .select()
+      .from(companionCheckIns)
+      .where(
+        and(
+          eq(companionCheckIns.patientId, patientId),
+          eq(companionCheckIns.checkInType, checkInType)
+        )
+      )
+      .orderBy(desc(companionCheckIns.checkedInAt))
+      .limit(limit);
+    return checkIns;
+  }
+
+  async getRecentCheckIns(patientId: string, days: number): Promise<CompanionCheckIn[]> {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const checkIns = await db
+      .select()
+      .from(companionCheckIns)
+      .where(
+        and(
+          eq(companionCheckIns.patientId, patientId),
+          sql`${companionCheckIns.checkedInAt} >= ${since}`
+        )
+      )
+      .orderBy(desc(companionCheckIns.checkedInAt));
+    return checkIns;
+  }
+
+  async createCompanionCheckIn(checkIn: InsertCompanionCheckIn): Promise<CompanionCheckIn> {
+    const [newCheckIn] = await db
+      .insert(companionCheckIns)
+      .values(checkIn)
+      .returning();
+    return newCheckIn;
+  }
+
+  // Companion engagement operations
+  async getCompanionEngagement(patientId: string): Promise<CompanionEngagement | undefined> {
+    const [engagement] = await db
+      .select()
+      .from(companionEngagement)
+      .where(eq(companionEngagement.patientId, patientId));
+    return engagement;
+  }
+
+  async upsertCompanionEngagement(engagement: InsertCompanionEngagement): Promise<CompanionEngagement> {
+    const [upserted] = await db
+      .insert(companionEngagement)
+      .values(engagement)
+      .onConflictDoUpdate({
+        target: companionEngagement.patientId,
+        set: { ...engagement, updatedAt: new Date() },
+      })
+      .returning();
+    return upserted;
+  }
+
+  async updateCompanionEngagement(patientId: string, data: Partial<CompanionEngagement>): Promise<CompanionEngagement | undefined> {
+    const [engagement] = await db
+      .update(companionEngagement)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(companionEngagement.patientId, patientId))
+      .returning();
+    return engagement;
   }
 }
 
