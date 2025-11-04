@@ -911,6 +911,246 @@ export const insertWearableIntegrationSchema = createInsertSchema(wearableIntegr
 export type InsertWearableIntegration = z.infer<typeof insertWearableIntegrationSchema>;
 export type WearableIntegration = typeof wearableIntegrations.$inferSelect;
 
+// Immune Biomarkers - Digital biomarkers from wearables for immune monitoring
+export const immuneBiomarkers = pgTable("immune_biomarkers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Data source
+  dataSource: varchar("data_source").notNull(), // 'fitbit', 'apple_health', 'google_fit', 'garmin', 'amazfit', 'manual'
+  wearableIntegrationId: varchar("wearable_integration_id").references(() => wearableIntegrations.id),
+  
+  // Timestamp of measurement
+  measuredAt: timestamp("measured_at").notNull(),
+  
+  // Heart Rate Variability (key immune indicator)
+  hrvRmssd: decimal("hrv_rmssd"), // RMSSD in milliseconds (higher = better recovery)
+  hrvSdnn: decimal("hrv_sdnn"), // SDNN in milliseconds
+  restingHeartRate: integer("resting_heart_rate"), // BPM
+  
+  // Sleep quality (critical for immune function)
+  sleepDuration: decimal("sleep_duration"), // Hours
+  deepSleepDuration: decimal("deep_sleep_duration"), // Hours
+  remSleepDuration: decimal("rem_sleep_duration"), // Hours
+  sleepQuality: integer("sleep_quality"), // 1-100 score
+  sleepEfficiency: decimal("sleep_efficiency"), // Percentage
+  
+  // Activity and stress
+  stepsCount: integer("steps_count"),
+  activeMinutes: integer("active_minutes"),
+  caloriesBurned: integer("calories_burned"),
+  stressLevel: integer("stress_level"), // 1-100 scale
+  
+  // Temperature (early infection indicator)
+  bodyTemperature: decimal("body_temperature"), // Celsius
+  skinTemperature: decimal("skin_temperature"), // Celsius
+  
+  // Respiratory
+  respiratoryRate: decimal("respiratory_rate"), // Breaths per minute
+  oxygenSaturation: decimal("oxygen_saturation"), // SpO2 percentage
+  
+  // Recovery metrics
+  recoveryScore: integer("recovery_score"), // 1-100 composite score
+  readinessScore: integer("readiness_score"), // 1-100 readiness for activity
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    deviceModel?: string;
+    firmwareVersion?: string;
+    confidenceScore?: number;
+    isManualEntry?: boolean;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertImmuneBiomarkerSchema = createInsertSchema(immuneBiomarkers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertImmuneBiomarker = z.infer<typeof insertImmuneBiomarkerSchema>;
+export type ImmuneBiomarker = typeof immuneBiomarkers.$inferSelect;
+
+// Immune Digital Twins - AI models predicting immune function status
+export const immuneDigitalTwins = pgTable("immune_digital_twins", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Prediction timestamp
+  predictedAt: timestamp("predicted_at").notNull(),
+  predictionWindow: varchar("prediction_window").notNull(), // 'current', '24h', '48h', '7d'
+  
+  // Immune function score (0-100, where 100 is optimal)
+  immuneScore: integer("immune_score").notNull(),
+  immuneScoreTrend: varchar("immune_score_trend"), // 'improving', 'stable', 'declining', 'critical'
+  
+  // Component scores
+  recoveryCapacityScore: integer("recovery_capacity_score"), // How well recovering from stress
+  infectionResistanceScore: integer("infection_resistance_score"), // Resistance to pathogens
+  inflammationScore: integer("inflammation_score"), // Systemic inflammation level
+  stressResponseScore: integer("stress_response_score"), // Stress adaptation
+  
+  // Risk assessment
+  infectionRisk: varchar("infection_risk").notNull(), // 'low', 'moderate', 'high', 'critical'
+  hospitalAdmissionRisk: varchar("hospitalization_risk"), // Probability of hospitalization
+  
+  // Contributing factors (for explainability)
+  contributingFactors: jsonb("contributing_factors").$type<{
+    factor: string;
+    impact: 'positive' | 'negative';
+    strength: number; // 1-10
+  }[]>(),
+  
+  // Biomarker inputs used for prediction
+  biomarkerIds: jsonb("biomarker_ids").$type<string[]>(), // References to immuneBiomarkers
+  
+  // Model information
+  modelVersion: varchar("model_version").notNull(),
+  confidenceScore: decimal("confidence_score"), // 0-1 model confidence
+  
+  // AI-generated insights
+  aiInsights: text("ai_insights"), // Natural language explanation
+  recommendations: jsonb("recommendations").$type<string[]>(), // Actionable recommendations
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertImmuneDigitalTwinSchema = createInsertSchema(immuneDigitalTwins).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertImmuneDigitalTwin = z.infer<typeof insertImmuneDigitalTwinSchema>;
+export type ImmuneDigitalTwin = typeof immuneDigitalTwins.$inferSelect;
+
+// Environmental Risk Data - Real-time pathogen and environmental threats
+export const environmentalRiskData = pgTable("environmental_risk_data", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Location data
+  latitude: decimal("latitude").notNull(),
+  longitude: decimal("longitude").notNull(),
+  locationName: varchar("location_name"), // City, neighborhood
+  zipCode: varchar("zip_code"),
+  country: varchar("country").default("USA"),
+  
+  // Timestamp
+  measuredAt: timestamp("measured_at").notNull(),
+  
+  // Air Quality Index (AQI)
+  aqi: integer("aqi"), // 0-500 scale
+  aqiCategory: varchar("aqi_category"), // 'good', 'moderate', 'unhealthy_sensitive', 'unhealthy', 'very_unhealthy', 'hazardous'
+  pm25: decimal("pm25"), // PM2.5 particulate matter (µg/m³)
+  pm10: decimal("pm10"), // PM10 particulate matter (µg/m³)
+  ozone: decimal("ozone"), // O3 concentration
+  no2: decimal("no2"), // Nitrogen dioxide
+  so2: decimal("so2"), // Sulfur dioxide
+  co: decimal("co"), // Carbon monoxide
+  
+  // Pollen and allergens
+  pollenCount: integer("pollen_count"), // 0-12 scale
+  pollenTypes: jsonb("pollen_types").$type<string[]>(), // ['tree', 'grass', 'weed']
+  moldSporeCount: integer("mold_spore_count"),
+  
+  // Wastewater surveillance (pathogen detection)
+  wastewaterViralLoad: decimal("wastewater_viral_load"), // RNA copies/L
+  detectedPathogens: jsonb("detected_pathogens").$type<{
+    pathogen: string; // 'covid-19', 'influenza', 'rsv', 'norovirus'
+    concentration: number;
+    trend: 'increasing' | 'stable' | 'decreasing';
+  }[]>(),
+  
+  // Outbreak tracking
+  localOutbreaks: jsonb("local_outbreaks").$type<{
+    disease: string;
+    caseCount: number;
+    severity: 'low' | 'moderate' | 'high';
+    radius: number; // miles
+  }[]>(),
+  
+  // Weather conditions (affect immune function)
+  temperature: decimal("temperature"), // Celsius
+  humidity: decimal("humidity"), // Percentage
+  uvIndex: integer("uv_index"), // 0-11+
+  
+  // Risk scores
+  overallRiskScore: integer("overall_risk_score"), // 0-100 composite
+  immunocompromisedRisk: varchar("immunocompromised_risk"), // 'low', 'moderate', 'high', 'critical'
+  
+  // Data sources
+  dataSources: jsonb("data_sources").$type<{
+    aqi?: string; // 'airnow', 'iqair', 'purple_air'
+    wastewater?: string; // 'biobot', 'wastewater_scan', 'cdc'
+    outbreak?: string; // 'cdc', 'who', 'local_health_dept'
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEnvironmentalRiskDataSchema = createInsertSchema(environmentalRiskData).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEnvironmentalRiskData = z.infer<typeof insertEnvironmentalRiskDataSchema>;
+export type EnvironmentalRiskData = typeof environmentalRiskData.$inferSelect;
+
+// Risk Alerts - Real-time alerts for immune decline and environmental threats
+export const riskAlerts = pgTable("risk_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Alert type
+  alertType: varchar("alert_type").notNull(), // 'immune_decline', 'environmental_risk', 'combined'
+  severity: varchar("severity").notNull(), // 'low', 'moderate', 'high', 'critical'
+  priority: integer("priority").notNull(), // 1-10 (10 = most urgent)
+  
+  // Alert details
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  aiExplanation: text("ai_explanation"), // Agent Clona's empathetic explanation
+  
+  // Related data
+  immuneDigitalTwinId: varchar("immune_digital_twin_id").references(() => immuneDigitalTwins.id),
+  environmentalRiskDataId: varchar("environmental_risk_data_id").references(() => environmentalRiskData.id),
+  
+  // Recommendations
+  recommendations: jsonb("recommendations").$type<{
+    action: string;
+    urgency: 'immediate' | 'today' | 'this_week';
+    category: 'medical' | 'lifestyle' | 'environmental';
+  }[]>(),
+  
+  // User interaction
+  status: varchar("status").default("active"), // 'active', 'acknowledged', 'resolved', 'dismissed'
+  acknowledgedAt: timestamp("acknowledged_at"),
+  resolvedAt: timestamp("resolved_at"),
+  
+  // Notification tracking
+  smsNotificationSent: boolean("sms_notification_sent").default(false),
+  smsNotificationSentAt: timestamp("sms_notification_sent_at"),
+  emailNotificationSent: boolean("email_notification_sent").default(false),
+  emailNotificationSentAt: timestamp("email_notification_sent_at"),
+  pushNotificationSent: boolean("push_notification_sent").default(false),
+  pushNotificationSentAt: timestamp("push_notification_sent_at"),
+  
+  // Expiry
+  expiresAt: timestamp("expires_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertRiskAlertSchema = createInsertSchema(riskAlerts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertRiskAlert = z.infer<typeof insertRiskAlertSchema>;
+export type RiskAlert = typeof riskAlerts.$inferSelect;
+
 // Referral System (for 1-month free trial incentive)
 export const referrals = pgTable("referrals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -23,6 +23,10 @@ import {
   healthInsightConsents,
   ehrConnections,
   wearableIntegrations,
+  immuneBiomarkers,
+  immuneDigitalTwins,
+  environmentalRiskData,
+  riskAlerts,
   referrals,
   creditTransactions,
   twoFactorAuth,
@@ -78,6 +82,14 @@ import {
   type InsertEhrConnection,
   type WearableIntegration,
   type InsertWearableIntegration,
+  type ImmuneBiomarker,
+  type InsertImmuneBiomarker,
+  type ImmuneDigitalTwin,
+  type InsertImmuneDigitalTwin,
+  type EnvironmentalRiskData,
+  type InsertEnvironmentalRiskData,
+  type RiskAlert,
+  type InsertRiskAlert,
   type Referral,
   type InsertReferral,
   type CreditTransaction,
@@ -258,6 +270,29 @@ export interface IStorage {
   // User settings operations
   getUserSettings(userId: string): Promise<UserSettings | undefined>;
   upsertUserSettings(settings: InsertUserSettings): Promise<UserSettings>;
+  
+  // Immune biomarker operations
+  getImmuneBiomarkers(userId: string, limit?: number): Promise<ImmuneBiomarker[]>;
+  getImmuneBiomarkersInDateRange(userId: string, startDate: Date, endDate: Date): Promise<ImmuneBiomarker[]>;
+  createImmuneBiomarker(biomarker: InsertImmuneBiomarker): Promise<ImmuneBiomarker>;
+  
+  // Immune digital twin operations
+  getLatestImmuneDigitalTwin(userId: string): Promise<ImmuneDigitalTwin | undefined>;
+  getImmuneDigitalTwins(userId: string, limit?: number): Promise<ImmuneDigitalTwin[]>;
+  createImmuneDigitalTwin(digitalTwin: InsertImmuneDigitalTwin): Promise<ImmuneDigitalTwin>;
+  
+  // Environmental risk operations
+  getLatestEnvironmentalRiskData(latitude: number, longitude: number): Promise<EnvironmentalRiskData | undefined>;
+  getEnvironmentalRiskDataByLocation(zipCode: string, limit?: number): Promise<EnvironmentalRiskData[]>;
+  createEnvironmentalRiskData(riskData: InsertEnvironmentalRiskData): Promise<EnvironmentalRiskData>;
+  
+  // Risk alert operations
+  getActiveRiskAlerts(userId: string): Promise<RiskAlert[]>;
+  getAllRiskAlerts(userId: string, limit?: number): Promise<RiskAlert[]>;
+  createRiskAlert(alert: InsertRiskAlert): Promise<RiskAlert>;
+  acknowledgeRiskAlert(id: string): Promise<RiskAlert | undefined>;
+  resolveRiskAlert(id: string): Promise<RiskAlert | undefined>;
+  dismissRiskAlert(id: string): Promise<RiskAlert | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1506,6 +1541,174 @@ export class DatabaseStorage implements IStorage {
       .from(drugGeneInteractions)
       .where(eq(drugGeneInteractions.drugId, drugId));
     return interactions;
+  }
+
+  // Immune biomarker operations
+  async getImmuneBiomarkers(userId: string, limit: number = 30): Promise<ImmuneBiomarker[]> {
+    const biomarkers = await db
+      .select()
+      .from(immuneBiomarkers)
+      .where(eq(immuneBiomarkers.userId, userId))
+      .orderBy(desc(immuneBiomarkers.measuredAt))
+      .limit(limit);
+    return biomarkers;
+  }
+
+  async getImmuneBiomarkersInDateRange(userId: string, startDate: Date, endDate: Date): Promise<ImmuneBiomarker[]> {
+    const biomarkers = await db
+      .select()
+      .from(immuneBiomarkers)
+      .where(
+        and(
+          eq(immuneBiomarkers.userId, userId),
+          sql`${immuneBiomarkers.measuredAt} >= ${startDate}`,
+          sql`${immuneBiomarkers.measuredAt} <= ${endDate}`
+        )
+      )
+      .orderBy(desc(immuneBiomarkers.measuredAt));
+    return biomarkers;
+  }
+
+  async createImmuneBiomarker(biomarkerData: InsertImmuneBiomarker): Promise<ImmuneBiomarker> {
+    const [biomarker] = await db
+      .insert(immuneBiomarkers)
+      .values(biomarkerData)
+      .returning();
+    return biomarker;
+  }
+
+  // Immune digital twin operations
+  async getLatestImmuneDigitalTwin(userId: string): Promise<ImmuneDigitalTwin | undefined> {
+    const [digitalTwin] = await db
+      .select()
+      .from(immuneDigitalTwins)
+      .where(eq(immuneDigitalTwins.userId, userId))
+      .orderBy(desc(immuneDigitalTwins.predictedAt))
+      .limit(1);
+    return digitalTwin;
+  }
+
+  async getImmuneDigitalTwins(userId: string, limit: number = 30): Promise<ImmuneDigitalTwin[]> {
+    const digitalTwins = await db
+      .select()
+      .from(immuneDigitalTwins)
+      .where(eq(immuneDigitalTwins.userId, userId))
+      .orderBy(desc(immuneDigitalTwins.predictedAt))
+      .limit(limit);
+    return digitalTwins;
+  }
+
+  async createImmuneDigitalTwin(digitalTwinData: InsertImmuneDigitalTwin): Promise<ImmuneDigitalTwin> {
+    const [digitalTwin] = await db
+      .insert(immuneDigitalTwins)
+      .values(digitalTwinData)
+      .returning();
+    return digitalTwin;
+  }
+
+  // Environmental risk operations
+  async getLatestEnvironmentalRiskData(latitude: number, longitude: number): Promise<EnvironmentalRiskData | undefined> {
+    const [riskData] = await db
+      .select()
+      .from(environmentalRiskData)
+      .where(
+        and(
+          sql`${environmentalRiskData.latitude} = ${latitude.toString()}`,
+          sql`${environmentalRiskData.longitude} = ${longitude.toString()}`
+        )
+      )
+      .orderBy(desc(environmentalRiskData.measuredAt))
+      .limit(1);
+    return riskData;
+  }
+
+  async getEnvironmentalRiskDataByLocation(zipCode: string, limit: number = 30): Promise<EnvironmentalRiskData[]> {
+    const riskData = await db
+      .select()
+      .from(environmentalRiskData)
+      .where(eq(environmentalRiskData.zipCode, zipCode))
+      .orderBy(desc(environmentalRiskData.measuredAt))
+      .limit(limit);
+    return riskData;
+  }
+
+  async createEnvironmentalRiskData(riskData: InsertEnvironmentalRiskData): Promise<EnvironmentalRiskData> {
+    const [data] = await db
+      .insert(environmentalRiskData)
+      .values(riskData)
+      .returning();
+    return data;
+  }
+
+  // Risk alert operations
+  async getActiveRiskAlerts(userId: string): Promise<RiskAlert[]> {
+    const alerts = await db
+      .select()
+      .from(riskAlerts)
+      .where(
+        and(
+          eq(riskAlerts.userId, userId),
+          eq(riskAlerts.status, 'active')
+        )
+      )
+      .orderBy(desc(riskAlerts.priority), desc(riskAlerts.createdAt));
+    return alerts;
+  }
+
+  async getAllRiskAlerts(userId: string, limit: number = 50): Promise<RiskAlert[]> {
+    const alerts = await db
+      .select()
+      .from(riskAlerts)
+      .where(eq(riskAlerts.userId, userId))
+      .orderBy(desc(riskAlerts.createdAt))
+      .limit(limit);
+    return alerts;
+  }
+
+  async createRiskAlert(alertData: InsertRiskAlert): Promise<RiskAlert> {
+    const [alert] = await db
+      .insert(riskAlerts)
+      .values(alertData)
+      .returning();
+    return alert;
+  }
+
+  async acknowledgeRiskAlert(id: string): Promise<RiskAlert | undefined> {
+    const [alert] = await db
+      .update(riskAlerts)
+      .set({
+        status: 'acknowledged',
+        acknowledgedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(riskAlerts.id, id))
+      .returning();
+    return alert;
+  }
+
+  async resolveRiskAlert(id: string): Promise<RiskAlert | undefined> {
+    const [alert] = await db
+      .update(riskAlerts)
+      .set({
+        status: 'resolved',
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(riskAlerts.id, id))
+      .returning();
+    return alert;
+  }
+
+  async dismissRiskAlert(id: string): Promise<RiskAlert | undefined> {
+    const [alert] = await db
+      .update(riskAlerts)
+      .set({
+        status: 'dismissed',
+        updatedAt: new Date(),
+      })
+      .where(eq(riskAlerts.id, id))
+      .returning();
+    return alert;
   }
 }
 
