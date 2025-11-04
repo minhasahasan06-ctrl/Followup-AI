@@ -50,6 +50,7 @@ import AdminVerification from "@/pages/AdminVerification";
 import TwoFactorAuth from "@/pages/TwoFactorAuth";
 import MedicalDocuments from "@/pages/MedicalDocuments";
 import DrugInteractions from "@/pages/DrugInteractions";
+import ImmuneMonitoring from "@/pages/ImmuneMonitoring";
 
 function PatientRouter() {
   return (
@@ -62,6 +63,7 @@ function PatientRouter() {
       <Route path="/consents" component={ConsentManagement} />
       <Route path="/ehr-integrations" component={EHRIntegrations} />
       <Route path="/wearables" component={WearableDevices} />
+      <Route path="/immune-monitoring" component={ImmuneMonitoring} />
       <Route path="/medical-documents" component={MedicalDocuments} />
       <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/referrals" component={Referrals} />

@@ -21,6 +21,7 @@ import {
   Gift,
   ScanText,
   AlertTriangle,
+  Shield,
 } from "lucide-react";
 import {
   Sidebar,
@@ -80,6 +81,12 @@ const patientItems = [
     title: "Wearable Devices",
     url: "/wearables",
     icon: Watch,
+  },
+  {
+    title: "Immune Monitoring",
+    url: "/immune-monitoring",
+    icon: Shield,
+    badge: "AI",
   },
   {
     title: "Medical Documents",
