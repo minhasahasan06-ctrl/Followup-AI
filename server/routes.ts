@@ -3,6 +3,11 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, isDoctor, hashPassword, comparePassword, generateToken, sendVerificationEmail, sendPasswordResetEmail } from "./auth";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
+import { s3Client, textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
+import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
+import { StartDocumentAnalysisCommand, GetDocumentAnalysisCommand } from "@aws-sdk/client-textract";
+import { DetectEntitiesV2Command, DetectPHICommand } from "@aws-sdk/client-comprehendmedical";
 import OpenAI from "openai";
 import Sentiment from "sentiment";
 import multer from "multer";
@@ -29,6 +34,22 @@ const upload = multer({
     }
   }),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|pdf/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    if (extname && mimetype) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .jpg, .jpeg, .png, and .pdf files are allowed'));
+    }
+  }
+});
+
+// Configure multer for medical document uploads (stored in memory before S3)
+const medicalDocUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit for medical documents
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|pdf/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -2036,6 +2057,287 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     } catch (error) {
       console.error("Error withdrawing credits:", error);
       res.status(500).json({ message: "Failed to withdraw credits" });
+    }
+  });
+
+  // ============== MEDICAL DOCUMENTS ROUTES ==============
+
+  app.post('/api/medical-documents/upload', isAuthenticated, medicalDocUpload.single('file'), async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const file = req.file;
+      
+      if (!file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      const documentType = req.body.documentType || 'other';
+      const documentDate = req.body.documentDate ? new Date(req.body.documentDate) : null;
+      
+      const fileKey = `medical-documents/${userId}/${Date.now()}-${file.originalname}`;
+      
+      const uploadParams = {
+        Bucket: AWS_S3_BUCKET,
+        Key: fileKey,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+        ServerSideEncryption: 'AES256' as const,
+        Metadata: {
+          userId,
+          documentType,
+          uploadDate: new Date().toISOString(),
+        },
+      };
+      
+      const upload = new Upload({
+        client: s3Client,
+        params: uploadParams,
+      });
+      
+      await upload.done();
+      
+      const fileUrl = `https://${AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+      
+      const document = await storage.createMedicalDocument({
+        userId,
+        fileName: file.originalname,
+        fileType: path.extname(file.originalname).substring(1),
+        fileSize: file.size,
+        fileUrl,
+        documentType,
+        documentDate,
+        processingStatus: 'pending',
+      });
+      
+      res.json({
+        success: true,
+        document,
+        message: 'Document uploaded successfully. OCR processing will begin shortly.',
+      });
+      
+      processDocumentOCR(document.id, fileKey).catch(error => {
+        console.error('Error processing OCR:', error);
+      });
+      
+    } catch (error) {
+      console.error('Error uploading medical document:', error);
+      res.status(500).json({ message: 'Failed to upload document' });
+    }
+  });
+
+  async function processDocumentOCR(documentId: string, s3Key: string) {
+    try {
+      await storage.updateMedicalDocument(documentId, { processingStatus: 'processing' });
+      
+      const startCommand = new StartDocumentAnalysisCommand({
+        DocumentLocation: {
+          S3Object: {
+            Bucket: AWS_S3_BUCKET,
+            Name: s3Key,
+          },
+        },
+        FeatureTypes: ['TABLES', 'FORMS'],
+      });
+      
+      const startResponse = await textractClient.send(startCommand);
+      const jobId = startResponse.JobId;
+      
+      if (!jobId) {
+        throw new Error('Failed to start Textract job');
+      }
+      
+      let jobStatus = 'IN_PROGRESS';
+      let attempts = 0;
+      const maxAttempts = 300;
+      
+      while (jobStatus === 'IN_PROGRESS' && attempts < maxAttempts) {
+        const baseDelay = 2000;
+        const delay = attempts < 30 ? baseDelay : 
+                     attempts < 60 ? baseDelay * 2 : 
+                     attempts < 120 ? baseDelay * 3 : 
+                     baseDelay * 4;
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        const getCommand = new GetDocumentAnalysisCommand({ JobId: jobId });
+        const getResponse = await textractClient.send(getCommand);
+        
+        jobStatus = getResponse.JobStatus || 'IN_PROGRESS';
+        
+        if (jobStatus === 'SUCCEEDED') {
+          let extractedText = '';
+          let allBlocks = getResponse.Blocks || [];
+          let nextToken = getResponse.NextToken;
+          
+          while (nextToken) {
+            const nextCommand = new GetDocumentAnalysisCommand({ 
+              JobId: jobId,
+              NextToken: nextToken,
+            });
+            const nextResponse = await textractClient.send(nextCommand);
+            allBlocks = allBlocks.concat(nextResponse.Blocks || []);
+            nextToken = nextResponse.NextToken;
+          }
+          
+          for (const block of allBlocks) {
+            if (block.BlockType === 'LINE' && block.Text) {
+              extractedText += block.Text + '\n';
+            }
+          }
+          
+          let allMedicalEntities: any[] = [];
+          if (extractedText.trim().length > 0) {
+            try {
+              const MAX_CHUNK_SIZE = 19000;
+              const chunks: string[] = [];
+              
+              if (extractedText.length <= MAX_CHUNK_SIZE) {
+                chunks.push(extractedText);
+              } else {
+                const lines = extractedText.split('\n');
+                let currentChunk = '';
+                
+                for (const line of lines) {
+                  if ((currentChunk.length + line.length + 1) > MAX_CHUNK_SIZE) {
+                    if (currentChunk.length > 0) {
+                      chunks.push(currentChunk);
+                    }
+                    currentChunk = line;
+                  } else {
+                    currentChunk += (currentChunk ? '\n' : '') + line;
+                  }
+                }
+                
+                if (currentChunk.length > 0) {
+                  chunks.push(currentChunk);
+                }
+              }
+              
+              for (const chunk of chunks) {
+                try {
+                  const comprehendCommand = new DetectEntitiesV2Command({
+                    Text: chunk,
+                  });
+                  
+                  const comprehendResponse = await comprehendMedicalClient.send(comprehendCommand);
+                  allMedicalEntities = allMedicalEntities.concat(comprehendResponse.Entities || []);
+                  
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                } catch (chunkError) {
+                  console.error('Comprehend Medical chunk error:', chunkError);
+                }
+              }
+            } catch (comprehendError) {
+              console.error('Comprehend Medical error:', comprehendError);
+            }
+          }
+          
+          const extractedData: any = {
+            medications: [],
+            diagnosis: [],
+            labResults: [],
+            vitalSigns: [],
+            allergies: [],
+            procedures: [],
+          };
+          
+          const seenTexts = new Set<string>();
+          
+          for (const entity of allMedicalEntities) {
+            const normalizedText = entity.Text?.toLowerCase().trim();
+            if (!normalizedText || seenTexts.has(normalizedText)) continue;
+            seenTexts.add(normalizedText);
+            
+            if (entity.Category === 'MEDICATION' && entity.Text) {
+              extractedData.medications.push(entity.Text);
+            } else if (entity.Category === 'MEDICAL_CONDITION' && entity.Text) {
+              extractedData.diagnosis.push(entity.Text);
+            } else if (entity.Category === 'TEST_TREATMENT_PROCEDURE' && entity.Text) {
+              extractedData.procedures.push(entity.Text);
+            }
+          }
+          
+          await storage.updateMedicalDocument(documentId, {
+            extractedText,
+            extractedData,
+            processingStatus: 'completed',
+          });
+          
+          return;
+        } else if (jobStatus === 'FAILED') {
+          throw new Error(getResponse.StatusMessage || 'Textract job failed');
+        }
+        
+        attempts++;
+      }
+      
+      if (jobStatus === 'IN_PROGRESS') {
+        throw new Error('Textract job timeout - processing took too long');
+      }
+      
+    } catch (error) {
+      console.error('OCR processing error:', error);
+      await storage.updateMedicalDocument(documentId, {
+        processingStatus: 'failed',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  app.get('/api/medical-documents', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const documents = await storage.getMedicalDocuments(userId);
+      res.json(documents);
+    } catch (error) {
+      console.error('Error fetching medical documents:', error);
+      res.status(500).json({ message: 'Failed to fetch documents' });
+    }
+  });
+
+  app.get('/api/medical-documents/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const documentId = req.params.id;
+      
+      const document = await storage.getMedicalDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ message: 'Document not found' });
+      }
+      
+      if (document.userId !== userId && req.user!.role !== 'doctor') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      res.json(document);
+    } catch (error) {
+      console.error('Error fetching medical document:', error);
+      res.status(500).json({ message: 'Failed to fetch document' });
+    }
+  });
+
+  app.delete('/api/medical-documents/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const documentId = req.params.id;
+      
+      const document = await storage.getMedicalDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ message: 'Document not found' });
+      }
+      
+      if (document.userId !== userId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      await storage.deleteMedicalDocument(documentId);
+      
+      res.json({ success: true, message: 'Document deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting medical document:', error);
+      res.status(500).json({ message: 'Failed to delete document' });
     }
   });
 
