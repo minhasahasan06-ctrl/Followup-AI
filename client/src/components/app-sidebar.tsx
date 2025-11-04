@@ -19,6 +19,7 @@ import {
   Watch,
   Wallet as WalletIcon,
   Gift,
+  ScanText,
 } from "lucide-react";
 import {
   Sidebar,
@@ -78,6 +79,12 @@ const patientItems = [
     title: "Wearable Devices",
     url: "/wearables",
     icon: Watch,
+  },
+  {
+    title: "Medical Documents",
+    url: "/medical-documents",
+    icon: ScanText,
+    badge: "OCR",
   },
   {
     title: "Referrals",

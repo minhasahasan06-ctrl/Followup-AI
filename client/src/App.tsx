@@ -48,6 +48,7 @@ import Referrals from "@/pages/Referrals";
 import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
 import TwoFactorAuth from "@/pages/TwoFactorAuth";
+import MedicalDocuments from "@/pages/MedicalDocuments";
 
 function PatientRouter() {
   return (
@@ -60,6 +61,7 @@ function PatientRouter() {
       <Route path="/consents" component={ConsentManagement} />
       <Route path="/ehr-integrations" component={EHRIntegrations} />
       <Route path="/wearables" component={WearableDevices} />
+      <Route path="/medical-documents" component={MedicalDocuments} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/files" component={Files} />

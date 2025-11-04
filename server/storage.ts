@@ -21,6 +21,10 @@ import {
   referrals,
   creditTransactions,
   twoFactorAuth,
+  medicalDocuments,
+  medicalHistories,
+  differentialDiagnoses,
+  userSettings,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -65,6 +69,14 @@ import {
   type InsertCreditTransaction,
   type TwoFactorAuth,
   type InsertTwoFactorAuth,
+  type MedicalDocument,
+  type InsertMedicalDocument,
+  type MedicalHistory,
+  type InsertMedicalHistory,
+  type DifferentialDiagnosis,
+  type InsertDifferentialDiagnosis,
+  type UserSettings,
+  type InsertUserSettings,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -200,6 +212,28 @@ export interface IStorage {
   create2FASettings(settings: InsertTwoFactorAuth): Promise<TwoFactorAuth>;
   update2FASettings(userId: string, data: Partial<TwoFactorAuth>): Promise<TwoFactorAuth | undefined>;
   delete2FASettings(userId: string): Promise<boolean>;
+  
+  // Medical document operations
+  getMedicalDocuments(userId: string): Promise<MedicalDocument[]>;
+  getMedicalDocument(id: string): Promise<MedicalDocument | undefined>;
+  createMedicalDocument(document: InsertMedicalDocument): Promise<MedicalDocument>;
+  updateMedicalDocument(id: string, data: Partial<MedicalDocument>): Promise<MedicalDocument | undefined>;
+  deleteMedicalDocument(id: string): Promise<boolean>;
+  
+  // Medical history operations
+  getMedicalHistories(userId: string): Promise<MedicalHistory[]>;
+  getMedicalHistoryBySession(sessionId: string): Promise<MedicalHistory | undefined>;
+  createMedicalHistory(history: InsertMedicalHistory): Promise<MedicalHistory>;
+  updateMedicalHistory(id: string, data: Partial<MedicalHistory>): Promise<MedicalHistory | undefined>;
+  
+  // Differential diagnosis operations
+  getDifferentialDiagnoses(userId: string): Promise<DifferentialDiagnosis[]>;
+  getDifferentialDiagnosisByHistory(medicalHistoryId: string): Promise<DifferentialDiagnosis | undefined>;
+  createDifferentialDiagnosis(diagnosis: InsertDifferentialDiagnosis): Promise<DifferentialDiagnosis>;
+  
+  // User settings operations
+  getUserSettings(userId: string): Promise<UserSettings | undefined>;
+  upsertUserSettings(settings: InsertUserSettings): Promise<UserSettings>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1109,6 +1143,133 @@ export class DatabaseStorage implements IStorage {
       .delete(twoFactorAuth)
       .where(eq(twoFactorAuth.userId, userId));
     return !!result;
+  }
+
+  // Medical document operations
+  async getMedicalDocuments(userId: string): Promise<MedicalDocument[]> {
+    const documents = await db
+      .select()
+      .from(medicalDocuments)
+      .where(eq(medicalDocuments.userId, userId))
+      .orderBy(desc(medicalDocuments.createdAt));
+    return documents;
+  }
+
+  async getMedicalDocument(id: string): Promise<MedicalDocument | undefined> {
+    const [document] = await db
+      .select()
+      .from(medicalDocuments)
+      .where(eq(medicalDocuments.id, id));
+    return document;
+  }
+
+  async createMedicalDocument(documentData: InsertMedicalDocument): Promise<MedicalDocument> {
+    const [document] = await db
+      .insert(medicalDocuments)
+      .values(documentData)
+      .returning();
+    return document;
+  }
+
+  async updateMedicalDocument(id: string, data: Partial<MedicalDocument>): Promise<MedicalDocument | undefined> {
+    const [document] = await db
+      .update(medicalDocuments)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(medicalDocuments.id, id))
+      .returning();
+    return document;
+  }
+
+  async deleteMedicalDocument(id: string): Promise<boolean> {
+    const result = await db
+      .delete(medicalDocuments)
+      .where(eq(medicalDocuments.id, id));
+    return !!result;
+  }
+
+  // Medical history operations
+  async getMedicalHistories(userId: string): Promise<MedicalHistory[]> {
+    const histories = await db
+      .select()
+      .from(medicalHistories)
+      .where(eq(medicalHistories.userId, userId))
+      .orderBy(desc(medicalHistories.createdAt));
+    return histories;
+  }
+
+  async getMedicalHistoryBySession(sessionId: string): Promise<MedicalHistory | undefined> {
+    const [history] = await db
+      .select()
+      .from(medicalHistories)
+      .where(eq(medicalHistories.sessionId, sessionId));
+    return history;
+  }
+
+  async createMedicalHistory(historyData: InsertMedicalHistory): Promise<MedicalHistory> {
+    const [history] = await db
+      .insert(medicalHistories)
+      .values(historyData)
+      .returning();
+    return history;
+  }
+
+  async updateMedicalHistory(id: string, data: Partial<MedicalHistory>): Promise<MedicalHistory | undefined> {
+    const [history] = await db
+      .update(medicalHistories)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(medicalHistories.id, id))
+      .returning();
+    return history;
+  }
+
+  // Differential diagnosis operations
+  async getDifferentialDiagnoses(userId: string): Promise<DifferentialDiagnosis[]> {
+    const diagnoses = await db
+      .select()
+      .from(differentialDiagnoses)
+      .where(eq(differentialDiagnoses.userId, userId))
+      .orderBy(desc(differentialDiagnoses.createdAt));
+    return diagnoses;
+  }
+
+  async getDifferentialDiagnosisByHistory(medicalHistoryId: string): Promise<DifferentialDiagnosis | undefined> {
+    const [diagnosis] = await db
+      .select()
+      .from(differentialDiagnoses)
+      .where(eq(differentialDiagnoses.medicalHistoryId, medicalHistoryId));
+    return diagnosis;
+  }
+
+  async createDifferentialDiagnosis(diagnosisData: InsertDifferentialDiagnosis): Promise<DifferentialDiagnosis> {
+    const [diagnosis] = await db
+      .insert(differentialDiagnoses)
+      .values(diagnosisData)
+      .returning();
+    return diagnosis;
+  }
+
+  // User settings operations
+  async getUserSettings(userId: string): Promise<UserSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId));
+    return settings;
+  }
+
+  async upsertUserSettings(settingsData: InsertUserSettings): Promise<UserSettings> {
+    const [settings] = await db
+      .insert(userSettings)
+      .values(settingsData)
+      .onConflictDoUpdate({
+        target: userSettings.userId,
+        set: {
+          ...settingsData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return settings;
   }
 }
 
