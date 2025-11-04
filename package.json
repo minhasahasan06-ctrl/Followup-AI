@@ -11,6 +11,12 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@aws-sdk/client-comprehendmedical": "^3.922.0",
+    "@aws-sdk/client-healthlake": "^3.922.0",
+    "@aws-sdk/client-medical-imaging": "^3.922.0",
+    "@aws-sdk/client-s3": "^3.922.0",
+    "@aws-sdk/client-textract": "^3.922.0",
+    "@aws-sdk/lib-storage": "^3.922.0",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@neondatabase/serverless": "^0.10.4",
