@@ -50,6 +50,19 @@ export const users = pgTable("users", {
   verificationToken: varchar("verification_token"),
   verificationTokenExpires: timestamp("verification_token_expires"),
   
+  // Phone number and SMS verification
+  phoneNumber: varchar("phone_number"),
+  phoneVerified: boolean("phone_verified").default(false),
+  phoneVerificationCode: varchar("phone_verification_code"),
+  phoneVerificationExpires: timestamp("phone_verification_expires"),
+  
+  // SMS preferences
+  smsNotificationsEnabled: boolean("sms_notifications_enabled").default(true),
+  smsMedicationReminders: boolean("sms_medication_reminders").default(true),
+  smsAppointmentReminders: boolean("sms_appointment_reminders").default(true),
+  smsDailyFollowups: boolean("sms_daily_followups").default(true),
+  smsHealthAlerts: boolean("sms_health_alerts").default(true),
+  
   // Password reset
   resetToken: varchar("reset_token"),
   resetTokenExpires: timestamp("reset_token_expires"),

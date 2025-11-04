@@ -92,6 +92,15 @@ export interface IStorage {
   verifyEmail(token: string): Promise<User | undefined>;
   updateResetToken(userId: string, token: string, expires: Date): Promise<User | undefined>;
   resetPassword(token: string, newPasswordHash: string): Promise<User | undefined>;
+  updatePhoneVerificationCode(userId: string, phoneNumber: string, code: string, expires: Date): Promise<User | undefined>;
+  verifyPhoneNumber(userId: string): Promise<User | undefined>;
+  updateSmsPreferences(userId: string, preferences: {
+    smsNotificationsEnabled?: boolean;
+    smsMedicationReminders?: boolean;
+    smsAppointmentReminders?: boolean;
+    smsDailyFollowups?: boolean;
+    smsHealthAlerts?: boolean;
+  }): Promise<User | undefined>;
   
   // Patient profile operations
   getPatientProfile(userId: string): Promise<PatientProfile | undefined>;
@@ -358,6 +367,53 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, user.id))
       .returning();
     return updatedUser;
+  }
+
+  async updatePhoneVerificationCode(userId: string, phoneNumber: string, code: string, expires: Date): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        phoneNumber,
+        phoneVerificationCode: code,
+        phoneVerificationExpires: expires,
+        phoneVerified: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async verifyPhoneNumber(userId: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        phoneVerified: true,
+        phoneVerificationCode: null,
+        phoneVerificationExpires: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async updateSmsPreferences(userId: string, preferences: {
+    smsNotificationsEnabled?: boolean;
+    smsMedicationReminders?: boolean;
+    smsAppointmentReminders?: boolean;
+    smsDailyFollowups?: boolean;
+    smsHealthAlerts?: boolean;
+  }): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        ...preferences,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
   }
 
   // Patient profile operations
