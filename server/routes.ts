@@ -1132,6 +1132,124 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
         ...req.body,
       });
       
+      // AUTOMATIC DRUG INTERACTION CHECKING
+      // Check for interactions with existing medications and create alerts
+      try {
+        const patientProfile = await storage.getPatientProfile(userId);
+        const currentMedications = await storage.getActiveMedications(userId);
+        
+        if (currentMedications.length > 1) { // Only check if there are other medications
+          const { analyzeMultipleDrugInteractions, calculateCriticalityScore, enrichMedicationWithGenericName } = await import('./drugInteraction');
+          
+          // Build medication list with ALL name variations (brand, generic) for reliable ID mapping
+          const medicationsToCheck = await Promise.all(currentMedications.map(async (med) => {
+            // Try to find drug record to get generic/brand names
+            let drug = await storage.getDrugByName(med.name);
+            
+            // If no drug record exists, enrich using AI to get generic name
+            if (!drug) {
+              const enriched = await enrichMedicationWithGenericName(med.name);
+              // Create drug record for future use
+              drug = await storage.createDrug({
+                name: med.name,
+                genericName: enriched.genericName,
+                brandNames: enriched.brandNames
+              });
+            }
+            
+            return {
+              name: med.name,
+              genericName: drug.genericName || med.name,
+              drugClass: drug.drugClass,
+              id: med.id,
+              brandNames: drug.brandNames || []
+            };
+          }));
+
+          const interactions = await analyzeMultipleDrugInteractions(
+            medicationsToCheck,
+            {
+              isImmunocompromised: true,
+              conditions: patientProfile?.immunocompromisedCondition 
+                ? [patientProfile.immunocompromisedCondition]
+                : [],
+            }
+          );
+
+          // Create alerts for any detected interactions (using medication IDs from AI analysis)
+          for (const interactionData of interactions) {
+            // Skip if we don't have both medication IDs mapped
+            if (!interactionData.med1Id || !interactionData.med2Id) {
+              console.warn(`⚠️  Skipping interaction alert: Could not map drug names to medication IDs (${interactionData.drug1} / ${interactionData.drug2})`);
+              continue;
+            }
+
+            // Find or create drug records
+            let drug1 = await storage.getDrugByName(interactionData.drug1);
+            if (!drug1) {
+              drug1 = await storage.createDrug({ name: interactionData.drug1 });
+            }
+
+            let drug2 = await storage.getDrugByName(interactionData.drug2);
+            if (!drug2) {
+              drug2 = await storage.createDrug({ name: interactionData.drug2 });
+            }
+
+            // Create or get drug interaction record
+            let dbInteraction = await storage.getDrugInteraction(drug1.id, drug2.id);
+            if (!dbInteraction) {
+              dbInteraction = await storage.createDrugInteraction({
+                drug1Id: drug1.id,
+                drug2Id: drug2.id,
+                severityLevel: interactionData.interaction.severityLevel,
+                interactionType: interactionData.interaction.interactionType,
+                mechanismDescription: interactionData.interaction.mechanismDescription,
+                clinicalEffects: interactionData.interaction.clinicalEffects,
+                managementRecommendations: interactionData.interaction.managementRecommendations,
+                alternativeSuggestions: interactionData.interaction.alternativeSuggestions,
+                onsetTimeframe: interactionData.interaction.onsetTimeframe,
+                riskForImmunocompromised: interactionData.interaction.riskForImmunocompromised,
+                requiresMonitoring: interactionData.interaction.requiresMonitoring,
+                monitoringParameters: interactionData.interaction.monitoringParameters,
+                evidenceLevel: interactionData.interaction.evidenceLevel,
+                aiAnalysisConfidence: interactionData.interaction.aiAnalysisConfidence?.toString(),
+                detectedByGNN: true,
+                detectedByNLP: true,
+              });
+            }
+
+            const criticalityScore = calculateCriticalityScore(
+              interactionData.interaction.severityLevel,
+              interactionData.interaction.riskForImmunocompromised,
+              interactionData.interaction.onsetTimeframe
+            );
+
+            // Check if alert already exists
+            const existingAlerts = await storage.getActiveInteractionAlerts(userId);
+            const alertExists = existingAlerts.some(alert => 
+              (alert.medication1Id === interactionData.med1Id && alert.medication2Id === interactionData.med2Id) ||
+              (alert.medication1Id === interactionData.med2Id && alert.medication2Id === interactionData.med1Id)
+            );
+
+            if (!alertExists) {
+              await storage.createInteractionAlert({
+                patientId: userId,
+                medication1Id: interactionData.med1Id!,
+                medication2Id: interactionData.med2Id!,
+                interactionId: dbInteraction.id,
+                criticalityScore,
+                notifiedPatient: false,
+                notifiedDoctor: false,
+              });
+            }
+          }
+        }
+      } catch (interactionError) {
+        // Log but don't fail medication creation
+        console.error("Error checking drug interactions:", interactionError);
+      }
+      
+      // Send SMS reminder
       if (user?.phoneNumber && user?.phoneVerified && user?.smsMedicationReminders) {
         const { sendMedicationReminder } = await import('./twilio');
         const time = req.body.timeOfDay || 'scheduled time';
@@ -1147,6 +1265,265 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     } catch (error) {
       console.error("Error creating medication:", error);
       res.status(500).json({ message: "Failed to create medication" });
+    }
+  });
+
+  // Drug interaction routes - AI-powered detection
+  app.post('/api/drug-interactions/analyze', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { drugName, drugClass, genericName, createAlerts = false, newMedicationId } = req.body;
+
+      if (!drugName) {
+        return res.status(400).json({ message: "Drug name is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      const patientProfile = await storage.getPatientProfile(userId);
+      const currentMedications = await storage.getActiveMedications(userId);
+
+      const { analyzeMultipleDrugInteractions, calculateCriticalityScore, enrichMedicationWithGenericName } = await import('./drugInteraction');
+
+      // Build medication list with ALL name variations (brand, generic) for reliable ID mapping
+      const medicationsToCheck = await Promise.all(currentMedications.map(async (med) => {
+        let drug = await storage.getDrugByName(med.name);
+        
+        // If no drug record exists, enrich using AI to get generic name
+        if (!drug) {
+          const enriched = await enrichMedicationWithGenericName(med.name);
+          // Create drug record for future use
+          drug = await storage.createDrug({
+            name: med.name,
+            genericName: enriched.genericName,
+            brandNames: enriched.brandNames
+          });
+        }
+        
+        return {
+          name: med.name,
+          genericName: drug.genericName || med.name,
+          drugClass: drug.drugClass,
+          id: med.id,
+          brandNames: drug.brandNames || []
+        };
+      }));
+
+      // Add the new drug with its variations
+      const newDrug = {
+        name: drugName,
+        genericName: genericName || drugName,
+        drugClass: drugClass,
+        id: newMedicationId,
+        brandNames: []
+      };
+
+      medicationsToCheck.push(newDrug);
+
+      const interactions = await analyzeMultipleDrugInteractions(
+        medicationsToCheck,
+        {
+          isImmunocompromised: true,
+          conditions: patientProfile?.immunocompromisedCondition 
+            ? [patientProfile.immunocompromisedCondition]
+            : [],
+        }
+      );
+
+      // PERSISTENCE FIX: Create interaction alerts in database if requested
+      if (createAlerts && interactions.length > 0) {
+        for (const interactionData of interactions) {
+          // Skip if we don't have both medication IDs mapped
+          if (!interactionData.med1Id || !interactionData.med2Id) {
+            console.warn(`⚠️  Skipping interaction alert: Could not map drug names to medication IDs (${interactionData.drug1} / ${interactionData.drug2})`);
+            continue;
+          }
+
+          // Find or create drug records
+          let drug1 = await storage.getDrugByName(interactionData.drug1);
+          if (!drug1) {
+            drug1 = await storage.createDrug({ name: interactionData.drug1 });
+          }
+
+          let drug2 = await storage.getDrugByName(interactionData.drug2);
+          if (!drug2) {
+            drug2 = await storage.createDrug({ name: interactionData.drug2 });
+          }
+
+          // Create or get drug interaction record
+          let dbInteraction = await storage.getDrugInteraction(drug1.id, drug2.id);
+          if (!dbInteraction) {
+            dbInteraction = await storage.createDrugInteraction({
+              drug1Id: drug1.id,
+              drug2Id: drug2.id,
+              severityLevel: interactionData.interaction.severityLevel,
+              interactionType: interactionData.interaction.interactionType,
+              mechanismDescription: interactionData.interaction.mechanismDescription,
+              clinicalEffects: interactionData.interaction.clinicalEffects,
+              managementRecommendations: interactionData.interaction.managementRecommendations,
+              alternativeSuggestions: interactionData.interaction.alternativeSuggestions,
+              onsetTimeframe: interactionData.interaction.onsetTimeframe,
+              riskForImmunocompromised: interactionData.interaction.riskForImmunocompromised,
+              requiresMonitoring: interactionData.interaction.requiresMonitoring,
+              monitoringParameters: interactionData.interaction.monitoringParameters,
+              evidenceLevel: interactionData.interaction.evidenceLevel,
+              aiAnalysisConfidence: interactionData.interaction.aiAnalysisConfidence?.toString(),
+              detectedByGNN: true,
+              detectedByNLP: true,
+            });
+          }
+
+          const criticalityScore = calculateCriticalityScore(
+            interactionData.interaction.severityLevel,
+            interactionData.interaction.riskForImmunocompromised,
+            interactionData.interaction.onsetTimeframe
+          );
+
+          // Check if alert already exists to avoid duplicates
+          const existingAlerts = await storage.getActiveInteractionAlerts(userId);
+          const alertExists = existingAlerts.some(alert => 
+            (alert.medication1Id === interactionData.med1Id && alert.medication2Id === interactionData.med2Id) ||
+            (alert.medication1Id === interactionData.med2Id && alert.medication2Id === interactionData.med1Id)
+          );
+
+          if (!alertExists) {
+            // Create interaction alert
+            await storage.createInteractionAlert({
+              patientId: userId,
+              medication1Id: interactionData.med1Id!,
+              medication2Id: interactionData.med2Id!,
+              interactionId: dbInteraction.id,
+              criticalityScore,
+              notifiedPatient: false,
+              notifiedDoctor: false,
+            });
+          }
+        }
+      }
+
+      const severeInteractions = interactions.filter(i => i.interaction.severityLevel === 'severe');
+      const hasBlockingInteraction = severeInteractions.length > 0;
+
+      res.json({
+        hasInteractions: interactions.length > 0,
+        interactions,
+        hasBlockingInteraction,
+        recommendation: hasBlockingInteraction 
+          ? 'Please consult your doctor before taking this medication' 
+          : 'No severe interactions detected',
+      });
+    } catch (error) {
+      console.error("Error analyzing drug interactions:", error);
+      // Resilience: Return graceful error instead of 500
+      res.status(200).json({
+        hasInteractions: false,
+        interactions: [],
+        hasBlockingInteraction: false,
+        recommendation: 'Unable to analyze interactions at this time. Please consult your doctor.',
+        error: 'Analysis temporarily unavailable',
+      });
+    }
+  });
+
+  app.get('/api/drug-interactions/alerts', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const alerts = await storage.getActiveInteractionAlerts(userId);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Error fetching interaction alerts:", error);
+      res.status(500).json({ message: "Failed to fetch interaction alerts" });
+    }
+  });
+
+  app.get('/api/drug-interactions/alerts/all', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const alerts = await storage.getAllInteractionAlerts(userId);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Error fetching all interaction alerts:", error);
+      res.status(500).json({ message: "Failed to fetch interaction alerts" });
+    }
+  });
+
+  app.post('/api/drug-interactions/alerts/:id/acknowledge', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { id } = req.params;
+      const alert = await storage.acknowledgeInteractionAlert(id, userId);
+      res.json(alert);
+    } catch (error) {
+      console.error("Error acknowledging interaction alert:", error);
+      res.status(500).json({ message: "Failed to acknowledge alert" });
+    }
+  });
+
+  app.post('/api/drug-interactions/alerts/:id/override', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const { id } = req.params;
+      const { reason } = req.body;
+
+      if (!reason) {
+        return res.status(400).json({ message: "Override reason is required" });
+      }
+
+      const alert = await storage.overrideInteractionAlert(id, doctorId, reason);
+      res.json(alert);
+    } catch (error) {
+      console.error("Error overriding interaction alert:", error);
+      res.status(500).json({ message: "Failed to override alert" });
+    }
+  });
+
+  // Drug search and information
+  app.get('/api/drugs/search', isAuthenticated, async (req: any, res) => {
+    try {
+      const { q } = req.query;
+      
+      if (!q || typeof q !== 'string') {
+        return res.status(400).json({ message: "Search query required" });
+      }
+
+      const drugs = await storage.searchDrugs(q);
+      res.json(drugs);
+    } catch (error) {
+      console.error("Error searching drugs:", error);
+      res.status(500).json({ message: "Failed to search drugs" });
+    }
+  });
+
+  // Pharmacogenomic profile routes
+  app.get('/api/pharmacogenomics/profile', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const profile = await storage.getPharmacogenomicProfile(userId);
+      res.json(profile);
+    } catch (error) {
+      console.error("Error fetching pharmacogenomic profile:", error);
+      res.status(500).json({ message: "Failed to fetch pharmacogenomic profile" });
+    }
+  });
+
+  app.post('/api/pharmacogenomics/profile', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const existingProfile = await storage.getPharmacogenomicProfile(userId);
+
+      if (existingProfile) {
+        const updated = await storage.updatePharmacogenomicProfile(userId, req.body);
+        return res.json(updated);
+      }
+
+      const profile = await storage.createPharmacogenomicProfile({
+        patientId: userId,
+        ...req.body,
+      });
+      
+      res.json(profile);
+    } catch (error) {
+      console.error("Error creating/updating pharmacogenomic profile:", error);
+      res.status(500).json({ message: "Failed to save pharmacogenomic profile" });
     }
   });
 

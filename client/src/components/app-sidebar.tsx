@@ -20,6 +20,7 @@ import {
   Wallet as WalletIcon,
   Gift,
   ScanText,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -85,6 +86,12 @@ const patientItems = [
     url: "/medical-documents",
     icon: ScanText,
     badge: "OCR",
+  },
+  {
+    title: "Drug Interactions",
+    url: "/drug-interactions",
+    icon: AlertTriangle,
+    badge: "AI",
   },
   {
     title: "Referrals",
