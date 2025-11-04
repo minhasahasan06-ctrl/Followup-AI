@@ -436,6 +436,243 @@ export const insertDrugGeneInteractionSchema = createInsertSchema(drugGeneIntera
 export type InsertDrugGeneInteraction = z.infer<typeof insertDrugGeneInteractionSchema>;
 export type DrugGeneInteraction = typeof drugGeneInteractions.$inferSelect;
 
+// ==================== ADAPTIVE MEDICATION & NUTRITION INSIGHTS ====================
+
+// Medication schedules - When medications should be taken
+export const medicationSchedules = pgTable("medication_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  medicationId: varchar("medication_id").notNull().references(() => medications.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  timeOfDay: varchar("time_of_day").notNull(), // '08:00', '12:00', '20:00', etc.
+  withFood: boolean("with_food").default(false),
+  withWater: boolean("with_water").default(true),
+  specialInstructions: text("special_instructions"),
+  aiOptimized: boolean("ai_optimized").default(false), // AI-suggested optimal timing
+  aiReasoning: text("ai_reasoning"), // Why AI suggested this timing
+  reminderEnabled: boolean("reminder_enabled").default(true),
+  smsReminderSent: boolean("sms_reminder_sent").default(false),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertMedicationScheduleSchema = createInsertSchema(medicationSchedules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMedicationSchedule = z.infer<typeof insertMedicationScheduleSchema>;
+export type MedicationSchedule = typeof medicationSchedules.$inferSelect;
+
+// Medication adherence tracking
+export const medicationAdherence = pgTable("medication_adherence", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  medicationId: varchar("medication_id").notNull().references(() => medications.id),
+  scheduleId: varchar("schedule_id").references(() => medicationSchedules.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  scheduledTime: timestamp("scheduled_time").notNull(),
+  takenAt: timestamp("taken_at"),
+  status: varchar("status").notNull().default("pending"), // 'pending', 'taken', 'missed', 'skipped'
+  skipReason: text("skip_reason"),
+  sideEffects: text("side_effects"),
+  effectivenessRating: integer("effectiveness_rating"), // 1-10 scale
+  loggedBy: varchar("logged_by").default("patient"), // 'patient', 'companion', 'ai'
+  companionChecked: boolean("companion_checked").default(false), // Checked in Health Companion Mode
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMedicationAdherenceSchema = createInsertSchema(medicationAdherence).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMedicationAdherence = z.infer<typeof insertMedicationAdherenceSchema>;
+export type MedicationAdherence = typeof medicationAdherence.$inferSelect;
+
+// Dietary preferences and restrictions
+export const dietaryPreferences = pgTable("dietary_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().unique().references(() => users.id),
+  dietType: varchar("diet_type"), // 'omnivore', 'vegetarian', 'vegan', 'pescatarian', 'keto', 'paleo', etc.
+  allergies: jsonb("allergies").$type<string[]>(), // Food allergies
+  intolerances: jsonb("intolerances").$type<string[]>(), // Lactose, gluten, etc.
+  dislikes: jsonb("dislikes").$type<string[]>(), // Foods to avoid
+  culturalRestrictions: jsonb("cultural_restrictions").$type<string[]>(),
+  religiousRestrictions: jsonb("religious_restrictions").$type<string[]>(),
+  calorieTarget: integer("calorie_target"), // Daily calorie goal
+  proteinTarget: integer("protein_target"), // Grams per day
+  carbTarget: integer("carb_target"), // Grams per day
+  fatTarget: integer("fat_target"), // Grams per day
+  immuneBoostingFocus: boolean("immune_boosting_focus").default(true), // Focus on immune-boosting foods
+  preferredCuisines: jsonb("preferred_cuisines").$type<string[]>(),
+  cookingSkillLevel: varchar("cooking_skill_level"), // 'beginner', 'intermediate', 'advanced'
+  mealsPerDay: integer("meals_per_day").default(3),
+  snacksPerDay: integer("snacks_per_day").default(2),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertDietaryPreferenceSchema = createInsertSchema(dietaryPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDietaryPreference = z.infer<typeof insertDietaryPreferenceSchema>;
+export type DietaryPreference = typeof dietaryPreferences.$inferSelect;
+
+// AI-generated meal plans
+export const mealPlans = pgTable("meal_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  weekStartDate: timestamp("week_start_date").notNull(), // Start of the week for this plan
+  planName: varchar("plan_name").notNull(), // "Immune-Boosting Week Plan"
+  aiGeneratedSummary: text("ai_generated_summary"), // AI explanation of the plan
+  totalCalories: integer("total_calories"),
+  focusAreas: jsonb("focus_areas").$type<string[]>(), // ['immune_support', 'energy', 'inflammation_reduction']
+  considersMedications: boolean("considers_medications").default(true), // Plan considers medication timing
+  active: boolean("active").default(true),
+  generatedAt: timestamp("generated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMealPlanSchema = createInsertSchema(mealPlans).omit({
+  id: true,
+  createdAt: true,
+  generatedAt: true,
+});
+
+export type InsertMealPlan = z.infer<typeof insertMealPlanSchema>;
+export type MealPlan = typeof mealPlans.$inferSelect;
+
+// Individual meals (planned or logged)
+export const meals = pgTable("meals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  mealPlanId: varchar("meal_plan_id").references(() => mealPlans.id), // If part of a plan
+  mealType: varchar("meal_type").notNull(), // 'breakfast', 'lunch', 'dinner', 'snack'
+  mealName: varchar("meal_name").notNull(),
+  description: text("description"),
+  ingredients: jsonb("ingredients").$type<Array<{ name: string; amount: string; unit: string }>>(),
+  recipeSuggestion: text("recipe_suggestion"), // AI-generated recipe
+  scheduledTime: timestamp("scheduled_time"),
+  actualTime: timestamp("actual_time"),
+  status: varchar("status").default("planned"), // 'planned', 'eaten', 'skipped'
+  photoUrl: varchar("photo_url"), // S3 URL for meal photo
+  aiNutritionAnalysis: text("ai_nutrition_analysis"), // AI-generated nutrition insights
+  immuneBenefits: jsonb("immune_benefits").$type<string[]>(), // ['high_vitamin_c', 'probiotic', 'anti_inflammatory']
+  companionLogged: boolean("companion_logged").default(false), // Logged via Health Companion Mode
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMealSchema = createInsertSchema(meals).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMeal = z.infer<typeof insertMealSchema>;
+export type Meal = typeof meals.$inferSelect;
+
+// Nutrition entries for meals
+export const nutritionEntries = pgTable("nutrition_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  mealId: varchar("meal_id").notNull().references(() => meals.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  calories: integer("calories"),
+  protein: decimal("protein"), // Grams
+  carbs: decimal("carbs"), // Grams
+  fat: decimal("fat"), // Grams
+  fiber: decimal("fiber"), // Grams
+  sugar: decimal("sugar"), // Grams
+  sodium: decimal("sodium"), // Milligrams
+  vitaminC: decimal("vitamin_c"), // Milligrams
+  vitaminD: decimal("vitamin_d"), // Micrograms
+  zinc: decimal("zinc"), // Milligrams
+  iron: decimal("iron"), // Milligrams
+  calcium: decimal("calcium"), // Milligrams
+  omega3: decimal("omega_3"), // Grams
+  antioxidantScore: integer("antioxidant_score"), // 1-100 scale
+  immuneSupportScore: integer("immune_support_score"), // 1-100 AI-calculated
+  dataSource: varchar("data_source").default("ai_estimation"), // 'ai_estimation', 'manual', 'api'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertNutritionEntrySchema = createInsertSchema(nutritionEntries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertNutritionEntry = z.infer<typeof insertNutritionEntrySchema>;
+export type NutritionEntry = typeof nutritionEntries.$inferSelect;
+
+// ==================== HEALTH COMPANION MODE ====================
+
+// Natural conversational check-ins
+export const companionCheckIns = pgTable("companion_check_ins", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  checkInType: varchar("check_in_type").notNull(), // 'morning', 'midday', 'evening', 'medication', 'meal', 'mood', 'symptom', 'spontaneous'
+  conversationSummary: text("conversation_summary").notNull(), // AI-generated summary
+  naturalLanguageInput: text("natural_language_input"), // What the patient said
+  extractedData: jsonb("extracted_data").$type<{
+    mood?: string;
+    energy?: number;
+    symptoms?: string[];
+    medications?: Array<{ name: string; taken: boolean }>;
+    meals?: Array<{ type: string; description: string }>;
+    concerns?: string[];
+  }>(), // AI-extracted structured data
+  empathyLevel: varchar("empathy_level").default("supportive"), // 'supportive', 'encouraging', 'urgent', 'celebratory'
+  aiResponse: text("ai_response").notNull(), // What companion said back
+  sentimentScore: decimal("sentiment_score"), // -1 to 1 (negative to positive)
+  concernsRaised: boolean("concerns_raised").default(false),
+  needsFollowup: boolean("needs_followup").default(false),
+  followupReason: text("followup_reason"),
+  notifiedDoctor: boolean("notified_doctor").default(false),
+  sessionDuration: integer("session_duration"), // Seconds
+  interactionCount: integer("interaction_count").default(1), // Number of back-and-forth messages
+  checkedInAt: timestamp("checked_in_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCompanionCheckInSchema = createInsertSchema(companionCheckIns).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCompanionCheckIn = z.infer<typeof insertCompanionCheckInSchema>;
+export type CompanionCheckIn = typeof companionCheckIns.$inferSelect;
+
+// Companion engagement tracking
+export const companionEngagement = pgTable("companion_engagement", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().unique().references(() => users.id),
+  totalCheckIns: integer("total_check_ins").default(0),
+  currentStreak: integer("current_streak").default(0), // Days in a row
+  longestStreak: integer("longest_streak").default(0),
+  lastCheckInDate: timestamp("last_check_in_date"),
+  favoriteCheckInType: varchar("favorite_check_in_type"),
+  avgSentimentScore: decimal("avg_sentiment_score"),
+  totalConcernsRaised: integer("total_concerns_raised").default(0),
+  companionPersonality: varchar("companion_personality").default("empathetic"), // 'empathetic', 'motivational', 'clinical', 'friend'
+  preferredTone: varchar("preferred_tone").default("warm"), // 'warm', 'professional', 'casual', 'cheerful'
+  notificationPreference: varchar("notification_preference").default("gentle"), // 'gentle', 'standard', 'none'
+  bestCheckInTime: varchar("best_check_in_time"), // '09:00', '14:00', etc. AI-learned
+  engagementScore: integer("engagement_score").default(50), // 1-100 based on usage patterns
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCompanionEngagementSchema = createInsertSchema(companionEngagement).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCompanionEngagement = z.infer<typeof insertCompanionEngagementSchema>;
+export type CompanionEngagement = typeof companionEngagement.$inferSelect;
+
 // Dynamic tasks
 export const dynamicTasks = pgTable("dynamic_tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
