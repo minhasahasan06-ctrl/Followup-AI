@@ -271,6 +271,171 @@ export const insertMedicationSchema = createInsertSchema(medications).omit({
 export type InsertMedication = z.infer<typeof insertMedicationSchema>;
 export type Medication = typeof medications.$inferSelect;
 
+// Drug knowledge base - Comprehensive drug information
+export const drugs = pgTable("drugs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(),
+  genericName: varchar("generic_name"),
+  brandNames: jsonb("brand_names").$type<string[]>(),
+  drugClass: varchar("drug_class"),
+  mechanismOfAction: text("mechanism_of_action"),
+  molecularFormula: varchar("molecular_formula"),
+  molecularWeight: decimal("molecular_weight"),
+  fdaApproved: boolean("fda_approved").default(true),
+  blackBoxWarning: boolean("black_box_warning").default(false),
+  blackBoxWarningText: text("black_box_warning_text"),
+  therapeuticCategories: jsonb("therapeutic_categories").$type<string[]>(),
+  commonSideEffects: jsonb("common_side_effects").$type<string[]>(),
+  seriousSideEffects: jsonb("serious_side_effects").$type<string[]>(),
+  contraindicationsForImmuneSuppressed: text("contraindications_for_immune_suppressed"),
+  halfLife: varchar("half_life"),
+  metabolismPathway: text("metabolism_pathway"),
+  cytochromeP450Enzymes: jsonb("cytochrome_p450_enzymes").$type<string[]>(), // CYP2D6, CYP3A4, etc.
+  renalExcretion: boolean("renal_excretion").default(false),
+  hepaticMetabolism: boolean("hepatic_metabolism").default(false),
+  proteinBinding: decimal("protein_binding"), // Percentage
+  bioavailability: decimal("bioavailability"), // Percentage
+  peakPlasmaTime: varchar("peak_plasma_time"),
+  immunocompromisedSafety: varchar("immunocompromised_safety"), // 'safe', 'caution', 'avoid'
+  pregnancyCategory: varchar("pregnancy_category"),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertDrugSchema = createInsertSchema(drugs).omit({
+  id: true,
+  createdAt: true,
+  lastUpdated: true,
+});
+
+export type InsertDrug = z.infer<typeof insertDrugSchema>;
+export type Drug = typeof drugs.$inferSelect;
+
+// Drug-drug interactions with AI-powered analysis
+export const drugInteractions = pgTable("drug_interactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  drug1Id: varchar("drug1_id").notNull().references(() => drugs.id),
+  drug2Id: varchar("drug2_id").notNull().references(() => drugs.id),
+  severityLevel: varchar("severity_level").notNull(), // 'severe', 'moderate', 'minor'
+  interactionType: varchar("interaction_type").notNull(), // 'pharmacokinetic', 'pharmacodynamic', 'synergistic', 'antagonistic'
+  mechanismDescription: text("mechanism_description").notNull(),
+  clinicalEffects: text("clinical_effects").notNull(),
+  managementRecommendations: text("management_recommendations").notNull(),
+  alternativeSuggestions: jsonb("alternative_suggestions").$type<string[]>(),
+  onsetTimeframe: varchar("onset_timeframe"), // 'immediate', 'hours', 'days', 'weeks'
+  riskForImmunocompromised: varchar("risk_for_immunocompromised"), // 'high', 'medium', 'low'
+  requiresMonitoring: boolean("requires_monitoring").default(false),
+  monitoringParameters: jsonb("monitoring_parameters").$type<string[]>(),
+  evidenceLevel: varchar("evidence_level"), // 'proven', 'probable', 'theoretical'
+  literatureReferences: jsonb("literature_references").$type<Array<{ title: string; url: string; year: number }>>(),
+  fdaWarning: boolean("fda_warning").default(false),
+  aiAnalysisConfidence: decimal("ai_analysis_confidence"), // 0-100% confidence score
+  detectedByGNN: boolean("detected_by_gnn").default(false), // Graph Neural Network detection
+  detectedByNLP: boolean("detected_by_nlp").default(false), // Natural Language Processing detection
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDrugInteractionSchema = createInsertSchema(drugInteractions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDrugInteraction = z.infer<typeof insertDrugInteractionSchema>;
+export type DrugInteraction = typeof drugInteractions.$inferSelect;
+
+// Patient-specific interaction alerts
+export const interactionAlerts = pgTable("interaction_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  medication1Id: varchar("medication1_id").notNull().references(() => medications.id),
+  medication2Id: varchar("medication2_id").notNull().references(() => medications.id),
+  interactionId: varchar("interaction_id").notNull().references(() => drugInteractions.id),
+  alertStatus: varchar("alert_status").notNull().default("active"), // 'active', 'acknowledged', 'overridden', 'resolved'
+  acknowledgedBy: varchar("acknowledged_by"), // User ID who acknowledged
+  acknowledgedAt: timestamp("acknowledged_at"),
+  overrideReason: text("override_reason"),
+  overrideBy: varchar("override_by"), // Doctor ID who overrode
+  overrideAt: timestamp("override_at"),
+  notifiedPatient: boolean("notified_patient").default(false),
+  notifiedDoctor: boolean("notified_doctor").default(false),
+  smsAlertSent: boolean("sms_alert_sent").default(false),
+  emailAlertSent: boolean("email_alert_sent").default(false),
+  clonaMentioned: boolean("clona_mentioned").default(false), // Mentioned in Agent Clona chat
+  criticalityScore: integer("criticality_score"), // 1-10 scale based on patient profile
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertInteractionAlertSchema = createInsertSchema(interactionAlerts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertInteractionAlert = z.infer<typeof insertInteractionAlertSchema>;
+export type InteractionAlert = typeof interactionAlerts.$inferSelect;
+
+// Pharmacogenomic profiles for personalized drug-gene interactions
+export const pharmacogenomicProfiles = pgTable("pharmacogenomic_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().unique().references(() => users.id),
+  testProvider: varchar("test_provider"), // '23andMe', 'AncestryDNA', 'medical_lab', etc.
+  testDate: timestamp("test_date"),
+  cypEnzymes: jsonb("cyp_enzymes").$type<Array<{ enzyme: string; genotype: string; phenotype: string; activity: string }>>(), // CYP2D6, CYP3A4, etc.
+  slcoTransporters: jsonb("slco_transporters").$type<Array<{ transporter: string; genotype: string; activity: string }>>(),
+  hlaAlleles: jsonb("hla_alleles").$type<Array<{ allele: string; present: boolean; riskLevel: string }>>(), // HLA-B*57:01, etc.
+  vkorc1Genotype: varchar("vkorc1_genotype"), // For warfarin dosing
+  tpmtGenotype: varchar("tpmt_genotype"), // For azathioprine/mercaptopurine
+  dpydGenotype: varchar("dpyd_genotype"), // For 5-FU/capecitabine
+  g6pdDeficiency: boolean("g6pd_deficiency").default(false),
+  otherPharmacogenes: jsonb("other_pharmacogenes").$type<Array<{ gene: string; variants: string[]; clinicalSignificance: string }>>(),
+  ethnicBackground: varchar("ethnic_background"), // Important for pharmacogenomics
+  consentForResearch: boolean("consent_for_research").default(false),
+  dataSource: varchar("data_source"), // 'upload', 'ehr', 'lab_integration'
+  rawDataFileUrl: varchar("raw_data_file_url"), // S3 URL for uploaded genetic data
+  interpreterNotes: text("interpreter_notes"),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPharmacogenomicProfileSchema = createInsertSchema(pharmacogenomicProfiles).omit({
+  id: true,
+  createdAt: true,
+  lastUpdated: true,
+});
+
+export type InsertPharmacogenomicProfile = z.infer<typeof insertPharmacogenomicProfileSchema>;
+export type PharmacogenomicProfile = typeof pharmacogenomicProfiles.$inferSelect;
+
+// Drug-gene interactions for pharmacogenomic warnings
+export const drugGeneInteractions = pgTable("drug_gene_interactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  drugId: varchar("drug_id").notNull().references(() => drugs.id),
+  gene: varchar("gene").notNull(), // 'CYP2D6', 'HLA-B*57:01', etc.
+  allele: varchar("allele"), // Specific allele if applicable
+  phenotype: varchar("phenotype"), // 'poor metabolizer', 'rapid metabolizer', etc.
+  clinicalEffect: text("clinical_effect").notNull(),
+  recommendation: text("recommendation").notNull(),
+  dosageAdjustment: text("dosage_adjustment"),
+  alternativeDrug: varchar("alternative_drug"),
+  riskLevel: varchar("risk_level").notNull(), // 'high', 'moderate', 'low'
+  fdaGuideline: boolean("fda_guideline").default(false),
+  cpicGuideline: boolean("cpic_guideline").default(false), // Clinical Pharmacogenetics Implementation Consortium
+  evidence: text("evidence"),
+  references: jsonb("references").$type<Array<{ title: string; url: string }>>(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertDrugGeneInteractionSchema = createInsertSchema(drugGeneInteractions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDrugGeneInteraction = z.infer<typeof insertDrugGeneInteractionSchema>;
+export type DrugGeneInteraction = typeof drugGeneInteractions.$inferSelect;
+
 // Dynamic tasks
 export const dynamicTasks = pgTable("dynamic_tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

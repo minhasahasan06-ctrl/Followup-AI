@@ -6,6 +6,11 @@ import {
   chatSessions,
   chatMessages,
   medications,
+  drugs,
+  drugInteractions,
+  interactionAlerts,
+  pharmacogenomicProfiles,
+  drugGeneInteractions,
   dynamicTasks,
   autoJournals,
   calmActivities,
@@ -39,6 +44,16 @@ import {
   type InsertChatMessage,
   type Medication,
   type InsertMedication,
+  type Drug,
+  type InsertDrug,
+  type DrugInteraction,
+  type InsertDrugInteraction,
+  type InteractionAlert,
+  type InsertInteractionAlert,
+  type PharmacogenomicProfile,
+  type InsertPharmacogenomicProfile,
+  type DrugGeneInteraction,
+  type InsertDrugGeneInteraction,
   type DynamicTask,
   type InsertDynamicTask,
   type AutoJournal,
@@ -661,6 +676,14 @@ export class DatabaseStorage implements IStorage {
       .insert(medications)
       .values(medicationData)
       .returning();
+    return medication;
+  }
+
+  async getMedicationByName(patientId: string, name: string): Promise<Medication | undefined> {
+    const [medication] = await db
+      .select()
+      .from(medications)
+      .where(sql`${medications.patientId} = ${patientId} AND LOWER(${medications.name}) = ${name.toLowerCase()} AND ${medications.active} = true`);
     return medication;
   }
 
@@ -1326,6 +1349,163 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return settings;
+  }
+
+  // Drug interaction operations
+  async createDrug(drugData: InsertDrug): Promise<Drug> {
+    const [drug] = await db
+      .insert(drugs)
+      .values(drugData)
+      .returning();
+    return drug;
+  }
+
+  async getDrug(id: string): Promise<Drug | undefined> {
+    const [drug] = await db
+      .select()
+      .from(drugs)
+      .where(eq(drugs.id, id));
+    return drug;
+  }
+
+  async getDrugByName(name: string): Promise<Drug | undefined> {
+    const [drug] = await db
+      .select()
+      .from(drugs)
+      .where(eq(drugs.name, name));
+    return drug;
+  }
+
+  async searchDrugs(query: string): Promise<Drug[]> {
+    const results = await db
+      .select()
+      .from(drugs)
+      .where(sql`LOWER(${drugs.name}) LIKE ${`%${query.toLowerCase()}%`} OR LOWER(${drugs.genericName}) LIKE ${`%${query.toLowerCase()}%`}`)
+      .limit(20);
+    return results;
+  }
+
+  async createDrugInteraction(interactionData: InsertDrugInteraction): Promise<DrugInteraction> {
+    const [interaction] = await db
+      .insert(drugInteractions)
+      .values(interactionData)
+      .returning();
+    return interaction;
+  }
+
+  async getDrugInteraction(drug1Id: string, drug2Id: string): Promise<DrugInteraction | undefined> {
+    const [interaction] = await db
+      .select()
+      .from(drugInteractions)
+      .where(
+        sql`(${drugInteractions.drug1Id} = ${drug1Id} AND ${drugInteractions.drug2Id} = ${drug2Id}) OR (${drugInteractions.drug1Id} = ${drug2Id} AND ${drugInteractions.drug2Id} = ${drug1Id})`
+      );
+    return interaction;
+  }
+
+  async createInteractionAlert(alertData: InsertInteractionAlert): Promise<InteractionAlert> {
+    const [alert] = await db
+      .insert(interactionAlerts)
+      .values(alertData)
+      .returning();
+    return alert;
+  }
+
+  async getActiveInteractionAlerts(patientId: string): Promise<InteractionAlert[]> {
+    const alerts = await db
+      .select()
+      .from(interactionAlerts)
+      .where(
+        sql`${interactionAlerts.patientId} = ${patientId} AND ${interactionAlerts.alertStatus} = 'active'`
+      )
+      .orderBy(desc(interactionAlerts.criticalityScore), desc(interactionAlerts.createdAt));
+    return alerts;
+  }
+
+  async getAllInteractionAlerts(patientId: string): Promise<InteractionAlert[]> {
+    const alerts = await db
+      .select()
+      .from(interactionAlerts)
+      .where(eq(interactionAlerts.patientId, patientId))
+      .orderBy(desc(interactionAlerts.createdAt));
+    return alerts;
+  }
+
+  async acknowledgeInteractionAlert(alertId: string, userId: string): Promise<InteractionAlert | undefined> {
+    const [alert] = await db
+      .update(interactionAlerts)
+      .set({
+        alertStatus: 'acknowledged',
+        acknowledgedBy: userId,
+        acknowledgedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(interactionAlerts.id, alertId))
+      .returning();
+    return alert;
+  }
+
+  async overrideInteractionAlert(
+    alertId: string,
+    doctorId: string,
+    reason: string
+  ): Promise<InteractionAlert | undefined> {
+    const [alert] = await db
+      .update(interactionAlerts)
+      .set({
+        alertStatus: 'overridden',
+        overrideBy: doctorId,
+        overrideReason: reason,
+        overrideAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(interactionAlerts.id, alertId))
+      .returning();
+    return alert;
+  }
+
+  async createPharmacogenomicProfile(profileData: InsertPharmacogenomicProfile): Promise<PharmacogenomicProfile> {
+    const [profile] = await db
+      .insert(pharmacogenomicProfiles)
+      .values(profileData)
+      .returning();
+    return profile;
+  }
+
+  async getPharmacogenomicProfile(patientId: string): Promise<PharmacogenomicProfile | undefined> {
+    const [profile] = await db
+      .select()
+      .from(pharmacogenomicProfiles)
+      .where(eq(pharmacogenomicProfiles.patientId, patientId));
+    return profile;
+  }
+
+  async updatePharmacogenomicProfile(
+    patientId: string,
+    updates: Partial<PharmacogenomicProfile>
+  ): Promise<PharmacogenomicProfile | undefined> {
+    const [profile] = await db
+      .update(pharmacogenomicProfiles)
+      .set({ ...updates, lastUpdated: new Date() })
+      .where(eq(pharmacogenomicProfiles.patientId, patientId))
+      .returning();
+    return profile;
+  }
+
+  async createDrugGeneInteraction(interactionData: InsertDrugGeneInteraction): Promise<DrugGeneInteraction> {
+    const [interaction] = await db
+      .insert(drugGeneInteractions)
+      .values(interactionData)
+      .returning();
+    return interaction;
+  }
+
+  async getDrugGeneInteractions(drugId: string): Promise<DrugGeneInteraction[]> {
+    const interactions = await db
+      .select()
+      .from(drugGeneInteractions)
+      .where(eq(drugGeneInteractions.drugId, drugId));
+    return interactions;
   }
 }
 

@@ -49,6 +49,7 @@ import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
 import TwoFactorAuth from "@/pages/TwoFactorAuth";
 import MedicalDocuments from "@/pages/MedicalDocuments";
+import DrugInteractions from "@/pages/DrugInteractions";
 
 function PatientRouter() {
   return (
@@ -62,6 +63,7 @@ function PatientRouter() {
       <Route path="/ehr-integrations" component={EHRIntegrations} />
       <Route path="/wearables" component={WearableDevices} />
       <Route path="/medical-documents" component={MedicalDocuments} />
+      <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/files" component={Files} />
