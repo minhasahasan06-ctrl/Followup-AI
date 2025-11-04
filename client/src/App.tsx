@@ -54,6 +54,7 @@ import ImmuneMonitoring from "@/pages/ImmuneMonitoring";
 import EnvironmentalRiskMap from "@/pages/EnvironmentalRiskMap";
 import CorrelationInsights from "@/pages/CorrelationInsights";
 import NutritionInsights from "@/pages/NutritionInsights";
+import HealthCompanion from "@/pages/HealthCompanion";
 
 function PatientRouter() {
   return (
@@ -70,6 +71,7 @@ function PatientRouter() {
       <Route path="/environmental-risk" component={EnvironmentalRiskMap} />
       <Route path="/correlation-insights" component={CorrelationInsights} />
       <Route path="/nutrition-insights" component={NutritionInsights} />
+      <Route path="/health-companion" component={HealthCompanion} />
       <Route path="/medical-documents" component={MedicalDocuments} />
       <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/referrals" component={Referrals} />
