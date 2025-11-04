@@ -340,3 +340,117 @@ export function generateSafetyRecommendations(
 
   return recommendations;
 }
+
+/**
+ * Fetch environmental risk data for a location
+ * Geocodes zip code to get latitude/longitude then collects and persists environmental data
+ */
+export async function fetchEnvironmentalRiskData(zipCode: string) {
+  const { storage } = await import('./storage');
+  
+  // Geocode zip code to get latitude/longitude
+  // For demo: Use approximate coordinates (in production, use Google Geocoding API or similar)
+  const coords = await geocodeZipCode(zipCode);
+  
+  // Collect environmental risk data
+  const riskDataInsert = await collectEnvironmentalRiskData(coords.latitude, coords.longitude, zipCode);
+  
+  // Persist to database
+  const riskData = await storage.createEnvironmentalRiskData(riskDataInsert);
+  
+  return riskData;
+}
+
+/**
+ * Geocode a zip code to latitude/longitude
+ * In production, this would call a geocoding API (Google, OpenCage, etc.)
+ * For demo, returns approximate US zip code center coordinates
+ */
+async function geocodeZipCode(zipCode: string): Promise<{ latitude: number; longitude: number }> {
+  // For demo purposes, use approximate coordinates based on first digit
+  // In production, call a geocoding API like Google Maps Geocoding or OpenCage
+  const firstDigit = parseInt(zipCode[0]);
+  
+  // Approximate US regions by first zip digit
+  const regionCoords: Record<number, { latitude: number; longitude: number }> = {
+    0: { latitude: 40.7128, longitude: -74.0060 },  // Northeast (NYC area)
+    1: { latitude: 40.7128, longitude: -74.0060 },  // Northeast
+    2: { latitude: 38.9072, longitude: -77.0369 },  // Mid-Atlantic (DC area)
+    3: { latitude: 33.7490, longitude: -84.3880 },  // Southeast (Atlanta area)
+    4: { latitude: 30.2672, longitude: -97.7431 },  // South Central (Austin area)
+    5: { latitude: 41.8781, longitude: -87.6298 },  // Midwest (Chicago area)
+    6: { latitude: 39.7392, longitude: -104.9903 }, // Central (Denver area)
+    7: { latitude: 32.7767, longitude: -96.7970 },  // South (Dallas area)
+    8: { latitude: 40.7608, longitude: -111.8910 }, // Mountain (Salt Lake City)
+    9: { latitude: 37.7749, longitude: -122.4194 }, // West (San Francisco area)
+  };
+  
+  return regionCoords[firstDigit] || regionCoords[0];
+}
+
+/**
+ * Generate pathogen risk map for a location
+ * Returns a comprehensive risk assessment with recommendations
+ */
+export async function generatePathogenRiskMap(zipCode: string) {
+  const { storage } = await import('./storage');
+  
+  // Get latest environmental risk data for this location
+  const riskDataList = await storage.getEnvironmentalRiskDataByLocation(zipCode, 1);
+  
+  if (riskDataList.length === 0) {
+    // If no data exists, collect it with proper geocoding
+    const coords = await geocodeZipCode(zipCode);
+    const riskDataInsert = await collectEnvironmentalRiskData(coords.latitude, coords.longitude, zipCode);
+    const newRiskData = await storage.createEnvironmentalRiskData(riskDataInsert);
+    var riskData = newRiskData;
+  } else {
+    var riskData = riskDataList[0];
+  }
+  
+  // Generate safety recommendations
+  const recommendations = generateSafetyRecommendations(riskData);
+  
+  // Build pathogen risk map
+  return {
+    location: {
+      zipCode: riskData.zipCode,
+      city: riskData.city,
+      state: riskData.state,
+      latitude: riskData.latitude,
+      longitude: riskData.longitude,
+    },
+    measuredAt: riskData.measuredAt,
+    overallRisk: {
+      score: riskData.overallRiskScore,
+      level: riskData.immunocompromisedRisk,
+      description: getRiskDescription(riskData.immunocompromisedRisk),
+    },
+    airQuality: {
+      aqi: riskData.aqi,
+      aqiCategory: riskData.aqiCategory,
+      pm25: riskData.pm25,
+      pollutants: riskData.pollutants,
+    },
+    outbreaks: riskData.localOutbreaks || [],
+    pathogens: riskData.detectedPathogens || [],
+    pollenCount: riskData.pollenCount,
+    uvIndex: riskData.uvIndex,
+    recommendations,
+  };
+}
+
+function getRiskDescription(risk: string): string {
+  switch (risk) {
+    case 'low':
+      return 'Minimal environmental health risks. Standard precautions are sufficient.';
+    case 'moderate':
+      return 'Some environmental factors present. Monitor your symptoms and follow basic precautions.';
+    case 'high':
+      return 'Elevated environmental health risks. Limit outdoor exposure and take enhanced precautions.';
+    case 'critical':
+      return 'Severe environmental health risks. Stay indoors if possible and consult your healthcare provider.';
+    default:
+      return 'Environmental risk assessment unavailable.';
+  }
+}
