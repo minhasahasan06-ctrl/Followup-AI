@@ -811,3 +811,169 @@ export const insertTwoFactorAuthSchema = createInsertSchema(twoFactorAuth).omit(
 
 export type InsertTwoFactorAuth = z.infer<typeof insertTwoFactorAuthSchema>;
 export type TwoFactorAuth = typeof twoFactorAuth.$inferSelect;
+
+// Medical Documents (OCR extraction from uploaded files)
+export const medicalDocuments = pgTable("medical_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // File information
+  fileName: varchar("file_name").notNull(),
+  fileType: varchar("file_type").notNull(), // 'pdf', 'image', etc.
+  fileSize: integer("file_size"), // in bytes
+  fileUrl: text("file_url").notNull(), // Storage URL
+  
+  // OCR extracted data
+  extractedText: text("extracted_text"), // Full text extraction
+  extractedData: jsonb("extracted_data").$type<{
+    patientName?: string;
+    dateOfBirth?: string;
+    diagnosis?: string[];
+    medications?: string[];
+    labResults?: { test: string; value: string; unit?: string }[];
+    vitalSigns?: { type: string; value: string; unit?: string }[];
+    allergies?: string[];
+    procedures?: string[];
+    notes?: string;
+  }>(), // Structured extracted medical data
+  
+  // Metadata
+  documentType: varchar("document_type"), // 'lab_report', 'prescription', 'imaging', 'discharge_summary', 'other'
+  documentDate: timestamp("document_date"),
+  processingStatus: varchar("processing_status").default("pending"), // 'pending', 'processing', 'completed', 'failed'
+  errorMessage: text("error_message"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertMedicalDocumentSchema = createInsertSchema(medicalDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMedicalDocument = z.infer<typeof insertMedicalDocumentSchema>;
+export type MedicalDocument = typeof medicalDocuments.$inferSelect;
+
+// Medical Histories (structured symptom data from OPQRST questioning)
+export const medicalHistories = pgTable("medical_histories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Chief complaint
+  chiefComplaint: text("chief_complaint").notNull(),
+  
+  // OPQRST details
+  onset: text("onset"), // When did it start, what were you doing
+  provocation: text("provocation"), // What makes it better/worse
+  quality: text("quality"), // Description of how it feels
+  region: text("region"), // Where is it, does it radiate
+  severity: integer("severity"), // Scale 1-10
+  timing: text("timing"), // Duration, frequency, patterns
+  
+  // Additional history
+  associatedSymptoms: jsonb("associated_symptoms").$type<string[]>(),
+  pastMedicalHistory: text("past_medical_history"),
+  currentMedications: jsonb("current_medications").$type<string[]>(),
+  allergies: jsonb("allergies").$type<string[]>(),
+  recentChanges: text("recent_changes"), // Travel, diet, stress, etc.
+  impactOnLife: text("impact_on_life"), // Effect on daily activities
+  
+  // Summary
+  historyComplete: boolean("history_complete").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertMedicalHistorySchema = createInsertSchema(medicalHistories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMedicalHistory = z.infer<typeof insertMedicalHistorySchema>;
+export type MedicalHistory = typeof medicalHistories.$inferSelect;
+
+// Differential Diagnoses (AI-generated from medical history)
+export const differentialDiagnoses = pgTable("differential_diagnoses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  medicalHistoryId: varchar("medical_history_id").notNull().references(() => medicalHistories.id),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Differential diagnosis list (ordered by likelihood)
+  diagnoses: jsonb("diagnoses").$type<Array<{
+    condition: string;
+    likelihood: 'high' | 'moderate' | 'low';
+    reasoning: string;
+    redFlags?: string[];
+    recommendedActions?: string[];
+  }>>(),
+  
+  // Summary and recommendations
+  summary: text("summary"), // Patient-friendly explanation
+  immediateActions: jsonb("immediate_actions").$type<string[]>(),
+  followUpRecommendations: text("follow_up_recommendations"),
+  urgencyLevel: varchar("urgency_level"), // 'emergency', 'urgent', 'routine', 'monitor'
+  
+  // AI metadata
+  generatedBy: varchar("generated_by").default("agent_clona"), // Which AI generated this
+  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDifferentialDiagnosisSchema = createInsertSchema(differentialDiagnoses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDifferentialDiagnosis = z.infer<typeof insertDifferentialDiagnosisSchema>;
+export type DifferentialDiagnosis = typeof differentialDiagnoses.$inferSelect;
+
+// User Settings (language, theme, voice, data permissions)
+export const userSettings = pgTable("user_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").unique().notNull().references(() => users.id),
+  
+  // Language preferences
+  language: varchar("language").default("en"), // 'en', 'es', 'fr', 'de', 'zh', 'ja', 'ar', 'hi', etc.
+  autoDetectLanguage: boolean("auto_detect_language").default(true),
+  
+  // Theme preferences
+  theme: varchar("theme").default("system"), // 'light', 'dark', 'system'
+  
+  // Voice preferences
+  voiceEnabled: boolean("voice_enabled").default(false),
+  voiceGender: varchar("voice_gender").default("female"), // 'male', 'female'
+  voiceSpeed: decimal("voice_speed", { precision: 2, scale: 1 }).default("1.0"), // 0.5 to 2.0
+  voiceLanguage: varchar("voice_language"), // Can differ from text language
+  autoPlayVoice: boolean("auto_play_voice").default(false),
+  
+  // Data permissions
+  shareDataWithResearch: boolean("share_data_with_research").default(false),
+  shareDataWithDoctors: boolean("share_data_with_doctors").default(true),
+  allowThirdPartyIntegrations: boolean("allow_third_party_integrations").default(false),
+  allowAIAnalysis: boolean("allow_ai_analysis").default(true),
+  
+  // Notification preferences
+  emailNotifications: boolean("email_notifications").default(true),
+  pushNotifications: boolean("push_notifications").default(true),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
+export type UserSettings = typeof userSettings.$inferSelect;
