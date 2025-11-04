@@ -3046,6 +3046,331 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     }
   });
 
+  // ==================== ADAPTIVE MEDICATION & NUTRITION INSIGHTS ROUTES ====================
+
+  // Dietary preferences
+  app.get('/api/nutrition/preferences', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const preferences = await storage.getDietaryPreferences(userId);
+      res.json(preferences || {});
+    } catch (error) {
+      console.error('Error fetching dietary preferences:', error);
+      res.status(500).json({ message: 'Failed to fetch dietary preferences' });
+    }
+  });
+
+  app.post('/api/nutrition/preferences', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const preferences = await storage.upsertDietaryPreferences({
+        patientId: userId,
+        ...req.body,
+      });
+      res.json(preferences);
+    } catch (error) {
+      console.error('Error updating dietary preferences:', error);
+      res.status(500).json({ message: 'Failed to update dietary preferences' });
+    }
+  });
+
+  // Meal plans
+  app.post('/api/nutrition/generate-meal-plan', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { generateWeeklyMealPlan } = await import('./nutritionService');
+      const result = await generateWeeklyMealPlan(userId);
+      res.json(result);
+    } catch (error) {
+      console.error('Error generating meal plan:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to generate meal plan' });
+    }
+  });
+
+  app.get('/api/nutrition/meal-plans', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { activeOnly } = req.query;
+      const plans = await storage.getMealPlans(userId, activeOnly === 'true');
+      res.json(plans);
+    } catch (error) {
+      console.error('Error fetching meal plans:', error);
+      res.status(500).json({ message: 'Failed to fetch meal plans' });
+    }
+  });
+
+  app.get('/api/nutrition/active-plan', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const plan = await storage.getActiveMealPlan(userId);
+      res.json(plan || null);
+    } catch (error) {
+      console.error('Error fetching active meal plan:', error);
+      res.status(500).json({ message: 'Failed to fetch active meal plan' });
+    }
+  });
+
+  // Meals
+  app.get('/api/nutrition/meals', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { mealPlanId, limit } = req.query;
+      const meals = await storage.getMeals(
+        userId,
+        mealPlanId as string | undefined,
+        limit ? parseInt(limit as string) : undefined
+      );
+      res.json(meals);
+    } catch (error) {
+      console.error('Error fetching meals:', error);
+      res.status(500).json({ message: 'Failed to fetch meals' });
+    }
+  });
+
+  app.get('/api/nutrition/meals/today', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const meals = await storage.getTodaysMeals(userId);
+      res.json(meals);
+    } catch (error) {
+      console.error('Error fetching today\'s meals:', error);
+      res.status(500).json({ message: 'Failed to fetch today\'s meals' });
+    }
+  });
+
+  app.post('/api/nutrition/meals', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const meal = await storage.createMeal({
+        patientId: userId,
+        ...req.body,
+      });
+      res.json(meal);
+    } catch (error) {
+      console.error('Error creating meal:', error);
+      res.status(500).json({ message: 'Failed to create meal' });
+    }
+  });
+
+  app.patch('/api/nutrition/meals/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const meal = await storage.updateMeal(id, req.body);
+      res.json(meal);
+    } catch (error) {
+      console.error('Error updating meal:', error);
+      res.status(500).json({ message: 'Failed to update meal' });
+    }
+  });
+
+  // Nutrition analysis
+  app.post('/api/nutrition/analyze', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { mealDescription } = req.body;
+      if (!mealDescription) {
+        return res.status(400).json({ message: 'Meal description is required' });
+      }
+      const { analyzeMealNutrition } = await import('./nutritionService');
+      const analysis = await analyzeMealNutrition(mealDescription, userId);
+      res.json(analysis);
+    } catch (error) {
+      console.error('Error analyzing meal:', error);
+      res.status(500).json({ message: 'Failed to analyze meal' });
+    }
+  });
+
+  // Medication scheduling
+  app.get('/api/medications/schedules', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { activeOnly } = req.query;
+      const schedules = await storage.getPatientMedicationSchedules(userId, activeOnly !== 'false');
+      res.json(schedules);
+    } catch (error) {
+      console.error('Error fetching medication schedules:', error);
+      res.status(500).json({ message: 'Failed to fetch medication schedules' });
+    }
+  });
+
+  app.post('/api/medications/optimize-timing', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { optimizeMedicationTiming } = await import('./nutritionService');
+      const recommendations = await optimizeMedicationTiming(userId);
+      res.json(recommendations);
+    } catch (error) {
+      console.error('Error optimizing medication timing:', error);
+      res.status(500).json({ message: 'Failed to optimize medication timing' });
+    }
+  });
+
+  // Medication adherence
+  app.get('/api/medications/adherence', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { limit } = req.query;
+      const adherence = await storage.getPatientAdherence(userId, limit ? parseInt(limit as string) : undefined);
+      res.json(adherence);
+    } catch (error) {
+      console.error('Error fetching adherence data:', error);
+      res.status(500).json({ message: 'Failed to fetch adherence data' });
+    }
+  });
+
+  app.get('/api/medications/pending', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const pending = await storage.getPendingMedications(userId);
+      res.json(pending);
+    } catch (error) {
+      console.error('Error fetching pending medications:', error);
+      res.status(500).json({ message: 'Failed to fetch pending medications' });
+    }
+  });
+
+  app.post('/api/medications/adherence', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const adherence = await storage.createMedicationAdherence({
+        patientId: userId,
+        ...req.body,
+      });
+      res.json(adherence);
+    } catch (error) {
+      console.error('Error logging medication adherence:', error);
+      res.status(500).json({ message: 'Failed to log medication adherence' });
+    }
+  });
+
+  app.patch('/api/medications/adherence/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const adherence = await storage.updateMedicationAdherence(id, req.body);
+      res.json(adherence);
+    } catch (error) {
+      console.error('Error updating medication adherence:', error);
+      res.status(500).json({ message: 'Failed to update medication adherence' });
+    }
+  });
+
+  // ==================== HEALTH COMPANION MODE ROUTES ====================
+
+  // Companion check-ins
+  app.post('/api/companion/check-in', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { checkInType, userInput, context } = req.body;
+      
+      if (!userInput) {
+        return res.status(400).json({ message: 'User input is required' });
+      }
+
+      const { processCompanionCheckIn } = await import('./companionService');
+      const result = await processCompanionCheckIn({
+        patientId: userId,
+        checkInType: checkInType || 'spontaneous',
+        userInput,
+        context,
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error processing companion check-in:', error);
+      res.status(500).json({ message: 'Failed to process check-in' });
+    }
+  });
+
+  app.get('/api/companion/check-ins', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { limit, type } = req.query;
+      
+      let checkIns;
+      if (type) {
+        checkIns = await storage.getCheckInsByType(
+          userId,
+          type as string,
+          limit ? parseInt(limit as string) : undefined
+        );
+      } else {
+        checkIns = await storage.getCompanionCheckIns(
+          userId,
+          limit ? parseInt(limit as string) : undefined
+        );
+      }
+
+      res.json(checkIns);
+    } catch (error) {
+      console.error('Error fetching check-ins:', error);
+      res.status(500).json({ message: 'Failed to fetch check-ins' });
+    }
+  });
+
+  app.get('/api/companion/check-ins/recent', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { days } = req.query;
+      const checkIns = await storage.getRecentCheckIns(
+        userId,
+        days ? parseInt(days as string) : 7
+      );
+      res.json(checkIns);
+    } catch (error) {
+      console.error('Error fetching recent check-ins:', error);
+      res.status(500).json({ message: 'Failed to fetch recent check-ins' });
+    }
+  });
+
+  // Companion engagement
+  app.get('/api/companion/engagement', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const engagement = await storage.getCompanionEngagement(userId);
+      res.json(engagement || {});
+    } catch (error) {
+      console.error('Error fetching engagement data:', error);
+      res.status(500).json({ message: 'Failed to fetch engagement data' });
+    }
+  });
+
+  app.patch('/api/companion/engagement', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const engagement = await storage.updateCompanionEngagement(userId, req.body);
+      res.json(engagement);
+    } catch (error) {
+      console.error('Error updating engagement settings:', error);
+      res.status(500).json({ message: 'Failed to update engagement settings' });
+    }
+  });
+
+  // Helper endpoints
+  app.get('/api/companion/suggest-check-in-time', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { suggestCheckInTime } = await import('./companionService');
+      const time = await suggestCheckInTime(userId);
+      res.json({ suggestedTime: time });
+    } catch (error) {
+      console.error('Error suggesting check-in time:', error);
+      res.status(500).json({ message: 'Failed to suggest check-in time' });
+    }
+  });
+
+  app.get('/api/companion/prompt', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { type } = req.query;
+      const { generateCheckInPrompt } = await import('./companionService');
+      const prompt = await generateCheckInPrompt(userId, (type as string) || 'morning');
+      res.json({ prompt });
+    } catch (error) {
+      console.error('Error generating check-in prompt:', error);
+      res.status(500).json({ message: 'Failed to generate prompt' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
