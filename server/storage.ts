@@ -3,6 +3,7 @@ import {
   patientProfiles,
   doctorProfiles,
   dailyFollowups,
+  voiceFollowups,
   chatSessions,
   chatMessages,
   medications,
@@ -56,6 +57,8 @@ import {
   type InsertDoctorProfile,
   type DailyFollowup,
   type InsertDailyFollowup,
+  type VoiceFollowup,
+  type InsertVoiceFollowup,
   type ChatSession,
   type InsertChatSession,
   type ChatMessage,
@@ -185,6 +188,12 @@ export interface IStorage {
   getRecentFollowups(patientId: string, limit?: number): Promise<DailyFollowup[]>;
   createDailyFollowup(followup: InsertDailyFollowup): Promise<DailyFollowup>;
   updateDailyFollowup(id: string, data: Partial<DailyFollowup>): Promise<DailyFollowup | undefined>;
+  
+  // Voice followup operations
+  createVoiceFollowup(followup: InsertVoiceFollowup): Promise<VoiceFollowup>;
+  getVoiceFollowup(id: string): Promise<VoiceFollowup | undefined>;
+  getRecentVoiceFollowups(patientId: string, limit?: number): Promise<VoiceFollowup[]>;
+  getAllVoiceFollowups(patientId: string): Promise<VoiceFollowup[]>;
   
   // Chat session operations
   getActiveSession(patientId: string, agentType: string): Promise<ChatSession | undefined>;
@@ -697,6 +706,43 @@ export class DatabaseStorage implements IStorage {
       .where(eq(dailyFollowups.id, id))
       .returning();
     return followup;
+  }
+
+  // Voice followup operations
+  async createVoiceFollowup(followupData: InsertVoiceFollowup): Promise<VoiceFollowup> {
+    const [followup] = await db
+      .insert(voiceFollowups)
+      .values(followupData)
+      .returning();
+    return followup;
+  }
+
+  async getVoiceFollowup(id: string): Promise<VoiceFollowup | undefined> {
+    const [followup] = await db
+      .select()
+      .from(voiceFollowups)
+      .where(eq(voiceFollowups.id, id))
+      .limit(1);
+    return followup;
+  }
+
+  async getRecentVoiceFollowups(patientId: string, limit: number = 10): Promise<VoiceFollowup[]> {
+    const followups = await db
+      .select()
+      .from(voiceFollowups)
+      .where(eq(voiceFollowups.patientId, patientId))
+      .orderBy(desc(voiceFollowups.createdAt))
+      .limit(limit);
+    return followups;
+  }
+
+  async getAllVoiceFollowups(patientId: string): Promise<VoiceFollowup[]> {
+    const followups = await db
+      .select()
+      .from(voiceFollowups)
+      .where(eq(voiceFollowups.patientId, patientId))
+      .orderBy(desc(voiceFollowups.createdAt));
+    return followups;
   }
 
   // Chat session operations
