@@ -185,6 +185,57 @@ export const insertDailyFollowupSchema = createInsertSchema(dailyFollowups).omit
 export type InsertDailyFollowup = z.infer<typeof insertDailyFollowupSchema>;
 export type DailyFollowup = typeof dailyFollowups.$inferSelect;
 
+// Voice-based daily followups - Quick 1min voice logs with AI extraction
+export const voiceFollowups = pgTable("voice_followups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  audioFileUrl: varchar("audio_file_url").notNull(), // S3 URL
+  audioFileName: varchar("audio_file_name").notNull(),
+  audioFileSize: integer("audio_file_size"), // bytes
+  audioDuration: integer("audio_duration"), // seconds
+  transcription: text("transcription").notNull(),
+  
+  // AI-extracted health data
+  extractedSymptoms: jsonb("extracted_symptoms").$type<Array<{ symptom: string; severity: string; confidence: number }>>(),
+  extractedMood: varchar("extracted_mood"), // 'positive', 'neutral', 'anxious', 'stressed', 'depressed'
+  moodScore: decimal("mood_score", { precision: 3, scale: 2 }), // -1.0 to 1.0
+  medicationAdherence: jsonb("medication_adherence").$type<Array<{ medication: string; taken: boolean; time?: string }>>(),
+  extractedMetrics: jsonb("extracted_metrics").$type<{
+    heartRate?: number;
+    bloodPressure?: string;
+    temperature?: number;
+    sleepHours?: number;
+    stepsCount?: number;
+    waterIntake?: number;
+  }>(),
+  
+  // AI analysis
+  sentimentScore: decimal("sentiment_score", { precision: 3, scale: 2 }), // -1.0 to 1.0
+  empathyLevel: varchar("empathy_level").notNull(), // 'supportive', 'empathetic', 'encouraging', 'concerned'
+  concernsRaised: boolean("concerns_raised").default(false),
+  concernsSummary: text("concerns_summary"),
+  aiResponse: text("ai_response").notNull(), // Empathetic AI-generated response
+  conversationSummary: text("conversation_summary"),
+  
+  // Follow-up recommendations
+  needsFollowup: boolean("needs_followup").default(false),
+  followupReason: text("followup_reason"),
+  recommendedActions: jsonb("recommended_actions").$type<string[]>(),
+  
+  // Link to structured daily followup
+  dailyFollowupId: varchar("daily_followup_id").references(() => dailyFollowups.id),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertVoiceFollowupSchema = createInsertSchema(voiceFollowups).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertVoiceFollowup = z.infer<typeof insertVoiceFollowupSchema>;
+export type VoiceFollowup = typeof voiceFollowups.$inferSelect;
+
 // Chat sessions - groups related messages together as medical history
 export const chatSessions = pgTable("chat_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
