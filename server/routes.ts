@@ -3371,6 +3371,112 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     }
   });
 
+  // Voice Followup Routes - Quick 1min voice logs
+  const voiceUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit (OpenAI Whisper limit)
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/mpeg'];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Invalid file type. Only audio files are allowed.'));
+      }
+    },
+  });
+
+  app.post('/api/voice-followup/upload', isAuthenticated, voiceUpload.single('audio'), async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      if (!req.file) {
+        return res.status(400).json({ message: 'No audio file provided' });
+      }
+
+      const { processVoiceFollowup } = await import('./voiceProcessingService');
+      
+      // Process the voice recording (pass mimetype for S3)
+      const processedData = await processVoiceFollowup(
+        req.file.buffer,
+        req.file.originalname,
+        userId,
+        req.file.mimetype
+      );
+
+      // Store in database
+      const voiceFollowup = await storage.createVoiceFollowup({
+        patientId: userId,
+        ...processedData,
+      });
+
+      res.json({
+        id: voiceFollowup.id,
+        transcription: voiceFollowup.transcription,
+        response: voiceFollowup.aiResponse,
+        empathyLevel: voiceFollowup.empathyLevel,
+        conversationSummary: voiceFollowup.conversationSummary,
+        concernsRaised: voiceFollowup.concernsRaised,
+        needsFollowup: voiceFollowup.needsFollowup,
+        followupReason: voiceFollowup.followupReason,
+        recommendedActions: voiceFollowup.recommendedActions,
+        extractedSymptoms: voiceFollowup.extractedSymptoms,
+        extractedMood: voiceFollowup.extractedMood,
+        medicationAdherence: voiceFollowup.medicationAdherence,
+        extractedMetrics: voiceFollowup.extractedMetrics,
+      });
+    } catch (error) {
+      console.error('Error processing voice followup:', error);
+      res.status(500).json({ message: 'Failed to process voice recording' });
+    }
+  });
+
+  app.get('/api/voice-followup/recent', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { limit } = req.query;
+      const followups = await storage.getRecentVoiceFollowups(
+        userId,
+        limit ? parseInt(limit) : 10
+      );
+      res.json(followups);
+    } catch (error) {
+      console.error('Error fetching voice followups:', error);
+      res.status(500).json({ message: 'Failed to fetch voice followups' });
+    }
+  });
+
+  app.get('/api/voice-followup/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const followup = await storage.getVoiceFollowup(id);
+      
+      if (!followup) {
+        return res.status(404).json({ message: 'Voice followup not found' });
+      }
+      
+      // Verify the followup belongs to the requesting user
+      if (followup.patientId !== req.user!.id && req.user!.role !== 'doctor') {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      res.json(followup);
+    } catch (error) {
+      console.error('Error fetching voice followup:', error);
+      res.status(500).json({ message: 'Failed to fetch voice followup' });
+    }
+  });
+
+  app.get('/api/voice-followup', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const followups = await storage.getAllVoiceFollowups(userId);
+      res.json(followups);
+    } catch (error) {
+      console.error('Error fetching all voice followups:', error);
+      res.status(500).json({ message: 'Failed to fetch voice followups' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

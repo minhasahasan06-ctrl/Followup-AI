@@ -44,7 +44,8 @@ interface VoiceProcessingResult {
 export async function processVoiceFollowup(
   audioBuffer: Buffer,
   fileName: string,
-  patientId: string
+  patientId: string,
+  mimeType: string = "audio/webm"
 ): Promise<VoiceProcessingResult> {
   try {
     // Step 1: Upload audio to S3
@@ -53,7 +54,7 @@ export async function processVoiceFollowup(
       Bucket: process.env.AWS_S3_BUCKET_NAME!,
       Key: s3Key,
       Body: audioBuffer,
-      ContentType: "audio/webm",
+      ContentType: mimeType,
     };
 
     await s3Client.send(new PutObjectCommand(uploadParams));
@@ -63,8 +64,11 @@ export async function processVoiceFollowup(
     const tempFilePath = path.join("/tmp", fileName);
     await fs.writeFile(tempFilePath, audioBuffer);
 
+    // Use fs.createReadStream for Node.js compatibility
+    const fileStream = (await import("fs")).createReadStream(tempFilePath);
+    
     const transcriptionResponse = await openai.audio.transcriptions.create({
-      file: await fs.readFile(tempFilePath).then((buffer) => new File([buffer], fileName, { type: "audio/webm" })),
+      file: fileStream as any,
       model: "whisper-1",
       response_format: "verbose_json",
       language: "en",
