@@ -113,8 +113,8 @@ function AuthenticatedApp() {
   };
 
   // Public routes that don't require auth
-  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/"];
-  const isPublicRoute = publicRoutes.includes(location);
+  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog"];
+  const isPublicRoute = publicRoutes.includes(location) || (!user && location === "/");
 
   // Only show loading on authenticated routes
   if (isLoading && !isPublicRoute) {
