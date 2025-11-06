@@ -26,7 +26,7 @@ export function getSession(maxAge?: number) {
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
-    createTableIfMissing: false,
+    createTableIfMissing: true, // ✅ Auto-create sessions table if missing
     // Don't set a fixed ttl - let it use the session's cookie.maxAge automatically
     tableName: "sessions",
   });
