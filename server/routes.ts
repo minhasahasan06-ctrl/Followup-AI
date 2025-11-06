@@ -119,8 +119,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Send verification email
       try {
         await sendVerificationEmail(email, verificationToken, firstName);
+        console.log(`[SIGNUP] Verification email sent to ${email}`);
       } catch (emailError) {
-        console.error("Error sending verification email:", emailError);
+        console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
+        console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
+        console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
         // Don't fail signup if email fails
       }
       
@@ -186,8 +189,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Send verification email
       try {
         await sendVerificationEmail(email, verificationToken, firstName);
+        console.log(`[SIGNUP] Verification email sent to ${email}`);
       } catch (emailError) {
-        console.error("Error sending verification email:", emailError);
+        console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
+        console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
+        console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
       }
       
       res.json({
