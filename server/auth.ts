@@ -35,11 +35,15 @@ export function getSession(maxAge?: number) {
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
+    name: 'followupai.sid', // Custom cookie name
+    proxy: true, // Trust proxy in Replit environment
     cookie: {
       httpOnly: true,
-      secure: isProduction, // Only secure in production (HTTPS)
-      sameSite: isProduction ? "strict" : "lax",
+      secure: false, // Force false even in production for Replit
+      sameSite: "lax",
       maxAge: sessionTtl, // cookie maxAge is in milliseconds
+      domain: undefined, // Don't set domain - let it default
+      path: '/', // Explicit path
     },
   });
 }
@@ -181,15 +185,8 @@ export async function sendPasswordResetEmail(email: string, token: string, first
 
 // Authentication middleware
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
-  console.log("[AUTH DEBUG] Checking authentication...");
-  console.log("[AUTH DEBUG] Session exists:", !!req.session);
-  console.log("[AUTH DEBUG] Session ID:", req.sessionID);
-  console.log("[AUTH DEBUG] Session data:", JSON.stringify(req.session));
-  console.log("[AUTH DEBUG] Cookie header:", req.headers.cookie);
-  
   if (req.session && (req.session as any).userId) {
     const userId = (req.session as any).userId;
-    console.log("[AUTH DEBUG] Found userId in session:", userId);
     const user = await storage.getUser(userId);
     
     if (user) {
@@ -198,13 +195,8 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
         email: user.email!,
         role: user.role,
       };
-      console.log("[AUTH DEBUG] ✓ User authenticated:", user.email);
       return next();
-    } else {
-      console.log("[AUTH DEBUG] ✗ User not found in database:", userId);
     }
-  } else {
-    console.log("[AUTH DEBUG] ✗ No userId in session");
   }
   
   return res.status(401).json({ message: "Unauthorized" });

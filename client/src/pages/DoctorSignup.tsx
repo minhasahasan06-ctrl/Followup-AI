@@ -71,6 +71,7 @@ export default function DoctorSignup() {
 
       const response = await fetch("/api/auth/signup/doctor", {
         method: "POST",
+        credentials: "include", // ✅ Include cookies for session
         body: formData,
       });
 
