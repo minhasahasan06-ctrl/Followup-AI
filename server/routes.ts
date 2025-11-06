@@ -237,6 +237,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Set session
       (req.session as any).userId = user.id;
+      console.log("[LOGIN DEBUG] Set userId in session:", user.id);
+      console.log("[LOGIN DEBUG] Session ID:", req.sessionID);
       
       // Extend session if remember me is checked
       if (rememberMe) {
@@ -246,8 +248,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Save session to ensure TTL is updated in the store
       await new Promise<void>((resolve, reject) => {
         req.session.save((err) => {
-          if (err) reject(err);
-          else resolve();
+          if (err) {
+            console.error("[LOGIN DEBUG] ✗ Error saving session:", err);
+            reject(err);
+          } else {
+            console.log("[LOGIN DEBUG] ✓ Session saved successfully");
+            console.log("[LOGIN DEBUG] Cookie settings:", req.session.cookie);
+            resolve();
+          }
         });
       });
       
