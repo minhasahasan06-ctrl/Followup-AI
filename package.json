@@ -14,6 +14,7 @@
     "@aws-sdk/client-comprehendmedical": "^3.922.0",
     "@aws-sdk/client-healthlake": "^3.922.0",
     "@aws-sdk/client-medical-imaging": "^3.922.0",
+    "@aws-sdk/client-omics": "^3.925.0",
     "@aws-sdk/client-s3": "^3.922.0",
     "@aws-sdk/client-textract": "^3.922.0",
     "@aws-sdk/lib-storage": "^3.922.0",
