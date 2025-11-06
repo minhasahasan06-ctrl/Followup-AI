@@ -44,7 +44,14 @@ Preferred communication style: Simple, everyday language.
 - **Safety Recommendations:** AI-generated location-specific recommendations (indoor/outdoor safety, mask requirements, activity restrictions) based on combined environmental factors.
 - **Pathogen Risk Maps:** Visual geospatial risk assessment with heat mapping, outbreak zone identification, and safe zone recommendations.
 **Twilio Integration:** Multi-channel (SMS, voice) verification system and customizable SMS notifications for medication reminders, appointments, daily check-ins, and critical alerts.
-**AWS Healthcare Services:** S3 for HIPAA-compliant encrypted document storage, Textract for OCR processing of medical documents, and Comprehend Medical for medical entity extraction.
+**AWS Healthcare Services (INTEGRATED):** Comprehensive AWS healthcare AI platform integration with Agent Clona:
+- **Amazon Comprehend Medical:** Real-time medical entity extraction from clinical text, detecting medications, symptoms, diagnoses, treatments, and PHI with confidence scores. Automatically extracts ICD-10-CM codes, RxNorm medication codes, and SNOMED CT medical concepts.
+- **AWS HealthLake:** FHIR R4-based health data storage for interoperability with EHR systems (integration framework established, uses FHIR REST APIs).
+- **AWS HealthImaging:** Medical imaging storage and analysis capabilities for DICOM images (CT, MRI, X-rays, ultrasound) with HTJ2K encoding.
+- **AWS HealthOmics:** Genomic data analysis infrastructure for personalized medicine, supporting sequence stores and genomic read sets for pharmacogenomics integration.
+- **AWS S3:** HIPAA-compliant encrypted storage for medical documents and voice followup audio files.
+- **AWS Textract:** OCR processing for extracting text from medical documents, prescriptions, and lab reports.
+**Voice-Based Daily Followups (NEW):** 1-minute voice recordings analyzed by OpenAI Whisper for transcription and GPT-4 for health data extraction (symptoms, mood, medication adherence), with empathetic AI responses making health tracking conversational.
 **Health Insight Consent:** Patient-controlled granular data sharing permissions for third-party health apps (Fitbit, Apple Health, Google Fit).
 **EHR & Wearable Integration:** FHIR-based integration with major EHR systems (Epic, Cerner) and support for major wearable devices (Amazfit, Garmin) for real-time health data sync.
 **Referral System:** Unique codes, tracking, and incentives for patients and doctors.
@@ -70,4 +77,4 @@ Preferred communication style: Simple, everyday language.
 **Development Tools:** Vite, TypeScript, Drizzle Kit, esbuild.
 **Data Integration APIs:** PubMed E-utilities, PhysioNet WFDB, Kaggle API, WHO Global Health Observatory API.
 **Communication:** Twilio API for SMS and voice services.
-**Cloud Services:** AWS S3, AWS Textract, AWS Comprehend Medical.
+**Cloud Services:** AWS S3, AWS Textract, AWS Comprehend Medical, AWS HealthLake, AWS HealthImaging, AWS HealthOmics.

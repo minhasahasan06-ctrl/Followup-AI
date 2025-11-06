@@ -3,6 +3,7 @@ import { TextractClient } from "@aws-sdk/client-textract";
 import { ComprehendMedicalClient } from "@aws-sdk/client-comprehendmedical";
 import { HealthLakeClient } from "@aws-sdk/client-healthlake";
 import { MedicalImagingClient } from "@aws-sdk/client-medical-imaging";
+import { OmicsClient } from "@aws-sdk/client-omics";
 
 const AWS_REGION = process.env.AWS_REGION || "us-east-1";
 
@@ -23,5 +24,7 @@ export const comprehendMedicalClient = new ComprehendMedicalClient(awsConfig);
 export const healthLakeClient = new HealthLakeClient(awsConfig);
 
 export const medicalImagingClient = new MedicalImagingClient(awsConfig);
+
+export const omicsClient = new OmicsClient(awsConfig);
 
 export const AWS_S3_BUCKET = process.env.AWS_S3_BUCKET_NAME || "";

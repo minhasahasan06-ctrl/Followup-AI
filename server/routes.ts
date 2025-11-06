@@ -812,7 +812,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isDoctor = user?.role === 'doctor';
       
       const systemPrompt = agentType === 'clona'
-        ? `You are Agent Clona, a warm, friendly, and empathetic AI health companion specifically designed for elderly immunocompromised patients.
+        ? `You are Agent Clona, a warm, friendly, and empathetic AI health companion specifically designed for elderly immunocompromised patients. You are powered by advanced AWS Healthcare AI services including Amazon Comprehend Medical for precise medical entity extraction, AWS HealthLake for FHIR-based health records, AWS HealthImaging for medical imaging analysis, and AWS HealthOmics for genomic insights.
 
 PERSONALITY & APPROACH:
 - Always greet users warmly and use their name when you know it
@@ -973,28 +973,69 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
 
       const assistantMessage = completion.choices[0].message.content || "I'm here to help!";
 
-      const extractMedicalEntities = (text: string) => {
-        const entities: Array<{ text: string; type: string }> = [];
-        const symptoms = ['fever', 'cough', 'headache', 'pain', 'nausea', 'fatigue', 'dizziness', 'sore throat', 'chills', 'shortness of breath'];
-        const medications = ['aspirin', 'ibuprofen', 'acetaminophen', 'antibiotic'];
-        
-        symptoms.forEach(symptom => {
-          if (text.toLowerCase().includes(symptom)) {
-            entities.push({ text: symptom, type: 'symptom' });
-          }
-        });
-        
-        medications.forEach(med => {
-          if (text.toLowerCase().includes(med)) {
-            entities.push({ text: med, type: 'medication' });
-          }
-        });
-        
-        return entities;
+      // Use AWS Comprehend Medical for advanced medical entity extraction
+      const extractMedicalEntitiesAWS = async (text: string) => {
+        try {
+          const { AWSHealthcareService } = await import('./awsHealthcareService');
+          const insights = await AWSHealthcareService.analyzeClinicalText(text);
+          
+          // Transform AWS Comprehend Medical entities to our legacy format
+          // Map AWS categories to our expected types for backward compatibility
+          return insights.entities.map(entity => {
+            let type = entity.category.toLowerCase();
+            
+            // Map AWS Comprehend Medical categories to our legacy schema
+            if (entity.category === 'MEDICAL_CONDITION') {
+              // Check traits to differentiate symptoms vs diagnoses
+              const isSymptom = entity.traits?.some(t => 
+                t.name === 'SYMPTOM' || t.name === 'SIGN'
+              );
+              type = isSymptom ? 'symptom' : 'medical_condition';
+            } else if (entity.category === 'MEDICATION') {
+              type = 'medication';
+            } else if (entity.category === 'ANATOMY') {
+              type = 'anatomy';
+            } else if (entity.category === 'TEST_TREATMENT_PROCEDURE') {
+              type = 'treatment';
+            }
+            
+            return {
+              text: entity.text,
+              type,
+              score: entity.score,
+              awsCategory: entity.category, // original AWS category
+              awsType: entity.type, // specific entity type from AWS
+            };
+          });
+        } catch (error) {
+          console.error('AWS Comprehend Medical extraction failed, using fallback:', error);
+          // Fallback to simple keyword matching if AWS fails
+          const entities: Array<{ text: string; type: string }> = [];
+          const symptoms = ['fever', 'cough', 'headache', 'pain', 'nausea', 'fatigue', 'dizziness', 'sore throat', 'chills', 'shortness of breath'];
+          const medications = ['aspirin', 'ibuprofen', 'acetaminophen', 'antibiotic'];
+          
+          symptoms.forEach(symptom => {
+            if (text.toLowerCase().includes(symptom)) {
+              entities.push({ text: symptom, type: 'symptom' });
+            }
+          });
+          
+          medications.forEach(med => {
+            if (text.toLowerCase().includes(med)) {
+              entities.push({ text: med, type: 'medication' });
+            }
+          });
+          
+          return entities;
+        }
       };
 
-      const userEntities = extractMedicalEntities(content);
-      const assistantEntities = extractMedicalEntities(assistantMessage);
+      const [userEntities, assistantEntities] = await Promise.all([
+        extractMedicalEntitiesAWS(content),
+        extractMedicalEntitiesAWS(assistantMessage),
+      ]);
+      
+      // Extract symptoms for session metadata (now properly mapped from AWS)
       const allSymptoms = [...userEntities, ...assistantEntities]
         .filter(e => e.type === 'symptom')
         .map(e => e.text);
