@@ -221,9 +221,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Invalid email or password" });
       }
       
-      // Check if email is verified
-      if (!user.emailVerified) {
-        return res.status(403).json({ message: "Please verify your email before logging in" });
+      // Check if email is verified (skip in development for testing)
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      const isTestEmail = email.includes('@example.com') || email.includes('@test.com');
+      
+      if (!user.emailVerified && !(isDevelopment && isTestEmail)) {
+        return res.status(403).json({ message: "Please verify your email before logging in. Check your email inbox for the verification link." });
       }
       
       // Set session
