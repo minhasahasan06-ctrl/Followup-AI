@@ -74,23 +74,28 @@ export function getSession(maxAge?: number) {
     store = new session.MemoryStore();
   }
 
-  return session({
+  const sessionConfig = session({
     secret: process.env.SESSION_SECRET || "dev-insecure-secret",
     store,
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true, // Changed to true to ensure sessions are saved even before modification
     name: 'followupai.sid',
     proxy: true,
     cookie: {
       httpOnly: true,
-      // Replit/preview envs are often http. Keep secure=false to ensure cookie is set.
-      secure: false,
+      // Use Secure cookies in production (HTTPS) to ensure browsers accept the session
+      secure: isProduction,
       sameSite: "lax",
       maxAge: sessionTtl,
       domain: undefined,
       path: '/',
     },
   });
+  
+  // Log session configuration
+  console.log(`[SESSION] Session configured - secure: ${isProduction}, sameSite: lax, store: ${store ? store.constructor.name : 'none'}`);
+  
+  return sessionConfig;
 }
 
 // Resend client helper
@@ -252,6 +257,13 @@ export async function sendPasswordResetEmail(email: string, token: string, first
 
 // Authentication middleware
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  // Debug logging (only for auth-related endpoints to reduce noise)
+  const isAuthEndpoint = req.path.includes('/api/auth/') || req.path.includes('/api/patient/') || req.path.includes('/api/doctor/');
+  
+  if (isAuthEndpoint) {
+    console.log(`[AUTH] ${req.method} ${req.path} - Session ID: ${req.sessionID}, userId: ${(req.session as any)?.userId || 'none'}`);
+  }
+  
   if (req.session && (req.session as any).userId) {
     const userId = (req.session as any).userId;
     const user = await storage.getUser(userId);
@@ -262,7 +274,17 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
         email: user.email!,
         role: user.role,
       };
+      if (isAuthEndpoint) {
+        console.log(`[AUTH] ✓ Authenticated: ${user.email} (${user.role})`);
+      }
       return next();
+    } else {
+      console.log(`[AUTH] ✗ User not found for userId: ${userId}`);
+    }
+  } else {
+    if (isAuthEndpoint) {
+      console.log(`[AUTH] ✗ Unauthorized - no session or userId`);
+      console.log(`[AUTH] Cookie header present: ${!!req.headers.cookie}`);
     }
   }
   
