@@ -306,26 +306,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Please verify your email before logging in. Check your email inbox for the verification link." });
       }
       
-      // Set session
+      // Ensure we have a session object
+      if (!req.session) {
+        console.error("[AUTH] No session object available after middleware");
+        return res.status(500).json({ message: "Session initialization failed" });
+      }
+      
+      console.log(`[AUTH] Initial session ID: ${req.sessionID}`);
+      console.log(`[AUTH] Existing userId in session: ${(req.session as any).userId || 'none'}`);
+      
+      // Regenerate to create a fresh session (this handles both new and existing sessions)
+      await new Promise<void>((resolve, reject) => {
+        req.session.regenerate((err) => {
+          if (err) {
+            console.error("[AUTH] Error regenerating session:", err);
+            reject(err);
+          } else {
+            console.log(`[AUTH] New session ID after regenerate: ${req.sessionID}`);
+            // Verify session still exists after regeneration
+            if (!req.session) {
+              console.error("[AUTH] Session is null after regeneration!");
+              reject(new Error("Session lost after regeneration"));
+            } else {
+              resolve();
+            }
+          }
+        });
+      });
+      
+      // Set session data - this marks the session as modified and will cause it to be saved
       (req.session as any).userId = user.id;
+      console.log(`[AUTH] Set userId in session: ${user.id}`);
       
       // Extend session if remember me is checked
       if (rememberMe) {
         req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
       }
       
-      // Save session to ensure TTL is updated in the store
+      // Manually save the session to ensure cookie is set
       await new Promise<void>((resolve, reject) => {
         req.session.save((err) => {
           if (err) {
-            console.error("Error saving session:", err);
+            console.error("[AUTH] Error saving session:", err);
             reject(err);
           } else {
+            console.log(`[AUTH] ✓ Session saved for user ${user.id}, session ID: ${req.sessionID}`);
+            console.log(`[AUTH] Session data: ${JSON.stringify(req.session)}`);
             resolve();
           }
         });
       });
       
+      // Send response with user data
       res.json({
         message: "Login successful",
         user: {
