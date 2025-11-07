@@ -19,6 +19,65 @@ import crypto from "crypto";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
+const isProduction = process.env.NODE_ENV === 'production';
+
+type SignupVerificationOptions = {
+  userId: string;
+  email: string;
+  firstName: string;
+  verificationToken: string;
+  successMessage: string;
+  devAutoVerifyMessage: string;
+  failureMessage: string;
+  logContext: string;
+};
+
+type SignupVerificationResult = {
+  message: string;
+  emailVerified: boolean;
+};
+
+async function handleVerificationAfterSignup({
+  userId,
+  email,
+  firstName,
+  verificationToken,
+  successMessage,
+  devAutoVerifyMessage,
+  failureMessage,
+  logContext,
+}: SignupVerificationOptions): Promise<SignupVerificationResult> {
+  try {
+    await sendVerificationEmail(email, verificationToken, firstName);
+    console.log(`[SIGNUP] Verification email sent to ${email}`);
+    return { message: successMessage, emailVerified: false };
+  } catch (emailError) {
+    console.error(`[SIGNUP] ⚠️  Error sending verification email (${logContext}):`, emailError);
+    console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
+    console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
+    
+    if (!isProduction) {
+      try {
+        const autoVerifiedUser = await storage.updateUser(userId, {
+          emailVerified: true,
+          verificationToken: null,
+          verificationTokenExpires: null,
+        });
+        
+        if (autoVerifiedUser?.emailVerified) {
+          console.log(`[SIGNUP] ✅ Auto-verified ${logContext} account ${userId} because email delivery failed in development mode.`);
+          return { message: devAutoVerifyMessage, emailVerified: true };
+        }
+        
+        console.warn(`[SIGNUP] ⚠️ Unable to auto-verify ${logContext} account ${userId} after email failure.`);
+      } catch (autoVerifyError) {
+        console.error(`[SIGNUP] ✗ Failed to auto-verify ${logContext} account ${userId}:`, autoVerifyError);
+      }
+    }
+    
+    return { message: failureMessage, emailVerified: false };
+  }
+}
 
 // Configure multer for file uploads (KYC photos)
 const upload = multer({
@@ -97,40 +156,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get KYC photo URL if uploaded
       const kycPhotoUrl = req.file ? `/uploads/kyc/${req.file.filename}` : undefined;
       
-      // Create user
-      const user = await storage.createUser({
-        email,
-        passwordHash,
-        firstName,
-        lastName,
-        role: 'doctor',
-        organization,
-        medicalLicenseNumber,
-        licenseCountry,
-        kycPhotoUrl,
-        emailVerified: false,
-        verificationToken,
-        verificationTokenExpires,
-        termsAccepted: true,
-        termsAcceptedAt: new Date(),
-        creditBalance: 0,
-      });
-      
-      // Send verification email
-      try {
-        await sendVerificationEmail(email, verificationToken, firstName);
-        console.log(`[SIGNUP] Verification email sent to ${email}`);
-      } catch (emailError) {
-        console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
-        console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
-        console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
-        // Don't fail signup if email fails
-      }
-      
-      res.json({
-        message: "Account created successfully. Please check your email to verify your account.",
-        userId: user.id,
-      });
+        // Create user
+        const user = await storage.createUser({
+          email,
+          passwordHash,
+          firstName,
+          lastName,
+          role: 'doctor',
+          organization,
+          medicalLicenseNumber,
+          licenseCountry,
+          kycPhotoUrl,
+          emailVerified: false,
+          verificationToken,
+          verificationTokenExpires,
+          termsAccepted: true,
+          termsAcceptedAt: new Date(),
+          creditBalance: 0,
+        });
+        
+        const verification = await handleVerificationAfterSignup({
+          userId: user.id,
+          email,
+          firstName,
+          verificationToken,
+          successMessage: "Account created successfully. Please check your email to verify your account.",
+          devAutoVerifyMessage: "Account created successfully. Email verification was skipped in development, so you can log in immediately.",
+          failureMessage: "Account created successfully, but we couldn't send the verification email. Please contact support to verify your account.",
+          logContext: "doctor",
+        });
+        
+        res.json({
+          message: verification.message,
+          userId: user.id,
+          emailVerified: verification.emailVerified,
+        });
     } catch (error) {
       console.error("Error in doctor signup:", error);
       res.status(500).json({ message: "Failed to create account" });
@@ -167,39 +227,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Start 7-day free trial
       const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       
-      // Create user
-      const user = await storage.createUser({
-        email,
-        passwordHash,
-        firstName,
-        lastName,
-        role: 'patient',
-        ehrImportMethod,
-        ehrPlatform,
-        emailVerified: false,
-        verificationToken,
-        verificationTokenExpires,
-        termsAccepted: true,
-        termsAcceptedAt: new Date(),
-        subscriptionStatus: 'trialing',
-        trialEndsAt,
-        creditBalance: 20, // 20 free consultation credits during trial
-      });
-      
-      // Send verification email
-      try {
-        await sendVerificationEmail(email, verificationToken, firstName);
-        console.log(`[SIGNUP] Verification email sent to ${email}`);
-      } catch (emailError) {
-        console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
-        console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
-        console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
-      }
-      
-      res.json({
-        message: "Account created successfully. Please check your email to verify your account. Your 7-day free trial has started!",
-        userId: user.id,
-      });
+        // Create user
+        const user = await storage.createUser({
+          email,
+          passwordHash,
+          firstName,
+          lastName,
+          role: 'patient',
+          ehrImportMethod,
+          ehrPlatform,
+          emailVerified: false,
+          verificationToken,
+          verificationTokenExpires,
+          termsAccepted: true,
+          termsAcceptedAt: new Date(),
+          subscriptionStatus: 'trialing',
+          trialEndsAt,
+          creditBalance: 20, // 20 free consultation credits during trial
+        });
+        
+        const verification = await handleVerificationAfterSignup({
+          userId: user.id,
+          email,
+          firstName,
+          verificationToken,
+          successMessage: "Account created successfully. Please check your email to verify your account. Your 7-day free trial has started!",
+          devAutoVerifyMessage: "Account created successfully. Email verification was skipped in development, so you can log in immediately. Your 7-day free trial has started!",
+          failureMessage: "Account created successfully, but we couldn't send the verification email. Please contact support to verify your account so your trial can continue.",
+          logContext: "patient",
+        });
+        
+        res.json({
+          message: verification.message,
+          userId: user.id,
+          emailVerified: verification.emailVerified,
+        });
     } catch (error) {
       console.error("Error in patient signup:", error);
       res.status(500).json({ message: "Failed to create account" });
