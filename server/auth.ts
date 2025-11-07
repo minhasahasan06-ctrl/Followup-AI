@@ -83,8 +83,8 @@ export function getSession(maxAge?: number) {
     proxy: true,
     cookie: {
       httpOnly: true,
-      // Replit/preview envs are often http. Keep secure=false to ensure cookie is set.
-      secure: false,
+      // Use Secure cookies in production (HTTPS) to ensure browsers accept the session
+      secure: isProduction,
       sameSite: "lax",
       maxAge: sessionTtl,
       domain: undefined,
