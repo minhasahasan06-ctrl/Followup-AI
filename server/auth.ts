@@ -35,7 +35,11 @@ function getReplitConnectorAuth() {
 }
 
 export function isEmailVerificationConfigured(): boolean {
-  return getReplitConnectorAuth() !== null;
+  // Consider configured if either Replit Connector is available or ENV has API key
+  return (
+    !!process.env.RESEND_API_KEY ||
+    getReplitConnectorAuth() !== null
+  );
 }
 
 export function isEmailVerificationRequired(): boolean {
@@ -82,10 +86,17 @@ export function getSession(maxAge?: number) {
 let connectionSettings: any;
 
 async function getCredentials() {
-  const connectorAuth = getReplitConnectorAuth();
+  // Primary: allow standard ENV configuration
+  const apiKeyFromEnv = process.env.RESEND_API_KEY;
+  const fromEmailFromEnv = process.env.RESEND_FROM_EMAIL;
+  if (apiKeyFromEnv) {
+    return { apiKey: apiKeyFromEnv, fromEmail: fromEmailFromEnv };
+  }
 
+  // Fallback: Replit Connector
+  const connectorAuth = getReplitConnectorAuth();
   if (!connectorAuth) {
-    throw new Error('Resend connector credentials are not configured');
+    throw new Error('Resend credentials are not configured (set RESEND_API_KEY or Replit Connector)');
   }
 
   const { hostname, xReplitToken } = connectorAuth;
@@ -103,7 +114,7 @@ async function getCredentials() {
   if (!connectionSettings || (!connectionSettings.settings.api_key)) {
     throw new Error('Resend not connected');
   }
-  return {apiKey: connectionSettings.settings.api_key, fromEmail: connectionSettings.settings.from_email};
+  return { apiKey: connectionSettings.settings.api_key, fromEmail: connectionSettings.settings.from_email };
 }
 
 async function getUncachableResendClient() {
