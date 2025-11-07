@@ -55,8 +55,10 @@ export function isEmailVerificationRequired(): boolean {
 
 // Session configuration
 export function getSession(maxAge?: number) {
-  const isProduction = process.env.NODE_ENV === "production";
   const sessionTtl = maxAge || (1 * 24 * 60 * 60 * 1000); // Default 1 day in milliseconds
+
+  // Detect if running in Replit environment (iframe context requires third-party cookies)
+  const isReplit = !!process.env.REPL_ID || !!process.env.REPLIT_DEV_DOMAIN;
 
   // Prefer Postgres-backed sessions when DATABASE_URL is configured; otherwise fall back to in-memory store.
   // The in-memory store is only suitable for development and will not persist across restarts.
@@ -74,26 +76,34 @@ export function getSession(maxAge?: number) {
     store = new session.MemoryStore();
   }
 
+  // Replit serves apps in an iframe, creating third-party cookie context
+  // Must use sameSite: "none" with secure: true for cookies to work in iframe
+  const cookieConfig = isReplit ? {
+    httpOnly: true,
+    secure: true, // Required for sameSite: none (Replit uses HTTPS proxy)
+    sameSite: "none" as const, // Required for third-party cookie context (iframe)
+    maxAge: sessionTtl,
+    path: '/',
+  } : {
+    httpOnly: true,
+    secure: false, // Local development uses HTTP
+    sameSite: "lax" as const,
+    maxAge: sessionTtl,
+    path: '/',
+  };
+
   const sessionConfig = session({
     secret: process.env.SESSION_SECRET || "dev-insecure-secret",
     store,
     resave: false,
-    saveUninitialized: true, // Changed to true to ensure sessions are saved even before modification
+    saveUninitialized: false,
     name: 'followupai.sid',
-    proxy: true,
-    cookie: {
-      httpOnly: true,
-      // Use Secure cookies in production (HTTPS) to ensure browsers accept the session
-      secure: isProduction,
-      sameSite: "lax",
-      maxAge: sessionTtl,
-      domain: undefined,
-      path: '/',
-    },
+    proxy: true, // Trust the Replit proxy
+    cookie: cookieConfig,
   });
   
   // Log session configuration
-  console.log(`[SESSION] Session configured - secure: ${isProduction}, sameSite: lax, store: ${store ? store.constructor.name : 'none'}`);
+  console.log(`[SESSION] Environment: ${isReplit ? 'Replit (iframe)' : 'Local'}, secure: ${cookieConfig.secure}, sameSite: ${cookieConfig.sameSite}, store: ${store ? store.constructor.name : 'none'}`);
   
   return sessionConfig;
 }

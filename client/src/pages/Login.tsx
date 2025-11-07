@@ -65,9 +65,9 @@ export default function Login() {
       // Redirect based on user role to authenticated routes
       const role = result?.user?.role as string | undefined;
       if (role === "doctor") {
-        setLocation("/profile");
+        setLocation("/");
       } else {
-        setLocation("/dashboard");
+        setLocation("/");
       }
     } catch (error: any) {
       toast({
