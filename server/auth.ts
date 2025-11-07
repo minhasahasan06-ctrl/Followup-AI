@@ -19,31 +19,76 @@ declare global {
   }
 }
 
+function getReplitConnectorAuth() {
+  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
+  const xReplitToken = process.env.REPL_IDENTITY
+    ? `repl ${process.env.REPL_IDENTITY}`
+    : process.env.WEB_REPL_RENEWAL
+    ? `depl ${process.env.WEB_REPL_RENEWAL}`
+    : null;
+
+  if (!hostname || !xReplitToken) {
+    return null;
+  }
+
+  return { hostname, xReplitToken };
+}
+
+export function isEmailVerificationConfigured(): boolean {
+  // Consider configured if either Replit Connector is available or ENV has API key
+  return (
+    !!process.env.RESEND_API_KEY ||
+    getReplitConnectorAuth() !== null
+  );
+}
+
+export function isEmailVerificationRequired(): boolean {
+  const flag = process.env.EMAIL_VERIFICATION_REQUIRED?.toLowerCase();
+  if (flag === "true") {
+    return true;
+  }
+  if (flag === "false") {
+    return false;
+  }
+  return process.env.NODE_ENV === "production" && isEmailVerificationConfigured();
+}
+
 // Session configuration
 export function getSession(maxAge?: number) {
   const isProduction = process.env.NODE_ENV === "production";
   const sessionTtl = maxAge || (1 * 24 * 60 * 60 * 1000); // Default 1 day in milliseconds
-  const pgStore = connectPg(session);
-  const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
-    createTableIfMissing: true, // ✅ Auto-create sessions table if missing
-    // Don't set a fixed ttl - let it use the session's cookie.maxAge automatically
-    tableName: "sessions",
-  });
+
+  // Prefer Postgres-backed sessions when DATABASE_URL is configured; otherwise fall back to in-memory store.
+  // The in-memory store is only suitable for development and will not persist across restarts.
+  let store: session.Store | undefined;
+  if (process.env.DATABASE_URL) {
+    const PgStore = connectPg(session);
+    store = new PgStore({
+      conString: process.env.DATABASE_URL,
+      createTableIfMissing: true,
+      tableName: "sessions",
+    });
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn("[SESSION] DATABASE_URL not set – using MemoryStore (dev only). Sessions won't persist across restarts.");
+    store = new session.MemoryStore();
+  }
+
   return session({
-    secret: process.env.SESSION_SECRET!,
-    store: sessionStore,
+    secret: process.env.SESSION_SECRET || "dev-insecure-secret",
+    store,
     resave: false,
     saveUninitialized: false,
-    name: 'followupai.sid', // Custom cookie name
-    proxy: true, // Trust proxy in Replit environment
+    name: 'followupai.sid',
+    proxy: true,
     cookie: {
       httpOnly: true,
-      secure: false, // Force false even in production for Replit
+      // Replit/preview envs are often http. Keep secure=false to ensure cookie is set.
+      secure: false,
       sameSite: "lax",
-      maxAge: sessionTtl, // cookie maxAge is in milliseconds
-      domain: undefined, // Don't set domain - let it default
-      path: '/', // Explicit path
+      maxAge: sessionTtl,
+      domain: undefined,
+      path: '/',
     },
   });
 }
@@ -52,16 +97,20 @@ export function getSession(maxAge?: number) {
 let connectionSettings: any;
 
 async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+  // Primary: allow standard ENV configuration
+  const apiKeyFromEnv = process.env.RESEND_API_KEY;
+  const fromEmailFromEnv = process.env.RESEND_FROM_EMAIL;
+  if (apiKeyFromEnv) {
+    return { apiKey: apiKeyFromEnv, fromEmail: fromEmailFromEnv };
   }
+
+  // Fallback: Replit Connector
+  const connectorAuth = getReplitConnectorAuth();
+  if (!connectorAuth) {
+    throw new Error('Resend credentials are not configured (set RESEND_API_KEY or Replit Connector)');
+  }
+
+  const { hostname, xReplitToken } = connectorAuth;
 
   connectionSettings = await fetch(
     'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=resend',
@@ -76,7 +125,7 @@ async function getCredentials() {
   if (!connectionSettings || (!connectionSettings.settings.api_key)) {
     throw new Error('Resend not connected');
   }
-  return {apiKey: connectionSettings.settings.api_key, fromEmail: connectionSettings.settings.from_email};
+  return { apiKey: connectionSettings.settings.api_key, fromEmail: connectionSettings.settings.from_email };
 }
 
 async function getUncachableResendClient() {
@@ -105,8 +154,6 @@ export async function comparePassword(password: string, hash: string): Promise<b
 
 // Send verification email
 export async function sendVerificationEmail(email: string, token: string, firstName: string) {
-<<<<<<< Current (Your changes)
-=======
   if (!isEmailVerificationRequired()) {
     console.log(`[EMAIL] Skipping verification email for ${email}; verification is disabled in this environment.`);
     return;
@@ -118,7 +165,6 @@ export async function sendVerificationEmail(email: string, token: string, firstN
     return;
   }
 
->>>>>>> Incoming (Background Agent changes)
   console.log(`[EMAIL] Attempting to send verification email to: ${email}`);
   
   try {
