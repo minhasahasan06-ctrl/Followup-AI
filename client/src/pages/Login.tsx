@@ -58,15 +58,16 @@ export default function Login() {
         description: "Welcome back!",
       });
 
-      // Invalidate auth queries
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      // Refresh auth state before redirecting
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      await queryClient.fetchQuery({ queryKey: ["/api/auth/user"] });
 
-      // Redirect based on user role
+      // Redirect based on user role to authenticated routes
       const role = result?.user?.role as string | undefined;
       if (role === "doctor") {
         setLocation("/profile");
       } else {
-        setLocation("/");
+        setLocation("/dashboard");
       }
     } catch (error: any) {
       toast({
