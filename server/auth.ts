@@ -57,27 +57,38 @@ export function isEmailVerificationRequired(): boolean {
 export function getSession(maxAge?: number) {
   const isProduction = process.env.NODE_ENV === "production";
   const sessionTtl = maxAge || (1 * 24 * 60 * 60 * 1000); // Default 1 day in milliseconds
-  const pgStore = connectPg(session);
-  const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
-    createTableIfMissing: true, // ✅ Auto-create sessions table if missing
-    // Don't set a fixed ttl - let it use the session's cookie.maxAge automatically
-    tableName: "sessions",
-  });
+
+  // Prefer Postgres-backed sessions when DATABASE_URL is configured; otherwise fall back to in-memory store.
+  // The in-memory store is only suitable for development and will not persist across restarts.
+  let store: session.Store | undefined;
+  if (process.env.DATABASE_URL) {
+    const PgStore = connectPg(session);
+    store = new PgStore({
+      conString: process.env.DATABASE_URL,
+      createTableIfMissing: true,
+      tableName: "sessions",
+    });
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn("[SESSION] DATABASE_URL not set – using MemoryStore (dev only). Sessions won't persist across restarts.");
+    store = new session.MemoryStore();
+  }
+
   return session({
-    secret: process.env.SESSION_SECRET!,
-    store: sessionStore,
+    secret: process.env.SESSION_SECRET || "dev-insecure-secret",
+    store,
     resave: false,
     saveUninitialized: false,
-    name: 'followupai.sid', // Custom cookie name
-    proxy: true, // Trust proxy in Replit environment
+    name: 'followupai.sid',
+    proxy: true,
     cookie: {
       httpOnly: true,
-      secure: false, // Force false even in production for Replit
+      // Replit/preview envs are often http. Keep secure=false to ensure cookie is set.
+      secure: false,
       sameSite: "lax",
-      maxAge: sessionTtl, // cookie maxAge is in milliseconds
-      domain: undefined, // Don't set domain - let it default
-      path: '/', // Explicit path
+      maxAge: sessionTtl,
+      domain: undefined,
+      path: '/',
     },
   });
 }
