@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, isDoctor, hashPassword, comparePassword, generateToken, sendVerificationEmail, sendPasswordResetEmail } from "./auth";
+import { setupAuth, isAuthenticated, isDoctor, hashPassword, comparePassword, generateToken, sendVerificationEmail, sendPasswordResetEmail, isEmailVerificationRequired } from "./auth";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
 import { s3Client, textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -87,12 +87,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email already registered" });
       }
       
-      // Hash password
-      const passwordHash = await hashPassword(password);
-      
-      // Generate verification token
-      const verificationToken = generateToken();
-      const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        // Hash password
+        const passwordHash = await hashPassword(password);
+
+        const emailVerificationRequired = isEmailVerificationRequired();
+
+        // Generate verification token if needed
+        const verificationToken = emailVerificationRequired ? generateToken() : null;
+        const verificationTokenExpires = emailVerificationRequired
+          ? new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+          : null;
       
       // Get KYC photo URL if uploaded
       const kycPhotoUrl = req.file ? `/uploads/kyc/${req.file.filename}` : undefined;
@@ -108,7 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         medicalLicenseNumber,
         licenseCountry,
         kycPhotoUrl,
-        emailVerified: false,
+          emailVerified: !emailVerificationRequired,
         verificationToken,
         verificationTokenExpires,
         termsAccepted: true,
@@ -116,21 +120,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         creditBalance: 0,
       });
       
-      // Send verification email
-      try {
-        await sendVerificationEmail(email, verificationToken, firstName);
-        console.log(`[SIGNUP] Verification email sent to ${email}`);
-      } catch (emailError) {
-        console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
-        console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
-        console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
-        // Don't fail signup if email fails
-      }
-      
-      res.json({
-        message: "Account created successfully. Please check your email to verify your account.",
-        userId: user.id,
-      });
+        if (emailVerificationRequired && verificationToken) {
+          try {
+            await sendVerificationEmail(email, verificationToken, firstName);
+            console.log(`[SIGNUP] Verification email sent to ${email}`);
+          } catch (emailError) {
+            console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
+            console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
+            console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
+            // Don't fail signup if email fails
+          }
+        } else {
+          console.log(`[SIGNUP] Email verification disabled; skipping verification email for ${email}`);
+        }
+
+        res.json({
+          message: emailVerificationRequired
+            ? "Account created successfully. Please check your email to verify your account."
+            : "Account created successfully. You can now log in.",
+          userId: user.id,
+        });
     } catch (error) {
       console.error("Error in doctor signup:", error);
       res.status(500).json({ message: "Failed to create account" });
@@ -157,12 +166,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email already registered" });
       }
       
-      // Hash password
-      const passwordHash = await hashPassword(password);
-      
-      // Generate verification token
-      const verificationToken = generateToken();
-      const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        // Hash password
+        const passwordHash = await hashPassword(password);
+
+        const emailVerificationRequired = isEmailVerificationRequired();
+
+        // Generate verification token if needed
+        const verificationToken = emailVerificationRequired ? generateToken() : null;
+        const verificationTokenExpires = emailVerificationRequired
+          ? new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+          : null;
       
       // Start 7-day free trial
       const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -176,7 +189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: 'patient',
         ehrImportMethod,
         ehrPlatform,
-        emailVerified: false,
+          emailVerified: !emailVerificationRequired,
         verificationToken,
         verificationTokenExpires,
         termsAccepted: true,
@@ -186,20 +199,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         creditBalance: 20, // 20 free consultation credits during trial
       });
       
-      // Send verification email
-      try {
-        await sendVerificationEmail(email, verificationToken, firstName);
-        console.log(`[SIGNUP] Verification email sent to ${email}`);
-      } catch (emailError) {
-        console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
-        console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
-        console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
-      }
-      
-      res.json({
-        message: "Account created successfully. Please check your email to verify your account. Your 7-day free trial has started!",
-        userId: user.id,
-      });
+        if (emailVerificationRequired && verificationToken) {
+          try {
+            await sendVerificationEmail(email, verificationToken, firstName);
+            console.log(`[SIGNUP] Verification email sent to ${email}`);
+          } catch (emailError) {
+            console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
+            console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
+            console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
+          }
+        } else {
+          console.log(`[SIGNUP] Email verification disabled; skipping verification email for ${email}`);
+        }
+
+        res.json({
+          message: emailVerificationRequired
+            ? "Account created successfully. Please check your email to verify your account. Your 7-day free trial has started!"
+            : "Account created successfully. Your 7-day free trial has started! You can now log in.",
+          userId: user.id,
+        });
     } catch (error) {
       console.error("Error in patient signup:", error);
       res.status(500).json({ message: "Failed to create account" });
@@ -215,8 +233,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email and password are required" });
       }
       
-      // Get user by email
-      const user = await storage.getUserByEmail(email);
+        // Get user by email
+        let user = await storage.getUserByEmail(email);
       if (!user) {
         return res.status(401).json({ message: "Invalid email or password" });
       }
@@ -227,11 +245,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Invalid email or password" });
       }
       
+        const emailVerificationRequired = isEmailVerificationRequired();
+
+        if (!emailVerificationRequired && !user.emailVerified) {
+          const updatedUser = await storage.updateUser(user.id, {
+            emailVerified: true,
+            verificationToken: null,
+            verificationTokenExpires: null,
+          });
+          if (updatedUser) {
+            user = updatedUser;
+          } else {
+            user = { ...user, emailVerified: true, verificationToken: null, verificationTokenExpires: null };
+          }
+        }
+
       // Check if email is verified (skip in development for testing)
       const isDevelopment = process.env.NODE_ENV === 'development';
       const isTestEmail = email.includes('@example.com') || email.includes('@test.com');
       
-      if (!user.emailVerified && !(isDevelopment && isTestEmail)) {
+        if (emailVerificationRequired && !user.emailVerified && !(isDevelopment && isTestEmail)) {
         return res.status(403).json({ message: "Please verify your email before logging in. Check your email inbox for the verification link." });
       }
       

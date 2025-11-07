@@ -19,6 +19,36 @@ declare global {
   }
 }
 
+function getReplitConnectorAuth() {
+  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
+  const xReplitToken = process.env.REPL_IDENTITY
+    ? `repl ${process.env.REPL_IDENTITY}`
+    : process.env.WEB_REPL_RENEWAL
+    ? `depl ${process.env.WEB_REPL_RENEWAL}`
+    : null;
+
+  if (!hostname || !xReplitToken) {
+    return null;
+  }
+
+  return { hostname, xReplitToken };
+}
+
+export function isEmailVerificationConfigured(): boolean {
+  return getReplitConnectorAuth() !== null;
+}
+
+export function isEmailVerificationRequired(): boolean {
+  const flag = process.env.EMAIL_VERIFICATION_REQUIRED?.toLowerCase();
+  if (flag === "true") {
+    return true;
+  }
+  if (flag === "false") {
+    return false;
+  }
+  return process.env.NODE_ENV === "production" && isEmailVerificationConfigured();
+}
+
 // Session configuration
 export function getSession(maxAge?: number) {
   const isProduction = process.env.NODE_ENV === "production";
@@ -52,16 +82,13 @@ export function getSession(maxAge?: number) {
 let connectionSettings: any;
 
 async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
+  const connectorAuth = getReplitConnectorAuth();
 
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+  if (!connectorAuth) {
+    throw new Error('Resend connector credentials are not configured');
   }
+
+  const { hostname, xReplitToken } = connectorAuth;
 
   connectionSettings = await fetch(
     'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=resend',
@@ -105,6 +132,15 @@ export async function comparePassword(password: string, hash: string): Promise<b
 
 // Send verification email
 export async function sendVerificationEmail(email: string, token: string, firstName: string) {
+  if (!isEmailVerificationRequired()) {
+    console.log(`[EMAIL] Skipping verification email for ${email}; verification is disabled in this environment.`);
+    return;
+  }
+
+  if (!isEmailVerificationConfigured()) {
+    throw new Error("Email verification is required, but connector credentials are missing.");
+  }
+
   console.log(`[EMAIL] Attempting to send verification email to: ${email}`);
   
   try {
