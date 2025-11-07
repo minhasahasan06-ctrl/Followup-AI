@@ -67,6 +67,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============== AUTHENTICATION ROUTES ==============
   
+  // Admin: Reset user by email (set new password and verify email)
+  app.post('/api/admin/reset-user', async (req, res) => {
+    try {
+      const adminKeyHeader = req.headers['x-admin-key'];
+      const adminKey = process.env.ADMIN_API_KEY;
+      if (!adminKey || adminKeyHeader !== adminKey) {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+
+      const { email, newPassword } = req.body as { email?: string; newPassword?: string };
+      if (!email || !newPassword) {
+        return res.status(400).json({ message: 'email and newPassword are required' });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const passwordHash = await hashPassword(newPassword);
+
+      // Update user directly via storage where possible
+      const updated = await storage.updateUser(user.id, {
+        passwordHash,
+        emailVerified: true,
+        verificationToken: null,
+        verificationTokenExpires: null,
+        resetToken: null,
+        resetTokenExpires: null,
+      } as any);
+
+      return res.json({ message: 'User reset successfully', userId: (updated?.id ?? user.id) });
+    } catch (error) {
+      console.error('Error in admin reset-user:', error);
+      return res.status(500).json({ message: 'Failed to reset user' });
+    }
+  });
+  
   // Doctor signup
   app.post('/api/auth/signup/doctor', upload.single('kycPhoto'), async (req, res) => {
     try {

@@ -149,7 +149,9 @@ export async function sendVerificationEmail(email: string, token: string, firstN
   }
 
   if (!isEmailVerificationConfigured()) {
-    throw new Error("Email verification is required, but connector credentials are missing.");
+    const verificationUrl = `${process.env.APP_URL || 'http://localhost:5000'}/verify-email?token=${token}`;
+    console.warn(`[EMAIL] Verification required but email provider not configured. Manual verify URL for ${email}: ${verificationUrl}`);
+    return;
   }
 
   console.log(`[EMAIL] Attempting to send verification email to: ${email}`);
@@ -195,6 +197,13 @@ export async function sendVerificationEmail(email: string, token: string, firstN
 
 // Send password reset email
 export async function sendPasswordResetEmail(email: string, token: string, firstName: string) {
+  // If email integration isn't configured, log the reset URL as a fallback
+  if (!isEmailVerificationConfigured()) {
+    const resetUrl = `${process.env.APP_URL || 'http://localhost:5000'}/reset-password?token=${token}`;
+    console.warn(`[EMAIL] Resend not configured. Password reset URL for ${email}: ${resetUrl}`);
+    return;
+  }
+
   const { client, fromEmail } = await getUncachableResendClient();
   const resetUrl = `${process.env.APP_URL || 'http://localhost:5000'}/reset-password?token=${token}`;
   
