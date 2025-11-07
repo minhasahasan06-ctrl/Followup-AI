@@ -62,7 +62,12 @@ export default function Login() {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
 
       // Redirect based on user role
-      setLocation("/");
+      const role = result?.user?.role as string | undefined;
+      if (role === "doctor") {
+        setLocation("/profile");
+      } else {
+        setLocation("/");
+      }
     } catch (error: any) {
       toast({
         title: "Login failed",
