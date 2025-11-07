@@ -78,10 +78,12 @@ export function getSession(maxAge?: number) {
 
   // Replit serves apps in an iframe, creating third-party cookie context
   // Must use sameSite: "none" with secure: true for cookies to work in iframe
+  // partitioned: true enables CHIPS (Cookies Having Independent Partitioned State) for Chrome
   const cookieConfig = isReplit ? {
     httpOnly: true,
     secure: true, // Required for sameSite: none (Replit uses HTTPS proxy)
     sameSite: "none" as const, // Required for third-party cookie context (iframe)
+    partitioned: true, // Required for Chrome CHIPS in third-party iframe
     maxAge: sessionTtl,
     path: '/',
   } : {
@@ -103,7 +105,7 @@ export function getSession(maxAge?: number) {
   });
   
   // Log session configuration
-  console.log(`[SESSION] Environment: ${isReplit ? 'Replit (iframe)' : 'Local'}, secure: ${cookieConfig.secure}, sameSite: ${cookieConfig.sameSite}, store: ${store ? store.constructor.name : 'none'}`);
+  console.log(`[SESSION] Environment: ${isReplit ? 'Replit (iframe)' : 'Local'}, secure: ${cookieConfig.secure}, sameSite: ${cookieConfig.sameSite}, partitioned: ${(cookieConfig as any).partitioned || false}, store: ${store ? store.constructor.name : 'none'}`);
   
   return sessionConfig;
 }
