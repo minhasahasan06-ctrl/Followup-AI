@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, isDoctor, hashPassword, comparePassword, generateToken, sendVerificationEmail, sendPasswordResetEmail, isEmailVerificationRequired } from "./auth";
+import { setupAuth, isAuthenticated, isDoctor } from "./replitAuth";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
 import { s3Client, textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -63,345 +63,79 @@ const medicalDocUpload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  setupAuth(app);
+  await setupAuth(app);
 
-  // ============== AUTHENTICATION ROUTES ==============
+  // ============== AUTHENTICATION ROUTES (Replit Auth OIDC) ==============
   
-  // Admin: Reset user by email (set new password and verify email)
-  app.post('/api/admin/reset-user', async (req, res) => {
+  // Auth routes (/api/login, /api/logout, /api/callback) are set up by setupAuth
+  // GET /api/login - redirects to Replit OIDC login
+  // GET /api/callback - OIDC callback handler
+  // GET /api/logout - logs out and redirects
+  
+  // Get current user
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const adminKeyHeader = req.headers['x-admin-key'];
-      const adminKey = process.env.ADMIN_API_KEY;
-      if (!adminKey || adminKeyHeader !== adminKey) {
-        return res.status(403).json({ message: 'Forbidden' });
-      }
-
-      const { email, newPassword } = req.body as { email?: string; newPassword?: string };
-      if (!email || !newPassword) {
-        return res.status(400).json({ message: 'email and newPassword are required' });
-      }
-
-      const user = await storage.getUserByEmail(email);
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
-
-      const passwordHash = await hashPassword(newPassword);
-
-      // Update user directly via storage where possible
-      const updated = await storage.updateUser(user.id, {
-        passwordHash,
-        emailVerified: true,
-        verificationToken: null,
-        verificationTokenExpires: null,
-        resetToken: null,
-        resetTokenExpires: null,
-      } as any);
-
-      return res.json({ message: 'User reset successfully', userId: (updated?.id ?? user.id) });
+      res.json(user);
     } catch (error) {
-      console.error('Error in admin reset-user:', error);
-      return res.status(500).json({ message: 'Failed to reset user' });
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
     }
   });
   
-  // Doctor signup
-  app.post('/api/auth/signup/doctor', upload.single('kycPhoto'), async (req, res) => {
+  // Update user role (used after OIDC login for role selection)
+  app.post('/api/auth/set-role', isAuthenticated, async (req: any, res) => {
     try {
-      const { email, password, firstName, lastName, organization, medicalLicenseNumber, licenseCountry, termsAccepted } = req.body;
+      const userId = req.user.claims.sub;
+      const { role, medicalLicenseNumber, organization, licenseCountry, ehrImportMethod, ehrPlatform, termsAccepted } = req.body;
       
-      // Validation
-      if (!email || !password || !firstName || !lastName || !organization || !medicalLicenseNumber || !licenseCountry) {
-        return res.status(400).json({ message: "All fields are required" });
-      }
-      
-      if (!termsAccepted || termsAccepted !== 'true') {
-        return res.status(400).json({ message: "You must accept the terms and conditions" });
-      }
-      
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
-      }
-      
-        // Hash password
-        const passwordHash = await hashPassword(password);
-
-        const emailVerificationRequired = isEmailVerificationRequired();
-
-        // Generate verification token if needed
-        const verificationToken = emailVerificationRequired ? generateToken() : null;
-        const verificationTokenExpires = emailVerificationRequired
-          ? new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-          : null;
-      
-      // Get KYC photo URL if uploaded
-      const kycPhotoUrl = req.file ? `/uploads/kyc/${req.file.filename}` : undefined;
-      
-      // Create user
-      const user = await storage.createUser({
-        email,
-        passwordHash,
-        firstName,
-        lastName,
-        role: 'doctor',
-        organization,
-        medicalLicenseNumber,
-        licenseCountry,
-        kycPhotoUrl,
-          emailVerified: !emailVerificationRequired,
-        verificationToken,
-        verificationTokenExpires,
-        termsAccepted: true,
-        termsAcceptedAt: new Date(),
-        creditBalance: 0,
-      });
-      
-        if (emailVerificationRequired && verificationToken) {
-          try {
-            await sendVerificationEmail(email, verificationToken, firstName);
-            console.log(`[SIGNUP] Verification email sent to ${email}`);
-          } catch (emailError) {
-            console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
-            console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
-            console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
-            // Don't fail signup if email fails
-          }
-        } else {
-          console.log(`[SIGNUP] Email verification disabled; skipping verification email for ${email}`);
-        }
-
-        res.json({
-          message: emailVerificationRequired
-            ? "Account created successfully. Please check your email to verify your account."
-            : "Account created successfully. You can now log in.",
-          userId: user.id,
-        });
-    } catch (error) {
-      console.error("Error in doctor signup:", error);
-      res.status(500).json({ message: "Failed to create account" });
-    }
-  });
-  
-  // Patient signup
-  app.post('/api/auth/signup/patient', async (req, res) => {
-    try {
-      const { email, password, firstName, lastName, ehrImportMethod, ehrPlatform, termsAccepted } = req.body;
-      
-      // Validation
-      if (!email || !password || !firstName || !lastName || !ehrImportMethod) {
-        return res.status(400).json({ message: "All fields are required" });
+      if (!role || (role !== 'patient' && role !== 'doctor')) {
+        return res.status(400).json({ message: "Valid role (patient or doctor) is required" });
       }
       
       if (!termsAccepted) {
         return res.status(400).json({ message: "You must accept the terms and conditions" });
       }
       
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
-      }
-      
-        // Hash password
-        const passwordHash = await hashPassword(password);
-
-        const emailVerificationRequired = isEmailVerificationRequired();
-
-        // Generate verification token if needed
-        const verificationToken = emailVerificationRequired ? generateToken() : null;
-        const verificationTokenExpires = emailVerificationRequired
-          ? new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-          : null;
-      
-      // Start 7-day free trial
-      const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      
-      // Create user
-      const user = await storage.createUser({
-        email,
-        passwordHash,
-        firstName,
-        lastName,
-        role: 'patient',
-        ehrImportMethod,
-        ehrPlatform,
-          emailVerified: !emailVerificationRequired,
-        verificationToken,
-        verificationTokenExpires,
+      const updateData: any = {
+        role,
         termsAccepted: true,
         termsAcceptedAt: new Date(),
-        subscriptionStatus: 'trialing',
-        trialEndsAt,
-        creditBalance: 20, // 20 free consultation credits during trial
-      });
+      };
       
-        if (emailVerificationRequired && verificationToken) {
-          try {
-            await sendVerificationEmail(email, verificationToken, firstName);
-            console.log(`[SIGNUP] Verification email sent to ${email}`);
-          } catch (emailError) {
-            console.error("[SIGNUP] ⚠️  Error sending verification email:", emailError);
-            console.error("[SIGNUP] ℹ️  Account created but user will need manual verification");
-            console.error("[SIGNUP] ℹ️  Please configure Resend integration in Replit Secrets");
-          }
-        } else {
-          console.log(`[SIGNUP] Email verification disabled; skipping verification email for ${email}`);
+      // Doctor-specific fields
+      if (role === 'doctor') {
+        if (!medicalLicenseNumber || !organization || !licenseCountry) {
+          return res.status(400).json({ message: "Medical license, organization, and country are required for doctors" });
         }
-
-        res.json({
-          message: emailVerificationRequired
-            ? "Account created successfully. Please check your email to verify your account. Your 7-day free trial has started!"
-            : "Account created successfully. Your 7-day free trial has started! You can now log in.",
-          userId: user.id,
-        });
-    } catch (error) {
-      console.error("Error in patient signup:", error);
-      res.status(500).json({ message: "Failed to create account" });
-    }
-  });
-  
-  // Login
-  app.post('/api/auth/login', async (req, res) => {
-    try {
-      const { email, password, rememberMe } = req.body;
-      
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
+        updateData.medicalLicenseNumber = medicalLicenseNumber;
+        updateData.organization = organization;
+        updateData.licenseCountry = licenseCountry;
+        updateData.creditBalance = 0;
       }
       
-        // Get user by email
-        let user = await storage.getUserByEmail(email);
-      if (!user) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-      
-      // Compare password
-      const isPasswordValid = await comparePassword(password, user.passwordHash!);
-      if (!isPasswordValid) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-      
-        const emailVerificationRequired = isEmailVerificationRequired();
-
-        if (!emailVerificationRequired && !user.emailVerified) {
-          const updatedUser = await storage.updateUser(user.id, {
-            emailVerified: true,
-            verificationToken: null,
-            verificationTokenExpires: null,
-          });
-          if (updatedUser) {
-            user = updatedUser;
-          } else {
-            user = { ...user, emailVerified: true, verificationToken: null, verificationTokenExpires: null };
-          }
+      // Patient-specific fields
+      if (role === 'patient') {
+        if (!ehrImportMethod) {
+          return res.status(400).json({ message: "EHR import method is required for patients" });
         }
-
-      // Check if email is verified (skip in development for testing)
-      const isDevelopment = process.env.NODE_ENV === 'development';
-      const isTestEmail = email.includes('@example.com') || email.includes('@test.com');
-      
-        if (emailVerificationRequired && !user.emailVerified && !(isDevelopment && isTestEmail)) {
-        return res.status(403).json({ message: "Please verify your email before logging in. Check your email inbox for the verification link." });
+        updateData.ehrImportMethod = ehrImportMethod;
+        updateData.ehrPlatform = ehrPlatform;
+        // Start 7-day free trial
+        updateData.subscriptionStatus = 'trialing';
+        updateData.trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        updateData.creditBalance = 20; // 20 free consultation credits during trial
       }
       
-      // Ensure we have a session object
-      if (!req.session) {
-        console.error("[AUTH] No session object available after middleware");
-        return res.status(500).json({ message: "Session initialization failed" });
-      }
-      
-      console.log(`[AUTH] Initial session ID: ${req.sessionID}`);
-      console.log(`[AUTH] Existing userId in session: ${(req.session as any).userId || 'none'}`);
-      
-      // Regenerate to create a fresh session (this handles both new and existing sessions)
-      await new Promise<void>((resolve, reject) => {
-        req.session.regenerate((err) => {
-          if (err) {
-            console.error("[AUTH] Error regenerating session:", err);
-            reject(err);
-          } else {
-            console.log(`[AUTH] New session ID after regenerate: ${req.sessionID}`);
-            // Verify session still exists after regeneration
-            if (!req.session) {
-              console.error("[AUTH] Session is null after regeneration!");
-              reject(new Error("Session lost after regeneration"));
-            } else {
-              resolve();
-            }
-          }
-        });
-      });
-      
-      // Set session data - this marks the session as modified and will cause it to be saved
-      (req.session as any).userId = user.id;
-      console.log(`[AUTH] Set userId in session: ${user.id}`);
-      
-      // Extend session if remember me is checked
-      if (rememberMe) {
-        req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
-      }
-      
-      // Manually save the session to ensure cookie is set
-      await new Promise<void>((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) {
-            console.error("[AUTH] Error saving session:", err);
-            reject(err);
-          } else {
-            console.log(`[AUTH] ✓ Session saved for user ${user.id}, session ID: ${req.sessionID}`);
-            console.log(`[AUTH] Session data: ${JSON.stringify(req.session)}`);
-            resolve();
-          }
-        });
-      });
-      
-      // Send response with user data
-      res.json({
-        message: "Login successful",
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-        },
-      });
+      const user = await storage.updateUser(userId, updateData);
+      res.json({ message: "Role updated successfully", user });
     } catch (error) {
-      console.error("Error in login:", error);
-      res.status(500).json({ message: "Failed to log in" });
-    }
-  });
-  
-  // Logout
-  app.post('/api/auth/logout', (req, res) => {
-    req.session.destroy((err) => {
-      if (err) {
-        return res.status(500).json({ message: "Failed to log out" });
-      }
-      res.json({ message: "Logged out successfully" });
-    });
-  });
-  
-  // Verify email
-  app.get('/api/auth/verify-email', async (req, res) => {
-    try {
-      const { token } = req.query;
-      
-      if (!token || typeof token !== 'string') {
-        return res.status(400).json({ message: "Invalid verification token" });
-      }
-      
-      const user = await storage.verifyEmail(token);
-      if (!user) {
-        return res.status(400).json({ message: "Invalid or expired verification token" });
-      }
-      
-      res.json({ message: "Email verified successfully. You can now log in." });
-    } catch (error) {
-      console.error("Error verifying email:", error);
-      res.status(500).json({ message: "Failed to verify email" });
+      console.error("Error updating user role:", error);
+      res.status(500).json({ message: "Failed to update role" });
     }
   });
   
@@ -499,64 +233,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to update SMS preferences" });
     }
   });
-  
-  // Request password reset
-  app.post('/api/auth/forgot-password', async (req, res) => {
-    try {
-      const { email } = req.body;
-      
-      if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-      }
-      
-      const user = await storage.getUserByEmail(email);
-      if (!user) {
-        // Don't reveal if email exists
-        return res.json({ message: "If that email is registered, you will receive a password reset link" });
-      }
-      
-      // Generate reset token
-      const resetToken = generateToken();
-      const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-      
-      await storage.updateResetToken(user.id, resetToken, resetTokenExpires);
-      
-      // Send reset email
-      try {
-        await sendPasswordResetEmail(user.email!, resetToken, user.firstName!);
-      } catch (emailError) {
-        console.error("Error sending password reset email:", emailError);
-      }
-      
-      res.json({ message: "If that email is registered, you will receive a password reset link" });
-    } catch (error) {
-      console.error("Error in forgot password:", error);
-      res.status(500).json({ message: "Failed to process request" });
-    }
-  });
-  
-  // Reset password
-  app.post('/api/auth/reset-password', async (req, res) => {
-    try {
-      const { token, newPassword } = req.body;
-      
-      if (!token || !newPassword) {
-        return res.status(400).json({ message: "Token and new password are required" });
-      }
-      
-      const passwordHash = await hashPassword(newPassword);
-      const user = await storage.resetPassword(token, passwordHash);
-      
-      if (!user) {
-        return res.status(400).json({ message: "Invalid or expired reset token" });
-      }
-      
-      res.json({ message: "Password reset successfully. You can now log in with your new password." });
-    } catch (error) {
-      console.error("Error resetting password:", error);
-      res.status(500).json({ message: "Failed to reset password" });
-    }
-  });
 
   // ============== TWO-FACTOR AUTHENTICATION ROUTES ==============
   
@@ -573,69 +249,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching 2FA status:", error);
       res.status(500).json({ message: "Failed to fetch 2FA status" });
-    }
-  });
-  
-  // Setup 2FA - Generate secret and QR code
-  app.post('/api/2fa/setup', isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const user = await storage.getUser(userId);
-      
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      // Check if 2FA is already enabled
-      const existing = await storage.get2FASettings(userId);
-      if (existing?.enabled) {
-        return res.status(400).json({ message: "2FA is already enabled" });
-      }
-      
-      // Generate secret
-      const secret = speakeasy.generateSecret({
-        name: `Followup AI (${user.email})`,
-        issuer: 'Followup AI',
-        length: 32,
-      });
-      
-      // Generate backup codes
-      const backupCodes = Array.from({ length: 10 }, () => 
-        crypto.randomBytes(4).toString('hex').toUpperCase()
-      );
-      
-      // Hash backup codes before storing
-      const hashedBackupCodes = await Promise.all(
-        backupCodes.map(code => hashPassword(code))
-      );
-      
-      // Create or update 2FA settings (not enabled yet)
-      if (existing) {
-        await storage.update2FASettings(userId, {
-          totpSecret: secret.base32,
-          backupCodes: hashedBackupCodes,
-          enabled: false,
-        });
-      } else {
-        await storage.create2FASettings({
-          userId,
-          totpSecret: secret.base32,
-          backupCodes: hashedBackupCodes,
-          enabled: false,
-        });
-      }
-      
-      // Generate QR code
-      const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url!);
-      
-      res.json({
-        secret: secret.base32,
-        qrCode: qrCodeUrl,
-        backupCodes, // Send plain text codes only once
-      });
-    } catch (error) {
-      console.error("Error setting up 2FA:", error);
-      res.status(500).json({ message: "Failed to setup 2FA" });
     }
   });
   
@@ -680,109 +293,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error enabling 2FA:", error);
       res.status(500).json({ message: "Failed to enable 2FA" });
-    }
-  });
-  
-  // Disable 2FA
-  app.post('/api/2fa/disable', isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const { password } = req.body;
-      
-      if (!password) {
-        return res.status(400).json({ message: "Password is required" });
-      }
-      
-      // Verify password
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      const validPassword = await comparePassword(password, user.passwordHash!);
-      if (!validPassword) {
-        return res.status(400).json({ message: "Invalid password" });
-      }
-      
-      // Delete 2FA settings
-      await storage.delete2FASettings(userId);
-      
-      res.json({ message: "2FA disabled successfully" });
-    } catch (error) {
-      console.error("Error disabling 2FA:", error);
-      res.status(500).json({ message: "Failed to disable 2FA" });
-    }
-  });
-  
-  // Verify 2FA token (for login or wallet operations)
-  app.post('/api/2fa/verify', isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const { token } = req.body;
-      
-      if (!token) {
-        return res.status(400).json({ message: "Token is required" });
-      }
-      
-      const settings = await storage.get2FASettings(userId);
-      if (!settings || !settings.enabled) {
-        return res.status(400).json({ message: "2FA is not enabled" });
-      }
-      
-      // Try TOTP verification
-      const totpVerified = speakeasy.totp.verify({
-        secret: settings.totpSecret,
-        encoding: 'base32',
-        token,
-        window: 2,
-      });
-      
-      if (totpVerified) {
-        await storage.update2FASettings(userId, {
-          lastUsedAt: new Date(),
-        });
-        return res.json({ verified: true });
-      }
-      
-      // Try backup code verification
-      if (settings.backupCodes && settings.backupCodes.length > 0) {
-        for (let i = 0; i < settings.backupCodes.length; i++) {
-          const isMatch = await comparePassword(token, settings.backupCodes[i]);
-          if (isMatch) {
-            // Remove used backup code
-            const newBackupCodes = [...settings.backupCodes];
-            newBackupCodes.splice(i, 1);
-            
-            await storage.update2FASettings(userId, {
-              backupCodes: newBackupCodes,
-              lastUsedAt: new Date(),
-            });
-            
-            return res.json({ 
-              verified: true,
-              backupCodeUsed: true,
-              remainingBackupCodes: newBackupCodes.length,
-            });
-          }
-        }
-      }
-      
-      res.status(400).json({ message: "Invalid token or backup code" });
-    } catch (error) {
-      console.error("Error verifying 2FA token:", error);
-      res.status(500).json({ message: "Failed to verify token" });
-    }
-  });
-
-  // Get current user
-  app.get('/api/auth/user', isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const user = await storage.getUser(userId);
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
     }
   });
 

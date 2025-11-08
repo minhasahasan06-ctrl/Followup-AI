@@ -24,14 +24,16 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// Users table with role-based access
+// Users table with role-based access (Replit Auth OIDC)
 export const users = pgTable("users", {
+  // Replit Auth OIDC fields (keep default for migration compatibility)
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique().notNull(),
-  passwordHash: varchar("password_hash").notNull(),
-  firstName: varchar("first_name").notNull(),
-  lastName: varchar("last_name").notNull(),
+  email: varchar("email").unique(), // Nullable - some login methods don't have email
+  firstName: varchar("first_name"), // Nullable - Replit Auth provides null for some methods
+  lastName: varchar("last_name"), // Nullable - Replit Auth provides null for some methods
   profileImageUrl: varchar("profile_image_url"),
+  
+  // Application-specific fields
   role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient' or 'doctor'
   
   // Doctor-specific fields
@@ -45,16 +47,9 @@ export const users = pgTable("users", {
   ehrPlatform: varchar("ehr_platform"), // Patient's chosen EHR platform
   ehrImportMethod: varchar("ehr_import_method"), // 'manual', 'hospital', 'platform'
   
-  // Email verification
-  emailVerified: boolean("email_verified").default(false),
-  verificationToken: varchar("verification_token"),
-  verificationTokenExpires: timestamp("verification_token_expires"),
-  
-  // Phone number and SMS verification
+  // Phone number for SMS (user configures after OIDC login)
   phoneNumber: varchar("phone_number"),
   phoneVerified: boolean("phone_verified").default(false),
-  phoneVerificationCode: varchar("phone_verification_code"),
-  phoneVerificationExpires: timestamp("phone_verification_expires"),
   
   // SMS preferences
   smsNotificationsEnabled: boolean("sms_notifications_enabled").default(true),
@@ -62,10 +57,6 @@ export const users = pgTable("users", {
   smsAppointmentReminders: boolean("sms_appointment_reminders").default(true),
   smsDailyFollowups: boolean("sms_daily_followups").default(true),
   smsHealthAlerts: boolean("sms_health_alerts").default(true),
-  
-  // Password reset
-  resetToken: varchar("reset_token"),
-  resetTokenExpires: timestamp("reset_token_expires"),
   
   // Terms and conditions
   termsAccepted: boolean("terms_accepted").default(false),
