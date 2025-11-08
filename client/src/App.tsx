@@ -113,11 +113,11 @@ function AuthenticatedApp() {
   };
 
   // Public routes that don't require auth
-  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog"];
+  const publicRoutes = ["/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog"];
   const isPublicRoute = publicRoutes.includes(location) || (!user && location === "/");
 
-  // Only show loading on authenticated routes
-  if (isLoading && !isPublicRoute) {
+  // Show loading while checking auth
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
@@ -128,16 +128,10 @@ function AuthenticatedApp() {
     );
   }
 
-  // All routes available for unauthenticated users and public routes
-  if (!user || isPublicRoute) {
+  // Public routes available for everyone
+  if (isPublicRoute) {
     return (
       <Switch>
-        <Route path="/login" component={Login} />
-        <Route path="/signup/doctor" component={DoctorSignup} />
-        <Route path="/signup/patient" component={PatientSignup} />
-        <Route path="/verify-email" component={VerifyEmail} />
-        <Route path="/forgot-password" component={ForgotPassword} />
-        <Route path="/reset-password" component={ResetPassword} />
         <Route path="/doctor-portal" component={DoctorPortal} />
         <Route path="/coming-soon" component={ComingSoon} />
         <Route path="/terms" component={Terms} />
@@ -151,9 +145,20 @@ function AuthenticatedApp() {
         <Route path="/documentation" component={Documentation} />
         <Route path="/api" component={API} />
         <Route path="/blog" component={Blog} />
-        <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>
+    );
+  }
+  
+  // Not authenticated - redirect to Replit Auth login
+  if (!user) {
+    window.location.href = "/api/login";
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground">Redirecting to login...</p>
+        </div>
+      </div>
     );
   }
 
