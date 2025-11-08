@@ -17,7 +17,7 @@ Preferred communication style: Simple, everyday language.
 ### Backend
 **Framework & Runtime:** Express.js with TypeScript and Node.js.
 **API Design:** RESTful API with middleware for logging and error handling.
-**Authentication & Authorization:** Replit Auth (OIDC), Passport.js, and a TOTP-based Two-Factor Authentication (2FA) system. Role-based access control and medical license verification for doctors. Session management uses a PostgreSQL-backed store.
+**Authentication & Authorization:** Replit Auth OIDC (OpenID Connect) via Passport.js with support for Google, GitHub, X, Apple, and email/password authentication. Session management uses PostgreSQL-backed sessions (connect-pg-simple) with 1-week TTL, httpOnly/secure cookies. Role-based access control and medical license verification for doctors. Optional TOTP-based Two-Factor Authentication (2FA) system for enhanced security.
 **Data Layer:** Drizzle ORM for type-safe queries, PostgreSQL database.
 **AI Integration:** OpenAI API (gpt-4o) for Agent Clona (warm, empathetic, simple language) and Assistant Lysa. Includes sentiment analysis, medical entity extraction, and AI-generated session summaries.
 **Advanced Drug Interaction Detection (PRODUCTION-READY):** AI-powered system using Graph Neural Networks (GNN) simulation and Natural Language Processing (NLP) via OpenAI to detect drug-drug and drug-gene interactions with 99% accuracy. Features:
@@ -60,7 +60,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Database
 **Technology:** PostgreSQL via Neon serverless platform.
-**Schema Design:** Comprehensive schema for user management (patients, doctors), medical history, daily follow-ups, medications, drug interaction detection (drugs, drugInteractions, interactionAlerts, pharmacogenomicProfiles, drugGeneInteractions), chat sessions, wellness activities, research data, consent management, EHR/wearable connections, referrals, and wallet transactions.
+**Schema Design:** Comprehensive schema for user management (patients, doctors with varchar IDs for OIDC compatibility), medical history, daily follow-ups, medications, drug interaction detection (drugs, drugInteractions, interactionAlerts, pharmacogenomicProfiles, drugGeneInteractions), chat sessions, wellness activities, research data, consent management, EHR/wearable connections, referrals, wallet transactions, and sessions table for PostgreSQL-backed session storage.
 **Migrations:** Drizzle Kit for schema migrations.
 
 ### Design System
