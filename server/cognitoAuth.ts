@@ -8,6 +8,7 @@ import {
   ConfirmForgotPasswordCommand,
   AdminUpdateUserAttributesCommand,
   AdminSetUserPasswordCommand,
+  AdminConfirmSignUpCommand,
   GetUserCommand,
   DescribeUserPoolCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
@@ -218,6 +219,28 @@ export async function confirmSignUp(email: string, code: string, username?: stri
     return response;
   } catch (error: any) {
     console.error(`[COGNITO] Error confirming signup for ${email} (username: ${cognitoUsername}):`, error);
+    throw error;
+  }
+}
+
+// Admin confirm sign up (bypasses code verification - use when we've verified via our own system)
+export async function adminConfirmSignUp(username: string) {
+  const command = new AdminConfirmSignUpCommand({
+    UserPoolId: USER_POOL_ID,
+    Username: username,
+  });
+
+  try {
+    const response = await cognitoClient.send(command);
+    console.log(`[COGNITO] User confirmed via admin for ${username}`);
+    return response;
+  } catch (error: any) {
+    // If user is already confirmed, that's fine
+    if (error.name === 'NotAuthorizedException' && error.message?.includes('already confirmed')) {
+      console.log(`[COGNITO] User already confirmed for ${username}`);
+      return { $metadata: {} };
+    }
+    console.error(`[COGNITO] Error admin confirming signup for ${username}:`, error);
     throw error;
   }
 }
