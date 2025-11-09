@@ -276,8 +276,18 @@ export async function describeUserPoolSchema() {
   const customAttributes = schemaAttributes.filter(attr => attr.Name?.startsWith('custom:'));
   const standardAttributes = schemaAttributes.filter(attr => !attr.Name?.startsWith('custom:'));
   
+  // Extract email configuration for debugging
+  const emailConfig = response.UserPool?.EmailConfiguration;
+  
   return {
     userPoolId: USER_POOL_ID,
+    emailConfiguration: {
+      emailSendingAccount: emailConfig?.EmailSendingAccount || 'COGNITO_DEFAULT',
+      sourceArn: emailConfig?.SourceArn || null,
+      from: emailConfig?.From || null,
+      replyToEmailAddress: emailConfig?.ReplyToEmailAddress || null,
+      configurationSet: emailConfig?.ConfigurationSet || null,
+    },
     standardAttributes: standardAttributes.map(attr => ({
       name: attr.Name,
       attributeDataType: attr.AttributeDataType,
