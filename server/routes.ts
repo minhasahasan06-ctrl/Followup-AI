@@ -332,19 +332,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const role = userInfo.UserAttributes?.find(attr => attr.Name === 'custom:role')?.Value as 'patient' | 'doctor';
       const emailVerified = userInfo.UserAttributes?.find(attr => attr.Name === 'email_verified')?.Value === 'true';
       
-      // Upsert user in our database
-      const user = await storage.upsertUser({
-        id: cognitoSub,
-        email: cognitoEmail,
-        firstName,
-        lastName,
-        emailVerified,
-        role,
-      });
+      // Check if user exists in our database (must have completed phone verification)
+      let user = await storage.getUser(cognitoSub);
       
-      // Send welcome email on first login (if user was just created)
-      if (!user.createdAt || (new Date().getTime() - new Date(user.createdAt).getTime() < 5000)) {
-        await sendWelcomeEmail(cognitoEmail, firstName).catch(console.error);
+      if (!user) {
+        // User hasn't completed phone verification yet
+        return res.status(403).json({ 
+          message: "Please complete phone verification to access your account",
+          requiresPhoneVerification: true,
+        });
+      }
+      
+      // Block doctors until admin approval
+      if (role === 'doctor' && !user.adminVerified) {
+        return res.status(403).json({ 
+          message: "Your application is under review. You'll receive an email when your account is activated.",
+          requiresAdminApproval: true,
+        });
+      }
+      
+      // Update email verification status from Cognito if needed
+      if (emailVerified && !user.emailVerified) {
+        user = await storage.upsertUser({
+          id: cognitoSub,
+          emailVerified,
+        });
       }
       
       res.json({
