@@ -63,17 +63,173 @@ const medicalDocUpload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // ============== AUTHENTICATION ROUTES (Cognito) ==============
+  // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
   
-  // Auth routes (/api/login, /api/logout, /api/callback) are set up by setupAuth
-  // GET /api/login - redirects to Replit OIDC login
-  // GET /api/callback - OIDC callback handler
-  // GET /api/logout - logs out and redirects
+  const { signUp, signIn, confirmSignUp, resendConfirmationCode, forgotPassword, confirmForgotPassword, getUserInfo } = await import('./cognitoAuth');
+  const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
   
-  // Get current user
+  // Sign up new user
+  app.post('/api/auth/signup', async (req, res) => {
+    try {
+      const { email, password, firstName, lastName, role } = req.body;
+      
+      if (!email || !password || !firstName || !lastName || !role) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+      
+      if (role !== 'patient' && role !== 'doctor') {
+        return res.status(400).json({ message: "Role must be 'patient' or 'doctor'" });
+      }
+      
+      // Sign up in Cognito
+      await signUp(email, password, firstName, lastName, role);
+      
+      res.json({ message: "Signup successful. Please check your email for verification code." });
+    } catch (error: any) {
+      console.error("Signup error:", error);
+      if (error.name === 'UsernameExistsException') {
+        return res.status(400).json({ message: "An account with this email already exists" });
+      }
+      res.status(500).json({ message: error.message || "Signup failed" });
+    }
+  });
+  
+  // Verify email with code
+  app.post('/api/auth/verify-email', async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      
+      if (!email || !code) {
+        return res.status(400).json({ message: "Email and verification code are required" });
+      }
+      
+      await confirmSignUp(email, code);
+      
+      res.json({ message: "Email verified successfully. You can now log in." });
+    } catch (error: any) {
+      console.error("Verification error:", error);
+      res.status(500).json({ message: error.message || "Verification failed" });
+    }
+  });
+  
+  // Resend verification code
+  app.post('/api/auth/resend-code', async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      
+      await resendConfirmationCode(email);
+      
+      res.json({ message: "Verification code resent. Please check your email." });
+    } catch (error: any) {
+      console.error("Resend code error:", error);
+      res.status(500).json({ message: error.message || "Failed to resend code" });
+    }
+  });
+  
+  // Login
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+      
+      const authResult = await signIn(email, password);
+      
+      if (!authResult || !authResult.IdToken || !authResult.AccessToken) {
+        return res.status(401).json({ message: "Login failed" });
+      }
+      
+      // Get user info from Cognito
+      const userInfo = await getUserInfo(authResult.AccessToken);
+      const cognitoSub = userInfo.UserAttributes?.find(attr => attr.Name === 'sub')?.Value!;
+      const cognitoEmail = userInfo.UserAttributes?.find(attr => attr.Name === 'email')?.Value!;
+      const firstName = userInfo.UserAttributes?.find(attr => attr.Name === 'given_name')?.Value!;
+      const lastName = userInfo.UserAttributes?.find(attr => attr.Name === 'family_name')?.Value!;
+      const role = userInfo.UserAttributes?.find(attr => attr.Name === 'custom:role')?.Value as 'patient' | 'doctor';
+      const emailVerified = userInfo.UserAttributes?.find(attr => attr.Name === 'email_verified')?.Value === 'true';
+      
+      // Upsert user in our database
+      const user = await storage.upsertUser({
+        id: cognitoSub,
+        email: cognitoEmail,
+        firstName,
+        lastName,
+        emailVerified,
+        role,
+      });
+      
+      // Send welcome email on first login (if user was just created)
+      if (!user.createdAt || (new Date().getTime() - new Date(user.createdAt).getTime() < 5000)) {
+        await sendWelcomeEmail(cognitoEmail, firstName).catch(console.error);
+      }
+      
+      res.json({
+        message: "Login successful",
+        tokens: {
+          idToken: authResult.IdToken,
+          accessToken: authResult.AccessToken,
+          refreshToken: authResult.RefreshToken,
+        },
+        user,
+      });
+    } catch (error: any) {
+      console.error("Login error:", error);
+      if (error.name === 'NotAuthorizedException') {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      if (error.name === 'UserNotConfirmedException') {
+        return res.status(400).json({ message: "Please verify your email before logging in" });
+      }
+      res.status(500).json({ message: error.message || "Login failed" });
+    }
+  });
+  
+  // Forgot password - send reset code
+  app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      
+      await forgotPassword(email);
+      
+      res.json({ message: "Password reset code sent. Please check your email." });
+    } catch (error: any) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({ message: error.message || "Failed to send reset code" });
+    }
+  });
+  
+  // Reset password with code
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({ message: "Email, code, and new password are required" });
+      }
+      
+      await confirmForgotPassword(email, code, newPassword);
+      
+      res.json({ message: "Password reset successful. You can now log in with your new password." });
+    } catch (error: any) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ message: error.message || "Password reset failed" });
+    }
+  });
+  
+  // Get current user (protected route)
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -85,10 +241,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Update user role (used after OIDC login for role selection)
+  // Update user role and profile (used after login for role-specific setup)
   app.post('/api/auth/set-role', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const { role, medicalLicenseNumber, organization, licenseCountry, ehrImportMethod, ehrPlatform, termsAccepted } = req.body;
       
       if (!role || (role !== 'patient' && role !== 'doctor')) {
@@ -140,7 +296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Send SMS verification code
   app.post('/api/auth/send-phone-verification', isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as any).claims.sub;
+      const userId = (req as any).userId;
       const { phoneNumber, channel } = req.body;
       
       if (!phoneNumber) {
@@ -167,7 +323,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Verify phone number
   app.post('/api/auth/verify-phone', isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as any).claims.sub;
+      const userId = (req as any).userId;
       const { code } = req.body;
       
       if (!code) {
