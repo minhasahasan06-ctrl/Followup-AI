@@ -15,6 +15,7 @@ import Login from "@/pages/Login";
 import DoctorSignup from "@/pages/DoctorSignup";
 import PatientSignup from "@/pages/PatientSignup";
 import VerifyEmail from "@/pages/VerifyEmail";
+import VerifyPhone from "@/pages/VerifyPhone";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import RoleSelection from "@/pages/RoleSelection";
@@ -135,6 +136,7 @@ function AuthenticatedApp() {
         <Route path="/signup/doctor" component={DoctorSignup} />
         <Route path="/signup/patient" component={PatientSignup} />
         <Route path="/verify-email" component={VerifyEmail} />
+        <Route path="/verify-phone" component={VerifyPhone} />
         <Route path="/forgot-password" component={ForgotPassword} />
         <Route path="/reset-password" component={ResetPassword} />
         <Route path="/doctor-portal" component={DoctorPortal} />
