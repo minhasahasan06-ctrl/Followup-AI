@@ -17,7 +17,7 @@ Preferred communication style: Simple, everyday language.
 ### Backend
 **Framework & Runtime:** Express.js with TypeScript and Node.js.
 **API Design:** RESTful API with middleware for logging and error handling.
-**Authentication & Authorization:** Replit Auth (OIDC), Passport.js, and a TOTP-based Two-Factor Authentication (2FA) system. Role-based access control and medical license verification for doctors. Session management uses a PostgreSQL-backed store.
+**Authentication & Authorization:** AWS Cognito User Pools for authentication with email/password signup and login. JWT-based stateless authentication using Bearer tokens in Authorization headers. Role-based access control (patient vs. doctor) stored in Cognito custom attributes and local database. Medical license verification for doctors. Optional TOTP-based Two-Factor Authentication (2FA) through AWS Cognito MFA.
 **Data Layer:** Drizzle ORM for type-safe queries, PostgreSQL database.
 **AI Integration:** OpenAI API (gpt-4o) for Agent Clona (warm, empathetic, simple language) and Assistant Lysa. Includes sentiment analysis, medical entity extraction, and AI-generated session summaries.
 **Advanced Drug Interaction Detection (PRODUCTION-READY):** AI-powered system using Graph Neural Networks (GNN) simulation and Natural Language Processing (NLP) via OpenAI to detect drug-drug and drug-gene interactions with 99% accuracy. Features:
@@ -60,7 +60,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Database
 **Technology:** PostgreSQL via Neon serverless platform.
-**Schema Design:** Comprehensive schema for user management (patients, doctors), medical history, daily follow-ups, medications, drug interaction detection (drugs, drugInteractions, interactionAlerts, pharmacogenomicProfiles, drugGeneInteractions), chat sessions, wellness activities, research data, consent management, EHR/wearable connections, referrals, and wallet transactions.
+**Schema Design:** Comprehensive schema for user management (patients, doctors with varchar IDs matching AWS Cognito sub), medical history, daily follow-ups, medications, drug interaction detection (drugs, drugInteractions, interactionAlerts, pharmacogenomicProfiles, drugGeneInteractions), chat sessions, wellness activities, research data, consent management, EHR/wearable connections, referrals, and wallet transactions.
 **Migrations:** Drizzle Kit for schema migrations.
 
 ### Design System
@@ -76,5 +76,6 @@ Preferred communication style: Simple, everyday language.
 **Frontend Libraries:** Radix UI, TanStack Query, Wouter, React Hook Form (with Zod), date-fns.
 **Development Tools:** Vite, TypeScript, Drizzle Kit, esbuild.
 **Data Integration APIs:** PubMed E-utilities, PhysioNet WFDB, Kaggle API, WHO Global Health Observatory API.
-**Communication:** Twilio API for SMS and voice services.
+**Communication:** AWS SES (Simple Email Service) for transactional emails (verification, password reset, welcome emails), Twilio API for SMS and voice services.
+**AWS SES Configuration:** Region `ap-southeast-2` (Sydney), verified identity `t@followupai.io`, configuration set `my-first-configuration-set`. **CRITICAL: SES currently in Sandbox Mode** - can only send emails to verified addresses. For production: (1) Request SES production access via AWS Support case explaining HIPAA healthcare use case, or (2) For testing, manually verify recipient email addresses in SES Console → Verified identities. Ensure AWS account has signed BAA for HIPAA compliance before enabling production email delivery.
 **Cloud Services:** AWS S3, AWS Textract, AWS Comprehend Medical, AWS HealthLake, AWS HealthImaging, AWS HealthOmics.

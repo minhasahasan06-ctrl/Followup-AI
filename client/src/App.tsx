@@ -7,8 +7,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useAuth } from "@/hooks/useAuth";
-import { isUnauthorizedError } from "@/lib/authUtils";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import DoctorPortal from "@/pages/DoctorPortal";
@@ -16,6 +15,7 @@ import Login from "@/pages/Login";
 import DoctorSignup from "@/pages/DoctorSignup";
 import PatientSignup from "@/pages/PatientSignup";
 import VerifyEmail from "@/pages/VerifyEmail";
+import VerifyPhone from "@/pages/VerifyPhone";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import RoleSelection from "@/pages/RoleSelection";
@@ -113,11 +113,11 @@ function AuthenticatedApp() {
   };
 
   // Public routes that don't require auth
-  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog"];
+  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/verify-phone", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog"];
   const isPublicRoute = publicRoutes.includes(location) || (!user && location === "/");
 
-  // Only show loading on authenticated routes
-  if (isLoading && !isPublicRoute) {
+  // Show loading while checking auth
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
@@ -128,14 +128,15 @@ function AuthenticatedApp() {
     );
   }
 
-  // All routes available for unauthenticated users and public routes
-  if (!user || isPublicRoute) {
+  // Public routes available for everyone
+  if (isPublicRoute) {
     return (
       <Switch>
         <Route path="/login" component={Login} />
         <Route path="/signup/doctor" component={DoctorSignup} />
         <Route path="/signup/patient" component={PatientSignup} />
         <Route path="/verify-email" component={VerifyEmail} />
+        <Route path="/verify-phone" component={VerifyPhone} />
         <Route path="/forgot-password" component={ForgotPassword} />
         <Route path="/reset-password" component={ResetPassword} />
         <Route path="/doctor-portal" component={DoctorPortal} />
@@ -155,6 +156,12 @@ function AuthenticatedApp() {
         <Route component={Landing} />
       </Switch>
     );
+  }
+  
+  // Not authenticated - redirect to login
+  if (!user) {
+    window.location.href = "/login";
+    return null;
   }
 
   const isDoctor = user.role === "doctor";
@@ -180,12 +187,14 @@ function AuthenticatedApp() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light">
-        <TooltipProvider>
-          <AuthenticatedApp />
-          <Toaster />
-        </TooltipProvider>
-      </ThemeProvider>
+      <AuthProvider>
+        <ThemeProvider defaultTheme="light">
+          <TooltipProvider>
+            <AuthenticatedApp />
+            <Toaster />
+          </TooltipProvider>
+        </ThemeProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

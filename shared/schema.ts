@@ -13,25 +13,21 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Session storage table (required for Replit Auth)
-export const sessions = pgTable(
-  "sessions",
-  {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)],
-);
-
-// Users table with role-based access
+// Users table with role-based access (AWS Cognito)
 export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // AWS Cognito fields - ID is Cognito sub (UUID format)
+  id: varchar("id").primaryKey(),
   email: varchar("email").unique().notNull(),
-  passwordHash: varchar("password_hash").notNull(),
   firstName: varchar("first_name").notNull(),
   lastName: varchar("last_name").notNull(),
   profileImageUrl: varchar("profile_image_url"),
+  emailVerified: boolean("email_verified").default(false),
+  verificationToken: varchar("verification_token"),
+  verificationTokenExpires: timestamp("verification_token_expires"),
+  resetToken: varchar("reset_token"),
+  resetTokenExpires: timestamp("reset_token_expires"),
+  
+  // Application-specific fields
   role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient' or 'doctor'
   
   // Doctor-specific fields
@@ -45,16 +41,17 @@ export const users = pgTable("users", {
   ehrPlatform: varchar("ehr_platform"), // Patient's chosen EHR platform
   ehrImportMethod: varchar("ehr_import_method"), // 'manual', 'hospital', 'platform'
   
-  // Email verification
-  emailVerified: boolean("email_verified").default(false),
-  verificationToken: varchar("verification_token"),
-  verificationTokenExpires: timestamp("verification_token_expires"),
-  
-  // Phone number and SMS verification
+  // Phone number for SMS and verification
   phoneNumber: varchar("phone_number"),
   phoneVerified: boolean("phone_verified").default(false),
   phoneVerificationCode: varchar("phone_verification_code"),
   phoneVerificationExpires: timestamp("phone_verification_expires"),
+  
+  // Doctor application verification
+  googleDriveApplicationUrl: varchar("google_drive_application_url"),
+  adminVerified: boolean("admin_verified").default(false),
+  adminVerifiedAt: timestamp("admin_verified_at"),
+  adminVerifiedBy: varchar("admin_verified_by"),
   
   // SMS preferences
   smsNotificationsEnabled: boolean("sms_notifications_enabled").default(true),
@@ -62,10 +59,6 @@ export const users = pgTable("users", {
   smsAppointmentReminders: boolean("sms_appointment_reminders").default(true),
   smsDailyFollowups: boolean("sms_daily_followups").default(true),
   smsHealthAlerts: boolean("sms_health_alerts").default(true),
-  
-  // Password reset
-  resetToken: varchar("reset_token"),
-  resetTokenExpires: timestamp("reset_token_expires"),
   
   // Terms and conditions
   termsAccepted: boolean("terms_accepted").default(false),

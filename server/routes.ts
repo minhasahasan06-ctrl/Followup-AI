@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, isDoctor, hashPassword, comparePassword, generateToken, sendVerificationEmail, sendPasswordResetEmail } from "./auth";
+import { isAuthenticated, isDoctor, getSession } from "./auth";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
 import { s3Client, textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -122,190 +122,518 @@ const medicalDocUpload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  setupAuth(app);
-
-  // ============== AUTHENTICATION ROUTES ==============
+  // ============== SESSION CONFIGURATION ==============
+  // Configure session middleware for cookie-based authentication
+  app.use(getSession());
   
-  // Doctor signup
-  app.post('/api/auth/signup/doctor', upload.single('kycPhoto'), async (req, res) => {
+  // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
+  
+  const { signUp, signIn, confirmSignUp, resendConfirmationCode, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
+  const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
+  const { metadataStorage } = await import('./metadataStorage');
+  
+  // Debug endpoint to inspect Cognito User Pool schema
+  app.get('/api/debug/cognito-schema', async (req, res) => {
     try {
-      const { email, password, firstName, lastName, organization, medicalLicenseNumber, licenseCountry, termsAccepted } = req.body;
-      
-      // Validation
-      if (!email || !password || !firstName || !lastName || !organization || !medicalLicenseNumber || !licenseCountry) {
-        return res.status(400).json({ message: "All fields are required" });
-      }
-      
-      if (!termsAccepted || termsAccepted !== 'true') {
-        return res.status(400).json({ message: "You must accept the terms and conditions" });
-      }
-      
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
-      }
-      
-      // Hash password
-      const passwordHash = await hashPassword(password);
-      
-      // Generate verification token
-      const verificationToken = generateToken();
-      const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-      
-      // Get KYC photo URL if uploaded
-      const kycPhotoUrl = req.file ? `/uploads/kyc/${req.file.filename}` : undefined;
-      
-        // Create user
-        const user = await storage.createUser({
-          email,
-          passwordHash,
-          firstName,
-          lastName,
-          role: 'doctor',
-          organization,
-          medicalLicenseNumber,
-          licenseCountry,
-          kycPhotoUrl,
-          emailVerified: false,
-          verificationToken,
-          verificationTokenExpires,
-          termsAccepted: true,
-          termsAcceptedAt: new Date(),
-          creditBalance: 0,
-        });
-        
-        const verification = await handleVerificationAfterSignup({
-          userId: user.id,
-          email,
-          firstName,
-          verificationToken,
-          successMessage: "Account created successfully. Please check your email to verify your account.",
-          devAutoVerifyMessage: "Account created successfully. Email verification was skipped in development, so you can log in immediately.",
-          failureMessage: "Account created successfully, but we couldn't send the verification email. Please contact support to verify your account.",
-          logContext: "doctor",
-        });
-        
-        res.json({
-          message: verification.message,
-          userId: user.id,
-          emailVerified: verification.emailVerified,
-        });
-    } catch (error) {
-      console.error("Error in doctor signup:", error);
-      res.status(500).json({ message: "Failed to create account" });
+      const schema = await describeUserPoolSchema();
+      res.json(schema);
+    } catch (error: any) {
+      console.error('Error describing Cognito schema:', error);
+      res.status(500).json({ error: error.message });
     }
   });
   
-  // Patient signup
+  // Debug endpoint to check Cognito email configuration
+  app.get('/api/debug/cognito-email-config', async (req, res) => {
+    try {
+      const schema = await describeUserPoolSchema();
+      const emailConfig = schema.emailConfiguration;
+      
+      const diagnostics = {
+        emailSendingAccount: emailConfig.emailSendingAccount,
+        sourceArn: emailConfig.sourceArn,
+        from: emailConfig.from,
+        replyToEmailAddress: emailConfig.replyToEmailAddress,
+        configurationSet: emailConfig.configurationSet,
+        recommendations: [] as string[],
+      };
+      
+      // Add recommendations based on configuration
+      if (emailConfig.emailSendingAccount === 'COGNITO_DEFAULT') {
+        diagnostics.recommendations.push(
+          'Cognito is using its default email service. This has limitations:',
+          '- Only works in sandbox mode (verified emails only)',
+          '- Limited email sending capacity',
+          '- Consider configuring SES for production use'
+        );
+      } else if (emailConfig.emailSendingAccount === 'DEVELOPER') {
+        if (!emailConfig.sourceArn) {
+          diagnostics.recommendations.push(
+            'SES is configured but SourceArn is missing. Emails may not be sent properly.'
+          );
+        } else {
+          diagnostics.recommendations.push(
+            'SES is configured. Ensure the SES identity (email/domain) is verified in AWS SES console.'
+          );
+        }
+      }
+      
+      if (!emailConfig.from) {
+        diagnostics.recommendations.push(
+          'No "From" email address configured. Cognito may use a default address.'
+        );
+      }
+      
+      res.json(diagnostics);
+    } catch (error: any) {
+      console.error('Error checking Cognito email config:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Patient Signup
   app.post('/api/auth/signup/patient', async (req, res) => {
     try {
-      const { email, password, firstName, lastName, ehrImportMethod, ehrPlatform, termsAccepted } = req.body;
+      const { email, password, firstName, lastName, phoneNumber, ehrImportMethod, ehrPlatform } = req.body;
       
-      // Validation
-      if (!email || !password || !firstName || !lastName || !ehrImportMethod) {
+      if (!email || !password || !firstName || !lastName || !phoneNumber) {
         return res.status(400).json({ message: "All fields are required" });
       }
       
-      if (!termsAccepted) {
-        return res.status(400).json({ message: "You must accept the terms and conditions" });
+      // Sign up in Cognito
+      const signUpResponse = await signUp(email, password, firstName, lastName, 'patient', phoneNumber);
+      const cognitoSub = signUpResponse.UserSub!;
+      const cognitoUsername = signUpResponse.username!;
+      
+      // Generate verification code (6 digits)
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      // Store phone number temporarily (will be verified after email)
+      metadataStorage.setUserMetadata(email, {
+        cognitoSub,
+        cognitoUsername,
+        firstName,
+        lastName,
+        phoneNumber,
+        role: 'patient',
+        ehrImportMethod,
+        ehrPlatform,
+        verificationCode, // Store our generated code
+        verificationCodeExpires: expiresAt.getTime(),
+      });
+      
+      // Send verification email via AWS SES (primary method)
+      try {
+        await sendVerificationEmail(email, verificationCode);
+        console.log(`[AUTH] Verification email sent via SES for patient signup: ${email}`);
+      } catch (sesError: any) {
+        console.error(`[AUTH] Failed to send verification email via SES for ${email}:`, sesError);
+        // Fallback to Cognito email
+        try {
+          await resendConfirmationCode(email, cognitoUsername);
+          console.log(`[AUTH] Fallback: Confirmation code resent via Cognito for patient signup: ${email}`);
+        } catch (resendError: any) {
+          console.error(`[AUTH] Failed to resend confirmation code via Cognito for ${email}:`, resendError);
+          // Still return success - user can request resend
+        }
       }
       
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
+      res.json({ message: "Signup successful. Please check your email for verification code." });
+    } catch (error: any) {
+      console.error("Patient signup error:", error);
+      if (error.name === 'UsernameExistsException') {
+        return res.status(400).json({ message: "An account with this email already exists" });
+      }
+      res.status(500).json({ message: error.message || "Signup failed" });
+    }
+  });
+  
+  // Doctor Signup
+  app.post('/api/auth/signup/doctor', upload.single('kycPhoto'), async (req, res) => {
+    try {
+      const { email, password, firstName, lastName, phoneNumber, organization, medicalLicenseNumber, licenseCountry } = req.body;
+      const kycPhoto = req.file;
+      
+      if (!email || !password || !firstName || !lastName || !phoneNumber || !organization || !medicalLicenseNumber || !licenseCountry) {
+        return res.status(400).json({ message: "All fields are required" });
       }
       
-      // Hash password
-      const passwordHash = await hashPassword(password);
+      // Sign up in Cognito
+      const signUpResponse = await signUp(email, password, firstName, lastName, 'doctor', phoneNumber);
+      const cognitoSub = signUpResponse.UserSub!;
+      const cognitoUsername = signUpResponse.username!;
       
-      // Generate verification token
-      const verificationToken = generateToken();
-      const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      // Upload KYC photo if provided
+      let kycPhotoUrl: string | undefined;
+      if (kycPhoto) {
+        const { uploadToS3 } = await import('./awsS3');
+        kycPhotoUrl = await uploadToS3(kycPhoto.buffer, `kyc/${email}_${Date.now()}.${kycPhoto.originalname.split('.').pop()}`, kycPhoto.mimetype);
+      }
       
-      // Start 7-day free trial
-      const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      // Generate PDF for doctor application
+      const { generateDoctorApplicationPDF, uploadDoctorApplicationToGoogleDrive } = await import('./googleDrive');
+      const pdfBuffer = await generateDoctorApplicationPDF({
+        email,
+        firstName,
+        lastName,
+        organization,
+        medicalLicenseNumber,
+        licenseCountry,
+        submittedAt: new Date(),
+      });
       
-        // Create user
-        const user = await storage.createUser({
-          email,
-          passwordHash,
-          firstName,
-          lastName,
-          role: 'patient',
-          ehrImportMethod,
-          ehrPlatform,
-          emailVerified: false,
-          verificationToken,
-          verificationTokenExpires,
-          termsAccepted: true,
-          termsAcceptedAt: new Date(),
-          subscriptionStatus: 'trialing',
-          trialEndsAt,
-          creditBalance: 20, // 20 free consultation credits during trial
-        });
-        
-        const verification = await handleVerificationAfterSignup({
-          userId: user.id,
-          email,
-          firstName,
-          verificationToken,
-          successMessage: "Account created successfully. Please check your email to verify your account. Your 7-day free trial has started!",
-          devAutoVerifyMessage: "Account created successfully. Email verification was skipped in development, so you can log in immediately. Your 7-day free trial has started!",
-          failureMessage: "Account created successfully, but we couldn't send the verification email. Please contact support to verify your account so your trial can continue.",
-          logContext: "patient",
-        });
-        
-        res.json({
-          message: verification.message,
-          userId: user.id,
-          emailVerified: verification.emailVerified,
-        });
-    } catch (error) {
-      console.error("Error in patient signup:", error);
-      res.status(500).json({ message: "Failed to create account" });
+      // Upload to Google Drive
+      const googleDriveUrl = await uploadDoctorApplicationToGoogleDrive({
+        email,
+        firstName,
+        lastName,
+        organization,
+        medicalLicenseNumber,
+        licenseCountry,
+        submittedAt: new Date(),
+      }, pdfBuffer);
+      
+      // Generate verification code (6 digits)
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      // Store doctor data temporarily
+      metadataStorage.setUserMetadata(email, {
+        cognitoSub,
+        cognitoUsername,
+        firstName,
+        lastName,
+        phoneNumber,
+        role: 'doctor',
+        organization,
+        medicalLicenseNumber,
+        licenseCountry,
+        kycPhotoUrl,
+        googleDriveApplicationUrl: googleDriveUrl,
+        verificationCode, // Store our generated code
+        verificationCodeExpires: expiresAt.getTime(),
+      });
+      
+      // Send verification email via AWS SES (primary method)
+      try {
+        await sendVerificationEmail(email, verificationCode);
+        console.log(`[AUTH] Verification email sent via SES for doctor signup: ${email}`);
+      } catch (sesError: any) {
+        console.error(`[AUTH] Failed to send verification email via SES for ${email}:`, sesError);
+        // Fallback to Cognito email
+        try {
+          await resendConfirmationCode(email, cognitoUsername);
+          console.log(`[AUTH] Fallback: Confirmation code resent via Cognito for doctor signup: ${email}`);
+        } catch (resendError: any) {
+          console.error(`[AUTH] Failed to resend confirmation code via Cognito for ${email}:`, resendError);
+          // Still return success - user can request resend
+        }
+      }
+      
+      res.json({ message: "Application submitted successfully. Please check your email for verification code. Your application will be reviewed by our team." });
+    } catch (error: any) {
+      console.error("Doctor signup error:", error);
+      if (error.name === 'UsernameExistsException') {
+        return res.status(400).json({ message: "An account with this email already exists" });
+      }
+      res.status(500).json({ message: error.message || "Signup failed" });
+>>>>>>> main
+    }
+  });
+  
+  // Verify email with code (Step 1)
+  app.post('/api/auth/verify-email', async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      
+      if (!email || !code) {
+        return res.status(400).json({ message: "Email and verification code are required" });
+      }
+      
+      // Get user metadata to retrieve the Cognito username
+      const metadata = metadataStorage.getUserMetadata(email);
+      if (!metadata) {
+        return res.status(400).json({ message: "No signup data found. Please sign up again." });
+      }
+      
+      const cognitoUsername = metadata.cognitoUsername;
+      
+      // First, try to verify with our generated code (from SES email)
+      let codeVerified = false;
+      if (metadata.verificationCode && metadata.verificationCodeExpires) {
+        if (Date.now() < metadata.verificationCodeExpires) {
+          if (metadata.verificationCode === code) {
+            codeVerified = true;
+            console.log(`[AUTH] Verification code verified via SES code for ${email}`);
+          }
+        } else {
+          return res.status(400).json({ message: "Verification code has expired. Please request a new code." });
+        }
+      }
+      
+      // If our code didn't match, try Cognito's code
+      if (!codeVerified) {
+        try {
+          await confirmSignUp(email, code, cognitoUsername);
+          codeVerified = true;
+          console.log(`[AUTH] Verification code verified via Cognito for ${email}`);
+        } catch (cognitoError: any) {
+          // If Cognito verification fails, check if it's because code is wrong or user already verified
+          if (cognitoError.name === 'CodeMismatchException' || cognitoError.name === 'ExpiredCodeException') {
+            return res.status(400).json({ message: "Invalid or expired verification code. Please try again or request a new code." });
+          } else if (cognitoError.name === 'NotAuthorizedException' && cognitoError.message?.includes('already confirmed')) {
+            // User already verified, continue
+            codeVerified = true;
+            console.log(`[AUTH] User already verified in Cognito for ${email}`);
+          } else {
+            throw cognitoError;
+          }
+        }
+      }
+      
+      if (!codeVerified) {
+        return res.status(400).json({ message: "Invalid verification code. Please try again." });
+      }
+      
+      // If we verified with our code, confirm with Cognito using admin API
+      // This ensures Cognito knows the user is verified and can log in
+      if (codeVerified && metadata.verificationCode === code) {
+        try {
+          const { adminConfirmSignUp } = await import('./cognitoAuth');
+          await adminConfirmSignUp(cognitoUsername);
+          console.log(`[AUTH] User confirmed in Cognito via admin API for ${email}`);
+        } catch (adminError: any) {
+          // If admin confirm fails, try regular confirm as fallback
+          try {
+            await confirmSignUp(email, code, cognitoUsername).catch((cognitoError: any) => {
+              if (cognitoError.name === 'NotAuthorizedException' && cognitoError.message?.includes('already confirmed')) {
+                console.log(`[AUTH] User already confirmed in Cognito for ${email}`);
+              } else {
+                console.warn(`[AUTH] Could not confirm with Cognito for ${email}, but our code was valid:`, cognitoError.message);
+              }
+            });
+          } catch (err) {
+            // Ignore Cognito errors if our code was valid - user can still proceed
+            console.warn(`[AUTH] Cognito confirmation failed for ${email}, but proceeding with our verification`);
+          }
+        }
+      }
+      
+      // Get phone number from metadata
+      if (!metadata.phoneNumber) {
+        return res.status(400).json({ message: "No phone number found. Please sign up again." });
+      }
+      
+      // Send SMS verification code (Step 2)
+      const { sendVerificationCode } = await import('./twilio');
+      const result = await sendVerificationCode({ to: metadata.phoneNumber, channel: 'sms' });
+      
+      if (!result.success || !result.code) {
+        return res.status(500).json({ message: "Failed to send SMS verification code" });
+      }
+      
+      // Store phone verification code (hashed)
+      await metadataStorage.setPhoneVerification(email, metadata.phoneNumber, result.code);
+      
+      res.json({ 
+        message: "Email verified successfully. Please verify your phone number with the SMS code sent to " + metadata.phoneNumber,
+        phoneNumber: metadata.phoneNumber,
+        requiresPhoneVerification: true,
+      });
+    } catch (error: any) {
+      console.error("Email verification error:", error);
+      res.status(500).json({ message: error.message || "Verification failed" });
+    }
+  });
+  
+  // Verify phone with SMS code (Step 2)
+  app.post('/api/auth/verify-phone', async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      
+      if (!email || !code) {
+        return res.status(400).json({ message: "Email and verification code are required" });
+      }
+      
+      // Verify phone code
+      const phoneVerification = await metadataStorage.verifyPhoneCode(email, code);
+      if (!phoneVerification.valid) {
+        return res.status(400).json({ message: "Invalid or expired verification code" });
+      }
+      
+      // Get user metadata
+      const metadata = metadataStorage.getUserMetadata(email);
+      if (!metadata) {
+        return res.status(400).json({ message: "No signup data found. Please sign up again." });
+      }
+      
+      // Create user in database with verified phone
+      const userData: any = {
+        id: metadata.cognitoSub,
+        email: metadata.email,
+        firstName: metadata.firstName,
+        lastName: metadata.lastName,
+        role: metadata.role,
+        phoneNumber: metadata.phoneNumber,
+        phoneVerified: true,
+        emailVerified: true,
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+      };
+      
+      // Add patient-specific data
+      if (metadata.role === 'patient') {
+        userData.ehrImportMethod = metadata.ehrImportMethod;
+        userData.ehrPlatform = metadata.ehrPlatform;
+        userData.subscriptionStatus = 'trialing';
+        userData.trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        userData.creditBalance = 20;
+      }
+      
+      // Add doctor-specific data
+      if (metadata.role === 'doctor') {
+        userData.organization = metadata.organization;
+        userData.medicalLicenseNumber = metadata.medicalLicenseNumber;
+        userData.licenseCountry = metadata.licenseCountry;
+        userData.kycPhotoUrl = metadata.kycPhotoUrl;
+        userData.googleDriveApplicationUrl = metadata.googleDriveApplicationUrl;
+        userData.adminVerified = false;
+        userData.creditBalance = 0;
+      }
+      
+      // Create user in database
+      await storage.upsertUser(userData);
+      
+      // Clean up metadata
+      metadataStorage.deleteUserMetadata(email);
+      
+      // Send welcome SMS
+      const { sendWelcomeSMS } = await import('./twilio');
+      await sendWelcomeSMS(metadata.phoneNumber, userData.firstName).catch(console.error);
+      
+      const message = metadata.role === 'doctor' 
+        ? "Verification complete! Your application is under review. You'll receive an email when your account is activated."
+        : "Verification complete! You can now log in to your account.";
+      
+      res.json({ 
+        message,
+        requiresAdminApproval: metadata.role === 'doctor',
+      });
+    } catch (error: any) {
+      console.error("Phone verification error:", error);
+      res.status(500).json({ message: error.message || "Verification failed" });
+    }
+  });
+  
+  // Resend verification code
+  app.post('/api/auth/resend-code', async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      
+      // Get user metadata to retrieve the Cognito username
+      const metadata = metadataStorage.getUserMetadata(email);
+      if (!metadata) {
+        return res.status(400).json({ message: "No signup data found. Please sign up again." });
+      }
+      
+      const cognitoUsername = metadata.cognitoUsername;
+      
+      // Generate new verification code (6 digits)
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      // Update metadata with new code
+      metadataStorage.setUserMetadata(email, {
+        ...metadata,
+        verificationCode,
+        verificationCodeExpires: expiresAt.getTime(),
+      });
+      
+      // Send verification email via AWS SES (primary method)
+      try {
+        await sendVerificationEmail(email, verificationCode);
+        console.log(`[AUTH] Verification code resent via SES for ${email}`);
+        res.json({ message: "Verification code resent. Please check your email." });
+      } catch (sesError: any) {
+        console.error(`[AUTH] Failed to send verification email via SES for ${email}:`, sesError);
+        // Fallback to Cognito email
+        try {
+          await resendConfirmationCode(email, cognitoUsername);
+          console.log(`[AUTH] Fallback: Confirmation code resent via Cognito for ${email}`);
+          res.json({ message: "Verification code resent. Please check your email." });
+        } catch (resendError: any) {
+          console.error(`[AUTH] Failed to resend confirmation code via Cognito for ${email}:`, resendError);
+          res.status(500).json({ message: "Failed to resend verification code. Please try again later." });
+        }
+      }
+    } catch (error: any) {
+      console.error("Resend code error:", error);
+      res.status(500).json({ message: error.message || "Failed to resend code" });
+>>>>>>> main
     }
   });
   
   // Login
   app.post('/api/auth/login', async (req, res) => {
     try {
-      const { email, password, rememberMe } = req.body;
+      const { email, password } = req.body;
       
       if (!email || !password) {
         return res.status(400).json({ message: "Email and password are required" });
       }
       
-      // Get user by email
-      const user = await storage.getUserByEmail(email);
+      const authResult = await signIn(email, password);
+      
+      if (!authResult || !authResult.IdToken || !authResult.AccessToken) {
+        return res.status(401).json({ message: "Login failed" });
+      }
+      
+      // Get user info from Cognito
+      const userInfo = await getUserInfo(authResult.AccessToken);
+      const cognitoSub = userInfo.UserAttributes?.find(attr => attr.Name === 'sub')?.Value!;
+      const cognitoEmail = userInfo.UserAttributes?.find(attr => attr.Name === 'email')?.Value!;
+      const firstName = userInfo.UserAttributes?.find(attr => attr.Name === 'given_name')?.Value!;
+      const lastName = userInfo.UserAttributes?.find(attr => attr.Name === 'family_name')?.Value!;
+      const role = userInfo.UserAttributes?.find(attr => attr.Name === 'custom:role')?.Value as 'patient' | 'doctor';
+      const emailVerified = userInfo.UserAttributes?.find(attr => attr.Name === 'email_verified')?.Value === 'true';
+      
+      // Check if user exists in our database (must have completed phone verification)
+      let user = await storage.getUser(cognitoSub);
+      
       if (!user) {
-        return res.status(401).json({ message: "Invalid email or password" });
+        // User hasn't completed phone verification yet
+        return res.status(403).json({ 
+          message: "Please complete phone verification to access your account",
+          requiresPhoneVerification: true,
+        });
       }
       
-      // Compare password
-      const isPasswordValid = await comparePassword(password, user.passwordHash!);
-      if (!isPasswordValid) {
-        return res.status(401).json({ message: "Invalid email or password" });
+      // Block doctors until admin approval
+      if (role === 'doctor' && !user.adminVerified) {
+        return res.status(403).json({ 
+          message: "Your application is under review. You'll receive an email when your account is activated.",
+          requiresAdminApproval: true,
+        });
       }
       
-      // Check if email is verified (skip in development for testing)
-      const isDevelopment = process.env.NODE_ENV === 'development';
-      const isTestEmail = email.includes('@example.com') || email.includes('@test.com');
-      
-      if (!user.emailVerified && !(isDevelopment && isTestEmail)) {
-        return res.status(403).json({ message: "Please verify your email before logging in. Check your email inbox for the verification link." });
+      // Update email verification status from Cognito if needed
+      if (emailVerified && !user.emailVerified) {
+        user = await storage.upsertUser({
+          id: cognitoSub,
+          emailVerified,
+        });
       }
       
-      // Set session
+      // Establish session for cookie-based authentication
+      // This allows the client to use credentials: "include" for subsequent requests
       (req.session as any).userId = user.id;
       
-      // Extend session if remember me is checked
-      if (rememberMe) {
-        req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
-      }
-      
-      // Save session to ensure TTL is updated in the store
+      // Save session to ensure cookie is set
       await new Promise<void>((resolve, reject) => {
         req.session.save((err) => {
           if (err) {
@@ -319,55 +647,152 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({
         message: "Login successful",
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
+        tokens: {
+          idToken: authResult.IdToken,
+          accessToken: authResult.AccessToken,
+          refreshToken: authResult.RefreshToken,
         },
+        user,
       });
-    } catch (error) {
-      console.error("Error in login:", error);
-      res.status(500).json({ message: "Failed to log in" });
+    } catch (error: any) {
+      console.error("Login error:", error);
+      if (error.name === 'NotAuthorizedException') {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      if (error.name === 'UserNotConfirmedException') {
+        return res.status(400).json({ message: "Please verify your email before logging in" });
+      }
+      res.status(500).json({ message: error.message || "Login failed" });
     }
   });
   
-  // Logout
+  // Forgot password - send reset code
+  app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      
+      await forgotPassword(email);
+      
+      res.json({ message: "Password reset code sent. Please check your email." });
+    } catch (error: any) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({ message: error.message || "Failed to send reset code" });
+    }
+  });
+  
+  // Reset password with code
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({ message: "Email, code, and new password are required" });
+      }
+      
+      await confirmForgotPassword(email, code, newPassword);
+      
+      res.json({ message: "Password reset successful. You can now log in with your new password." });
+    } catch (error: any) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ message: error.message || "Password reset failed" });
+    }
+  });
+  
+  // Get current user (protected route)
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+  
+  // Logout - destroy session
   app.post('/api/auth/logout', (req, res) => {
     req.session.destroy((err) => {
       if (err) {
+        console.error("Error destroying session:", err);
         return res.status(500).json({ message: "Failed to log out" });
       }
       res.json({ message: "Logged out successfully" });
     });
   });
   
-  // Verify email
-  app.get('/api/auth/verify-email', async (req, res) => {
+  // Update user role and profile (used after login for role-specific setup)
+  app.post('/api/auth/set-role', isAuthenticated, async (req: any, res) => {
     try {
-      const { token } = req.query;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const { role, medicalLicenseNumber, organization, licenseCountry, ehrImportMethod, ehrPlatform, termsAccepted } = req.body;
       
-      if (!token || typeof token !== 'string') {
-        return res.status(400).json({ message: "Invalid verification token" });
+      if (!role || (role !== 'patient' && role !== 'doctor')) {
+        return res.status(400).json({ message: "Valid role (patient or doctor) is required" });
       }
       
-      const user = await storage.verifyEmail(token);
-      if (!user) {
-        return res.status(400).json({ message: "Invalid or expired verification token" });
+      if (!termsAccepted) {
+        return res.status(400).json({ message: "You must accept the terms and conditions" });
       }
       
-      res.json({ message: "Email verified successfully. You can now log in." });
+      const updateData: any = {
+        role,
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+      };
+      
+      // Doctor-specific fields
+      if (role === 'doctor') {
+        if (!medicalLicenseNumber || !organization || !licenseCountry) {
+          return res.status(400).json({ message: "Medical license, organization, and country are required for doctors" });
+        }
+        updateData.medicalLicenseNumber = medicalLicenseNumber;
+        updateData.organization = organization;
+        updateData.licenseCountry = licenseCountry;
+        updateData.creditBalance = 0;
+      }
+      
+      // Patient-specific fields
+      if (role === 'patient') {
+        if (!ehrImportMethod) {
+          return res.status(400).json({ message: "EHR import method is required for patients" });
+        }
+        updateData.ehrImportMethod = ehrImportMethod;
+        updateData.ehrPlatform = ehrPlatform;
+        // Start 7-day free trial
+        updateData.subscriptionStatus = 'trialing';
+        updateData.trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        updateData.creditBalance = 20; // 20 free consultation credits during trial
+      }
+      
+      const user = await storage.updateUser(userId, updateData);
+      res.json({ message: "Role updated successfully", user });
     } catch (error) {
-      console.error("Error verifying email:", error);
-      res.status(500).json({ message: "Failed to verify email" });
+      console.error("Error updating user role:", error);
+      res.status(500).json({ message: "Failed to update role" });
     }
   });
   
   // Send SMS verification code
-  app.post('/api/auth/send-phone-verification', isAuthenticated, async (req, res) => {
+  app.post('/api/auth/send-phone-verification', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = (req.user as any).claims.sub;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const { phoneNumber, channel } = req.body;
       
       if (!phoneNumber) {
@@ -392,9 +817,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Verify phone number
-  app.post('/api/auth/verify-phone', isAuthenticated, async (req, res) => {
+  app.post('/api/auth/verify-phone', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = (req.user as any).claims.sub;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const { code } = req.body;
       
       if (!code) {
@@ -433,9 +861,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update SMS preferences
-  app.post('/api/auth/sms-preferences', isAuthenticated, async (req, res) => {
+  app.post('/api/auth/sms-preferences', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = (req.user as any).claims.sub;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const {
         smsNotificationsEnabled,
         smsMedicationReminders,
@@ -458,64 +889,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to update SMS preferences" });
     }
   });
-  
-  // Request password reset
-  app.post('/api/auth/forgot-password', async (req, res) => {
-    try {
-      const { email } = req.body;
-      
-      if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-      }
-      
-      const user = await storage.getUserByEmail(email);
-      if (!user) {
-        // Don't reveal if email exists
-        return res.json({ message: "If that email is registered, you will receive a password reset link" });
-      }
-      
-      // Generate reset token
-      const resetToken = generateToken();
-      const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-      
-      await storage.updateResetToken(user.id, resetToken, resetTokenExpires);
-      
-      // Send reset email
-      try {
-        await sendPasswordResetEmail(user.email!, resetToken, user.firstName!);
-      } catch (emailError) {
-        console.error("Error sending password reset email:", emailError);
-      }
-      
-      res.json({ message: "If that email is registered, you will receive a password reset link" });
-    } catch (error) {
-      console.error("Error in forgot password:", error);
-      res.status(500).json({ message: "Failed to process request" });
-    }
-  });
-  
-  // Reset password
-  app.post('/api/auth/reset-password', async (req, res) => {
-    try {
-      const { token, newPassword } = req.body;
-      
-      if (!token || !newPassword) {
-        return res.status(400).json({ message: "Token and new password are required" });
-      }
-      
-      const passwordHash = await hashPassword(newPassword);
-      const user = await storage.resetPassword(token, passwordHash);
-      
-      if (!user) {
-        return res.status(400).json({ message: "Invalid or expired reset token" });
-      }
-      
-      res.json({ message: "Password reset successfully. You can now log in with your new password." });
-    } catch (error) {
-      console.error("Error resetting password:", error);
-      res.status(500).json({ message: "Failed to reset password" });
-    }
-  });
 
   // ============== TWO-FACTOR AUTHENTICATION ROUTES ==============
   
@@ -532,69 +905,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching 2FA status:", error);
       res.status(500).json({ message: "Failed to fetch 2FA status" });
-    }
-  });
-  
-  // Setup 2FA - Generate secret and QR code
-  app.post('/api/2fa/setup', isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const user = await storage.getUser(userId);
-      
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      // Check if 2FA is already enabled
-      const existing = await storage.get2FASettings(userId);
-      if (existing?.enabled) {
-        return res.status(400).json({ message: "2FA is already enabled" });
-      }
-      
-      // Generate secret
-      const secret = speakeasy.generateSecret({
-        name: `Followup AI (${user.email})`,
-        issuer: 'Followup AI',
-        length: 32,
-      });
-      
-      // Generate backup codes
-      const backupCodes = Array.from({ length: 10 }, () => 
-        crypto.randomBytes(4).toString('hex').toUpperCase()
-      );
-      
-      // Hash backup codes before storing
-      const hashedBackupCodes = await Promise.all(
-        backupCodes.map(code => hashPassword(code))
-      );
-      
-      // Create or update 2FA settings (not enabled yet)
-      if (existing) {
-        await storage.update2FASettings(userId, {
-          totpSecret: secret.base32,
-          backupCodes: hashedBackupCodes,
-          enabled: false,
-        });
-      } else {
-        await storage.create2FASettings({
-          userId,
-          totpSecret: secret.base32,
-          backupCodes: hashedBackupCodes,
-          enabled: false,
-        });
-      }
-      
-      // Generate QR code
-      const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url!);
-      
-      res.json({
-        secret: secret.base32,
-        qrCode: qrCodeUrl,
-        backupCodes, // Send plain text codes only once
-      });
-    } catch (error) {
-      console.error("Error setting up 2FA:", error);
-      res.status(500).json({ message: "Failed to setup 2FA" });
     }
   });
   
@@ -639,109 +949,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error enabling 2FA:", error);
       res.status(500).json({ message: "Failed to enable 2FA" });
-    }
-  });
-  
-  // Disable 2FA
-  app.post('/api/2fa/disable', isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const { password } = req.body;
-      
-      if (!password) {
-        return res.status(400).json({ message: "Password is required" });
-      }
-      
-      // Verify password
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      const validPassword = await comparePassword(password, user.passwordHash!);
-      if (!validPassword) {
-        return res.status(400).json({ message: "Invalid password" });
-      }
-      
-      // Delete 2FA settings
-      await storage.delete2FASettings(userId);
-      
-      res.json({ message: "2FA disabled successfully" });
-    } catch (error) {
-      console.error("Error disabling 2FA:", error);
-      res.status(500).json({ message: "Failed to disable 2FA" });
-    }
-  });
-  
-  // Verify 2FA token (for login or wallet operations)
-  app.post('/api/2fa/verify', isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const { token } = req.body;
-      
-      if (!token) {
-        return res.status(400).json({ message: "Token is required" });
-      }
-      
-      const settings = await storage.get2FASettings(userId);
-      if (!settings || !settings.enabled) {
-        return res.status(400).json({ message: "2FA is not enabled" });
-      }
-      
-      // Try TOTP verification
-      const totpVerified = speakeasy.totp.verify({
-        secret: settings.totpSecret,
-        encoding: 'base32',
-        token,
-        window: 2,
-      });
-      
-      if (totpVerified) {
-        await storage.update2FASettings(userId, {
-          lastUsedAt: new Date(),
-        });
-        return res.json({ verified: true });
-      }
-      
-      // Try backup code verification
-      if (settings.backupCodes && settings.backupCodes.length > 0) {
-        for (let i = 0; i < settings.backupCodes.length; i++) {
-          const isMatch = await comparePassword(token, settings.backupCodes[i]);
-          if (isMatch) {
-            // Remove used backup code
-            const newBackupCodes = [...settings.backupCodes];
-            newBackupCodes.splice(i, 1);
-            
-            await storage.update2FASettings(userId, {
-              backupCodes: newBackupCodes,
-              lastUsedAt: new Date(),
-            });
-            
-            return res.json({ 
-              verified: true,
-              backupCodeUsed: true,
-              remainingBackupCodes: newBackupCodes.length,
-            });
-          }
-        }
-      }
-      
-      res.status(400).json({ message: "Invalid token or backup code" });
-    } catch (error) {
-      console.error("Error verifying 2FA token:", error);
-      res.status(500).json({ message: "Failed to verify token" });
-    }
-  });
-
-  // Get current user
-  app.get('/api/auth/user', isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const user = await storage.getUser(userId);
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
     }
   });
 
@@ -2249,11 +2456,28 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     try {
       const { id } = req.params;
       const { notes } = req.body;
-      const verifiedDoctor = await storage.verifyDoctorLicense(id, true, notes, req.user!.id);
-      if (!verifiedDoctor) {
+      const adminUserId = req.user?.id;
+      if (!adminUserId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Get doctor info first
+      const doctor = await storage.getUser(id);
+      if (!doctor || doctor.role !== 'doctor') {
         return res.status(404).json({ message: "Doctor not found" });
       }
-      res.json({ success: true, doctor: verifiedDoctor });
+      
+      // Verify using new unified method
+      const result = await storage.verifyDoctorApplication(id, true, notes || 'Approved by admin', adminUserId);
+      if (!result.user) {
+        return res.status(404).json({ message: "Failed to verify doctor" });
+      }
+      
+      // Send approval email notification
+      const { sendDoctorApprovedEmail } = await import('./awsSES');
+      await sendDoctorApprovedEmail(doctor.email, doctor.firstName).catch(console.error);
+      
+      res.json({ success: true, user: result.user, doctorProfile: result.doctorProfile });
     } catch (error) {
       console.error("Error verifying doctor:", error);
       res.status(500).json({ message: "Failed to verify doctor" });
@@ -2265,11 +2489,28 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     try {
       const { id } = req.params;
       const { reason } = req.body;
-      const rejectedDoctor = await storage.verifyDoctorLicense(id, false, reason, req.user!.id);
-      if (!rejectedDoctor) {
+      const adminUserId = req.user?.id;
+      if (!adminUserId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Get doctor info first
+      const doctor = await storage.getUser(id);
+      if (!doctor || doctor.role !== 'doctor') {
         return res.status(404).json({ message: "Doctor not found" });
       }
-      res.json({ success: true, doctor: rejectedDoctor });
+      
+      // Reject using new unified method (verified = false)
+      const result = await storage.verifyDoctorApplication(id, false, reason || 'Application rejected', adminUserId);
+      if (!result.user) {
+        return res.status(404).json({ message: "Failed to reject doctor" });
+      }
+      
+      // Send rejection email notification
+      const { sendDoctorRejectedEmail } = await import('./awsSES');
+      await sendDoctorRejectedEmail(doctor.email, doctor.firstName, reason || 'Please contact our verification team for more information.').catch(console.error);
+      
+      res.json({ success: true, user: result.user, doctorProfile: result.doctorProfile });
     } catch (error) {
       console.error("Error rejecting doctor:", error);
       res.status(500).json({ message: "Failed to reject doctor" });

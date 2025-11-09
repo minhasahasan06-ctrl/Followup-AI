@@ -13,13 +13,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Heart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+import api from "@/lib/api";
 
 const signupSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
   confirmPassword: z.string(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
+  phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number (use international format, e.g., +1234567890)"),
   ehrImportMethod: z.enum(["manual", "hospital", "platform"], {
     required_error: "Please select how you want to import your medical history",
   }),
@@ -45,6 +50,7 @@ export default function PatientSignup() {
       confirmPassword: "",
       firstName: "",
       lastName: "",
+      phoneNumber: "",
       ehrImportMethod: undefined,
       ehrPlatform: "",
       termsAccepted: false,
@@ -56,32 +62,18 @@ export default function PatientSignup() {
   const onSubmit = async (data: SignupFormData) => {
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/auth/signup/patient", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include", // ✅ Include cookies for session
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || "Signup failed");
-      }
+      const response = await api.post("/auth/signup/patient", data);
 
       toast({
         title: "Account created successfully!",
-        description: result.message || "Please check your email to verify your account. Your 7-day free trial has started!",
+        description: response.data.message || "Please check your email to verify your account. Your 7-day free trial has started!",
       });
 
-      // Redirect to login after successful signup
-      setTimeout(() => setLocation("/login"), 2000);
+      setTimeout(() => setLocation("/verify-email"), 2000);
     } catch (error: any) {
       toast({
         title: "Signup failed",
-        description: error.message || "An error occurred during signup",
+        description: error.response?.data?.message || "An error occurred during signup",
         variant: "destructive",
       });
     } finally {
@@ -144,6 +136,23 @@ export default function PatientSignup() {
                     <FormControl>
                       <Input type="email" placeholder="patient@example.com" {...field} data-testid="input-email" />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="phoneNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone Number</FormLabel>
+                    <FormControl>
+                      <Input type="tel" placeholder="+12025551234" {...field} data-testid="input-phone-number" />
+                    </FormControl>
+                    <FormDescription>
+                      Include country code (e.g., +1 for US). This will be used for SMS verification.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
