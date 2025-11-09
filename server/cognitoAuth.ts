@@ -170,8 +170,12 @@ export async function signUp(
       { Name: "birthdate", Value: "1990-01-01" },
       { Name: "gender", Value: "Not specified" },
       { Name: "zoneinfo", Value: "UTC" },
+      // Custom attributes required by this specific Cognito User Pool (error shows these are required)
+      { Name: "custom:profileUrl", Value: "https://example.com/profile" },
+      { Name: "custom:addresses", Value: "US" },
+      { Name: "custom:phoneNumbers", Value: phoneNumber || "+10000000000" },
+      { Name: "custom:timezone", Value: "America/Los_Angeles" },
       // Note: Role is tracked in our database, not in Cognito
-      // Note: Some custom attributes may not be configured in the User Pool and are omitted
     ],
   });
 
