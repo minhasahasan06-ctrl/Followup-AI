@@ -277,35 +277,60 @@ export async function resendConfirmationCode(email: string, username?: string) {
   }
 }
 
-export async function adminConfirmUser(username: string) {
+export async function adminConfirmUser(username: string, email?: string) {
   const confirmCommand = new AdminConfirmSignUpCommand({
     UserPoolId: USER_POOL_ID,
     Username: username,
   });
 
+  let alreadyConfirmed = false;
+
   try {
     await cognitoClient.send(confirmCommand);
-    console.log(`[COGNITO] Admin confirmed signup for username: ${username}`);
   } catch (error: any) {
-    console.error(`[COGNITO] Error during admin confirm for ${username}:`, error);
+    if (
+      error?.name === "NotAuthorizedException" &&
+      typeof error?.message === "string" &&
+      error.message.includes("Current status is CONFIRMED")
+    ) {
+      alreadyConfirmed = true;
+      console.warn(
+        `[COGNITO] User ${email ? email + " " : ""}(username: ${username}) is already confirmed`
+      );
+    } else {
+      console.error(
+        `[COGNITO] Error admin confirming user ${email ? email + " " : ""}(username: ${username}):`,
+        error
+      );
+      throw error;
+    }
+  }
+
+  try {
+    await cognitoClient.send(
+      new AdminUpdateUserAttributesCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: username,
+        UserAttributes: [
+          {
+            Name: "email_verified",
+            Value: "true",
+          },
+        ],
+      })
+    );
+  } catch (error: any) {
+    console.error(
+      `[COGNITO] Error setting email_verified attribute for ${email ? email + " " : ""}(username: ${username}):`,
+      error
+    );
     throw error;
   }
 
-  // Ensure email_verified flag is set to true
-  const updateCommand = new AdminUpdateUserAttributesCommand({
-    UserPoolId: USER_POOL_ID,
-    Username: username,
-    UserAttributes: [
-      { Name: "email_verified", Value: "true" },
-    ],
-  });
-
-  try {
-    await cognitoClient.send(updateCommand);
-    console.log(`[COGNITO] Email marked verified for username: ${username}`);
-  } catch (error: any) {
-    console.error(`[COGNITO] Error updating email_verified for ${username}:`, error);
-    throw error;
+  if (!alreadyConfirmed) {
+    console.log(
+      `[COGNITO] Admin confirmed user ${email ? email + " " : ""}(username: ${username})`
+    );
   }
 }
 
