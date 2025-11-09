@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 interface UserMetadata {
   email: string;
@@ -28,7 +28,7 @@ class MetadataStorage {
   private userMetadata: Map<string, UserMetadata> = new Map();
   private phoneVerification: Map<string, PhoneVerificationMetadata> = new Map();
   private readonly TTL = 24 * 60 * 60 * 1000; // 24 hours
-  private readonly PHONE_CODE_TTL = 10 * 60 * 1000; // 10 minutes
+  private readonly PHONE_CODE_TTL = 15 * 60 * 1000; // 15 minutes
 
   constructor() {
     // Cleanup expired data every hour
@@ -79,12 +79,8 @@ class MetadataStorage {
     console.log(`[METADATA] Deleted metadata for ${email}`);
   }
 
-  hashPhoneCode(code: string): string {
-    return crypto.createHash('sha256').update(code).digest('hex');
-  }
-
-  setPhoneVerification(email: string, phoneNumber: string, code: string) {
-    const hashedCode = this.hashPhoneCode(code);
+  async setPhoneVerification(email: string, phoneNumber: string, code: string) {
+    const hashedCode = await bcrypt.hash(code, 10);
     this.phoneVerification.set(email, {
       email,
       phoneNumber,
@@ -94,7 +90,7 @@ class MetadataStorage {
     console.log(`[METADATA] Stored phone verification for ${email}`);
   }
 
-  verifyPhoneCode(email: string, code: string): { valid: boolean; phoneNumber?: string } {
+  async verifyPhoneCode(email: string, code: string): Promise<{ valid: boolean; phoneNumber?: string }> {
     const data = this.phoneVerification.get(email);
     if (!data) {
       return { valid: false };
@@ -105,8 +101,7 @@ class MetadataStorage {
       return { valid: false };
     }
     
-    const hashedCode = this.hashPhoneCode(code);
-    const valid = hashedCode === data.hashedCode;
+    const valid = await bcrypt.compare(code, data.hashedCode);
     
     if (valid) {
       this.phoneVerification.delete(email);
