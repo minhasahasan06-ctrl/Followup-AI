@@ -8,6 +8,7 @@ import {
   ConfirmForgotPasswordCommand,
   AdminUpdateUserAttributesCommand,
   AdminSetUserPasswordCommand,
+  AdminConfirmSignUpCommand,
   GetUserCommand,
   DescribeUserPoolCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
@@ -174,7 +175,8 @@ export async function signUp(
       // Optional but recommended
       { Name: "given_name", Value: firstName },
       { Name: "family_name", Value: lastName },
-      // Note: Role is tracked in our database, not in Cognito
+      // Persist role as custom attribute for downstream checks
+      { Name: "custom:role", Value: role },
     ],
   });
 
@@ -249,6 +251,38 @@ export async function resendConfirmationCode(email: string, username?: string) {
     return response;
   } catch (error: any) {
     console.error(`[COGNITO] Error resending confirmation code for ${email} (username: ${cognitoUsername}):`, error);
+    throw error;
+  }
+}
+
+export async function adminConfirmUser(username: string) {
+  const confirmCommand = new AdminConfirmSignUpCommand({
+    UserPoolId: USER_POOL_ID,
+    Username: username,
+  });
+
+  try {
+    await cognitoClient.send(confirmCommand);
+    console.log(`[COGNITO] Admin confirmed signup for username: ${username}`);
+  } catch (error: any) {
+    console.error(`[COGNITO] Error during admin confirm for ${username}:`, error);
+    throw error;
+  }
+
+  // Ensure email_verified flag is set to true
+  const updateCommand = new AdminUpdateUserAttributesCommand({
+    UserPoolId: USER_POOL_ID,
+    Username: username,
+    UserAttributes: [
+      { Name: "email_verified", Value: "true" },
+    ],
+  });
+
+  try {
+    await cognitoClient.send(updateCommand);
+    console.log(`[COGNITO] Email marked verified for username: ${username}`);
+  } catch (error: any) {
+    console.error(`[COGNITO] Error updating email_verified for ${username}:`, error);
     throw error;
   }
 }

@@ -15,6 +15,9 @@ interface UserMetadata {
   licenseCountry?: string;
   kycPhotoUrl?: string;
   googleDriveApplicationUrl?: string;
+  emailVerificationCodeHash?: string;
+  emailVerificationExpires?: number;
+  emailVerified?: boolean;
   expiresAt: number;
 }
 
@@ -29,6 +32,7 @@ class MetadataStorage {
   private userMetadata: Map<string, UserMetadata> = new Map();
   private phoneVerification: Map<string, PhoneVerificationMetadata> = new Map();
   private readonly TTL = 24 * 60 * 60 * 1000; // 24 hours
+  private readonly EMAIL_CODE_TTL = 24 * 60 * 60 * 1000; // 24 hours
   private readonly PHONE_CODE_TTL = 15 * 60 * 1000; // 15 minutes
 
   constructor() {
@@ -58,6 +62,7 @@ class MetadataStorage {
     this.userMetadata.set(email, {
       email,
       ...data,
+      emailVerified: false,
       expiresAt: Date.now() + this.TTL,
     });
     console.log(`[METADATA] Stored metadata for ${email}`);
@@ -78,6 +83,43 @@ class MetadataStorage {
   deleteUserMetadata(email: string) {
     this.userMetadata.delete(email);
     console.log(`[METADATA] Deleted metadata for ${email}`);
+  }
+
+  async setEmailVerificationCode(email: string, code: string) {
+    const metadata = this.userMetadata.get(email);
+    if (!metadata) {
+      throw new Error(`No metadata found for ${email} while setting email verification code`);
+    }
+    metadata.emailVerificationCodeHash = await bcrypt.hash(code, 10);
+    metadata.emailVerificationExpires = Date.now() + this.EMAIL_CODE_TTL;
+    metadata.emailVerified = false;
+    this.userMetadata.set(email, metadata);
+    console.log(`[METADATA] Stored email verification code for ${email}`);
+  }
+
+  async verifyEmailCode(email: string, code: string): Promise<{ valid: boolean; metadata?: UserMetadata }> {
+    const metadata = this.userMetadata.get(email);
+    if (!metadata || !metadata.emailVerificationCodeHash) {
+      return { valid: false };
+    }
+
+    if (!metadata.emailVerificationExpires || metadata.emailVerificationExpires < Date.now()) {
+      metadata.emailVerificationCodeHash = undefined;
+      metadata.emailVerificationExpires = undefined;
+      this.userMetadata.set(email, metadata);
+      return { valid: false };
+    }
+
+    const valid = await bcrypt.compare(code, metadata.emailVerificationCodeHash);
+    if (valid) {
+      metadata.emailVerificationCodeHash = undefined;
+      metadata.emailVerificationExpires = undefined;
+      metadata.emailVerified = true;
+      this.userMetadata.set(email, metadata);
+      return { valid: true, metadata };
+    }
+
+    return { valid: false };
   }
 
   async setPhoneVerification(email: string, phoneNumber: string, code: string) {
