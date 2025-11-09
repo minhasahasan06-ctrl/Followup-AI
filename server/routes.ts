@@ -70,7 +70,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
   
   const { signUp, signIn, confirmSignUp, resendConfirmationCode, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
-  const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
+  const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail, sendEmail } = await import('./awsSES');
   const { metadataStorage } = await import('./metadataStorage');
   
   // Debug endpoint to inspect Cognito User Pool schema
@@ -146,6 +146,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cognitoSub = signUpResponse.UserSub!;
       const cognitoUsername = signUpResponse.username!;
       
+      // Check if Cognito sent the verification email
+      const codeDeliveryDetails = signUpResponse.CodeDeliveryDetails;
+      let emailSentByCognito = codeDeliveryDetails && 
+        codeDeliveryDetails.DeliveryMedium === 'EMAIL' && 
+        codeDeliveryDetails.Destination;
+      
       // Store phone number temporarily (will be verified after email)
       metadataStorage.setUserMetadata(email, {
         cognitoSub,
@@ -158,21 +164,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ehrPlatform,
       });
       
-      // Explicitly resend confirmation code to ensure email is sent
-      // This helps if Cognito's automatic email sending failed
+      // Try to resend confirmation code to ensure email is sent
       try {
-        await resendConfirmationCode(email, cognitoUsername);
+        const resendResponse = await resendConfirmationCode(email, cognitoUsername);
+        const resendCodeDelivery = resendResponse.CodeDeliveryDetails;
+        if (resendCodeDelivery && resendCodeDelivery.DeliveryMedium === 'EMAIL') {
+          emailSentByCognito = true;
+        }
         console.log(`[AUTH] Confirmation code resent for patient signup: ${email}`);
-      } catch (resendError: any) {
-        console.error(`[AUTH] Failed to resend confirmation code for ${email}:`, resendError);
-        // Don't fail the signup if resend fails - Cognito may have already sent it
+      } catch (err: any) {
+        console.error(`[AUTH] Failed to resend confirmation code for ${email}:`, err);
+        // Check if it's a rate limit or other recoverable error
+        if (err.name === 'LimitExceededException') {
+          console.warn(`[AUTH] Rate limit hit for ${email}, but initial signup may have sent email`);
+        }
       }
       
-      res.json({ message: "Signup successful. Please check your email for verification code." });
+      // If Cognito didn't send email, send a notification via SES
+      if (!emailSentByCognito) {
+        console.warn(`[AUTH] Cognito email not sent for ${email}, sending SES notification`);
+        try {
+          const appUrl = process.env.APP_URL || process.env.REPLIT_DOMAINS 
+            ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` 
+            : 'http://localhost:5000';
+          
+          const notificationHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+                .content { background: white; padding: 40px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px; }
+                .button { display: inline-block; background: #8B5CF6; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+                .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>Welcome to Followup AI!</h1>
+                </div>
+                <div class="content">
+                  <p>Hi ${firstName},</p>
+                  <p>Your account has been created successfully!</p>
+                  <p>To complete your registration, please verify your email address by requesting a verification code:</p>
+                  <a href="${appUrl}/verify-email?email=${encodeURIComponent(email)}" class="button">Request Verification Code</a>
+                  <p>Or visit: <a href="${appUrl}/resend-code">${appUrl}/resend-code</a></p>
+                  <p>If you have any issues, please contact support.</p>
+                </div>
+                <div class="footer">
+                  <p>&copy; ${new Date().getFullYear()} Followup AI. All rights reserved.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `;
+          
+          await sendEmail({
+            to: email,
+            subject: "Complete Your Followup AI Registration",
+            htmlBody: notificationHtml,
+            textBody: `Hi ${firstName},\n\nYour account has been created. Please visit ${appUrl}/resend-code to request your verification code.\n\nIf you have any issues, please contact support.`,
+          });
+          console.log(`[AUTH] Sent SES notification email to ${email}`);
+        } catch (sesError: any) {
+          console.error(`[AUTH] Failed to send SES notification to ${email}:`, sesError);
+          // Continue anyway - user can still use resend-code endpoint
+        }
+      }
+      
+      res.json({ 
+        message: "Signup successful. Please check your email for verification code.",
+        emailSent: emailSentByCognito || false,
+      });
     } catch (error: any) {
       console.error("Patient signup error:", error);
       if (error.name === 'UsernameExistsException') {
         return res.status(400).json({ message: "An account with this email already exists" });
+      }
+      if (error.name === 'InvalidPasswordException') {
+        return res.status(400).json({ message: "Password does not meet requirements" });
+      }
+      if (error.name === 'InvalidParameterException') {
+        return res.status(400).json({ message: error.message || "Invalid input parameters" });
       }
       res.status(500).json({ message: error.message || "Signup failed" });
     }
@@ -192,6 +268,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const signUpResponse = await signUp(email, password, firstName, lastName, 'doctor', phoneNumber);
       const cognitoSub = signUpResponse.UserSub!;
       const cognitoUsername = signUpResponse.username!;
+      
+      // Check if Cognito sent the verification email
+      const codeDeliveryDetails = signUpResponse.CodeDeliveryDetails;
+      let emailSentByCognito = codeDeliveryDetails && 
+        codeDeliveryDetails.DeliveryMedium === 'EMAIL' && 
+        codeDeliveryDetails.Destination;
       
       // Upload KYC photo if provided
       let kycPhotoUrl: string | undefined;
@@ -238,21 +320,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
         googleDriveApplicationUrl: googleDriveUrl,
       });
       
-      // Explicitly resend confirmation code to ensure email is sent
-      // This helps if Cognito's automatic email sending failed
+      // Try to resend confirmation code to ensure email is sent
       try {
-        await resendConfirmationCode(email, cognitoUsername);
+        const resendResponse = await resendConfirmationCode(email, cognitoUsername);
+        const resendCodeDelivery = resendResponse.CodeDeliveryDetails;
+        if (resendCodeDelivery && resendCodeDelivery.DeliveryMedium === 'EMAIL') {
+          emailSentByCognito = true;
+        }
         console.log(`[AUTH] Confirmation code resent for doctor signup: ${email}`);
       } catch (resendError: any) {
         console.error(`[AUTH] Failed to resend confirmation code for ${email}:`, resendError);
-        // Don't fail the signup if resend fails - Cognito may have already sent it
+        if (resendError.name === 'LimitExceededException') {
+          console.warn(`[AUTH] Rate limit hit for ${email}, but initial signup may have sent email`);
+        }
       }
       
-      res.json({ message: "Application submitted successfully. Please check your email for verification code. Your application will be reviewed by our team." });
+      // If Cognito didn't send email, send a notification via SES
+      if (!emailSentByCognito) {
+        console.warn(`[AUTH] Cognito email not sent for ${email}, sending SES notification`);
+        try {
+          const appUrl = process.env.APP_URL || process.env.REPLIT_DOMAINS 
+            ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` 
+            : 'http://localhost:5000';
+          
+          const notificationHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+                .content { background: white; padding: 40px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px; }
+                .button { display: inline-block; background: #8B5CF6; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+                .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>Welcome to Followup AI!</h1>
+                </div>
+                <div class="content">
+                  <p>Dear Dr. ${firstName},</p>
+                  <p>Your doctor application has been submitted successfully!</p>
+                  <p>To complete your registration, please verify your email address by requesting a verification code:</p>
+                  <a href="${appUrl}/verify-email?email=${encodeURIComponent(email)}" class="button">Request Verification Code</a>
+                  <p>Or visit: <a href="${appUrl}/resend-code">${appUrl}/resend-code</a></p>
+                  <p>After email verification, your application will be reviewed by our team. You'll receive an email when your account is activated.</p>
+                  <p>If you have any issues, please contact support.</p>
+                </div>
+                <div class="footer">
+                  <p>&copy; ${new Date().getFullYear()} Followup AI. All rights reserved.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `;
+          
+          await sendEmail({
+            to: email,
+            subject: "Complete Your Followup AI Doctor Registration",
+            htmlBody: notificationHtml,
+            textBody: `Dear Dr. ${firstName},\n\nYour doctor application has been submitted. Please visit ${appUrl}/resend-code to request your verification code.\n\nAfter verification, your application will be reviewed. If you have any issues, please contact support.`,
+          });
+          console.log(`[AUTH] Sent SES notification email to ${email}`);
+        } catch (sesError: any) {
+          console.error(`[AUTH] Failed to send SES notification to ${email}:`, sesError);
+          // Continue anyway - user can still use resend-code endpoint
+        }
+      }
+      
+      res.json({ 
+        message: "Application submitted successfully. Please check your email for verification code. Your application will be reviewed by our team.",
+        emailSent: emailSentByCognito || false,
+      });
     } catch (error: any) {
       console.error("Doctor signup error:", error);
       if (error.name === 'UsernameExistsException') {
         return res.status(400).json({ message: "An account with this email already exists" });
+      }
+      if (error.name === 'InvalidPasswordException') {
+        return res.status(400).json({ message: "Password does not meet requirements" });
+      }
+      if (error.name === 'InvalidParameterException') {
+        return res.status(400).json({ message: error.message || "Invalid input parameters" });
       }
       res.status(500).json({ message: error.message || "Signup failed" });
     }
@@ -270,13 +422,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get user metadata to retrieve the Cognito username
       const metadata = metadataStorage.getUserMetadata(email);
       if (!metadata) {
-        return res.status(400).json({ message: "No signup data found. Please sign up again." });
+        return res.status(400).json({ 
+          message: "No signup data found. Please sign up again.",
+          requiresSignup: true,
+        });
       }
       
       const cognitoUsername = metadata.cognitoUsername;
       
       // Verify email in Cognito (use stored username if available)
-      await confirmSignUp(email, code, cognitoUsername);
+      try {
+        await confirmSignUp(email, code, cognitoUsername);
+        console.log(`[AUTH] Email verified successfully for ${email}`);
+      } catch (verifyError: any) {
+        console.error(`[AUTH] Email verification failed for ${email}:`, verifyError);
+        
+        if (verifyError.name === 'CodeMismatchException') {
+          return res.status(400).json({ 
+            message: "Invalid verification code. Please check your email and try again, or request a new code.",
+            invalidCode: true,
+          });
+        }
+        
+        if (verifyError.name === 'ExpiredCodeException') {
+          return res.status(400).json({ 
+            message: "Verification code has expired. Please request a new code.",
+            codeExpired: true,
+          });
+        }
+        
+        if (verifyError.name === 'NotAuthorizedException') {
+          return res.status(400).json({ 
+            message: "This code is no longer valid. The account may already be verified or the code has been used.",
+            alreadyVerified: true,
+          });
+        }
+        
+        if (verifyError.name === 'UserNotFoundException') {
+          return res.status(404).json({ 
+            message: "User not found. Please sign up again.",
+            requiresSignup: true,
+          });
+        }
+        
+        throw verifyError; // Re-throw to be caught by outer catch
+      }
       
       // Get phone number from metadata
       if (!metadata.phoneNumber) {
@@ -288,7 +478,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await sendVerificationCode({ to: metadata.phoneNumber, channel: 'sms' });
       
       if (!result.success || !result.code) {
-        return res.status(500).json({ message: "Failed to send SMS verification code" });
+        return res.status(500).json({ 
+          message: "Email verified, but failed to send SMS verification code. Please contact support.",
+          emailVerified: true,
+        });
       }
       
       // Store phone verification code (hashed)
@@ -395,11 +588,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get user metadata to retrieve the Cognito username
       const metadata = metadataStorage.getUserMetadata(email);
-      const cognitoUsername = metadata?.cognitoUsername;
+      if (!metadata) {
+        return res.status(400).json({ message: "No signup found for this email. Please sign up first." });
+      }
       
-      await resendConfirmationCode(email, cognitoUsername);
+      const cognitoUsername = metadata.cognitoUsername;
       
-      res.json({ message: "Verification code resent. Please check your email." });
+      try {
+        const response = await resendConfirmationCode(email, cognitoUsername);
+        
+        // Check if email was actually sent
+        const codeDeliveryDetails = response.CodeDeliveryDetails;
+        const emailSent = codeDeliveryDetails && 
+          codeDeliveryDetails.DeliveryMedium === 'EMAIL' && 
+          codeDeliveryDetails.Destination;
+        
+        if (emailSent) {
+          console.log(`[AUTH] Verification code resent successfully to ${email}`);
+          res.json({ 
+            message: "Verification code resent. Please check your email.",
+            emailSent: true,
+            destination: codeDeliveryDetails.Destination,
+          });
+        } else {
+          console.warn(`[AUTH] Resend code succeeded but email may not have been sent for ${email}`);
+          res.json({ 
+            message: "Code resend requested, but email delivery may not be configured. Please check your email or contact support.",
+            emailSent: false,
+          });
+        }
+      } catch (cognitoError: any) {
+        console.error(`[AUTH] Cognito resend failed for ${email}:`, cognitoError);
+        
+        // Handle specific Cognito errors
+        if (cognitoError.name === 'LimitExceededException') {
+          return res.status(429).json({ 
+            message: "Too many requests. Please wait a few minutes before requesting another code.",
+            retryAfter: 300, // 5 minutes
+          });
+        }
+        
+        if (cognitoError.name === 'UserNotFoundException') {
+          return res.status(404).json({ 
+            message: "User not found. Please sign up first.",
+          });
+        }
+        
+        if (cognitoError.name === 'InvalidParameterException') {
+          return res.status(400).json({ 
+            message: "Invalid email address or account state.",
+          });
+        }
+        
+        // For other errors, try to send a notification via SES as fallback
+        try {
+          const appUrl = process.env.APP_URL || process.env.REPLIT_DOMAINS 
+            ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` 
+            : 'http://localhost:5000';
+          
+          const notificationHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+                .content { background: white; padding: 40px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px; }
+                .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>Verification Code Request</h1>
+                </div>
+                <div class="content">
+                  <p>Hi ${metadata.firstName},</p>
+                  <p>We received a request to resend your verification code, but encountered an issue with our email service.</p>
+                  <p>Please try again in a few minutes, or contact support if the problem persists.</p>
+                  <p>Error: ${cognitoError.message || 'Unknown error'}</p>
+                </div>
+                <div class="footer">
+                  <p>&copy; ${new Date().getFullYear()} Followup AI. All rights reserved.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `;
+          
+          await sendEmail({
+            to: email,
+            subject: "Verification Code Request - Followup AI",
+            htmlBody: notificationHtml,
+            textBody: `Hi ${metadata.firstName},\n\nWe received a request to resend your verification code, but encountered an issue. Please try again in a few minutes or contact support.\n\nError: ${cognitoError.message || 'Unknown error'}`,
+          });
+          
+          res.json({ 
+            message: "We encountered an issue sending the code via Cognito, but we've sent you a notification email. Please try again in a few minutes or contact support.",
+            emailSent: false,
+            fallbackEmailSent: true,
+          });
+        } catch (sesError: any) {
+          console.error(`[AUTH] Failed to send fallback email to ${email}:`, sesError);
+          res.status(500).json({ 
+            message: cognitoError.message || "Failed to resend code. Please try again later or contact support.",
+          });
+        }
+      }
     } catch (error: any) {
       console.error("Resend code error:", error);
       res.status(500).json({ message: error.message || "Failed to resend code" });
@@ -488,7 +784,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Invalid email or password" });
       }
       if (error.name === 'UserNotConfirmedException') {
-        return res.status(400).json({ message: "Please verify your email before logging in" });
+        // Check if user metadata exists to provide better guidance
+        const metadata = metadataStorage.getUserMetadata(email);
+        if (metadata) {
+          return res.status(400).json({ 
+            message: "Please verify your email before logging in. Check your email for the verification code, or request a new one.",
+            requiresEmailVerification: true,
+            email: email,
+          });
+        }
+        return res.status(400).json({ 
+          message: "Please verify your email before logging in. If you didn't receive a verification code, please sign up again.",
+          requiresEmailVerification: true,
+        });
+      }
+      if (error.name === 'UserNotFoundException') {
+        return res.status(404).json({ message: "No account found with this email. Please sign up first." });
+      }
+      if (error.name === 'TooManyRequestsException') {
+        return res.status(429).json({ message: "Too many login attempts. Please wait a few minutes and try again." });
       }
       res.status(500).json({ message: error.message || "Login failed" });
     }
