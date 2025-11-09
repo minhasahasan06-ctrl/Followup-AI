@@ -37,9 +37,17 @@ export const users = pgTable("users", {
   ehrPlatform: varchar("ehr_platform"), // Patient's chosen EHR platform
   ehrImportMethod: varchar("ehr_import_method"), // 'manual', 'hospital', 'platform'
   
-  // Phone number for SMS (user configures after OIDC login)
+  // Phone number for SMS and verification
   phoneNumber: varchar("phone_number"),
   phoneVerified: boolean("phone_verified").default(false),
+  phoneVerificationCode: varchar("phone_verification_code"),
+  phoneVerificationExpires: timestamp("phone_verification_expires"),
+  
+  // Doctor application verification
+  googleDriveApplicationUrl: varchar("google_drive_application_url"),
+  adminVerified: boolean("admin_verified").default(false),
+  adminVerifiedAt: timestamp("admin_verified_at"),
+  adminVerifiedBy: varchar("admin_verified_by"),
   
   // SMS preferences
   smsNotificationsEnabled: boolean("sms_notifications_enabled").default(true),
