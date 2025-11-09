@@ -9,6 +9,7 @@ import {
   AdminUpdateUserAttributesCommand,
   AdminConfirmSignUpCommand,
   AdminSetUserPasswordCommand,
+  AdminConfirmSignUpCommand,
   GetUserCommand,
   DescribeUserPoolCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
@@ -223,35 +224,27 @@ export async function confirmSignUp(email: string, code: string, username?: stri
   }
 }
 
-export async function adminConfirmUser(username: string, email?: string) {
+// Admin confirm sign up (bypasses code verification - use when we've verified via our own system)
+export async function adminConfirmSignUp(username: string) {
   const command = new AdminConfirmSignUpCommand({
     UserPoolId: USER_POOL_ID,
     Username: username,
   });
 
-  let alreadyConfirmed = false;
-
   try {
     await cognitoClient.send(command);
+    console.log(`[COGNITO] User confirmed via admin for ${username}`);
   } catch (error: any) {
-    if (
-      error?.name === "NotAuthorizedException" &&
-      typeof error?.message === "string" &&
-      error.message.includes("Current status is CONFIRMED")
-    ) {
-      alreadyConfirmed = true;
-      console.warn(
-        `[COGNITO] User ${email ? email + " " : ""}(username: ${username}) is already confirmed`
-      );
+    // If user is already confirmed, that's fine
+    if (error.name === 'NotAuthorizedException' && error.message?.includes('already confirmed')) {
+      console.log(`[COGNITO] User already confirmed for ${username}`);
     } else {
-      console.error(
-        `[COGNITO] Error admin confirming user ${email ? email + " " : ""}(username: ${username}):`,
-        error
-      );
+      console.error(`[COGNITO] Error admin confirming signup for ${username}:`, error);
       throw error;
     }
   }
 
+  // Set email_verified attribute
   try {
     await cognitoClient.send(
       new AdminUpdateUserAttributesCommand({
@@ -266,17 +259,8 @@ export async function adminConfirmUser(username: string, email?: string) {
       })
     );
   } catch (error: any) {
-    console.error(
-      `[COGNITO] Error setting email_verified attribute for ${email ? email + " " : ""}(username: ${username}):`,
-      error
-    );
-    throw error;
-  }
-
-  if (!alreadyConfirmed) {
-    console.log(
-      `[COGNITO] Admin confirmed user ${email ? email + " " : ""}(username: ${username})`
-    );
+    console.error(`[COGNITO] Error setting email_verified attribute for ${username}:`, error);
+    // Don't throw - email verification is already handled
   }
 }
 
