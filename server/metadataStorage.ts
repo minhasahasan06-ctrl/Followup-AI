@@ -133,6 +133,7 @@ class MetadataStorage {
     return { valid: false };
   }
 
+
   getPhoneNumber(email: string): string | null {
     const data = this.phoneVerification.get(email);
     return data?.phoneNumber || null;
