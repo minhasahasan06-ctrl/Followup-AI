@@ -149,7 +149,8 @@ export async function signUp(
   password: string,
   firstName: string,
   lastName: string,
-  role: "patient" | "doctor"
+  role: "patient" | "doctor",
+  phoneNumber?: string
 ) {
   // Generate unique username (Cognito requires non-email username when email alias is configured)
   const username = crypto.randomUUID();
@@ -163,7 +164,14 @@ export async function signUp(
       { Name: "email", Value: email },
       { Name: "given_name", Value: firstName },
       { Name: "family_name", Value: lastName },
-      { Name: "custom:role", Value: role },
+      { Name: "name", Value: `${firstName} ${lastName}` },
+      // Standard OIDC attributes
+      { Name: "phone_number", Value: phoneNumber || "+10000000000" },
+      { Name: "birthdate", Value: "1990-01-01" },
+      { Name: "gender", Value: "Not specified" },
+      { Name: "zoneinfo", Value: "UTC" },
+      // Note: Role is tracked in our database, not in Cognito
+      // Note: Some custom attributes may not be configured in the User Pool and are omitted
     ],
   });
 
