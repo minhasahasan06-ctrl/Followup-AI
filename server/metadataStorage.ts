@@ -98,6 +98,8 @@ class MetadataStorage {
 
   deleteUserMetadata(email: string) {
     this.userMetadata.delete(email);
+    this.phoneVerification.delete(email);
+    this.emailVerification.delete(email);
     console.log(`[METADATA] Deleted metadata for ${email}`);
   }
 
