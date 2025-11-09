@@ -689,9 +689,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update SMS preferences
-  app.post('/api/auth/sms-preferences', isAuthenticated, async (req, res) => {
+  app.post('/api/auth/sms-preferences', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = (req.user as any).claims.sub;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const {
         smsNotificationsEnabled,
         smsMedicationReminders,
