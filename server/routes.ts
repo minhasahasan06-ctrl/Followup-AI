@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { isAuthenticated, isDoctor } from "./cognitoAuth";
+import { isAuthenticated, isDoctor, getSession } from "./auth";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
 import { s3Client, textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -63,6 +63,10 @@ const medicalDocUpload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // ============== SESSION CONFIGURATION ==============
+  // Configure session middleware for cookie-based authentication
+  app.use(getSession());
+  
   // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
   
   const { signUp, signIn, confirmSignUp, resendConfirmationCode, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
@@ -453,6 +457,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // Establish session for cookie-based authentication
+      // This allows the client to use credentials: "include" for subsequent requests
+      (req.session as any).userId = user.id;
+      
+      // Save session to ensure cookie is set
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.error("Error saving session:", err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+      
       res.json({
         message: "Login successful",
         tokens: {
@@ -513,7 +533,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current user (protected route)
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -525,10 +548,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Logout - destroy session
+  app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        console.error("Error destroying session:", err);
+        return res.status(500).json({ message: "Failed to log out" });
+      }
+      res.json({ message: "Logged out successfully" });
+    });
+  });
+  
   // Update user role and profile (used after login for role-specific setup)
   app.post('/api/auth/set-role', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const { role, medicalLicenseNumber, organization, licenseCountry, ehrImportMethod, ehrPlatform, termsAccepted } = req.body;
       
       if (!role || (role !== 'patient' && role !== 'doctor')) {
@@ -578,9 +615,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Send SMS verification code
-  app.post('/api/auth/send-phone-verification', isAuthenticated, async (req, res) => {
+  app.post('/api/auth/send-phone-verification', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = (req as any).userId;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const { phoneNumber, channel } = req.body;
       
       if (!phoneNumber) {
@@ -605,9 +645,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Verify phone number
-  app.post('/api/auth/verify-phone', isAuthenticated, async (req, res) => {
+  app.post('/api/auth/verify-phone', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = (req as any).userId;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const { code } = req.body;
       
       if (!code) {
@@ -2238,7 +2281,10 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     try {
       const { id } = req.params;
       const { notes } = req.body;
-      const adminUserId = req.userId;
+      const adminUserId = req.user?.id;
+      if (!adminUserId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       
       // Get doctor info first
       const doctor = await storage.getUser(id);
@@ -2268,7 +2314,10 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     try {
       const { id } = req.params;
       const { reason } = req.body;
-      const adminUserId = req.userId;
+      const adminUserId = req.user?.id;
+      if (!adminUserId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       
       // Get doctor info first
       const doctor = await storage.getUser(id);
