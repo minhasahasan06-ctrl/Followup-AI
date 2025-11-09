@@ -63,13 +63,29 @@ export async function verifyToken(token: string): Promise<JwtPayload> {
       {
         algorithms: ["RS256"],
         issuer: `https://cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}`,
+        audience: CLIENT_ID,
       },
       (err, decoded) => {
         if (err) {
           reject(err);
-        } else {
-          resolve(decoded as JwtPayload);
+          return;
         }
+        
+        const payload = decoded as JwtPayload;
+        
+        // Validate token_use claim (must be 'id' for ID tokens)
+        if (payload.token_use !== 'id') {
+          reject(new Error('Invalid token type - expected ID token'));
+          return;
+        }
+        
+        // Validate audience matches our client ID
+        if (payload.aud !== CLIENT_ID) {
+          reject(new Error('Invalid token audience'));
+          return;
+        }
+        
+        resolve(payload);
       }
     );
   });

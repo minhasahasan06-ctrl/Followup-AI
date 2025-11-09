@@ -185,14 +185,14 @@ function AuthenticatedApp() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light">
-        <TooltipProvider>
-          <AuthProvider>
+      <AuthProvider>
+        <ThemeProvider defaultTheme="light">
+          <TooltipProvider>
             <AuthenticatedApp />
-          </AuthProvider>
-          <Toaster />
-        </TooltipProvider>
-      </ThemeProvider>
+            <Toaster />
+          </TooltipProvider>
+        </ThemeProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

@@ -33,6 +33,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     
     setIsLoading(false);
+
+    // Listen for logout events from api interceptor
+    const handleLogout = () => {
+      setTokens(null);
+      setUser(null);
+    };
+
+    window.addEventListener('auth:logout', handleLogout);
+    return () => window.removeEventListener('auth:logout', handleLogout);
   }, []);
 
   const login = (newTokens: AuthTokens, newUser: User) => {
