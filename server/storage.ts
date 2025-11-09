@@ -293,6 +293,7 @@ export interface IStorage {
   // Admin verification operations
   getPendingDoctorVerifications(): Promise<Array<User & { doctorProfile?: DoctorProfile }>>;
   verifyDoctorLicense(userId: string, verified: boolean, notes: string, verifiedBy: string): Promise<DoctorProfile | undefined>;
+  verifyDoctorApplication(userId: string, verified: boolean, notes: string, verifiedBy: string): Promise<{ user: User | undefined; doctorProfile: DoctorProfile | undefined }>;
   
   // Two-Factor Authentication operations
   get2FASettings(userId: string): Promise<TwoFactorAuth | undefined>;
@@ -1395,6 +1396,42 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     return updated;
+  }
+
+  // Unified verification method that updates both users and doctorProfiles
+  async verifyDoctorApplication(
+    userId: string, 
+    verified: boolean, 
+    notes: string, 
+    verifiedBy: string
+  ): Promise<{ user: User | undefined; doctorProfile: DoctorProfile | undefined }> {
+    // Start a transaction to update both tables atomically
+    const now = new Date();
+    
+    // Update users table (authorization control)
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        adminVerified: verified,
+        adminVerifiedAt: now,
+        adminVerifiedBy: verifiedBy,
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    // Update doctorProfiles table (compliance evidencing)
+    const [updatedProfile] = await db
+      .update(doctorProfiles)
+      .set({
+        licenseVerified: verified,
+        verificationNotes: notes,
+        verifiedBy,
+        verifiedAt: now,
+      })
+      .where(eq(doctorProfiles.userId, userId))
+      .returning();
+
+    return { user: updatedUser, doctorProfile: updatedProfile };
   }
 
   // Two-Factor Authentication operations

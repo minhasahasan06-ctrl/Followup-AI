@@ -2144,11 +2144,25 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     try {
       const { id } = req.params;
       const { notes } = req.body;
-      const verifiedDoctor = await storage.verifyDoctorLicense(id, true, notes, req.user!.id);
-      if (!verifiedDoctor) {
+      const adminUserId = req.userId;
+      
+      // Get doctor info first
+      const doctor = await storage.getUser(id);
+      if (!doctor || doctor.role !== 'doctor') {
         return res.status(404).json({ message: "Doctor not found" });
       }
-      res.json({ success: true, doctor: verifiedDoctor });
+      
+      // Verify using new unified method
+      const result = await storage.verifyDoctorApplication(id, true, notes || 'Approved by admin', adminUserId);
+      if (!result.user) {
+        return res.status(404).json({ message: "Failed to verify doctor" });
+      }
+      
+      // Send approval email notification
+      const { sendDoctorApprovedEmail } = await import('./awsSES');
+      await sendDoctorApprovedEmail(doctor.email, doctor.firstName).catch(console.error);
+      
+      res.json({ success: true, user: result.user, doctorProfile: result.doctorProfile });
     } catch (error) {
       console.error("Error verifying doctor:", error);
       res.status(500).json({ message: "Failed to verify doctor" });
@@ -2160,11 +2174,25 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     try {
       const { id } = req.params;
       const { reason } = req.body;
-      const rejectedDoctor = await storage.verifyDoctorLicense(id, false, reason, req.user!.id);
-      if (!rejectedDoctor) {
+      const adminUserId = req.userId;
+      
+      // Get doctor info first
+      const doctor = await storage.getUser(id);
+      if (!doctor || doctor.role !== 'doctor') {
         return res.status(404).json({ message: "Doctor not found" });
       }
-      res.json({ success: true, doctor: rejectedDoctor });
+      
+      // Reject using new unified method (verified = false)
+      const result = await storage.verifyDoctorApplication(id, false, reason || 'Application rejected', adminUserId);
+      if (!result.user) {
+        return res.status(404).json({ message: "Failed to reject doctor" });
+      }
+      
+      // Send rejection email notification
+      const { sendDoctorRejectedEmail } = await import('./awsSES');
+      await sendDoctorRejectedEmail(doctor.email, doctor.firstName, reason || 'Please contact our verification team for more information.').catch(console.error);
+      
+      res.json({ success: true, user: result.user, doctorProfile: result.doctorProfile });
     } catch (error) {
       console.error("Error rejecting doctor:", error);
       res.status(500).json({ message: "Failed to reject doctor" });
