@@ -131,6 +131,7 @@ class MetadataStorage {
     return { valid: false };
   }
 
+
   getPhoneNumber(email: string): string | null {
     const data = this.phoneVerification.get(email);
     return data?.phoneNumber || null;
@@ -158,6 +159,7 @@ class MetadataStorage {
     }
 
     const valid = await bcrypt.compare(code, data.hashedCode);
+
     if (valid) {
       this.emailVerification.delete(email);
       return { valid: true };
