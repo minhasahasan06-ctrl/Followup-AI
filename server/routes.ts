@@ -80,6 +80,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Debug endpoint to check Cognito email configuration
+  app.get('/api/debug/cognito-email-config', async (req, res) => {
+    try {
+      const schema = await describeUserPoolSchema();
+      const emailConfig = schema.emailConfiguration;
+      
+      const diagnostics = {
+        emailSendingAccount: emailConfig.emailSendingAccount,
+        sourceArn: emailConfig.sourceArn,
+        from: emailConfig.from,
+        replyToEmailAddress: emailConfig.replyToEmailAddress,
+        configurationSet: emailConfig.configurationSet,
+        recommendations: [] as string[],
+      };
+      
+      // Add recommendations based on configuration
+      if (emailConfig.emailSendingAccount === 'COGNITO_DEFAULT') {
+        diagnostics.recommendations.push(
+          'Cognito is using its default email service. This has limitations:',
+          '- Only works in sandbox mode (verified emails only)',
+          '- Limited email sending capacity',
+          '- Consider configuring SES for production use'
+        );
+      } else if (emailConfig.emailSendingAccount === 'DEVELOPER') {
+        if (!emailConfig.sourceArn) {
+          diagnostics.recommendations.push(
+            'SES is configured but SourceArn is missing. Emails may not be sent properly.'
+          );
+        } else {
+          diagnostics.recommendations.push(
+            'SES is configured. Ensure the SES identity (email/domain) is verified in AWS SES console.'
+          );
+        }
+      }
+      
+      if (!emailConfig.from) {
+        diagnostics.recommendations.push(
+          'No "From" email address configured. Cognito may use a default address.'
+        );
+      }
+      
+      res.json(diagnostics);
+    } catch (error: any) {
+      console.error('Error checking Cognito email config:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
   // Patient Signup
   app.post('/api/auth/signup/patient', async (req, res) => {
     try {
@@ -105,6 +153,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ehrImportMethod,
         ehrPlatform,
       });
+      
+      // Explicitly resend confirmation code to ensure email is sent
+      // This helps if Cognito's automatic email sending failed
+      try {
+        await resendConfirmationCode(email, cognitoUsername);
+        console.log(`[AUTH] Confirmation code resent for patient signup: ${email}`);
+      } catch (resendError: any) {
+        console.error(`[AUTH] Failed to resend confirmation code for ${email}:`, resendError);
+        // Don't fail the signup if resend fails - Cognito may have already sent it
+      }
       
       res.json({ message: "Signup successful. Please check your email for verification code." });
     } catch (error: any) {
@@ -176,6 +234,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         googleDriveApplicationUrl: googleDriveUrl,
       });
       
+      // Explicitly resend confirmation code to ensure email is sent
+      // This helps if Cognito's automatic email sending failed
+      try {
+        await resendConfirmationCode(email, cognitoUsername);
+        console.log(`[AUTH] Confirmation code resent for doctor signup: ${email}`);
+      } catch (resendError: any) {
+        console.error(`[AUTH] Failed to resend confirmation code for ${email}:`, resendError);
+        // Don't fail the signup if resend fails - Cognito may have already sent it
+      }
+      
       res.json({ message: "Application submitted successfully. Please check your email for verification code. Your application will be reviewed by our team." });
     } catch (error: any) {
       console.error("Doctor signup error:", error);
@@ -195,13 +263,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email and verification code are required" });
       }
       
-      // Verify email in Cognito
-      await confirmSignUp(email, code);
-      
-      // Get user metadata to get phone number
+      // Get user metadata to retrieve the Cognito username
       const metadata = metadataStorage.getUserMetadata(email);
-      if (!metadata || !metadata.phoneNumber) {
+      if (!metadata) {
         return res.status(400).json({ message: "No signup data found. Please sign up again." });
+      }
+      
+      const cognitoUsername = metadata.cognitoUsername;
+      
+      // Verify email in Cognito (use stored username if available)
+      await confirmSignUp(email, code, cognitoUsername);
+      
+      // Get phone number from metadata
+      if (!metadata.phoneNumber) {
+        return res.status(400).json({ message: "No phone number found. Please sign up again." });
       }
       
       // Send SMS verification code (Step 2)
@@ -314,7 +389,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email is required" });
       }
       
-      await resendConfirmationCode(email);
+      // Get user metadata to retrieve the Cognito username
+      const metadata = metadataStorage.getUserMetadata(email);
+      const cognitoUsername = metadata?.cognitoUsername;
+      
+      await resendConfirmationCode(email, cognitoUsername);
       
       res.json({ message: "Verification code resent. Please check your email." });
     } catch (error: any) {

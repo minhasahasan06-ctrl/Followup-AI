@@ -178,33 +178,79 @@ export async function signUp(
     ],
   });
 
-  const response = await cognitoClient.send(command);
-  return { ...response, username }; // Return username for metadata storage
+  try {
+    const response = await cognitoClient.send(command);
+    console.log(`[COGNITO] User signed up successfully: ${email} (username: ${username}, sub: ${response.UserSub})`);
+    
+    // Log code delivery details if available
+    if (response.CodeDeliveryDetails) {
+      console.log(`[COGNITO] Code delivery details:`, {
+        deliveryMedium: response.CodeDeliveryDetails.DeliveryMedium,
+        destination: response.CodeDeliveryDetails.Destination,
+        attributeName: response.CodeDeliveryDetails.AttributeName,
+      });
+    } else {
+      console.warn(`[COGNITO] No code delivery details in signup response for ${email}. Email may not be configured properly.`);
+    }
+    
+    return { ...response, username }; // Return username for metadata storage
+  } catch (error: any) {
+    console.error(`[COGNITO] Error during signup for ${email}:`, error);
+    throw error;
+  }
 }
 
 // Confirm sign up with verification code
-export async function confirmSignUp(email: string, code: string) {
+export async function confirmSignUp(email: string, code: string, username?: string) {
+  // Use provided username or fallback to email (for email alias configuration)
+  const cognitoUsername = username || email;
+  
   const command = new ConfirmSignUpCommand({
     ClientId: CLIENT_ID,
-    Username: email,
+    Username: cognitoUsername,
     ConfirmationCode: code,
-    SecretHash: computeSecretHash(email),
+    SecretHash: computeSecretHash(cognitoUsername),
   });
 
-  const response = await cognitoClient.send(command);
-  return response;
+  try {
+    const response = await cognitoClient.send(command);
+    console.log(`[COGNITO] Email confirmed successfully for ${email} (username: ${cognitoUsername})`);
+    return response;
+  } catch (error: any) {
+    console.error(`[COGNITO] Error confirming signup for ${email} (username: ${cognitoUsername}):`, error);
+    throw error;
+  }
 }
 
 // Resend verification code
-export async function resendConfirmationCode(email: string) {
+export async function resendConfirmationCode(email: string, username?: string) {
+  // Use provided username or fallback to email (for email alias configuration)
+  const cognitoUsername = username || email;
+  
   const command = new ResendConfirmationCodeCommand({
     ClientId: CLIENT_ID,
-    Username: email,
-    SecretHash: computeSecretHash(email),
+    Username: cognitoUsername,
+    SecretHash: computeSecretHash(cognitoUsername),
   });
 
-  const response = await cognitoClient.send(command);
-  return response;
+  try {
+    const response = await cognitoClient.send(command);
+    console.log(`[COGNITO] Confirmation code resent to ${email} (username: ${cognitoUsername})`);
+    
+    // Log code delivery details if available
+    if (response.CodeDeliveryDetails) {
+      console.log(`[COGNITO] Code delivery details:`, {
+        deliveryMedium: response.CodeDeliveryDetails.DeliveryMedium,
+        destination: response.CodeDeliveryDetails.Destination,
+        attributeName: response.CodeDeliveryDetails.AttributeName,
+      });
+    }
+    
+    return response;
+  } catch (error: any) {
+    console.error(`[COGNITO] Error resending confirmation code for ${email} (username: ${cognitoUsername}):`, error);
+    throw error;
+  }
 }
 
 // Sign in user
