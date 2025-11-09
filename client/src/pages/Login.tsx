@@ -8,14 +8,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Stethoscope } from "lucide-react";
+import { Stethoscope, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
-import { queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/contexts/AuthContext";
+import api from "@/lib/api";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(1, "Password is required"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   rememberMe: z.boolean().default(false),
 });
 
@@ -24,7 +26,9 @@ type LoginFormData = z.infer<typeof loginSchema>;
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { login } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
 
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -37,42 +41,33 @@ export default function Login() {
 
   const onSubmit = async (data: LoginFormData) => {
     setIsSubmitting(true);
+    setNeedsVerification(false);
+    
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include", // ✅ CRITICAL: Include cookies for session
-        body: JSON.stringify(data),
+      const response = await api.post("/auth/login", {
+        email: data.email,
+        password: data.password,
       });
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || "Login failed");
-      }
+      const { tokens, user } = response.data;
 
       toast({
         title: "Login successful",
         description: "Welcome back!",
       });
 
-      // Refresh auth state before redirecting
-      await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      await queryClient.fetchQuery({ queryKey: ["/api/auth/user"] });
-
-      // Redirect based on user role to authenticated routes
-      const role = result?.user?.role as string | undefined;
-      if (role === "doctor") {
-        setLocation("/");
-      } else {
-        setLocation("/");
-      }
+      login(tokens, user);
+      setLocation("/");
     } catch (error: any) {
+      const errorMessage = error.response?.data?.message || error.message;
+      
+      if (errorMessage.includes("verify your email")) {
+        setNeedsVerification(true);
+      }
+      
       toast({
         title: "Login failed",
-        description: error.message || "Invalid email or password",
+        description: errorMessage || "Invalid email or password",
         variant: "destructive",
       });
     } finally {

@@ -7,8 +7,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useAuth } from "@/hooks/useAuth";
-import { isUnauthorizedError } from "@/lib/authUtils";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import DoctorPortal from "@/pages/DoctorPortal";
@@ -113,7 +112,7 @@ function AuthenticatedApp() {
   };
 
   // Public routes that don't require auth
-  const publicRoutes = ["/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog"];
+  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog"];
   const isPublicRoute = publicRoutes.includes(location) || (!user && location === "/");
 
   // Show loading while checking auth
@@ -132,6 +131,12 @@ function AuthenticatedApp() {
   if (isPublicRoute) {
     return (
       <Switch>
+        <Route path="/login" component={Login} />
+        <Route path="/signup/doctor" component={DoctorSignup} />
+        <Route path="/signup/patient" component={PatientSignup} />
+        <Route path="/verify-email" component={VerifyEmail} />
+        <Route path="/forgot-password" component={ForgotPassword} />
+        <Route path="/reset-password" component={ResetPassword} />
         <Route path="/doctor-portal" component={DoctorPortal} />
         <Route path="/coming-soon" component={ComingSoon} />
         <Route path="/terms" component={Terms} />
@@ -145,21 +150,16 @@ function AuthenticatedApp() {
         <Route path="/documentation" component={Documentation} />
         <Route path="/api" component={API} />
         <Route path="/blog" component={Blog} />
+        <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>
     );
   }
   
-  // Not authenticated - redirect to Replit Auth login
+  // Not authenticated - redirect to login
   if (!user) {
-    window.location.href = "/api/login";
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
-          <p className="text-muted-foreground">Redirecting to login...</p>
-        </div>
-      </div>
-    );
+    window.location.href = "/login";
+    return null;
   }
 
   const isDoctor = user.role === "doctor";
@@ -187,7 +187,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          <AuthenticatedApp />
+          <AuthProvider>
+            <AuthenticatedApp />
+          </AuthProvider>
           <Toaster />
         </TooltipProvider>
       </ThemeProvider>
