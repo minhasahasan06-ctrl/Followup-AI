@@ -81,10 +81,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sign up in Cognito
       const signUpResponse = await signUp(email, password, firstName, lastName, 'patient');
       const cognitoSub = signUpResponse.UserSub!;
+      const cognitoUsername = signUpResponse.username!;
       
       // Store phone number temporarily (will be verified after email)
       metadataStorage.setUserMetadata(email, {
         cognitoSub,
+        cognitoUsername,
         firstName,
         lastName,
         phoneNumber,
@@ -116,6 +118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sign up in Cognito
       const signUpResponse = await signUp(email, password, firstName, lastName, 'doctor');
       const cognitoSub = signUpResponse.UserSub!;
+      const cognitoUsername = signUpResponse.username!;
       
       // Upload KYC photo if provided
       let kycPhotoUrl: string | undefined;
@@ -150,6 +153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Store doctor data temporarily
       metadataStorage.setUserMetadata(email, {
         cognitoSub,
+        cognitoUsername,
         firstName,
         lastName,
         phoneNumber,
