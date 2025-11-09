@@ -9,6 +9,7 @@ import {
   AdminUpdateUserAttributesCommand,
   AdminSetUserPasswordCommand,
   GetUserCommand,
+  DescribeUserPoolCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
@@ -161,20 +162,18 @@ export async function signUp(
     Password: password,
     SecretHash: computeSecretHash(username),
     UserAttributes: [
+      // Required standard attributes (verified via describeUserPoolSchema)
       { Name: "email", Value: email },
+      { Name: "name", Value: `${firstName} ${lastName}` },
+      { Name: "phone_number", Value: phoneNumber || "+10000000000" },
+      { Name: "birthdate", Value: "1990-01-01" }, // Must be exactly 10 chars (YYYY-MM-DD)
+      { Name: "gender", Value: "prefer not to say" },
+      { Name: "zoneinfo", Value: "America/Los_Angeles" },
+      { Name: "profile", Value: "https://followupai.com/profile/pending" },
+      { Name: "address", Value: "United States" },
+      // Optional but recommended
       { Name: "given_name", Value: firstName },
       { Name: "family_name", Value: lastName },
-      { Name: "name", Value: `${firstName} ${lastName}` },
-      // Standard OIDC attributes
-      { Name: "phone_number", Value: phoneNumber || "+10000000000" },
-      { Name: "birthdate", Value: "1990-01-01" },
-      { Name: "gender", Value: "Not specified" },
-      { Name: "zoneinfo", Value: "UTC" },
-      // Custom attributes required by this specific Cognito User Pool (error shows these are required)
-      { Name: "custom:profileUrl", Value: "https://example.com/profile" },
-      { Name: "custom:addresses", Value: "US" },
-      { Name: "custom:phoneNumbers", Value: phoneNumber || "+10000000000" },
-      { Name: "custom:timezone", Value: "America/Los_Angeles" },
       // Note: Role is tracked in our database, not in Cognito
     ],
   });
@@ -262,4 +261,38 @@ export async function getUserInfo(accessToken: string) {
 
   const response = await cognitoClient.send(command);
   return response;
+}
+
+// Describe User Pool schema (for debugging attribute requirements)
+export async function describeUserPoolSchema() {
+  const command = new DescribeUserPoolCommand({
+    UserPoolId: USER_POOL_ID,
+  });
+
+  const response = await cognitoClient.send(command);
+  
+  // Extract schema attributes with details
+  const schemaAttributes = response.UserPool?.SchemaAttributes || [];
+  const customAttributes = schemaAttributes.filter(attr => attr.Name?.startsWith('custom:'));
+  const standardAttributes = schemaAttributes.filter(attr => !attr.Name?.startsWith('custom:'));
+  
+  return {
+    userPoolId: USER_POOL_ID,
+    standardAttributes: standardAttributes.map(attr => ({
+      name: attr.Name,
+      attributeDataType: attr.AttributeDataType,
+      required: attr.Required,
+      mutable: attr.Mutable,
+      stringAttributeConstraints: attr.StringAttributeConstraints,
+      numberAttributeConstraints: attr.NumberAttributeConstraints,
+    })),
+    customAttributes: customAttributes.map(attr => ({
+      name: attr.Name,
+      attributeDataType: attr.AttributeDataType,
+      required: attr.Required,
+      mutable: attr.Mutable,
+      stringAttributeConstraints: attr.StringAttributeConstraints,
+      numberAttributeConstraints: attr.NumberAttributeConstraints,
+    })),
+  };
 }

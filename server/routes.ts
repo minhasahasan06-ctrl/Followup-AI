@@ -65,9 +65,20 @@ const medicalDocUpload = multer({
 export async function registerRoutes(app: Express): Promise<Server> {
   // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
   
-  const { signUp, signIn, confirmSignUp, resendConfirmationCode, forgotPassword, confirmForgotPassword, getUserInfo } = await import('./cognitoAuth');
+  const { signUp, signIn, confirmSignUp, resendConfirmationCode, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
   const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
   const { metadataStorage } = await import('./metadataStorage');
+  
+  // Debug endpoint to inspect Cognito User Pool schema
+  app.get('/api/debug/cognito-schema', async (req, res) => {
+    try {
+      const schema = await describeUserPoolSchema();
+      res.json(schema);
+    } catch (error: any) {
+      console.error('Error describing Cognito schema:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
   
   // Patient Signup
   app.post('/api/auth/signup/patient', async (req, res) => {
