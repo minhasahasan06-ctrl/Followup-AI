@@ -62,7 +62,7 @@ class MetadataStorage {
         console.log(`[METADATA] Purged expired phone verification for ${email}`);
       }
     }
-    
+
     for (const [email, data] of this.emailVerification.entries()) {
       if (data.expiresAt < now) {
         this.emailVerification.delete(email);
@@ -94,6 +94,8 @@ class MetadataStorage {
 
   deleteUserMetadata(email: string) {
     this.userMetadata.delete(email);
+    this.phoneVerification.delete(email);
+    this.emailVerification.delete(email);
     console.log(`[METADATA] Deleted metadata for ${email}`);
   }
 
@@ -150,25 +152,24 @@ class MetadataStorage {
     if (!data) {
       return { valid: false };
     }
-    
+
     if (data.expiresAt < Date.now()) {
       this.emailVerification.delete(email);
       return { valid: false };
     }
-    
+
     const valid = await bcrypt.compare(code, data.hashedCode);
-    
+
     if (valid) {
       this.emailVerification.delete(email);
       return { valid: true };
     }
-    
+
     return { valid: false };
   }
 
-  deleteEmailVerification(email: string) {
+  clearEmailVerification(email: string) {
     this.emailVerification.delete(email);
-    console.log(`[METADATA] Deleted email verification for ${email}`);
   }
 }
 
