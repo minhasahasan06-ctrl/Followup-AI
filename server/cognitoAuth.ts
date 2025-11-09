@@ -276,6 +276,22 @@ export async function resendConfirmationCode(email: string, username?: string) {
   }
 }
 
+export async function adminConfirmSignUp(username: string) {
+  const command = new AdminConfirmSignUpCommand({
+    UserPoolId: USER_POOL_ID,
+    Username: username,
+  });
+
+  try {
+    const response = await cognitoClient.send(command);
+    console.log(`[COGNITO] Admin confirmed signup for username: ${username}`);
+    return response;
+  } catch (error: any) {
+    console.error(`[COGNITO] Error admin confirming signup for username ${username}:`, error);
+    throw error;
+  }
+}
+
 // Sign in user
 export async function signIn(email: string, password: string) {
   const command = new InitiateAuthCommand({
