@@ -25,11 +25,23 @@ interface PhoneVerificationMetadata {
   expiresAt: number;
 }
 
+interface EmailVerificationMetadata {
+  email: string;
+  hashedCode: string;
+  expiresAt: number;
+  lastSentAt: number;
+  attemptsRemaining: number;
+}
+
 class MetadataStorage {
   private userMetadata: Map<string, UserMetadata> = new Map();
   private phoneVerification: Map<string, PhoneVerificationMetadata> = new Map();
+  private emailVerification: Map<string, EmailVerificationMetadata> = new Map();
   private readonly TTL = 24 * 60 * 60 * 1000; // 24 hours
   private readonly PHONE_CODE_TTL = 15 * 60 * 1000; // 15 minutes
+  private readonly EMAIL_CODE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+  private readonly EMAIL_RESEND_COOLDOWN = 60 * 1000; // 60 seconds
+  private readonly EMAIL_MAX_ATTEMPTS = 5;
 
   constructor() {
     // Cleanup expired data every hour
@@ -50,6 +62,13 @@ class MetadataStorage {
       if (data.expiresAt < now) {
         this.phoneVerification.delete(email);
         console.log(`[METADATA] Purged expired phone verification for ${email}`);
+      }
+    }
+
+    for (const [email, data] of this.emailVerification.entries()) {
+      if (data.expiresAt < now) {
+        this.emailVerification.delete(email);
+        console.log(`[METADATA] Purged expired email verification for ${email}`);
       }
     }
   }
@@ -115,6 +134,71 @@ class MetadataStorage {
   getPhoneNumber(email: string): string | null {
     const data = this.phoneVerification.get(email);
     return data?.phoneNumber || null;
+  }
+
+  async setEmailVerification(email: string, code: string) {
+    const hashedCode = await bcrypt.hash(code, 10);
+    this.emailVerification.set(email, {
+      email,
+      hashedCode,
+      expiresAt: Date.now() + this.EMAIL_CODE_TTL,
+      lastSentAt: Date.now(),
+      attemptsRemaining: this.EMAIL_MAX_ATTEMPTS,
+    });
+    console.log(`[METADATA] Stored email verification for ${email}`);
+  }
+
+  getEmailVerificationStatus(email: string): { exists: boolean; retryAfterMs?: number } {
+    const data = this.emailVerification.get(email);
+    if (!data) {
+      return { exists: false };
+    }
+
+    const elapsed = Date.now() - data.lastSentAt;
+    if (elapsed < this.EMAIL_RESEND_COOLDOWN) {
+      return { exists: true, retryAfterMs: this.EMAIL_RESEND_COOLDOWN - elapsed };
+    }
+
+    return { exists: true };
+  }
+
+  async verifyEmailCode(email: string, code: string): Promise<{
+    valid: boolean;
+    reason?: "not_found" | "expired" | "invalid" | "attempts_exceeded";
+    attemptsRemaining?: number;
+  }> {
+    const data = this.emailVerification.get(email);
+    if (!data) {
+      return { valid: false, reason: "not_found" };
+    }
+
+    if (data.expiresAt < Date.now()) {
+      this.emailVerification.delete(email);
+      return { valid: false, reason: "expired" };
+    }
+
+    const isValid = await bcrypt.compare(code, data.hashedCode);
+    if (isValid) {
+      this.emailVerification.delete(email);
+      return { valid: true };
+    }
+
+    data.attemptsRemaining -= 1;
+    if (data.attemptsRemaining <= 0) {
+      this.emailVerification.delete(email);
+      return { valid: false, reason: "attempts_exceeded" };
+    }
+
+    this.emailVerification.set(email, data);
+    return {
+      valid: false,
+      reason: "invalid",
+      attemptsRemaining: data.attemptsRemaining,
+    };
+  }
+
+  clearEmailVerification(email: string) {
+    this.emailVerification.delete(email);
   }
 }
 
