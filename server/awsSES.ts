@@ -23,7 +23,7 @@ export async function sendEmail({
   subject,
   htmlBody,
   textBody,
-  from = "noreply@followupai.com", // Replace with your verified SES email
+  from = "t@followupai.io", // Verified SES email
 }: EmailOptions) {
   const recipients = Array.isArray(to) ? to : [to];
 
