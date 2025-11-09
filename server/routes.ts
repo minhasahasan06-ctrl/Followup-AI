@@ -198,7 +198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Store phone verification code (hashed)
-      metadataStorage.setPhoneVerification(email, metadata.phoneNumber, result.code);
+      await metadataStorage.setPhoneVerification(email, metadata.phoneNumber, result.code);
       
       res.json({ 
         message: "Email verified successfully. Please verify your phone number with the SMS code sent to " + metadata.phoneNumber,
@@ -221,7 +221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Verify phone code
-      const phoneVerification = metadataStorage.verifyPhoneCode(email, code);
+      const phoneVerification = await metadataStorage.verifyPhoneCode(email, code);
       if (!phoneVerification.valid) {
         return res.status(400).json({ message: "Invalid or expired verification code" });
       }
