@@ -7,6 +7,7 @@ import {
   ForgotPasswordCommand,
   ConfirmForgotPasswordCommand,
   AdminUpdateUserAttributesCommand,
+  AdminConfirmSignUpCommand,
   AdminSetUserPasswordCommand,
   AdminConfirmSignUpCommand,
   GetUserCommand,
@@ -233,17 +234,35 @@ export async function adminConfirmSignUp(username: string) {
   });
 
   try {
-    const response = await cognitoClient.send(command);
+    await cognitoClient.send(command);
     console.log(`[COGNITO] User confirmed via admin for ${username}`);
-    return response;
   } catch (error: any) {
     // If user is already confirmed, that's fine
     if (error.name === 'NotAuthorizedException' && error.message?.includes('already confirmed')) {
       console.log(`[COGNITO] User already confirmed for ${username}`);
-      return { $metadata: {} };
+    } else {
+      console.error(`[COGNITO] Error admin confirming signup for ${username}:`, error);
+      throw error;
     }
-    console.error(`[COGNITO] Error admin confirming signup for ${username}:`, error);
-    throw error;
+  }
+
+  // Set email_verified attribute
+  try {
+    await cognitoClient.send(
+      new AdminUpdateUserAttributesCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: username,
+        UserAttributes: [
+          {
+            Name: "email_verified",
+            Value: "true",
+          },
+        ],
+      })
+    );
+  } catch (error: any) {
+    console.error(`[COGNITO] Error setting email_verified attribute for ${username}:`, error);
+    // Don't throw - email verification is already handled
   }
 }
 

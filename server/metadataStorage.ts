@@ -31,6 +31,8 @@ interface EmailVerificationMetadata {
   email: string;
   hashedCode: string;
   expiresAt: number;
+  lastSentAt: number;
+  attemptsRemaining: number;
 }
 
 class MetadataStorage {
@@ -41,6 +43,8 @@ class MetadataStorage {
   private readonly EMAIL_CODE_TTL = 24 * 60 * 60 * 1000; // 24 hours
   private readonly PHONE_CODE_TTL = 15 * 60 * 1000; // 15 minutes
   private readonly EMAIL_CODE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+  private readonly EMAIL_RESEND_COOLDOWN = 60 * 1000; // 60 seconds
+  private readonly EMAIL_MAX_ATTEMPTS = 5;
 
   constructor() {
     // Cleanup expired data every hour
@@ -145,29 +149,59 @@ class MetadataStorage {
       email,
       hashedCode,
       expiresAt: Date.now() + this.EMAIL_CODE_TTL,
+      lastSentAt: Date.now(),
+      attemptsRemaining: this.EMAIL_MAX_ATTEMPTS,
     });
     console.log(`[METADATA] Stored email verification for ${email}`);
   }
 
-  async verifyEmailCode(email: string, code: string): Promise<{ valid: boolean }> {
+  getEmailVerificationStatus(email: string): { exists: boolean; retryAfterMs?: number } {
     const data = this.emailVerification.get(email);
     if (!data) {
-      return { valid: false };
+      return { exists: false };
+    }
+
+    const elapsed = Date.now() - data.lastSentAt;
+    if (elapsed < this.EMAIL_RESEND_COOLDOWN) {
+      return { exists: true, retryAfterMs: this.EMAIL_RESEND_COOLDOWN - elapsed };
+    }
+
+    return { exists: true };
+  }
+
+  async verifyEmailCode(email: string, code: string): Promise<{
+    valid: boolean;
+    reason?: "not_found" | "expired" | "invalid" | "attempts_exceeded";
+    attemptsRemaining?: number;
+  }> {
+    const data = this.emailVerification.get(email);
+    if (!data) {
+      return { valid: false, reason: "not_found" };
     }
 
     if (data.expiresAt < Date.now()) {
       this.emailVerification.delete(email);
-      return { valid: false };
+      return { valid: false, reason: "expired" };
     }
 
-    const valid = await bcrypt.compare(code, data.hashedCode);
-
-    if (valid) {
+    const isValid = await bcrypt.compare(code, data.hashedCode);
+    if (isValid) {
       this.emailVerification.delete(email);
       return { valid: true };
     }
 
-    return { valid: false };
+    data.attemptsRemaining -= 1;
+    if (data.attemptsRemaining <= 0) {
+      this.emailVerification.delete(email);
+      return { valid: false, reason: "attempts_exceeded" };
+    }
+
+    this.emailVerification.set(email, data);
+    return {
+      valid: false,
+      reason: "invalid",
+      attemptsRemaining: data.attemptsRemaining,
+    };
   }
 
   clearEmailVerification(email: string) {
