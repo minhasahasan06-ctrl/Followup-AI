@@ -151,11 +151,14 @@ export async function signUp(
   lastName: string,
   role: "patient" | "doctor"
 ) {
+  // Generate unique username (Cognito requires non-email username when email alias is configured)
+  const username = crypto.randomUUID();
+  
   const command = new SignUpCommand({
     ClientId: CLIENT_ID,
-    Username: email,
+    Username: username,
     Password: password,
-    SecretHash: computeSecretHash(email),
+    SecretHash: computeSecretHash(username),
     UserAttributes: [
       { Name: "email", Value: email },
       { Name: "given_name", Value: firstName },
@@ -165,7 +168,7 @@ export async function signUp(
   });
 
   const response = await cognitoClient.send(command);
-  return response;
+  return { ...response, username }; // Return username for metadata storage
 }
 
 // Confirm sign up with verification code

@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 interface UserMetadata {
   email: string;
   cognitoSub: string;
+  cognitoUsername: string;
   firstName: string;
   lastName: string;
   phoneNumber: string;
