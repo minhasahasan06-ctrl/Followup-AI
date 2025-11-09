@@ -20,6 +20,8 @@ import crypto from "crypto";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
 
+const generateVerificationCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+
 // Configure multer for file uploads (KYC photos)
 const upload = multer({
   storage: multer.diskStorage({
@@ -69,7 +71,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
   
-  const { signUp, signIn, confirmSignUp, resendConfirmationCode, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
+  const { signUp, signIn, adminConfirmSignUp, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
   const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
   const { metadataStorage } = await import('./metadataStorage');
   
@@ -156,17 +158,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: 'patient',
         ehrImportMethod,
         ehrPlatform,
-      });
-      
-      // Explicitly resend confirmation code to ensure email is sent
-      // This helps if Cognito's automatic email sending failed
-      try {
-        await resendConfirmationCode(email, cognitoUsername);
-        console.log(`[AUTH] Confirmation code resent for patient signup: ${email}`);
-      } catch (resendError: any) {
-        console.error(`[AUTH] Failed to resend confirmation code for ${email}:`, resendError);
-        // Don't fail the signup if resend fails - Cognito may have already sent it
-      }
+        });
+
+        const emailCode = generateVerificationCode();
+        await metadataStorage.setEmailVerificationCode(email, emailCode);
+
+        try {
+          await sendVerificationEmail(email, emailCode);
+          console.log(`[AUTH] Custom verification email sent for patient signup: ${email}`);
+        } catch (emailError: any) {
+          console.error(`[AUTH] Failed to send verification email for ${email}:`, emailError);
+          metadataStorage.clearEmailVerificationCode(email);
+          return res.status(500).json({ message: "Signup succeeded, but we couldn't send the verification email. Please try again." });
+        }
       
       res.json({ message: "Signup successful. Please check your email for verification code." });
     } catch (error: any) {
@@ -238,15 +242,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         googleDriveApplicationUrl: googleDriveUrl,
       });
       
-      // Explicitly resend confirmation code to ensure email is sent
-      // This helps if Cognito's automatic email sending failed
-      try {
-        await resendConfirmationCode(email, cognitoUsername);
-        console.log(`[AUTH] Confirmation code resent for doctor signup: ${email}`);
-      } catch (resendError: any) {
-        console.error(`[AUTH] Failed to resend confirmation code for ${email}:`, resendError);
-        // Don't fail the signup if resend fails - Cognito may have already sent it
-      }
+        const emailCode = generateVerificationCode();
+        await metadataStorage.setEmailVerificationCode(email, emailCode);
+
+        try {
+          await sendVerificationEmail(email, emailCode);
+          console.log(`[AUTH] Custom verification email sent for doctor signup: ${email}`);
+        } catch (emailError: any) {
+          console.error(`[AUTH] Failed to send verification email for doctor ${email}:`, emailError);
+          metadataStorage.clearEmailVerificationCode(email);
+          return res.status(500).json({ message: "Application received, but we couldn't send the verification email. Please try again." });
+        }
       
       res.json({ message: "Application submitted successfully. Please check your email for verification code. Your application will be reviewed by our team." });
     } catch (error: any) {
@@ -275,8 +281,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const cognitoUsername = metadata.cognitoUsername;
       
-      // Verify email in Cognito (use stored username if available)
-      await confirmSignUp(email, code, cognitoUsername);
+        const verificationResult = await metadataStorage.verifyEmailCode(email, code);
+        if (!verificationResult.valid) {
+          let message = "Invalid verification code";
+          if (verificationResult.reason === 'expired') {
+            message = "Verification code expired. Please request a new code.";
+          } else if (verificationResult.reason === 'not_found') {
+            message = "We couldn't find a verification request for this email. Please sign up again or request a new code.";
+          }
+          return res.status(400).json({ message });
+        }
+
+        try {
+          await adminConfirmSignUp(cognitoUsername);
+        } catch (confirmError: any) {
+          if (confirmError.name === 'NotAuthorizedException') {
+            console.warn(`[AUTH] Tried to confirm already confirmed user ${email}`);
+          } else if (confirmError.name === 'UserNotFoundException') {
+            console.error("Admin confirm signup error - user not found:", confirmError);
+            return res.status(400).json({ message: "We couldn't locate your account in the authentication service. Please sign up again." });
+          } else {
+            console.error("Admin confirm signup error:", confirmError);
+            throw confirmError;
+          }
+        }
       
       // Get phone number from metadata
       if (!metadata.phoneNumber) {
@@ -361,7 +389,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Create user in database
-      await storage.upsertUser(userData);
+        await storage.upsertUser(userData);
+
+        if (metadata.role === 'patient' && userData.email) {
+          try {
+            await sendWelcomeEmail(userData.email, userData.firstName);
+          } catch (welcomeError: any) {
+            console.error(`[AUTH] Failed to send welcome email to ${userData.email}:`, welcomeError);
+          }
+        }
       
       // Clean up metadata
       metadataStorage.deleteUserMetadata(email);
@@ -393,13 +429,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email is required" });
       }
       
-      // Get user metadata to retrieve the Cognito username
-      const metadata = metadataStorage.getUserMetadata(email);
-      const cognitoUsername = metadata?.cognitoUsername;
-      
-      await resendConfirmationCode(email, cognitoUsername);
-      
-      res.json({ message: "Verification code resent. Please check your email." });
+        const metadata = metadataStorage.getUserMetadata(email);
+        if (!metadata) {
+          return res.status(400).json({ message: "No signup data found for this email. Please sign up again." });
+        }
+
+        const emailCode = generateVerificationCode();
+        await metadataStorage.setEmailVerificationCode(email, emailCode);
+
+        try {
+          await sendVerificationEmail(email, emailCode);
+          console.log(`[AUTH] Resent custom verification email to ${email}`);
+        } catch (emailError: any) {
+          console.error(`[AUTH] Failed to resend verification email to ${email}:`, emailError);
+          metadataStorage.clearEmailVerificationCode(email);
+          return res.status(500).json({ message: "Failed to resend verification email. Please try again later." });
+        }
+
+        res.json({ message: "Verification code resent. Please check your email." });
     } catch (error: any) {
       console.error("Resend code error:", error);
       res.status(500).json({ message: error.message || "Failed to resend code" });
