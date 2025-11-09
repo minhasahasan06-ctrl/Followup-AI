@@ -14,11 +14,21 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 import type { JwtPayload } from "jsonwebtoken";
+import crypto from "crypto";
 import { storage } from "./storage";
 
 const REGION = process.env.AWS_COGNITO_REGION!;
 const USER_POOL_ID = process.env.AWS_COGNITO_USER_POOL_ID!;
 const CLIENT_ID = process.env.AWS_COGNITO_CLIENT_ID!;
+const CLIENT_SECRET = process.env.AWS_COGNITO_CLIENT_SECRET!;
+
+// Compute SECRET_HASH for Cognito API calls
+function computeSecretHash(username: string): string {
+  const message = username + CLIENT_ID;
+  const hmac = crypto.createHmac('sha256', CLIENT_SECRET);
+  hmac.update(message);
+  return hmac.digest('base64');
+}
 
 export const cognitoClient = new CognitoIdentityProviderClient({
   region: REGION,
@@ -145,6 +155,7 @@ export async function signUp(
     ClientId: CLIENT_ID,
     Username: email,
     Password: password,
+    SecretHash: computeSecretHash(email),
     UserAttributes: [
       { Name: "email", Value: email },
       { Name: "given_name", Value: firstName },
@@ -163,6 +174,7 @@ export async function confirmSignUp(email: string, code: string) {
     ClientId: CLIENT_ID,
     Username: email,
     ConfirmationCode: code,
+    SecretHash: computeSecretHash(email),
   });
 
   const response = await cognitoClient.send(command);
@@ -174,6 +186,7 @@ export async function resendConfirmationCode(email: string) {
   const command = new ResendConfirmationCodeCommand({
     ClientId: CLIENT_ID,
     Username: email,
+    SecretHash: computeSecretHash(email),
   });
 
   const response = await cognitoClient.send(command);
@@ -188,6 +201,7 @@ export async function signIn(email: string, password: string) {
     AuthParameters: {
       USERNAME: email,
       PASSWORD: password,
+      SECRET_HASH: computeSecretHash(email),
     },
   });
 
@@ -200,6 +214,7 @@ export async function forgotPassword(email: string) {
   const command = new ForgotPasswordCommand({
     ClientId: CLIENT_ID,
     Username: email,
+    SecretHash: computeSecretHash(email),
   });
 
   const response = await cognitoClient.send(command);
@@ -217,6 +232,7 @@ export async function confirmForgotPassword(
     Username: email,
     ConfirmationCode: code,
     Password: newPassword,
+    SecretHash: computeSecretHash(email),
   });
 
   const response = await cognitoClient.send(command);
