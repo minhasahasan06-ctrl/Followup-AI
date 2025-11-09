@@ -11,6 +11,7 @@ import {
   AdminConfirmSignUpCommand,
   GetUserCommand,
   DescribeUserPoolCommand,
+  AdminConfirmSignUpCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
@@ -278,7 +279,7 @@ export async function resendConfirmationCode(email: string, username?: string) {
 }
 
 export async function adminConfirmUser(username: string, email?: string) {
-  const confirmCommand = new AdminConfirmSignUpCommand({
+  const command = new AdminConfirmSignUpCommand({
     UserPoolId: USER_POOL_ID,
     Username: username,
   });
@@ -286,7 +287,7 @@ export async function adminConfirmUser(username: string, email?: string) {
   let alreadyConfirmed = false;
 
   try {
-    await cognitoClient.send(confirmCommand);
+    await cognitoClient.send(command);
   } catch (error: any) {
     if (
       error?.name === "NotAuthorizedException" &&
