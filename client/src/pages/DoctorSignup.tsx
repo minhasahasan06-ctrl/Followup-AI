@@ -23,6 +23,7 @@ const signupSchema = z.object({
   confirmPassword: z.string(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
+  phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number (use international format, e.g., +1234567890)"),
   organization: z.string().min(1, "Organization is required"),
   medicalLicenseNumber: z.string().min(1, "Medical license number is required"),
   licenseCountry: z.string().min(1, "Please select your country"),
@@ -49,6 +50,7 @@ export default function DoctorSignup() {
       confirmPassword: "",
       firstName: "",
       lastName: "",
+      phoneNumber: "",
       organization: "",
       medicalLicenseNumber: "",
       licenseCountry: "",
@@ -64,6 +66,7 @@ export default function DoctorSignup() {
       formData.append("password", data.password);
       formData.append("firstName", data.firstName);
       formData.append("lastName", data.lastName);
+      formData.append("phoneNumber", data.phoneNumber);
       formData.append("organization", data.organization);
       formData.append("medicalLicenseNumber", data.medicalLicenseNumber);
       formData.append("licenseCountry", data.licenseCountry);
@@ -156,6 +159,20 @@ export default function DoctorSignup() {
                     <FormLabel>Email</FormLabel>
                     <FormControl>
                       <Input type="email" placeholder="doctor@hospital.com" {...field} data-testid="input-email" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="phoneNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone Number</FormLabel>
+                    <FormControl>
+                      <Input type="tel" placeholder="+12025551234" {...field} data-testid="input-phone-number" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

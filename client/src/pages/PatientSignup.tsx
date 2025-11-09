@@ -24,6 +24,7 @@ const signupSchema = z.object({
   confirmPassword: z.string(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
+  phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number (use international format, e.g., +1234567890)"),
   ehrImportMethod: z.enum(["manual", "hospital", "platform"], {
     required_error: "Please select how you want to import your medical history",
   }),
@@ -49,6 +50,7 @@ export default function PatientSignup() {
       confirmPassword: "",
       firstName: "",
       lastName: "",
+      phoneNumber: "",
       ehrImportMethod: undefined,
       ehrPlatform: "",
       termsAccepted: false,
@@ -134,6 +136,23 @@ export default function PatientSignup() {
                     <FormControl>
                       <Input type="email" placeholder="patient@example.com" {...field} data-testid="input-email" />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="phoneNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone Number</FormLabel>
+                    <FormControl>
+                      <Input type="tel" placeholder="+12025551234" {...field} data-testid="input-phone-number" />
+                    </FormControl>
+                    <FormDescription>
+                      Include country code (e.g., +1 for US). This will be used for SMS verification.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
