@@ -68,7 +68,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(getSession());
 
   // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
-  const { signUp, signIn, adminConfirmUser, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
+  const { signUp, signIn, confirmSignUp, adminConfirmSignUp, resendConfirmationCode, adminConfirmUser, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
   const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
   const { metadataStorage } = await import('./metadataStorage');
 
@@ -538,7 +538,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cognitoEmail = userInfo.UserAttributes?.find(attr => attr.Name === 'email')?.Value!;
       const firstName = userInfo.UserAttributes?.find(attr => attr.Name === 'given_name')?.Value!;
       const lastName = userInfo.UserAttributes?.find(attr => attr.Name === 'family_name')?.Value!;
-      const roleFromCognito = userInfo.UserAttributes?.find(attr => attr.Name === 'custom:role')?.Value as 'patient' | 'doctor' | undefined;
       const emailVerified = userInfo.UserAttributes?.find(attr => attr.Name === 'email_verified')?.Value === 'true';
       
       // Check if user exists in our database (must have completed phone verification)
@@ -552,7 +551,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const effectiveRole = (roleFromCognito ?? user.role) as 'patient' | 'doctor' | undefined;
+      // Role is stored in local database only (Cognito User Pool has no custom attributes)
+      const effectiveRole = user.role as 'patient' | 'doctor' | undefined;
 
       // Block doctors until admin approval
       if (effectiveRole === 'doctor' && !user.adminVerified) {

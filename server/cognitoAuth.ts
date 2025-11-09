@@ -177,8 +177,7 @@ export async function signUp(
       // Optional but recommended
       { Name: "given_name", Value: firstName },
       { Name: "family_name", Value: lastName },
-      // Persist role as custom attribute for downstream checks
-      { Name: "custom:role", Value: role },
+      // Note: Role is stored in local database, not Cognito (User Pool has no custom attributes)
     ],
   });
 
