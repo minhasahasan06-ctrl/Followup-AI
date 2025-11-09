@@ -30,9 +30,15 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Clear auth and redirect to login
+      // Trigger logout event to clear AuthContext state
+      const event = new CustomEvent('auth:logout');
+      window.dispatchEvent(event);
+      
+      // Clear auth storage
       localStorage.removeItem('authTokens');
       localStorage.removeItem('authUser');
+      
+      // Redirect to login
       window.location.href = '/login';
     }
     return Promise.reject(error);

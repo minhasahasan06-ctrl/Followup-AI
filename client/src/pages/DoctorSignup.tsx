@@ -12,10 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Stethoscope, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+import axios from "axios";
 
 const signupSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
   confirmPassword: z.string(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
@@ -69,29 +73,22 @@ export default function DoctorSignup() {
         formData.append("kycPhoto", selectedFile);
       }
 
-      const response = await fetch("/api/auth/signup/doctor", {
-        method: "POST",
-        credentials: "include", // ✅ Include cookies for session
-        body: formData,
+      const response = await axios.post("/api/auth/signup/doctor", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
       });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || "Signup failed");
-      }
 
       toast({
         title: "Account created successfully!",
-        description: result.message || "Please check your email to verify your account.",
+        description: response.data.message || "Please check your email to verify your account.",
       });
 
-      // Redirect to login after successful signup
-      setTimeout(() => setLocation("/login"), 2000);
+      setTimeout(() => setLocation("/verify-email"), 2000);
     } catch (error: any) {
       toast({
         title: "Signup failed",
-        description: error.message || "An error occurred during signup",
+        description: error.response?.data?.message || "An error occurred during signup",
         variant: "destructive",
       });
     } finally {
