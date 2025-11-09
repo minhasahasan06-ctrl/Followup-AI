@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, isDoctor } from "./replitAuth";
+import { isAuthenticated, isDoctor } from "./cognitoAuth";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
 import { s3Client, textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -63,9 +63,7 @@ const medicalDocUpload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  await setupAuth(app);
-
-  // ============== AUTHENTICATION ROUTES (Replit Auth OIDC) ==============
+  // ============== AUTHENTICATION ROUTES (Cognito) ==============
   
   // Auth routes (/api/login, /api/logout, /api/callback) are set up by setupAuth
   // GET /api/login - redirects to Replit OIDC login
