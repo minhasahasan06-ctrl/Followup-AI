@@ -283,30 +283,54 @@ export async function adminConfirmUser(username: string, email?: string) {
     Username: username,
   });
 
+  let alreadyConfirmed = false;
+
   try {
     await cognitoClient.send(command);
-    console.log(`[COGNITO] Admin confirmed signup for ${username}`);
   } catch (error: any) {
-    console.error(`[COGNITO] Error admin confirming signup for ${username}:`, error);
-    throw error;
+    if (
+      error?.name === "NotAuthorizedException" &&
+      typeof error?.message === "string" &&
+      error.message.includes("Current status is CONFIRMED")
+    ) {
+      alreadyConfirmed = true;
+      console.warn(
+        `[COGNITO] User ${email ? email + " " : ""}(username: ${username}) is already confirmed`
+      );
+    } else {
+      console.error(
+        `[COGNITO] Error admin confirming user ${email ? email + " " : ""}(username: ${username}):`,
+        error
+      );
+      throw error;
+    }
   }
 
-  if (email) {
-    try {
-      const updateCommand = new AdminUpdateUserAttributesCommand({
+  try {
+    await cognitoClient.send(
+      new AdminUpdateUserAttributesCommand({
         UserPoolId: USER_POOL_ID,
         Username: username,
         UserAttributes: [
-          { Name: "email", Value: email },
-          { Name: "email_verified", Value: "true" },
+          {
+            Name: "email_verified",
+            Value: "true",
+          },
         ],
-      });
-      await cognitoClient.send(updateCommand);
-      console.log(`[COGNITO] Marked email as verified for ${email} (username: ${username})`);
-    } catch (error: any) {
-      console.error(`[COGNITO] Failed to mark email verified for ${email} (username: ${username}):`, error);
-      // Don't throw here – user is already confirmed; continue.
-    }
+      })
+    );
+  } catch (error: any) {
+    console.error(
+      `[COGNITO] Error setting email_verified attribute for ${email ? email + " " : ""}(username: ${username}):`,
+      error
+    );
+    throw error;
+  }
+
+  if (!alreadyConfirmed) {
+    console.log(
+      `[COGNITO] Admin confirmed user ${email ? email + " " : ""}(username: ${username})`
+    );
   }
 }
 
