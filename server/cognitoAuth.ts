@@ -176,7 +176,8 @@ export async function signUp(
       // Optional but recommended
       { Name: "given_name", Value: firstName },
       { Name: "family_name", Value: lastName },
-      // Note: Role is tracked in our database, not in Cognito
+      // Persist role as custom attribute for downstream checks
+      { Name: "custom:role", Value: role },
     ],
   });
 
