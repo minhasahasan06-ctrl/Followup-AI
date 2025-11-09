@@ -15,8 +15,8 @@ interface UserMetadata {
   licenseCountry?: string;
   kycPhotoUrl?: string;
   googleDriveApplicationUrl?: string;
-  emailVerificationCodeHash?: string;
-  emailVerificationExpires?: number;
+  verificationCode?: string;
+  verificationCodeExpires?: number;
   expiresAt: number;
 }
 
@@ -115,52 +115,6 @@ class MetadataStorage {
     return { valid: false };
   }
 
-  async setEmailVerificationCode(email: string, code: string) {
-    const metadata = this.userMetadata.get(email);
-    if (!metadata) {
-      throw new Error(`No signup metadata found for ${email}`);
-    }
-
-    metadata.emailVerificationCodeHash = await bcrypt.hash(code, 10);
-    metadata.emailVerificationExpires = Date.now() + this.EMAIL_CODE_TTL;
-    this.userMetadata.set(email, metadata);
-    console.log(`[METADATA] Stored email verification code for ${email}`);
-  }
-
-  async verifyEmailCode(email: string, code: string): Promise<{ valid: boolean; reason?: 'not_found' | 'expired' | 'invalid' }> {
-    const metadata = this.userMetadata.get(email);
-    if (!metadata || !metadata.emailVerificationCodeHash || !metadata.emailVerificationExpires) {
-      return { valid: false, reason: 'not_found' };
-    }
-
-    if (metadata.emailVerificationExpires < Date.now()) {
-      metadata.emailVerificationCodeHash = undefined;
-      metadata.emailVerificationExpires = undefined;
-      this.userMetadata.set(email, metadata);
-      return { valid: false, reason: 'expired' };
-    }
-
-    const matches = await bcrypt.compare(code, metadata.emailVerificationCodeHash);
-    if (!matches) {
-      return { valid: false, reason: 'invalid' };
-    }
-
-    metadata.emailVerificationCodeHash = undefined;
-    metadata.emailVerificationExpires = undefined;
-    this.userMetadata.set(email, metadata);
-    return { valid: true };
-  }
-
-  clearEmailVerificationCode(email: string) {
-    const metadata = this.userMetadata.get(email);
-    if (!metadata) {
-      return;
-    }
-
-    metadata.emailVerificationCodeHash = undefined;
-    metadata.emailVerificationExpires = undefined;
-    this.userMetadata.set(email, metadata);
-  }
 
   getPhoneNumber(email: string): string | null {
     const data = this.phoneVerification.get(email);
