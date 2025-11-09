@@ -22,6 +22,10 @@ export const users = pgTable("users", {
   lastName: varchar("last_name").notNull(),
   profileImageUrl: varchar("profile_image_url"),
   emailVerified: boolean("email_verified").default(false),
+  verificationToken: varchar("verification_token"),
+  verificationTokenExpires: timestamp("verification_token_expires"),
+  resetToken: varchar("reset_token"),
+  resetTokenExpires: timestamp("reset_token_expires"),
   
   // Application-specific fields
   role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient' or 'doctor'
