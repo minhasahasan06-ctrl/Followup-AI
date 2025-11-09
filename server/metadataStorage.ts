@@ -15,6 +15,8 @@ interface UserMetadata {
   licenseCountry?: string;
   kycPhotoUrl?: string;
   googleDriveApplicationUrl?: string;
+  verificationCode?: string;
+  verificationCodeExpires?: number;
   expiresAt: number;
 }
 
