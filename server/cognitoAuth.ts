@@ -10,6 +10,7 @@ import {
   AdminSetUserPasswordCommand,
   GetUserCommand,
   DescribeUserPoolCommand,
+  AdminConfirmSignUpCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
@@ -250,6 +251,39 @@ export async function resendConfirmationCode(email: string, username?: string) {
   } catch (error: any) {
     console.error(`[COGNITO] Error resending confirmation code for ${email} (username: ${cognitoUsername}):`, error);
     throw error;
+  }
+}
+
+export async function adminConfirmUser(username: string, email?: string) {
+  const command = new AdminConfirmSignUpCommand({
+    UserPoolId: USER_POOL_ID,
+    Username: username,
+  });
+
+  try {
+    await cognitoClient.send(command);
+    console.log(`[COGNITO] Admin confirmed signup for ${username}`);
+  } catch (error: any) {
+    console.error(`[COGNITO] Error admin confirming signup for ${username}:`, error);
+    throw error;
+  }
+
+  if (email) {
+    try {
+      const updateCommand = new AdminUpdateUserAttributesCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: username,
+        UserAttributes: [
+          { Name: "email", Value: email },
+          { Name: "email_verified", Value: "true" },
+        ],
+      });
+      await cognitoClient.send(updateCommand);
+      console.log(`[COGNITO] Marked email as verified for ${email} (username: ${username})`);
+    } catch (error: any) {
+      console.error(`[COGNITO] Failed to mark email verified for ${email} (username: ${username}):`, error);
+      // Don't throw here – user is already confirmed; continue.
+    }
   }
 }
 
