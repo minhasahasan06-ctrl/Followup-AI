@@ -67,26 +67,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   const { signUp, signIn, confirmSignUp, resendConfirmationCode, forgotPassword, confirmForgotPassword, getUserInfo } = await import('./cognitoAuth');
   const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
+  const { metadataStorage } = await import('./metadataStorage');
   
-  // Sign up new user
-  app.post('/api/auth/signup', async (req, res) => {
+  // Patient Signup
+  app.post('/api/auth/signup/patient', async (req, res) => {
     try {
-      const { email, password, firstName, lastName, role } = req.body;
+      const { email, password, firstName, lastName, phoneNumber, ehrImportMethod, ehrPlatform } = req.body;
       
-      if (!email || !password || !firstName || !lastName || !role) {
+      if (!email || !password || !firstName || !lastName || !phoneNumber) {
         return res.status(400).json({ message: "All fields are required" });
       }
       
-      if (role !== 'patient' && role !== 'doctor') {
-        return res.status(400).json({ message: "Role must be 'patient' or 'doctor'" });
-      }
-      
       // Sign up in Cognito
-      await signUp(email, password, firstName, lastName, role);
+      const signUpResponse = await signUp(email, password, firstName, lastName, 'patient');
+      const cognitoSub = signUpResponse.UserSub!;
+      
+      // Store phone number temporarily (will be verified after email)
+      metadataStorage.setUserMetadata(email, {
+        cognitoSub,
+        firstName,
+        lastName,
+        phoneNumber,
+        role: 'patient',
+        ehrImportMethod,
+        ehrPlatform,
+      });
       
       res.json({ message: "Signup successful. Please check your email for verification code." });
     } catch (error: any) {
-      console.error("Signup error:", error);
+      console.error("Patient signup error:", error);
       if (error.name === 'UsernameExistsException') {
         return res.status(400).json({ message: "An account with this email already exists" });
       }
@@ -94,7 +103,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Verify email with code
+  // Doctor Signup
+  app.post('/api/auth/signup/doctor', upload.single('kycPhoto'), async (req, res) => {
+    try {
+      const { email, password, firstName, lastName, phoneNumber, organization, medicalLicenseNumber, licenseCountry } = req.body;
+      const kycPhoto = req.file;
+      
+      if (!email || !password || !firstName || !lastName || !phoneNumber || !organization || !medicalLicenseNumber || !licenseCountry) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+      
+      // Sign up in Cognito
+      const signUpResponse = await signUp(email, password, firstName, lastName, 'doctor');
+      const cognitoSub = signUpResponse.UserSub!;
+      
+      // Upload KYC photo if provided
+      let kycPhotoUrl: string | undefined;
+      if (kycPhoto) {
+        const { uploadToS3 } = await import('./awsS3');
+        kycPhotoUrl = await uploadToS3(kycPhoto.buffer, `kyc/${email}_${Date.now()}.${kycPhoto.originalname.split('.').pop()}`, kycPhoto.mimetype);
+      }
+      
+      // Generate PDF for doctor application
+      const { generateDoctorApplicationPDF, uploadDoctorApplicationToGoogleDrive } = await import('./googleDrive');
+      const pdfBuffer = await generateDoctorApplicationPDF({
+        email,
+        firstName,
+        lastName,
+        organization,
+        medicalLicenseNumber,
+        licenseCountry,
+        submittedAt: new Date(),
+      });
+      
+      // Upload to Google Drive
+      const googleDriveUrl = await uploadDoctorApplicationToGoogleDrive({
+        email,
+        firstName,
+        lastName,
+        organization,
+        medicalLicenseNumber,
+        licenseCountry,
+        submittedAt: new Date(),
+      }, pdfBuffer);
+      
+      // Store doctor data temporarily
+      metadataStorage.setUserMetadata(email, {
+        cognitoSub,
+        firstName,
+        lastName,
+        phoneNumber,
+        role: 'doctor',
+        organization,
+        medicalLicenseNumber,
+        licenseCountry,
+        kycPhotoUrl,
+        googleDriveApplicationUrl: googleDriveUrl,
+      });
+      
+      res.json({ message: "Application submitted successfully. Please check your email for verification code. Your application will be reviewed by our team." });
+    } catch (error: any) {
+      console.error("Doctor signup error:", error);
+      if (error.name === 'UsernameExistsException') {
+        return res.status(400).json({ message: "An account with this email already exists" });
+      }
+      res.status(500).json({ message: error.message || "Signup failed" });
+    }
+  });
+  
+  // Verify email with code (Step 1)
   app.post('/api/auth/verify-email', async (req, res) => {
     try {
       const { email, code } = req.body;
@@ -103,11 +180,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email and verification code are required" });
       }
       
+      // Verify email in Cognito
       await confirmSignUp(email, code);
       
-      res.json({ message: "Email verified successfully. You can now log in." });
+      // Get user metadata to get phone number
+      const metadata = metadataStorage.getUserMetadata(email);
+      if (!metadata || !metadata.phoneNumber) {
+        return res.status(400).json({ message: "No signup data found. Please sign up again." });
+      }
+      
+      // Send SMS verification code (Step 2)
+      const { sendVerificationCode } = await import('./twilio');
+      const result = await sendVerificationCode({ to: metadata.phoneNumber, channel: 'sms' });
+      
+      if (!result.success || !result.code) {
+        return res.status(500).json({ message: "Failed to send SMS verification code" });
+      }
+      
+      // Store phone verification code (hashed)
+      metadataStorage.setPhoneVerification(email, metadata.phoneNumber, result.code);
+      
+      res.json({ 
+        message: "Email verified successfully. Please verify your phone number with the SMS code sent to " + metadata.phoneNumber,
+        phoneNumber: metadata.phoneNumber,
+        requiresPhoneVerification: true,
+      });
     } catch (error: any) {
-      console.error("Verification error:", error);
+      console.error("Email verification error:", error);
+      res.status(500).json({ message: error.message || "Verification failed" });
+    }
+  });
+  
+  // Verify phone with SMS code (Step 2)
+  app.post('/api/auth/verify-phone', async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      
+      if (!email || !code) {
+        return res.status(400).json({ message: "Email and verification code are required" });
+      }
+      
+      // Verify phone code
+      const phoneVerification = metadataStorage.verifyPhoneCode(email, code);
+      if (!phoneVerification.valid) {
+        return res.status(400).json({ message: "Invalid or expired verification code" });
+      }
+      
+      // Get user metadata
+      const metadata = metadataStorage.getUserMetadata(email);
+      if (!metadata) {
+        return res.status(400).json({ message: "No signup data found. Please sign up again." });
+      }
+      
+      // Create user in database with verified phone
+      const userData: any = {
+        id: metadata.cognitoSub,
+        email: metadata.email,
+        firstName: metadata.firstName,
+        lastName: metadata.lastName,
+        role: metadata.role,
+        phoneNumber: metadata.phoneNumber,
+        phoneVerified: true,
+        emailVerified: true,
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+      };
+      
+      // Add patient-specific data
+      if (metadata.role === 'patient') {
+        userData.ehrImportMethod = metadata.ehrImportMethod;
+        userData.ehrPlatform = metadata.ehrPlatform;
+        userData.subscriptionStatus = 'trialing';
+        userData.trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        userData.creditBalance = 20;
+      }
+      
+      // Add doctor-specific data
+      if (metadata.role === 'doctor') {
+        userData.organization = metadata.organization;
+        userData.medicalLicenseNumber = metadata.medicalLicenseNumber;
+        userData.licenseCountry = metadata.licenseCountry;
+        userData.kycPhotoUrl = metadata.kycPhotoUrl;
+        userData.googleDriveApplicationUrl = metadata.googleDriveApplicationUrl;
+        userData.adminVerified = false;
+        userData.creditBalance = 0;
+      }
+      
+      // Create user in database
+      await storage.upsertUser(userData);
+      
+      // Clean up metadata
+      metadataStorage.deleteUserMetadata(email);
+      
+      // Send welcome SMS
+      const { sendWelcomeSMS } = await import('./twilio');
+      await sendWelcomeSMS(metadata.phoneNumber, userData.firstName).catch(console.error);
+      
+      const message = metadata.role === 'doctor' 
+        ? "Verification complete! Your application is under review. You'll receive an email when your account is activated."
+        : "Verification complete! You can now log in to your account.";
+      
+      res.json({ 
+        message,
+        requiresAdminApproval: metadata.role === 'doctor',
+      });
+    } catch (error: any) {
+      console.error("Phone verification error:", error);
       res.status(500).json({ message: error.message || "Verification failed" });
     }
   });
