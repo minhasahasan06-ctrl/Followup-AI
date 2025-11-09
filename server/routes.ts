@@ -66,13 +66,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============== SESSION CONFIGURATION ==============
   // Configure session middleware for cookie-based authentication
   app.use(getSession());
-  
+
   // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
-  
-  const { signUp, signIn, confirmSignUp, resendConfirmationCode, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
+  const { signUp, signIn, adminConfirmUser, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
   const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
   const { metadataStorage } = await import('./metadataStorage');
-  
+
   // Debug endpoint to inspect Cognito User Pool schema
   app.get('/api/debug/cognito-schema', async (req, res) => {
     try {
@@ -447,6 +446,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Clean up metadata
       metadataStorage.deleteUserMetadata(email);
+      metadataStorage.clearEmailVerification(email);
       
       // Send welcome SMS
       const { sendWelcomeSMS } = await import('./twilio');
@@ -475,7 +475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email is required" });
       }
       
-      // Get user metadata to retrieve the Cognito username
+      // Validate metadata exists for this email
       const metadata = metadataStorage.getUserMetadata(email);
       if (!metadata) {
         return res.status(400).json({ message: "No signup data found. Please sign up again." });
@@ -538,7 +538,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cognitoEmail = userInfo.UserAttributes?.find(attr => attr.Name === 'email')?.Value!;
       const firstName = userInfo.UserAttributes?.find(attr => attr.Name === 'given_name')?.Value!;
       const lastName = userInfo.UserAttributes?.find(attr => attr.Name === 'family_name')?.Value!;
-      const role = userInfo.UserAttributes?.find(attr => attr.Name === 'custom:role')?.Value as 'patient' | 'doctor';
+      const roleFromCognito = userInfo.UserAttributes?.find(attr => attr.Name === 'custom:role')?.Value as 'patient' | 'doctor' | undefined;
       const emailVerified = userInfo.UserAttributes?.find(attr => attr.Name === 'email_verified')?.Value === 'true';
       
       // Check if user exists in our database (must have completed phone verification)
@@ -552,8 +552,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      const effectiveRole = (roleFromCognito ?? user.role) as 'patient' | 'doctor' | undefined;
+
       // Block doctors until admin approval
-      if (role === 'doctor' && !user.adminVerified) {
+      if (effectiveRole === 'doctor' && !user.adminVerified) {
         return res.status(403).json({ 
           message: "Your application is under review. You'll receive an email when your account is activated.",
           requiresAdminApproval: true,
@@ -591,7 +593,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           accessToken: authResult.AccessToken,
           refreshToken: authResult.RefreshToken,
         },
-        user,
+        user: {
+          ...user,
+          role: effectiveRole ?? user.role,
+        },
       });
     } catch (error: any) {
       console.error("Login error:", error);
