@@ -40,6 +40,7 @@ class MetadataStorage {
   private phoneVerification: Map<string, PhoneVerificationMetadata> = new Map();
   private emailVerification: Map<string, EmailVerificationMetadata> = new Map();
   private readonly TTL = 24 * 60 * 60 * 1000; // 24 hours
+  private readonly EMAIL_CODE_TTL = 24 * 60 * 60 * 1000; // 24 hours
   private readonly PHONE_CODE_TTL = 15 * 60 * 1000; // 15 minutes
   private readonly EMAIL_CODE_TTL = 24 * 60 * 60 * 1000; // 24 hours
   private readonly EMAIL_RESEND_COOLDOWN = 60 * 1000; // 60 seconds
@@ -102,6 +103,7 @@ class MetadataStorage {
     this.emailVerification.delete(email);
     console.log(`[METADATA] Deleted metadata for ${email}`);
   }
+
 
   async setPhoneVerification(email: string, phoneNumber: string, code: string) {
     const hashedCode = await bcrypt.hash(code, 10);
