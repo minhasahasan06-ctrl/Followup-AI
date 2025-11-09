@@ -77,4 +77,5 @@ Preferred communication style: Simple, everyday language.
 **Development Tools:** Vite, TypeScript, Drizzle Kit, esbuild.
 **Data Integration APIs:** PubMed E-utilities, PhysioNet WFDB, Kaggle API, WHO Global Health Observatory API.
 **Communication:** AWS SES (Simple Email Service) for transactional emails (verification, password reset, welcome emails), Twilio API for SMS and voice services.
+**AWS SES Configuration:** Region `ap-southeast-2` (Sydney), verified identity `t@followupai.io`, configuration set `my-first-configuration-set`. **CRITICAL: SES currently in Sandbox Mode** - can only send emails to verified addresses. For production: (1) Request SES production access via AWS Support case explaining HIPAA healthcare use case, or (2) For testing, manually verify recipient email addresses in SES Console → Verified identities. Ensure AWS account has signed BAA for HIPAA compliance before enabling production email delivery.
 **Cloud Services:** AWS S3, AWS Textract, AWS Comprehend Medical, AWS HealthLake, AWS HealthImaging, AWS HealthOmics.
