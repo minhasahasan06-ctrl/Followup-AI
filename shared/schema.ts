@@ -13,25 +13,15 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Session storage table (required for Replit Auth)
-export const sessions = pgTable(
-  "sessions",
-  {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)],
-);
-
-// Users table with role-based access (Replit Auth OIDC)
+// Users table with role-based access (AWS Cognito)
 export const users = pgTable("users", {
-  // Replit Auth OIDC fields (keep default for migration compatibility)
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(), // Nullable - some login methods don't have email
-  firstName: varchar("first_name"), // Nullable - Replit Auth provides null for some methods
-  lastName: varchar("last_name"), // Nullable - Replit Auth provides null for some methods
+  // AWS Cognito fields - ID is Cognito sub (UUID format)
+  id: varchar("id").primaryKey(),
+  email: varchar("email").unique().notNull(),
+  firstName: varchar("first_name").notNull(),
+  lastName: varchar("last_name").notNull(),
   profileImageUrl: varchar("profile_image_url"),
+  emailVerified: boolean("email_verified").default(false),
   
   // Application-specific fields
   role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient' or 'doctor'
