@@ -11,6 +11,7 @@ import {
   AdminConfirmSignUpCommand,
   GetUserCommand,
   DescribeUserPoolCommand,
+  AdminConfirmSignUpCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
@@ -273,6 +274,63 @@ export async function resendConfirmationCode(email: string, username?: string) {
   } catch (error: any) {
     console.error(`[COGNITO] Error resending confirmation code for ${email} (username: ${cognitoUsername}):`, error);
     throw error;
+  }
+}
+
+export async function adminConfirmUser(username: string, email?: string) {
+  const command = new AdminConfirmSignUpCommand({
+    UserPoolId: USER_POOL_ID,
+    Username: username,
+  });
+
+  let alreadyConfirmed = false;
+
+  try {
+    await cognitoClient.send(command);
+  } catch (error: any) {
+    if (
+      error?.name === "NotAuthorizedException" &&
+      typeof error?.message === "string" &&
+      error.message.includes("Current status is CONFIRMED")
+    ) {
+      alreadyConfirmed = true;
+      console.warn(
+        `[COGNITO] User ${email ? email + " " : ""}(username: ${username}) is already confirmed`
+      );
+    } else {
+      console.error(
+        `[COGNITO] Error admin confirming user ${email ? email + " " : ""}(username: ${username}):`,
+        error
+      );
+      throw error;
+    }
+  }
+
+  try {
+    await cognitoClient.send(
+      new AdminUpdateUserAttributesCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: username,
+        UserAttributes: [
+          {
+            Name: "email_verified",
+            Value: "true",
+          },
+        ],
+      })
+    );
+  } catch (error: any) {
+    console.error(
+      `[COGNITO] Error setting email_verified attribute for ${email ? email + " " : ""}(username: ${username}):`,
+      error
+    );
+    throw error;
+  }
+
+  if (!alreadyConfirmed) {
+    console.log(
+      `[COGNITO] Admin confirmed user ${email ? email + " " : ""}(username: ${username})`
+    );
   }
 }
 
