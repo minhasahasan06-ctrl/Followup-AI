@@ -10,7 +10,14 @@
 
 import { storage } from './storage';
 import { rlRewardCalculator } from './rlRewardCalculator';
-import type { UserLearningProfile, MLRecommendation, Habit } from '@shared/schema';
+import type { 
+  UserLearningProfile, 
+  InsertUserLearningProfile,
+  MLRecommendation, 
+  InsertMLRecommendation,
+  Habit,
+  InsertRLReward 
+} from '@shared/schema';
 
 /**
  * User Preference Tracker
@@ -30,45 +37,43 @@ export class PreferenceTracker {
       sentiment?: number;
     }
   ): Promise<void> {
-    const profile = await storage.getUserLearningProfile(userId, agentType) || {
-      userId,
-      agentType,
-      totalInteractions: 0,
-      avgSentiment: 0,
-      favoriteTopics: [],
-      strugglingAreas: [],
-      motivationalStyle: 'encouragement',
-      lastUpdated: new Date(),
-    };
-
-    // Update interaction count
-    profile.totalInteractions = (profile.totalInteractions || 0) + 1;
-
-    // Update sentiment (moving average)
-    if (interaction.sentiment !== undefined) {
-      const oldSentiment = profile.avgSentiment || 0;
-      profile.avgSentiment = (oldSentiment * 0.9 + interaction.sentiment * 0.1);
+    const existingProfile = await storage.getUserLearningProfile(userId, agentType);
+    
+    // Calculate updated values
+    const totalInteractions = (existingProfile?.totalInteractions || 0) + 1;
+    const oldSentiment = existingProfile?.avgSentiment || 0;
+    const newSentiment = interaction.sentiment !== undefined
+      ? (oldSentiment * 0.9 + interaction.sentiment * 0.1)
+      : oldSentiment;
+    
+    // Update liked categories
+    const favorites = existingProfile?.favoriteTopics || [];
+    if (interaction.liked && interaction.category && !favorites.includes(interaction.category)) {
+      favorites.push(interaction.category);
     }
-
-    // Track liked categories
-    if (interaction.liked && interaction.category) {
-      const favorites = profile.favoriteTopics || [];
-      if (!favorites.includes(interaction.category)) {
-        favorites.push(interaction.category);
-      }
-      profile.favoriteTopics = favorites;
-    }
-
+    
     // Track struggling areas (from negative sentiment)
+    const struggling = existingProfile?.strugglingAreas || [];
     if (interaction.sentiment !== undefined && interaction.sentiment < -0.3) {
-      const struggling = profile.strugglingAreas || [];
       if (interaction.category && !struggling.includes(interaction.category)) {
         struggling.push(interaction.category);
       }
-      profile.strugglingAreas = struggling;
     }
 
-    await storage.upsertUserLearningProfile(profile);
+    // Create typed profile update
+    const profileUpdate: InsertUserLearningProfile = {
+      userId,
+      agentType,
+      totalInteractions,
+      avgSentiment: newSentiment,
+      favoriteTopics: favorites,
+      strugglingAreas: struggling,
+      motivationalStyle: existingProfile?.motivationalStyle || 'encouragement',
+      favoriteHealthActivities: existingProfile?.favoriteHealthActivities || [],
+      researchInterests: existingProfile?.researchInterests || [],
+    };
+
+    await storage.upsertUserLearningProfile(profileUpdate);
   }
 
   /**
@@ -359,15 +364,16 @@ Use this context to personalize your responses while maintaining your core perso
       );
 
       // Store the reward for future analysis
-      await storage.createRLReward({
+      const rlReward: InsertRLReward = {
         userId,
         agentType,
         rewardValue: reward.toString(),
         actionType: 'conversation',
         stateSnapshot: {},
         actionSnapshot: {},
-        timestamp: new Date(),
-      });
+      };
+      
+      await storage.createRLReward(rlReward);
     }
   }
 }
