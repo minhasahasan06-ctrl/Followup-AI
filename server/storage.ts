@@ -428,6 +428,26 @@ export interface IStorage {
   getCompanionEngagement(patientId: string): Promise<CompanionEngagement | undefined>;
   upsertCompanionEngagement(engagement: InsertCompanionEngagement): Promise<CompanionEngagement>;
   updateCompanionEngagement(patientId: string, data: Partial<CompanionEngagement>): Promise<CompanionEngagement | undefined>;
+  
+  // ML/RL System operations
+  getUserLearningProfile(userId: string, agentType: string): Promise<any | undefined>;
+  upsertUserLearningProfile(profile: any): Promise<any>;
+  getHabits(userId: string): Promise<any[]>;
+  createHabit(habit: any): Promise<any>;
+  updateHabit(id: string, data: any): Promise<any | undefined>;
+  getRecentHabitCompletions(userId: string, days: number): Promise<any[]>;
+  createHabitCompletion(completion: any): Promise<any>;
+  getUserRecommendations(userId: string): Promise<any[]>;
+  createMLRecommendation(recommendation: any): Promise<any>;
+  updateMLRecommendation(id: string, data: any): Promise<any | undefined>;
+  createRLReward(reward: any): Promise<any>;
+  getDailyEngagement(userId: string, date: Date): Promise<any | undefined>;
+  upsertDailyEngagement(engagement: any): Promise<any>;
+  getDoctorWellnessHistory(userId: string, days: number): Promise<any[]>;
+  createDoctorWellness(wellness: any): Promise<any>;
+  getMilestones(userId: string): Promise<any[]>;
+  createMilestone(milestone: any): Promise<any>;
+  updateMilestone(id: string, data: any): Promise<any | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
