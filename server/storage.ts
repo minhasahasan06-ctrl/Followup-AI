@@ -430,24 +430,24 @@ export interface IStorage {
   updateCompanionEngagement(patientId: string, data: Partial<CompanionEngagement>): Promise<CompanionEngagement | undefined>;
   
   // ML/RL System operations
-  getUserLearningProfile(userId: string, agentType: string): Promise<any | undefined>;
-  upsertUserLearningProfile(profile: any): Promise<any>;
-  getHabits(userId: string): Promise<any[]>;
-  createHabit(habit: any): Promise<any>;
-  updateHabit(id: string, data: any): Promise<any | undefined>;
-  getRecentHabitCompletions(userId: string, days: number): Promise<any[]>;
-  createHabitCompletion(completion: any): Promise<any>;
-  getUserRecommendations(userId: string): Promise<any[]>;
-  createMLRecommendation(recommendation: any): Promise<any>;
-  updateMLRecommendation(id: string, data: any): Promise<any | undefined>;
-  createRLReward(reward: any): Promise<any>;
-  getDailyEngagement(userId: string, date: Date): Promise<any | undefined>;
-  upsertDailyEngagement(engagement: any): Promise<any>;
-  getDoctorWellnessHistory(userId: string, days: number): Promise<any[]>;
-  createDoctorWellness(wellness: any): Promise<any>;
-  getMilestones(userId: string): Promise<any[]>;
-  createMilestone(milestone: any): Promise<any>;
-  updateMilestone(id: string, data: any): Promise<any | undefined>;
+  getUserLearningProfile(userId: string, agentType: string): Promise<UserLearningProfile | undefined>;
+  upsertUserLearningProfile(profile: InsertUserLearningProfile): Promise<UserLearningProfile>;
+  getHabits(userId: string): Promise<Habit[]>;
+  createHabit(habit: InsertHabit): Promise<Habit>;
+  updateHabit(id: string, data: Partial<Habit>): Promise<Habit | undefined>;
+  getRecentHabitCompletions(userId: string, days: number): Promise<HabitCompletion[]>;
+  createHabitCompletion(completion: InsertHabitCompletion): Promise<HabitCompletion>;
+  getUserRecommendations(userId: string): Promise<MLRecommendation[]>;
+  createMLRecommendation(recommendation: InsertMLRecommendation): Promise<MLRecommendation>;
+  updateMLRecommendation(id: string, data: Partial<MLRecommendation>): Promise<MLRecommendation | undefined>;
+  createRLReward(reward: InsertRLReward): Promise<RLReward>;
+  getDailyEngagement(userId: string, date: Date): Promise<DailyEngagement | undefined>;
+  upsertDailyEngagement(engagement: InsertDailyEngagement): Promise<DailyEngagement>;
+  getDoctorWellnessHistory(userId: string, days: number): Promise<DoctorWellness[]>;
+  createDoctorWellness(wellness: InsertDoctorWellness): Promise<DoctorWellness>;
+  getMilestones(userId: string): Promise<Milestone[]>;
+  createMilestone(milestone: InsertMilestone): Promise<Milestone>;
+  updateMilestone(id: string, data: Partial<Milestone>): Promise<Milestone | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2561,6 +2561,186 @@ export class DatabaseStorage implements IStorage {
       .where(eq(companionEngagement.patientId, patientId))
       .returning();
     return engagement;
+  }
+
+  // ML/RL System operations
+  async getUserLearningProfile(userId: string, agentType: string): Promise<UserLearningProfile | undefined> {
+    const [profile] = await db
+      .select()
+      .from(userLearningProfiles)
+      .where(and(
+        eq(userLearningProfiles.userId, userId),
+        eq(userLearningProfiles.agentType, agentType)
+      ));
+    return profile;
+  }
+
+  async upsertUserLearningProfile(profileData: InsertUserLearningProfile): Promise<UserLearningProfile> {
+    const [profile] = await db
+      .insert(userLearningProfiles)
+      .values(profileData)
+      .onConflictDoUpdate({
+        target: [userLearningProfiles.userId, userLearningProfiles.agentType],
+        set: { ...profileData, updatedAt: new Date() },
+      })
+      .returning();
+    return profile;
+  }
+
+  async getHabits(userId: string): Promise<Habit[]> {
+    const habitsList = await db
+      .select()
+      .from(habits)
+      .where(eq(habits.userId, userId))
+      .orderBy(desc(habits.createdAt));
+    return habitsList;
+  }
+
+  async createHabit(habitData: InsertHabit): Promise<Habit> {
+    const [habit] = await db
+      .insert(habits)
+      .values(habitData)
+      .returning();
+    return habit;
+  }
+
+  async updateHabit(id: string, data: Partial<Habit>): Promise<Habit | undefined> {
+    const [habit] = await db
+      .update(habits)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(habits.id, id))
+      .returning();
+    return habit;
+  }
+
+  async getRecentHabitCompletions(userId: string, days: number): Promise<HabitCompletion[]> {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    
+    const completions = await db
+      .select()
+      .from(habitCompletions)
+      .innerJoin(habits, eq(habitCompletions.habitId, habits.id))
+      .where(and(
+        eq(habits.userId, userId),
+        sql`${habitCompletions.completedAt} >= ${since}`
+      ))
+      .orderBy(desc(habitCompletions.completedAt));
+    return completions.map(c => c.habit_completions);
+  }
+
+  async createHabitCompletion(completionData: InsertHabitCompletion): Promise<HabitCompletion> {
+    const [completion] = await db
+      .insert(habitCompletions)
+      .values(completionData)
+      .returning();
+    return completion;
+  }
+
+  async getUserRecommendations(userId: string): Promise<MLRecommendation[]> {
+    const recommendations = await db
+      .select()
+      .from(mlRecommendations)
+      .where(eq(mlRecommendations.userId, userId))
+      .orderBy(desc(mlRecommendations.createdAt));
+    return recommendations;
+  }
+
+  async createMLRecommendation(recommendationData: InsertMLRecommendation): Promise<MLRecommendation> {
+    const [recommendation] = await db
+      .insert(mlRecommendations)
+      .values(recommendationData)
+      .returning();
+    return recommendation;
+  }
+
+  async updateMLRecommendation(id: string, data: Partial<MLRecommendation>): Promise<MLRecommendation | undefined> {
+    const [recommendation] = await db
+      .update(mlRecommendations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(mlRecommendations.id, id))
+      .returning();
+    return recommendation;
+  }
+
+  async createRLReward(rewardData: InsertRLReward): Promise<RLReward> {
+    const [reward] = await db
+      .insert(rlRewards)
+      .values(rewardData)
+      .returning();
+    return reward;
+  }
+
+  async getDailyEngagement(userId: string, date: Date): Promise<DailyEngagement | undefined> {
+    const [engagement] = await db
+      .select()
+      .from(dailyEngagement)
+      .where(and(
+        eq(dailyEngagement.userId, userId),
+        eq(dailyEngagement.date, date)
+      ));
+    return engagement;
+  }
+
+  async upsertDailyEngagement(engagementData: InsertDailyEngagement): Promise<DailyEngagement> {
+    const [engagement] = await db
+      .insert(dailyEngagement)
+      .values(engagementData)
+      .onConflictDoUpdate({
+        target: [dailyEngagement.userId, dailyEngagement.date],
+        set: { ...engagementData, updatedAt: new Date() },
+      })
+      .returning();
+    return engagement;
+  }
+
+  async getDoctorWellnessHistory(userId: string, days: number): Promise<DoctorWellness[]> {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    
+    const wellnessHistory = await db
+      .select()
+      .from(doctorWellness)
+      .where(and(
+        eq(doctorWellness.userId, userId),
+        sql`${doctorWellness.date} >= ${since}`
+      ))
+      .orderBy(desc(doctorWellness.date));
+    return wellnessHistory;
+  }
+
+  async createDoctorWellness(wellnessData: InsertDoctorWellness): Promise<DoctorWellness> {
+    const [wellness] = await db
+      .insert(doctorWellness)
+      .values(wellnessData)
+      .returning();
+    return wellness;
+  }
+
+  async getMilestones(userId: string): Promise<Milestone[]> {
+    const milestonesList = await db
+      .select()
+      .from(milestones)
+      .where(eq(milestones.userId, userId))
+      .orderBy(desc(milestones.achievedAt));
+    return milestonesList;
+  }
+
+  async createMilestone(milestoneData: InsertMilestone): Promise<Milestone> {
+    const [milestone] = await db
+      .insert(milestones)
+      .values(milestoneData)
+      .returning();
+    return milestone;
+  }
+
+  async updateMilestone(id: string, data: Partial<Milestone>): Promise<Milestone | undefined> {
+    const [milestone] = await db
+      .update(milestones)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(milestones.id, id))
+      .returning();
+    return milestone;
   }
 }
 
