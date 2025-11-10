@@ -1,13 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Search, TrendingUp, AlertCircle } from "lucide-react";
+import { Users, Search, TrendingUp, AlertCircle, Sparkles, Lightbulb, BookOpen, Beaker } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import type { User } from "@shared/schema";
+
+type Recommendation = {
+  id: string;
+  type: string;
+  category: string;
+  title: string;
+  description: string;
+  confidenceScore: string;
+  priority: string;
+  reasoning?: string;
+};
 
 export default function DoctorDashboard() {
   const [, setLocation] = useLocation();
@@ -16,6 +27,24 @@ export default function DoctorDashboard() {
   const { data: patients, isLoading } = useQuery<User[]>({
     queryKey: ["/api/doctor/patients"],
   });
+
+  // Fetch Assistant Lysa recommendations for doctors
+  const { data: recommendations = [], isLoading: recommendationsLoading, isError: recommendationsError } = useQuery<Recommendation[]>({
+    queryKey: ['/api/v1/ml/recommendations', { agentType: 'lysa', limit: 6 }],
+    queryFn: async () => {
+      const res = await fetch('/api/v1/ml/recommendations?agentType=lysa&limit=6');
+      if (!res.ok) throw new Error('Failed to fetch recommendations');
+      return res.json();
+    },
+  });
+
+  const clinicalRecommendations = recommendations.filter(r => 
+    r.category === 'clinical_decision_support' || r.category === 'protocol_suggestion'
+  );
+  
+  const researchRecommendations = recommendations.filter(r => 
+    r.category === 'research' || r.category === 'literature_review'
+  );
 
   const filteredPatients = patients?.filter((patient) =>
     `${patient.firstName} ${patient.lastName}`.toLowerCase().includes(searchQuery.toLowerCase())
@@ -29,8 +58,8 @@ export default function DoctorDashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-semibold mb-2">All Patients</h1>
-          <p className="text-muted-foreground">Review and monitor your patient population</p>
+          <h1 className="text-4xl font-semibold mb-2" data-testid="text-dashboard-title">Doctor Dashboard</h1>
+          <p className="text-muted-foreground">Clinical insights and patient overview powered by Assistant Lysa</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className="text-sm">
@@ -38,6 +67,124 @@ export default function DoctorDashboard() {
             {patients?.length || 0} Total Patients
           </Badge>
         </div>
+      </div>
+
+      {/* Assistant Lysa Recommendations Section */}
+      {recommendationsLoading ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          {[1, 2].map((i) => (
+            <Card key={i} className="animate-pulse">
+              <CardHeader>
+                <div className="h-5 bg-muted rounded w-1/2 mb-2" />
+                <div className="h-4 bg-muted rounded w-3/4" />
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {[1, 2, 3].map((j) => (
+                    <div key={j} className="h-20 bg-muted rounded" />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : recommendationsError ? (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">
+              Unable to load recommendations. Please try again later.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (clinicalRecommendations.length > 0 || researchRecommendations.length > 0) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Clinical Decision Support */}
+          {clinicalRecommendations.length > 0 && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  <CardTitle className="text-lg">Clinical Decision Support</CardTitle>
+                </div>
+                <CardDescription>
+                  AI-powered recommendations from Assistant Lysa
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {clinicalRecommendations.slice(0, 3).map((rec) => (
+                    <div key={rec.id} className="p-3 border rounded-lg hover-elevate" data-testid={`clinical-recommendation-${rec.id}`}>
+                      <div className="flex items-start justify-between mb-1">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Lightbulb className="w-4 h-4 text-yellow-500" />
+                            <h4 className="font-medium text-sm">{rec.title}</h4>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{rec.description}</p>
+                        </div>
+                        <Badge variant={rec.priority === 'high' ? 'default' : 'secondary'} className="text-xs ml-2">
+                          {rec.priority}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-muted-foreground">
+                          {Math.round(parseFloat(rec.confidenceScore) * 100)}% confidence
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Research Recommendations */}
+          {researchRecommendations.length > 0 && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Beaker className="w-5 h-5 text-primary" />
+                  <CardTitle className="text-lg">Research Insights</CardTitle>
+                </div>
+                <CardDescription>
+                  Latest research and clinical literature
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {researchRecommendations.slice(0, 3).map((rec) => (
+                    <div key={rec.id} className="p-3 border rounded-lg hover-elevate" data-testid={`research-recommendation-${rec.id}`}>
+                      <div className="flex items-start justify-between mb-1">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <BookOpen className="w-4 h-4 text-blue-500" />
+                            <h4 className="font-medium text-sm">{rec.title}</h4>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{rec.description}</p>
+                        </div>
+                        <Badge variant={rec.priority === 'high' ? 'default' : 'secondary'} className="text-xs ml-2">
+                          {rec.priority}
+                        </Badge>
+                      </div>
+                      {rec.reasoning && (
+                        <p className="text-xs text-muted-foreground mt-2 italic">
+                          {rec.reasoning}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Patient List Section */}
+      <div className="flex items-center gap-2">
+        <Users className="w-5 h-5" />
+        <h2 className="text-2xl font-semibold">All Patients</h2>
       </div>
 
       <Card>
