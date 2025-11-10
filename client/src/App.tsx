@@ -37,6 +37,7 @@ import Wellness from "@/pages/Wellness";
 import Files from "@/pages/Files";
 import Profile from "@/pages/Profile";
 import DoctorDashboard from "@/pages/DoctorDashboard";
+import DoctorWellness from "@/pages/DoctorWellness";
 import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
 import Counseling from "@/pages/Counseling";
@@ -92,6 +93,7 @@ function DoctorRouter() {
   return (
     <Switch>
       <Route path="/" component={DoctorDashboard} />
+      <Route path="/doctor-wellness" component={DoctorWellness} />
       <Route path="/doctor/patient/:id" component={PatientReview} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/chat" component={Chat} />
