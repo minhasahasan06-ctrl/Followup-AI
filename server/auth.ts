@@ -102,3 +102,23 @@ export const isDoctor: RequestHandler = async (req, res, next) => {
     return res.status(403).json({ message: "Access denied" });
   }
 };
+
+// Patient role middleware
+export const isPatient: RequestHandler = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await storage.getUser(userId);
+    if (!user || user.role !== "patient") {
+      return res.status(403).json({ message: "Access denied. Patient role required." });
+    }
+
+    next();
+  } catch (error) {
+    console.error("Patient auth error:", error);
+    return res.status(403).json({ message: "Access denied" });
+  }
+};

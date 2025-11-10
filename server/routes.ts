@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { isAuthenticated, isDoctor, getSession } from "./auth";
+import { isAuthenticated, isDoctor, isPatient, getSession } from "./auth";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
 import { s3Client, textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -16,6 +16,15 @@ import fs from "fs";
 import speakeasy from "speakeasy";
 import QRCode from "qrcode";
 import crypto from "crypto";
+import { personalizationService } from "./personalizationService";
+import { rlRewardCalculator } from "./rlRewardCalculator";
+import { 
+  createHabitSchema,
+  completeHabitSchema,
+  feedbackSchema,
+  agentPromptSchema,
+  doctorWellnessSchema 
+} from "./mlValidation";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
@@ -3775,6 +3784,283 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     } catch (error) {
       console.error('Error fetching all voice followups:', error);
       res.status(500).json({ message: 'Failed to fetch voice followups' });
+    }
+  });
+
+  // ==================== ML/RL PERSONALIZATION ROUTES ====================
+  // Versioned API namespace: /api/v1/ml/*
+  // All routes require authentication and implement HIPAA-compliant data handling
+
+  // Get personalized recommendations for Agent Clona or Assistant Lysa
+  app.get('/api/v1/ml/recommendations', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const agentType = (req.query.agentType as 'clona' | 'lysa') || 'clona';
+      const limit = parseInt(req.query.limit as string) || 5;
+
+      // Role-based access: Verify role via fresh storage lookup (prevent session tampering)
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: 'Unauthorized: User not found' });
+      }
+
+      if (agentType === 'lysa' && user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Unauthorized: Lysa recommendations are doctor-only' });
+      }
+
+      const recommendations = await personalizationService.getRecommendations(userId, agentType, limit);
+      
+      // De-identify PHI: return only necessary fields
+      const sanitized = recommendations.map(r => ({
+        id: r.id,
+        type: r.type,
+        category: r.category,
+        title: r.title,
+        description: r.description,
+        confidenceScore: r.confidenceScore,
+        personalizationScore: r.personalizationScore,
+        priority: r.priority,
+        reasoning: r.reasoning,
+      }));
+
+      res.json(sanitized);
+    } catch (error) {
+      console.error('Error fetching recommendations:', error);
+      res.status(500).json({ message: 'Failed to fetch recommendations' });
+    }
+  });
+
+  // Create a new habit (patients only)
+  app.post('/api/v1/ml/habits', isAuthenticated, isPatient, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+
+      // Validate and sanitize input
+      const validated = createHabitSchema.parse(req.body);
+
+      const habit = await storage.createHabit({
+        userId,
+        name: validated.name,
+        description: validated.description,
+        category: validated.category,
+        frequency: validated.frequency,
+        goalCount: validated.goalCount,
+        currentStreak: 0,
+        longestStreak: 0,
+        totalCompletions: 0,
+      });
+
+      res.status(201).json(habit);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid input', errors: error.errors });
+      }
+      console.error('Error creating habit:', error);
+      res.status(500).json({ message: 'Failed to create habit' });
+    }
+  });
+
+  // Get user's habits
+  app.get('/api/v1/ml/habits', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const habits = await storage.getHabits(userId);
+      res.json(habits);
+    } catch (error) {
+      console.error('Error fetching habits:', error);
+      res.status(500).json({ message: 'Failed to fetch habits' });
+    }
+  });
+
+  // Mark habit as complete
+  app.post('/api/v1/ml/habits/:id/complete', isAuthenticated, isPatient, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const habitId = req.params.id;
+      
+      // Validate and sanitize input
+      const validated = completeHabitSchema.parse(req.body);
+      const { mood, notes, difficultyLevel } = validated;
+
+      // Verify habit belongs to user
+      const habits = await storage.getHabits(userId);
+      const habit = habits.find(h => h.id === habitId);
+      
+      if (!habit) {
+        return res.status(404).json({ message: 'Habit not found' });
+      }
+
+      // Create completion
+      const completion = await storage.createHabitCompletion({
+        habitId,
+        mood,
+        notes,
+        difficultyLevel: difficultyLevel || 3,
+        completedAt: new Date(),
+      });
+
+      // Update habit streak and stats
+      const currentStreak = (habit.currentStreak || 0) + 1;
+      const longestStreak = Math.max(currentStreak, habit.longestStreak || 0);
+      const totalCompletions = (habit.totalCompletions || 0) + 1;
+
+      await storage.updateHabit(habitId, {
+        currentStreak,
+        longestStreak,
+        totalCompletions,
+        lastCompletedAt: new Date(),
+      });
+
+      // Calculate RL reward
+      const reward = rlRewardCalculator.calculateHabitCompletionReward(
+        {
+          userContext: {
+            currentStreak,
+            habitsCompleted: totalCompletions,
+            engagementScore: 0,
+            recentSentiment: mood === 'great' ? 1 : mood === 'good' ? 0.5 : mood === 'okay' ? 0 : -0.5,
+          },
+          conversationContext: [],
+          healthMetrics: {},
+          recentActions: [],
+        },
+        completion,
+        currentStreak > (habit.currentStreak || 0)
+      );
+
+      // Store RL reward
+      await storage.createRLReward({
+        userId,
+        agentType: 'clona',
+        rewardValue: reward.toString(),
+        actionType: 'habit_completion',
+        stateSnapshot: { habitId, currentStreak },
+        actionSnapshot: { mood, difficultyLevel },
+      });
+
+      res.json({ completion, reward, newStreak: currentStreak });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid input', errors: error.errors });
+      }
+      console.error('Error completing habit:', error);
+      res.status(500).json({ message: 'Failed to complete habit' });
+    }
+  });
+
+  // Process user feedback (for RL reward loop)
+  app.post('/api/v1/ml/feedback', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Validate and sanitize input
+      const validated = feedbackSchema.parse(req.body);
+      const { agentType, helpful, sentiment, category, messageId } = validated;
+
+      await personalizationService.processFeedback(userId, agentType, {
+        messageId,
+        helpful,
+        sentiment,
+        category,
+      });
+
+      res.json({ success: true, message: 'Feedback processed' });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid input', errors: error.errors });
+      }
+      console.error('Error processing feedback:', error);
+      res.status(500).json({ message: 'Failed to process feedback' });
+    }
+  });
+
+  // Get personalized agent prompt (RAG integration for OpenAI)
+  app.post('/api/v1/ml/agent-prompts', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Validate and sanitize input (prevents prompt injection)
+      const validated = agentPromptSchema.parse(req.body);
+      const { agentType, basePrompt } = validated;
+
+      // Role-based access
+      if (agentType === 'lysa' && req.user!.role !== 'doctor') {
+        return res.status(403).json({ message: 'Unauthorized: Lysa prompts are doctor-only' });
+      }
+
+      const enhancedPrompt = await personalizationService.personalizeAgentPrompt(
+        userId,
+        agentType,
+        basePrompt
+      );
+
+      res.json({ enhancedPrompt });
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid input', errors: error.errors });
+      }
+      console.error('Error personalizing agent prompt:', error);
+      res.status(500).json({ message: 'Failed to personalize prompt' });
+    }
+  });
+
+  // Get user milestones
+  app.get('/api/v1/ml/milestones', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const milestones = await storage.getMilestones(userId);
+      res.json(milestones);
+    } catch (error) {
+      console.error('Error fetching milestones:', error);
+      res.status(500).json({ message: 'Failed to fetch milestones' });
+    }
+  });
+
+  // Track doctor wellness (doctors only)
+  app.post('/api/v1/ml/doctor-wellness', isAuthenticated, isDoctor, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Validate and sanitize input
+      const validated = doctorWellnessSchema.parse(req.body);
+      const { stressLevel, hoursWorked, patientsToday, burnoutRisk, notes } = validated;
+
+      const wellness = await storage.createDoctorWellness({
+        userId,
+        date: new Date(),
+        stressLevel,
+        hoursWorked,
+        patientsToday,
+        burnoutRisk,
+        notes,
+      });
+
+      res.status(201).json(wellness);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid input', errors: error.errors });
+      }
+      console.error('Error tracking doctor wellness:', error);
+      res.status(500).json({ message: 'Failed to track wellness' });
+    }
+  });
+
+  // Get doctor wellness history (doctors only)
+  app.get('/api/v1/ml/doctor-wellness', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+
+      // Only doctors can view their wellness history
+      if (req.user!.role !== 'doctor') {
+        return res.status(403).json({ message: 'Unauthorized: Only doctors can view wellness history' });
+      }
+
+      const days = parseInt(req.query.days as string) || 30;
+      const history = await storage.getDoctorWellnessHistory(userId, days);
+      res.json(history);
+    } catch (error) {
+      console.error('Error fetching doctor wellness history:', error);
+      res.status(500).json({ message: 'Failed to fetch wellness history' });
     }
   });
 
