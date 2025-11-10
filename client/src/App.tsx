@@ -56,12 +56,14 @@ import CorrelationInsights from "@/pages/CorrelationInsights";
 import NutritionInsights from "@/pages/NutritionInsights";
 import HealthCompanion from "@/pages/HealthCompanion";
 import VoiceFollowups from "@/pages/VoiceFollowups";
+import Habits from "@/pages/Habits";
 
 function PatientRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/chat" component={Chat} />
+      <Route path="/habits" component={Habits} />
       <Route path="/previous-sessions" component={PreviousSessions} />
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/counseling" component={Counseling} />

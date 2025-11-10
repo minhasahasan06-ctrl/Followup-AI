@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Shield,
   MapPin,
+  Target,
 } from "lucide-react";
 import {
   Sidebar,
@@ -51,6 +52,12 @@ const patientItems = [
     title: "Chat with Agent Clona",
     url: "/chat",
     icon: Bot,
+    badge: "AI",
+  },
+  {
+    title: "Habit Tracker",
+    url: "/habits",
+    icon: Target,
     badge: "AI",
   },
   {
