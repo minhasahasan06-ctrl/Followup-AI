@@ -3991,6 +3991,7 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
       // Create completion
       const completion = await storage.createHabitCompletion({
         habitId,
+        userId,
         mood,
         notes,
         difficultyLevel: difficultyLevel || 3,
@@ -4030,10 +4031,19 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
       await storage.createRLReward({
         userId,
         agentType: 'clona',
-        rewardValue: reward.toString(),
-        actionType: 'habit_completion',
-        stateSnapshot: { habitId, currentStreak },
-        actionSnapshot: { mood, difficultyLevel },
+        reward: reward.toString(),
+        rewardType: 'completion',
+        state: {
+          userContext: { habitId, currentStreak, totalCompletions },
+          conversationContext: [],
+          healthMetrics: {},
+          recentActions: [`habit_completion_${habitId}`],
+        },
+        action: {
+          type: 'habit_completion',
+          content: `Completed habit: ${habit.name}`,
+          parameters: { mood, difficultyLevel, habitId },
+        },
       });
 
       res.json({ completion, reward, newStreak: currentStreak });
@@ -4124,7 +4134,7 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
       const { stressLevel, hoursWorked, patientsToday, burnoutRisk, notes } = validated;
 
       const wellness = await storage.createDoctorWellness({
-        userId,
+        doctorId: userId,
         date: new Date(),
         stressLevel,
         hoursWorked,
