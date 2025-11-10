@@ -1981,3 +1981,345 @@ export const insertDeteriorationPredictionSchema = createInsertSchema(deteriorat
 
 export type InsertDeteriorationPrediction = z.infer<typeof insertDeteriorationPredictionSchema>;
 export type DeteriorationPrediction = typeof deteriorationPredictions.$inferSelect;
+
+// ============== REINFORCEMENT LEARNING & RECOMMENDATION SYSTEM ==============
+
+// User Preference Learning Profiles (for personalized AI responses)
+export const userLearningProfiles = pgTable("user_learning_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  agentType: varchar("agent_type").notNull(), // 'clona' or 'lysa'
+  
+  // Learned conversation preferences
+  preferredTone: varchar("preferred_tone"), // 'warm', 'professional', 'empathetic', 'motivational'
+  preferredResponseLength: varchar("preferred_response_length"), // 'brief', 'moderate', 'detailed'
+  preferredTopics: jsonb("preferred_topics").$type<string[]>(), // Topics user engages with most
+  avoidedTopics: jsonb("avoided_topics").$type<string[]>(), // Topics user avoids
+  
+  // Interaction patterns (learned from behavior)
+  averageSessionDuration: integer("average_session_duration"), // minutes
+  preferredTimeOfDay: varchar("preferred_time_of_day"), // 'morning', 'afternoon', 'evening', 'night'
+  interactionFrequency: decimal("interaction_frequency", { precision: 4, scale: 2 }), // times per day
+  
+  // Health-specific preferences (Agent Clona)
+  favoriteHealthActivities: jsonb("favorite_health_activities").$type<string[]>(),
+  strugglingAreas: jsonb("struggling_areas").$type<string[]>(), // Areas needing more support
+  motivationalStyle: varchar("motivational_style"), // 'encouragement', 'challenge', 'factual', 'celebration'
+  
+  // Clinical preferences (Assistant Lysa)
+  preferredDiagnosticApproach: varchar("preferred_diagnostic_approach"), // 'algorithmic', 'evidence_based', 'differential'
+  specialtyFocus: jsonb("specialty_focus").$type<string[]>(),
+  researchInterests: jsonb("research_interests").$type<string[]>(),
+  
+  // ML model state
+  modelVersion: varchar("model_version"),
+  embeddingVector: jsonb("embedding_vector").$type<number[]>(), // User preference embedding (TensorFlow)
+  lastTrainingDate: timestamp("last_training_date"),
+  totalInteractions: integer("total_interactions").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserLearningProfileSchema = createInsertSchema(userLearningProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertUserLearningProfile = z.infer<typeof insertUserLearningProfileSchema>;
+export type UserLearningProfile = typeof userLearningProfiles.$inferSelect;
+
+// Habit Tracking System
+export const habits = pgTable("habits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Habit details
+  name: varchar("name").notNull(), // "Morning meditation", "Evening walk", "Medication adherence"
+  description: text("description"),
+  category: varchar("category").notNull(), // 'health', 'medication', 'exercise', 'wellness', 'nutrition', 'sleep'
+  
+  // Tracking configuration
+  frequency: varchar("frequency").notNull(), // 'daily', 'weekly', 'custom'
+  targetDaysPerWeek: integer("target_days_per_week"),
+  reminderEnabled: boolean("reminder_enabled").default(true),
+  reminderTime: varchar("reminder_time"), // "08:00", "20:00"
+  
+  // Current status
+  isActive: boolean("is_active").default(true),
+  currentStreak: integer("current_streak").default(0), // days
+  longestStreak: integer("longest_streak").default(0), // days
+  totalCompletions: integer("total_completions").default(0),
+  
+  // AI recommendations
+  recommendedBy: varchar("recommended_by"), // 'clona', 'lysa', 'user', 'ml_model'
+  recommendationReason: text("recommendation_reason"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHabitSchema = createInsertSchema(habits).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHabit = z.infer<typeof insertHabitSchema>;
+export type Habit = typeof habits.$inferSelect;
+
+// Habit Completion Logs
+export const habitCompletions = pgTable("habit_completions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  habitId: varchar("habit_id").notNull().references(() => habits.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  completionDate: timestamp("completion_date").notNull().defaultNow(),
+  completed: boolean("completed").notNull().default(true),
+  
+  // Optional details
+  notes: text("notes"),
+  mood: varchar("mood"), // 'great', 'good', 'okay', 'struggling'
+  difficultyLevel: integer("difficulty_level"), // 1-5 scale
+  
+  // AI feedback
+  aiFeedback: text("ai_feedback"), // Encouraging message from Agent Clona
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitCompletionSchema = createInsertSchema(habitCompletions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitCompletion = z.infer<typeof insertHabitCompletionSchema>;
+export type HabitCompletion = typeof habitCompletions.$inferSelect;
+
+// Milestones & Achievements (Positive Reinforcement)
+export const milestones = pgTable("milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Milestone details
+  type: varchar("type").notNull(), // 'streak', 'total_completions', 'health_goal', 'engagement', 'wellness'
+  name: varchar("name").notNull(), // "7-Day Streak", "100 Days Strong", "First Month Complete"
+  description: text("description"),
+  icon: varchar("icon"), // emoji or icon name
+  
+  // Achievement criteria
+  category: varchar("category"), // 'habit', 'health', 'engagement', 'learning', 'doctor_wellness'
+  targetValue: integer("target_value"),
+  currentValue: integer("current_value").default(0),
+  
+  // Status
+  achieved: boolean("achieved").default(false),
+  achievedAt: timestamp("achieved_at"),
+  celebrated: boolean("celebrated").default(false), // Whether user saw celebration
+  
+  // Rewards
+  rewardPoints: integer("reward_points").default(0),
+  rewardMessage: text("reward_message"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertMilestoneSchema = createInsertSchema(milestones).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMilestone = z.infer<typeof insertMilestoneSchema>;
+export type Milestone = typeof milestones.$inferSelect;
+
+// ML-Generated Recommendations
+export const mlRecommendations = pgTable("ml_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  agentType: varchar("agent_type").notNull(), // 'clona' or 'lysa'
+  
+  // Recommendation details
+  type: varchar("type").notNull(), // 'habit', 'activity', 'health_tip', 'diagnostic', 'treatment', 'research'
+  category: varchar("category"), // 'wellness', 'nutrition', 'exercise', 'medication', 'clinical', 'research'
+  title: varchar("title").notNull(),
+  description: text("description").notNull(),
+  
+  // ML model metadata
+  modelVersion: varchar("model_version"),
+  confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  personalizationScore: decimal("personalization_score", { precision: 3, scale: 2 }), // How personalized (0-1)
+  
+  // Recommendation reasoning
+  reasoning: text("reasoning"), // Why this was recommended
+  basedOnFactors: jsonb("based_on_factors").$type<Array<{
+    factor: string;
+    weight: number;
+    source: string; // 'habit_history', 'conversation_data', 'health_metrics', 'research_interest'
+  }>>(),
+  
+  // User interaction
+  status: varchar("status").default("pending"), // 'pending', 'accepted', 'declined', 'completed', 'dismissed'
+  userFeedback: varchar("user_feedback"), // 'helpful', 'not_helpful', 'irrelevant'
+  userNotes: text("user_notes"),
+  
+  // Reinforcement learning reward signal
+  rewardValue: decimal("reward_value", { precision: 5, scale: 2 }), // Calculated reward (positive/negative)
+  
+  // Priority and timing
+  priority: varchar("priority"), // 'high', 'medium', 'low'
+  expiresAt: timestamp("expires_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertMLRecommendationSchema = createInsertSchema(mlRecommendations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMLRecommendation = z.infer<typeof insertMLRecommendationSchema>;
+export type MLRecommendation = typeof mlRecommendations.$inferSelect;
+
+// Reinforcement Learning Rewards & Feedback
+export const rlRewards = pgTable("rl_rewards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  agentType: varchar("agent_type").notNull(), // 'clona' or 'lysa'
+  
+  // State-action-reward data for RL
+  state: jsonb("state").$type<{
+    userContext: Record<string, any>;
+    conversationContext: string[];
+    healthMetrics: Record<string, any>;
+    recentActions: string[];
+  }>(),
+  
+  action: jsonb("action").$type<{
+    type: string;
+    content: string;
+    parameters: Record<string, any>;
+  }>(),
+  
+  reward: decimal("reward", { precision: 5, scale: 2 }).notNull(), // Positive or negative reward
+  
+  // Reward calculation factors
+  rewardType: varchar("reward_type"), // 'engagement', 'completion', 'satisfaction', 'health_outcome'
+  rewardFactors: jsonb("reward_factors").$type<Array<{
+    factor: string;
+    value: number;
+    weight: number;
+  }>>(),
+  
+  // Learning metadata
+  episodeId: varchar("episode_id"), // Groups related interactions
+  stepNumber: integer("step_number"), // Step in episode
+  
+  // Model update flag
+  usedForTraining: boolean("used_for_training").default(false),
+  trainingBatchId: varchar("training_batch_id"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertRLRewardSchema = createInsertSchema(rlRewards).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRLReward = z.infer<typeof insertRLRewardSchema>;
+export type RLReward = typeof rlRewards.$inferSelect;
+
+// Daily Engagement Tracking
+export const dailyEngagement = pgTable("daily_engagement", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  date: timestamp("date").notNull(),
+  
+  // Agent Clona engagement (patients)
+  clonaInteractions: integer("clona_interactions").default(0),
+  clonaSessionDuration: integer("clona_session_duration").default(0), // seconds
+  clonaTopics: jsonb("clona_topics").$type<string[]>(),
+  clonaSentiment: decimal("clona_sentiment", { precision: 3, scale: 2 }), // -1.00 to 1.00
+  
+  // Assistant Lysa engagement (doctors)
+  lysaInteractions: integer("lysa_interactions").default(0),
+  lysaSessionDuration: integer("lysa_session_duration").default(0), // seconds
+  lysaTopics: jsonb("lysa_topics").$type<string[]>(),
+  
+  // Habit completions
+  habitsCompleted: integer("habits_completed").default(0),
+  habitsSkipped: integer("habits_skipped").default(0),
+  
+  // Health metrics logged
+  healthMetricsLogged: integer("health_metrics_logged").default(0),
+  
+  // Overall engagement score (0-100)
+  engagementScore: integer("engagement_score"),
+  
+  // Streak tracking
+  isStreakDay: boolean("is_streak_day").default(false),
+  streakCount: integer("streak_count").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertDailyEngagementSchema = createInsertSchema(dailyEngagement).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDailyEngagement = z.infer<typeof insertDailyEngagementSchema>;
+export type DailyEngagement = typeof dailyEngagement.$inferSelect;
+
+// Doctor Wellness Tracking (for Assistant Lysa)
+export const doctorWellness = pgTable("doctor_wellness", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  date: timestamp("date").notNull().defaultNow(),
+  
+  // Wellness activities
+  meditationMinutes: integer("meditation_minutes").default(0),
+  exerciseMinutes: integer("exercise_minutes").default(0),
+  sleepHours: decimal("sleep_hours", { precision: 3, scale: 1 }),
+  
+  // Stress & burnout tracking
+  stressLevel: integer("stress_level"), // 1-10 scale
+  burnoutScore: integer("burnout_score"), // 1-100
+  workloadLevel: varchar("workload_level"), // 'light', 'moderate', 'heavy', 'overwhelming'
+  
+  // Professional development
+  researchTimeMinutes: integer("research_time_minutes").default(0),
+  learningActivities: jsonb("learning_activities").$type<string[]>(),
+  
+  // Patient care quality indicators
+  patientsSeenToday: integer("patients_seen_today").default(0),
+  averageConsultationTime: integer("average_consultation_time"), // minutes
+  
+  // Mood tracking
+  mood: varchar("mood"), // 'excellent', 'good', 'okay', 'struggling', 'burnout'
+  energyLevel: integer("energy_level"), // 1-10
+  
+  // AI insights
+  lysaRecommendations: jsonb("lysa_recommendations").$type<string[]>(),
+  wellnessScore: integer("wellness_score"), // 0-100 (AI-calculated)
+  
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDoctorWellnessSchema = createInsertSchema(doctorWellness).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorWellness = z.infer<typeof insertDoctorWellnessSchema>;
+export type DoctorWellness = typeof doctorWellness.$inferSelect;
