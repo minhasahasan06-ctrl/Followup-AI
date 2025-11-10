@@ -8,12 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Stethoscope, AlertCircle } from "lucide-react";
+import { Stethoscope, AlertCircle, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -72,6 +73,72 @@ export default function Login() {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const devLoginAsPatient = async () => {
+    try {
+      // Dev login sets session cookie
+      await api.post("/dev/login-as-patient");
+      
+      // Fetch user data from session
+      const userResponse = await api.get("/auth/user");
+      const user = userResponse.data;
+      
+      // Set mock tokens and user in localStorage for AuthContext
+      const mockTokens = {
+        idToken: "dev-token",
+        accessToken: "dev-access-token",
+        refreshToken: "dev-refresh-token",
+      };
+      
+      login(mockTokens, user);
+      
+      toast({
+        title: "Dev Login",
+        description: "Logged in as test patient",
+      });
+      
+      window.location.href = "/";
+    } catch (error) {
+      toast({
+        title: "Dev Login Failed",
+        description: "Unable to login as test patient",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const devLoginAsDoctor = async () => {
+    try {
+      // Dev login sets session cookie
+      await api.post("/dev/login-as-doctor");
+      
+      // Fetch user data from session
+      const userResponse = await api.get("/auth/user");
+      const user = userResponse.data;
+      
+      // Set mock tokens and user in localStorage for AuthContext
+      const mockTokens = {
+        idToken: "dev-token",
+        accessToken: "dev-access-token",
+        refreshToken: "dev-refresh-token",
+      };
+      
+      login(mockTokens, user);
+      
+      toast({
+        title: "Dev Login",
+        description: "Logged in as test doctor",
+      });
+      
+      window.location.href = "/";
+    } catch (error) {
+      toast({
+        title: "Dev Login Failed",
+        description: "Unable to login as test doctor",
+        variant: "destructive",
+      });
     }
   };
 
@@ -180,6 +247,39 @@ export default function Login() {
               </div>
             </form>
           </Form>
+
+          {/* Dev-only quick login buttons */}
+          {import.meta.env.DEV && (
+            <>
+              <Separator className="my-4" />
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+                  <Zap className="w-3 h-3" />
+                  Development Only
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={devLoginAsPatient}
+                    data-testid="button-dev-login-patient"
+                  >
+                    Test Patient
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={devLoginAsDoctor}
+                    data-testid="button-dev-login-doctor"
+                  >
+                    Test Doctor
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

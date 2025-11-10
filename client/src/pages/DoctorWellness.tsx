@@ -17,8 +17,9 @@ import { Progress } from "@/components/ui/progress";
 
 const logWellnessSchema = z.object({
   stressLevel: z.coerce.number().int().min(1).max(10),
-  workload: z.enum(['light', 'moderate', 'heavy', 'overwhelming']),
-  sleepQuality: z.enum(['poor', 'fair', 'good', 'excellent']).optional(),
+  hoursWorked: z.coerce.number().min(0).max(24),
+  patientsToday: z.coerce.number().int().min(0).max(100),
+  burnoutRisk: z.enum(['low', 'moderate', 'high', 'critical']).optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -63,8 +64,9 @@ export default function DoctorWellness() {
     resolver: zodResolver(logWellnessSchema),
     defaultValues: {
       stressLevel: 5,
-      workload: "moderate" as const,
-      sleepQuality: "good" as const,
+      hoursWorked: 8,
+      patientsToday: 15,
+      burnoutRisk: undefined,
       notes: "",
     },
   });
@@ -178,46 +180,45 @@ export default function DoctorWellness() {
                 />
                 <FormField
                   control={logWellnessForm.control}
-                  name="workload"
+                  name="hoursWorked"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Current Workload</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-workload">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="light">Light</SelectItem>
-                          <SelectItem value="moderate">Moderate</SelectItem>
-                          <SelectItem value="heavy">Heavy</SelectItem>
-                          <SelectItem value="overwhelming">Overwhelming</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Hours Worked Today</FormLabel>
+                      <FormControl>
+                        <input
+                          type="number"
+                          min="0"
+                          max="24"
+                          step="0.5"
+                          placeholder="8"
+                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          data-testid="input-hours-worked"
+                          {...field}
+                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
                 <FormField
                   control={logWellnessForm.control}
-                  name="sleepQuality"
+                  name="patientsToday"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Sleep Quality</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-sleep-quality">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="poor">Poor</SelectItem>
-                          <SelectItem value="fair">Fair</SelectItem>
-                          <SelectItem value="good">Good</SelectItem>
-                          <SelectItem value="excellent">Excellent</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Patients Seen Today</FormLabel>
+                      <FormControl>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          placeholder="15"
+                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          data-testid="input-patients-today"
+                          {...field}
+                          onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

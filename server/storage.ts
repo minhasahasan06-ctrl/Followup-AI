@@ -49,6 +49,15 @@ import {
   clinicalTrials,
   trialMatchScores,
   deteriorationPredictions,
+  userLearningProfiles,
+  habits,
+  habitCompletions,
+  streaks,
+  milestones,
+  mlRecommendations,
+  rlRewards,
+  dailyEngagement,
+  doctorWellness,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -149,9 +158,27 @@ import {
   type InsertTrialMatchScore,
   type DeteriorationPrediction,
   type InsertDeteriorationPrediction,
+  type UserLearningProfile,
+  type InsertUserLearningProfile,
+  type Habit,
+  type InsertHabit,
+  type HabitCompletion,
+  type InsertHabitCompletion,
+  type Streak,
+  type InsertStreak,
+  type Milestone,
+  type InsertMilestone,
+  type MLRecommendation,
+  type InsertMLRecommendation,
+  type RLReward,
+  type InsertRLReward,
+  type DailyEngagement,
+  type InsertDailyEngagement,
+  type DoctorWellness,
+  type InsertDoctorWellness,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, gte } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -2623,7 +2650,7 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(habits, eq(habitCompletions.habitId, habits.id))
       .where(and(
         eq(habits.userId, userId),
-        sql`${habitCompletions.completedAt} >= ${since}`
+        gte(habitCompletions.completedAt, since)
       ))
       .orderBy(desc(habitCompletions.completedAt));
     return completions.map(c => c.habit_completions);
@@ -2702,8 +2729,8 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(doctorWellness)
       .where(and(
-        eq(doctorWellness.userId, userId),
-        sql`${doctorWellness.date} >= ${since}`
+        eq(doctorWellness.doctorId, userId),
+        gte(doctorWellness.date, since)
       ))
       .orderBy(desc(doctorWellness.date));
     return wellnessHistory;
