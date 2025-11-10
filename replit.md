@@ -20,6 +20,15 @@ Preferred communication style: Simple, everyday language.
 **Authentication & Authorization:** AWS Cognito User Pools for authentication with email/password signup and login. JWT-based stateless authentication using Bearer tokens in Authorization headers. Role-based access control (patient vs. doctor) stored in Cognito custom attributes and local database. Medical license verification for doctors. Optional TOTP-based Two-Factor Authentication (2FA) through AWS Cognito MFA.
 **Data Layer:** Drizzle ORM for type-safe queries, PostgreSQL database.
 **AI Integration:** OpenAI API (gpt-4o) for Agent Clona (warm, empathetic, simple language) and Assistant Lysa. Includes sentiment analysis, medical entity extraction, and AI-generated session summaries.
+**Personalization & Recommendation System (NEW):** Rule-based intelligent recommendation engine with RAG-enhanced AI agent personalization. Features:
+- **Preference Learning:** Tracks user interactions, sentiment, favorite topics, and struggling areas without relying on untrained ML models.
+- **Rule-Based Recommendations:** Uses explainable heuristics for Agent Clona (habit suggestions, wellness activities, motivational content) and Assistant Lysa (clinical protocols, research papers, doctor wellness alerts).
+- **RAG Integration:** Injects learned user preferences into OpenAI agent prompts via personalized context, enabling truly personalized conversations.
+- **RL Reward System:** Calculates rewards from user feedback (helpful/not helpful, sentiment, completion rates) with epsilon-greedy exploration for future ML enhancement.
+- **Habit Tracking:** Streak monitoring, milestone celebrations, completion analytics with personalized recommendations based on patterns.
+- **Doctor Wellness:** Stress level tracking, burnout prevention, work-life balance recommendations for Assistant Lysa.
+- **Feedback Loop:** Processes user interactions to continuously improve recommendation quality and agent personalization.
+- **Database Schema:** 8 specialized tables (userLearningProfiles, habits, habitCompletions, streaks, milestones, mlRecommendations, rlRewards, dailyEngagement, doctorWellness) with full CRUD operations.
 **Advanced Drug Interaction Detection (PRODUCTION-READY):** AI-powered system using Graph Neural Networks (GNN) simulation and Natural Language Processing (NLP) via OpenAI to detect drug-drug and drug-gene interactions with 99% accuracy. Features:
 - **Automatic Medication Enrichment:** Uses OpenAI to automatically look up generic names and brand names for first-time medications, ensuring reliable name-to-ID mapping even when AI normalizes drug names (e.g., "atorvastatin" vs "Lipitor").
 - **Batched Performance Optimization:** Single AI request analyzes all medication pairs (45x reduction for 10 medications) instead of N*(N-1)/2 sequential calls.
