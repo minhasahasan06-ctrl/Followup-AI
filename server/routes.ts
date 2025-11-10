@@ -76,6 +76,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Configure session middleware for cookie-based authentication
   app.use(getSession());
 
+  // ============== DEV-ONLY: AUTHENTICATION BYPASS ==============
+  // ⚠️ SECURITY WARNING: This bypass is ONLY for development testing!
+  // It MUST NOT be accessible in production environments.
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[DEV-ONLY] 🔓 Authentication bypass routes enabled for testing');
+
+    // Create test users in database if they don't exist
+    const ensureTestUsers = async () => {
+      try {
+        // Test patient user
+        const testPatientId = 'dev-patient-00000000-0000-0000-0000-000000000001';
+        const existingPatient = await storage.getUser(testPatientId);
+        if (!existingPatient) {
+          await storage.createUser({
+            id: testPatientId,
+            email: 'patient@test.com',
+            firstName: 'Test',
+            lastName: 'Patient',
+            role: 'patient',
+            phoneNumber: '+15551234567',
+            phoneVerified: true,
+            twoFactorEnabled: false,
+          });
+          console.log('[DEV-ONLY] ✅ Created test patient user');
+        }
+
+        // Test doctor user
+        const testDoctorId = 'dev-doctor-00000000-0000-0000-0000-000000000002';
+        const existingDoctor = await storage.getUser(testDoctorId);
+        if (!existingDoctor) {
+          await storage.createUser({
+            id: testDoctorId,
+            email: 'doctor@test.com',
+            firstName: 'Dr. Test',
+            lastName: 'Doctor',
+            role: 'doctor',
+            phoneNumber: '+15551234568',
+            phoneVerified: true,
+            twoFactorEnabled: false,
+            medicalLicenseNumber: 'TEST-LICENSE-12345',
+            organization: 'Test Hospital',
+            verified: true,
+          });
+          console.log('[DEV-ONLY] ✅ Created test doctor user');
+        }
+      } catch (error) {
+        console.error('[DEV-ONLY] Error creating test users:', error);
+      }
+    };
+
+    // Initialize test users
+    await ensureTestUsers();
+
+    // Dev-only quick login endpoints
+    app.post('/api/dev/login-as-patient', async (req: any, res) => {
+      const testPatientId = 'dev-patient-00000000-0000-0000-0000-000000000001';
+      req.session.userId = testPatientId;
+      await req.session.save();
+      console.log('[DEV-ONLY] 👤 Logged in as test patient');
+      res.json({ 
+        message: 'Logged in as test patient', 
+        userId: testPatientId,
+        email: 'patient@test.com',
+        role: 'patient'
+      });
+    });
+
+    app.post('/api/dev/login-as-doctor', async (req: any, res) => {
+      const testDoctorId = 'dev-doctor-00000000-0000-0000-0000-000000000002';
+      req.session.userId = testDoctorId;
+      await req.session.save();
+      console.log('[DEV-ONLY] 👨‍⚕️ Logged in as test doctor');
+      res.json({ 
+        message: 'Logged in as test doctor', 
+        userId: testDoctorId,
+        email: 'doctor@test.com',
+        role: 'doctor'
+      });
+    });
+
+    app.get('/api/dev/test-users', async (req, res) => {
+      res.json({
+        patient: {
+          endpoint: 'POST /api/dev/login-as-patient',
+          email: 'patient@test.com',
+          userId: 'dev-patient-00000000-0000-0000-0000-000000000001'
+        },
+        doctor: {
+          endpoint: 'POST /api/dev/login-as-doctor',
+          email: 'doctor@test.com',
+          userId: 'dev-doctor-00000000-0000-0000-0000-000000000002'
+        },
+        note: 'These endpoints only work in development mode'
+      });
+    });
+  }
+  // ============== END DEV-ONLY BYPASS ==============
+
   // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
   const { signUp, signIn, confirmSignUp, adminConfirmSignUp, resendConfirmationCode, adminConfirmUser, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
   const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
