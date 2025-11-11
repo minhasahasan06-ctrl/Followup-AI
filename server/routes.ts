@@ -5835,6 +5835,226 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // ===== RESEARCH SERVICE =====
+  const { researchService, initResearchService } = await import('./researchService');
+  initResearchService(storage);
+
+  // Query FHIR data from AWS HealthLake
+  app.post('/api/v1/research/fhir/query', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access research data' });
+      }
+
+      const { resourceType, parameters, limit } = req.body;
+      const data = await researchService.queryFHIRData({ resourceType, parameters, limit });
+      res.json(data);
+    } catch (error) {
+      console.error('Error querying FHIR data:', error);
+      res.status(500).json({ message: 'Failed to query FHIR data' });
+    }
+  });
+
+  // Get epidemiological data
+  app.get('/api/v1/research/epidemiology/:condition', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access research data' });
+      }
+
+      const { condition } = req.params;
+      const data = await researchService.getEpidemiologicalData(condition);
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching epidemiological data:', error);
+      res.status(500).json({ message: 'Failed to fetch epidemiological data' });
+    }
+  });
+
+  // Get population health metrics
+  app.get('/api/v1/research/population-health', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access research data' });
+      }
+
+      const data = await researchService.getPopulationHealthMetrics(req.user.id);
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching population health metrics:', error);
+      res.status(500).json({ message: 'Failed to fetch population health metrics' });
+    }
+  });
+
+  // Generate research report
+  app.post('/api/v1/research/reports/generate', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can generate research reports' });
+      }
+
+      const { studyType, parameters } = req.body;
+      const report = await researchService.generateResearchReport(studyType, parameters);
+      res.json(report);
+    } catch (error) {
+      console.error('Error generating research report:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to generate report' });
+    }
+  });
+
+  // ===== VOICE INTERFACE SERVICE =====
+  const { voiceInterfaceService, initVoiceInterfaceService } = await import('./voiceInterfaceService');
+  initVoiceInterfaceService(storage);
+
+  // Transcribe audio
+  app.post('/api/v1/voice/transcribe', isAuthenticated, async (req: any, res) => {
+    try {
+      const { audioFilePath } = req.body;
+      const transcription = await voiceInterfaceService.transcribeAudio(audioFilePath);
+      res.json(transcription);
+    } catch (error) {
+      console.error('Error transcribing audio:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to transcribe audio' });
+    }
+  });
+
+  // Generate speech from text
+  app.post('/api/v1/voice/speech', isAuthenticated, async (req: any, res) => {
+    try {
+      const { text, voice } = req.body;
+      const audioBuffer = await voiceInterfaceService.generateSpeech(text, voice);
+      
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Disposition', 'attachment; filename="speech.mp3"');
+      res.send(audioBuffer);
+    } catch (error) {
+      console.error('Error generating speech:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to generate speech' });
+    }
+  });
+
+  // Process voice followup
+  app.post('/api/v1/voice/followup', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.user.role === 'patient' ? req.user.id : req.body.patientId;
+      const { audioFilePath } = req.body;
+      
+      const result = await voiceInterfaceService.processVoiceFollowup(patientId, audioFilePath);
+      res.json(result);
+    } catch (error) {
+      console.error('Error processing voice followup:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to process voice followup' });
+    }
+  });
+
+  // ===== DOCTOR CONSULTATION SERVICE =====
+  const { doctorConsultationService, initDoctorConsultationService } = await import('./doctorConsultationService');
+  initDoctorConsultationService(storage);
+
+  // Request consultation with another doctor
+  app.post('/api/v1/consultations/request', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can request consultations' });
+      }
+
+      const { consultingDoctorId, patientId, reason, urgency, shareRecordTypes } = req.body;
+      const consultation = await doctorConsultationService.requestConsultation({
+        requestingDoctorId: req.user.id,
+        consultingDoctorId,
+        patientId,
+        reason,
+        urgency,
+        shareRecordTypes,
+      });
+
+      res.json(consultation);
+    } catch (error) {
+      console.error('Error requesting consultation:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to request consultation' });
+    }
+  });
+
+  // Approve consultation request
+  app.post('/api/v1/consultations/:id/approve', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can approve consultations' });
+      }
+
+      const { id } = req.params;
+      const consultation = await doctorConsultationService.approveConsultation(id, req.user.id);
+      res.json(consultation);
+    } catch (error) {
+      console.error('Error approving consultation:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to approve consultation' });
+    }
+  });
+
+  // Deny consultation request
+  app.post('/api/v1/consultations/:id/deny', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can deny consultations' });
+      }
+
+      const { id } = req.params;
+      const { reason } = req.body;
+      const consultation = await doctorConsultationService.denyConsultation(id, req.user.id, reason);
+      res.json(consultation);
+    } catch (error) {
+      console.error('Error denying consultation:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to deny consultation' });
+    }
+  });
+
+  // Get patient records with access token
+  app.post('/api/v1/consultations/records', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access patient records' });
+      }
+
+      const { accessToken, recordTypes } = req.body;
+      const records = await doctorConsultationService.getPatientRecords(accessToken, recordTypes);
+      res.json(records);
+    } catch (error) {
+      console.error('Error fetching patient records:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to fetch patient records' });
+    }
+  });
+
+  // Get consultations for current doctor
+  app.get('/api/v1/consultations', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view consultations' });
+      }
+
+      const consultations = await doctorConsultationService.getConsultationsByDoctor(req.user.id);
+      res.json(consultations);
+    } catch (error) {
+      console.error('Error fetching consultations:', error);
+      res.status(500).json({ message: 'Failed to fetch consultations' });
+    }
+  });
+
+  // Revoke consultation
+  app.post('/api/v1/consultations/:id/revoke', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can revoke consultations' });
+      }
+
+      const { id } = req.params;
+      await doctorConsultationService.revokeConsultation(id, req.user.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error revoking consultation:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to revoke consultation' });
+    }
+  });
+
   // ===== CHATBOT SERVICE =====
   const { chatbotService, initChatbotService } = await import('./chatbotService');
   initChatbotService(storage);
