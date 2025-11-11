@@ -5835,8 +5835,58 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // ===== APPOINTMENT REMINDER SERVICE =====
+  const { appointmentReminderService, initAppointmentReminderService } = await import('./appointmentReminderService');
+  initAppointmentReminderService(storage);
+
+  // Send daily reminders (should be called by cron job)
+  app.post('/api/v1/reminders/send-daily', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can trigger reminders' });
+      }
+
+      const results = await appointmentReminderService.sendDailyReminders();
+      res.json(results);
+    } catch (error) {
+      console.error('Error sending daily reminders:', error);
+      res.status(500).json({ message: 'Failed to send daily reminders' });
+    }
+  });
+
+  // Send immediate reminder for specific appointment
+  app.post('/api/v1/reminders/send/:appointmentId', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can send reminders' });
+      }
+
+      const { appointmentId } = req.params;
+      const result = await appointmentReminderService.sendImmediateReminder(appointmentId);
+      res.json(result);
+    } catch (error) {
+      console.error('Error sending reminder:', error);
+      res.status(500).json({ message: 'Failed to send reminder' });
+    }
+  });
+
+  // Process SMS reminder responses (webhook from Twilio)
+  app.post('/api/v1/reminders/sms-response', async (req, res) => {
+    try {
+      const from = req.body.From;
+      const message = req.body.Body;
+      
+      await appointmentReminderService.processReminderResponse(from, message);
+      res.sendStatus(200);
+    } catch (error) {
+      console.error('Error processing reminder response:', error);
+      res.sendStatus(500);
+    }
+  });
+
   // ===== TWILIO VOICE IVR ROUTES =====
-  const { twilioVoiceService } = await import('./twilioVoiceService');
+  const { twilioVoiceService, initTwilioVoiceService } = await import('./twilioVoiceService');
+  initTwilioVoiceService(storage);
 
   // IVR welcome (incoming call webhook)
   app.post('/api/v1/voice/ivr/welcome', (req, res) => {
