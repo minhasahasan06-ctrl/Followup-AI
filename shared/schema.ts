@@ -2328,6 +2328,16 @@ export type DoctorWellness = typeof doctorWellness.$inferSelect;
 // RECEPTIONIST & ASSISTANT LYSA FEATURES
 // ============================================================================
 
+// Triage assessment structure for symptom urgency evaluation
+export type TriageAssessment = {
+  urgencyScore: number;
+  recommendedTimeframe: string;
+  redFlags: string[];
+  confidence: number;
+  assessedAt: string;
+  assessedBy: 'ai' | 'rule-based' | 'doctor';
+};
+
 // Appointments - Schedule and manage patient appointments
 export const appointments = pgTable("appointments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2372,6 +2382,15 @@ export const appointments = pgTable("appointments", {
   bookedByAI: boolean("booked_by_ai").default(false),
   aiBookingContext: jsonb("ai_booking_context").$type<{ intent: string; confidence: number; extractedInfo: any }>(),
   
+  // Symptom triage (AI-powered urgency assessment)
+  symptoms: text("symptoms"),
+  urgencyLevel: varchar("urgency_level").default("routine"), // 'emergency', 'urgent', 'routine', 'non-urgent'
+  triageAssessment: jsonb("triage_assessment").$type<TriageAssessment>(),
+  triageAssessedAt: timestamp("triage_assessed_at"),
+  clinicianOverride: boolean("clinician_override").default(false),
+  clinicianOverrideReason: text("clinician_override_reason"),
+  clinicianOverrideBy: varchar("clinician_override_by"),
+  
   // Notes
   doctorNotes: text("doctor_notes"),
   patientNotes: text("patient_notes"),
@@ -2388,6 +2407,7 @@ export const appointments = pgTable("appointments", {
   doctorTimeIdx: index("appointments_doctor_time_idx").on(table.doctorId, table.startTime),
   patientTimeIdx: index("appointments_patient_time_idx").on(table.patientId, table.startTime),
   statusIdx: index("appointments_status_idx").on(table.status),
+  urgencyQueueIdx: index("appointments_urgency_queue_idx").on(table.doctorId, table.urgencyLevel, table.startTime),
 }));
 
 export const insertAppointmentSchema = createInsertSchema(appointments).omit({
@@ -2398,6 +2418,54 @@ export const insertAppointmentSchema = createInsertSchema(appointments).omit({
 
 export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
 export type Appointment = typeof appointments.$inferSelect;
+
+// Appointment Triage Logs - Audit trail for symptom triage assessments
+export const appointmentTriageLogs = pgTable("appointment_triage_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  appointmentId: varchar("appointment_id").references(() => appointments.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Input
+  symptoms: text("symptoms").notNull(),
+  patientSelfAssessment: varchar("patient_self_assessment"), // Patient's own urgency estimate
+  
+  // AI Assessment
+  urgencyLevel: varchar("urgency_level").notNull(), // 'emergency', 'urgent', 'routine', 'followup'
+  urgencyScore: integer("urgency_score").notNull(), // 0-100
+  recommendedTimeframe: varchar("recommended_timeframe").notNull(),
+  redFlags: text("red_flags").array(),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }).notNull(), // 0.00-1.00
+  assessmentMethod: varchar("assessment_method").notNull(), // 'ai', 'rule-based', 'hybrid'
+  
+  // Clinician Review
+  clinicianReviewed: boolean("clinician_reviewed").default(false),
+  clinicianAgreed: boolean("clinician_agreed"),
+  clinicianOverrideLevel: varchar("clinician_override_level"),
+  clinicianOverrideReason: text("clinician_override_reason"),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  
+  // Risk Alert Integration
+  riskAlertCreated: boolean("risk_alert_created").default(false),
+  riskAlertId: varchar("risk_alert_id"),
+  
+  // Metadata
+  modelVersion: varchar("model_version"), // e.g., "gpt-4o-2024-11-20"
+  processingTimeMs: integer("processing_time_ms"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("triage_logs_patient_idx").on(table.patientId, table.createdAt),
+  urgencyIdx: index("triage_logs_urgency_idx").on(table.urgencyLevel, table.createdAt),
+}));
+
+export const insertAppointmentTriageLogSchema = createInsertSchema(appointmentTriageLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAppointmentTriageLog = z.infer<typeof insertAppointmentTriageLogSchema>;
+export type AppointmentTriageLog = typeof appointmentTriageLogs.$inferSelect;
 
 // Doctor Availability - Define doctor's working hours and availability
 export const doctorAvailability = pgTable("doctor_availability", {

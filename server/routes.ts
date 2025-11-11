@@ -1737,6 +1737,99 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // SYMPTOM TRIAGE - AI-powered urgency assessment for appointments
+  app.post('/api/appointments/triage', isAuthenticated, async (req: any, res) => {
+    const startTime = Date.now();
+    
+    try {
+      const { symptoms, patientId, appointmentId, patientSelfAssessment } = req.body;
+      
+      if (!symptoms || !patientId) {
+        return res.status(400).json({ message: "Symptoms and patient ID are required" });
+      }
+
+      // If appointmentId provided, verify it exists and belongs to patient
+      if (appointmentId) {
+        const appointment = await storage.getAppointment(appointmentId);
+        if (!appointment) {
+          return res.status(404).json({ message: "Appointment not found" });
+        }
+        if (appointment.patientId !== patientId) {
+          return res.status(403).json({ message: "Not authorized to triage this appointment" });
+        }
+      }
+
+      // Get patient profile for immunocompromised context
+      const patientProfile = await storage.getPatientProfile(patientId);
+      
+      // Assess symptom urgency
+      const { assessSymptomUrgency, escalateToRiskAlert } = await import('./symptomTriageService');
+      const triageResult = await assessSymptomUrgency(symptoms, patientProfile || undefined, patientId);
+      
+      const durationMs = Date.now() - startTime;
+
+      // Build TriageAssessment object from TriageResult
+      const triageAssessment = {
+        urgencyScore: triageResult.urgencyScore,
+        recommendedTimeframe: triageResult.recommendedTimeframe,
+        redFlags: triageResult.redFlags,
+        confidence: triageResult.confidence,
+        assessedAt: new Date().toISOString(),
+        assessedBy: triageResult.assessmentMethod === 'hybrid' ? 'ai' : triageResult.assessmentMethod,
+      };
+
+      // Map urgency level (followup → routine for consistency)
+      const urgencyLevel = triageResult.urgencyLevel === 'followup' ? 'routine' : triageResult.urgencyLevel;
+
+      // Persist triage results to appointment (if provided) and create audit log
+      const { appointment, log } = await storage.updateAppointmentTriageResult({
+        appointmentId,
+        patientId,
+        symptoms,
+        urgencyLevel: urgencyLevel as 'emergency' | 'urgent' | 'routine' | 'non-urgent',
+        triageAssessment,
+        redFlags: triageResult.redFlags,
+        recommendations: triageResult.recommendations,
+        patientSelfAssessment,
+        durationMs,
+      });
+      
+      // Create risk alert for urgent/emergency cases
+      let riskAlertId: string | null = null;
+      if (triageResult.urgencyLevel === 'urgent' || triageResult.urgencyLevel === 'emergency') {
+        riskAlertId = await escalateToRiskAlert(patientId, triageResult, symptoms);
+      }
+      
+      // Return persisted triage data
+      res.json({
+        appointment,
+        log,
+        riskAlertId,
+        urgencyLevel: triageResult.urgencyLevel,
+        redFlags: triageResult.redFlags,
+        recommendations: triageResult.recommendations,
+      });
+    } catch (error: any) {
+      console.error("[Triage] Error assessing symptoms:", error);
+      
+      // Handle specific error cases
+      if (error.message?.includes('Appointment not found')) {
+        return res.status(404).json({ message: "Appointment not found" });
+      }
+      if (error.message?.includes('Patient mismatch')) {
+        return res.status(403).json({ message: "Not authorized to triage this appointment" });
+      }
+      if (error.message?.includes('cancelled appointment')) {
+        return res.status(409).json({ message: "Cannot triage cancelled appointment" });
+      }
+      if (error.message?.includes('Concurrent triage')) {
+        return res.status(409).json({ message: "Appointment was recently triaged, please refresh" });
+      }
+      
+      res.status(500).json({ message: "Failed to assess symptoms" });
+    }
+  });
+
   // Medication routes
   app.get('/api/medications', isAuthenticated, async (req: any, res) => {
     try {
