@@ -5717,6 +5717,124 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // ===== GMAIL SYNC ROUTES (HIPAA CRITICAL) =====
+  const { gmailService } = await import('./gmailService');
+
+  // Get Gmail auth URL
+  app.get('/api/v1/gmail/auth-url', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can connect Gmail' });
+      }
+
+      const authUrl = gmailService.getAuthUrl(req.user.id);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error('Error generating Gmail auth URL:', error);
+      res.status(500).json({ message: 'Failed to generate auth URL' });
+    }
+  });
+
+  // Gmail OAuth callback
+  app.get('/api/gmail/oauth/callback', async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const state = req.query.state as string; // doctorId
+      
+      if (!code || !state) {
+        return res.status(400).send('Missing code or state parameter');
+      }
+
+      const result = await gmailService.handleOAuthCallback(code, state);
+      
+      if (result.success) {
+        res.redirect('/?gmail=connected');
+      } else {
+        res.redirect('/?gmail=error&message=' + encodeURIComponent(result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error in Gmail OAuth callback:', error);
+      res.status(500).send('Failed to complete OAuth');
+    }
+  });
+
+  // Get Gmail sync status
+  app.get('/api/v1/gmail/sync/status', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access Gmail sync' });
+      }
+
+      const syncConfig = await storage.getGmailSync(req.user.id);
+      res.json(syncConfig || { connected: false });
+    } catch (error) {
+      console.error('Error fetching Gmail sync status:', error);
+      res.status(500).json({ message: 'Failed to fetch sync status' });
+    }
+  });
+
+  // Trigger manual Gmail sync
+  app.post('/api/v1/gmail/sync/trigger', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can sync Gmail' });
+      }
+
+      const result = await gmailService.syncEmails(req.user.id);
+      res.json(result);
+    } catch (error) {
+      console.error('Error triggering Gmail sync:', error);
+      res.status(500).json({ message: 'Failed to trigger sync' });
+    }
+  });
+
+  // Send email via Gmail
+  app.post('/api/v1/gmail/send', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can send emails' });
+      }
+
+      const { to, subject, body } = req.body;
+      const result = await gmailService.sendEmail(req.user.id, to, subject, body);
+      res.json(result);
+    } catch (error) {
+      console.error('Error sending email:', error);
+      res.status(500).json({ message: 'Failed to send email' });
+    }
+  });
+
+  // Get Gmail sync logs
+  app.get('/api/v1/gmail/sync/logs', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view sync logs' });
+      }
+
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const logs = await storage.getGmailSyncLogs(req.user.id, limit);
+      res.json(logs);
+    } catch (error) {
+      console.error('Error fetching Gmail sync logs:', error);
+      res.status(500).json({ message: 'Failed to fetch sync logs' });
+    }
+  });
+
+  // Disconnect Gmail
+  app.post('/api/v1/gmail/disconnect', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can disconnect Gmail' });
+      }
+
+      const result = await gmailService.disconnect(req.user.id);
+      res.json(result);
+    } catch (error) {
+      console.error('Error disconnecting Gmail:', error);
+      res.status(500).json({ message: 'Failed to disconnect Gmail' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

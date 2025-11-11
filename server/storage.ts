@@ -66,6 +66,8 @@ import {
   appointmentReminders,
   googleCalendarSync,
   googleCalendarSyncLogs,
+  gmailSync,
+  gmailSyncLogs,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -200,6 +202,10 @@ import {
   type InsertGoogleCalendarSync,
   type GoogleCalendarSyncLog,
   type InsertGoogleCalendarSyncLog,
+  type GmailSync,
+  type InsertGmailSync,
+  type GmailSyncLog,
+  type InsertGmailSyncLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, sql, gte, lte, like, ilike, inArray, between } from "drizzle-orm";
@@ -590,6 +596,15 @@ export interface IStorage {
   createGoogleCalendarSyncLog(log: InsertGoogleCalendarSyncLog): Promise<GoogleCalendarSyncLog>;
   getGoogleCalendarSyncLogs(doctorId: string, limit?: number): Promise<GoogleCalendarSyncLog[]>;
   getAppointmentByGoogleEventId(eventId: string): Promise<Appointment | undefined>;
+  
+  // Gmail sync operations
+  createGmailSync(sync: InsertGmailSync): Promise<GmailSync>;
+  getGmailSync(doctorId: string): Promise<GmailSync | undefined>;
+  updateGmailSync(doctorId: string, data: Partial<GmailSync>): Promise<GmailSync | undefined>;
+  deleteGmailSync(doctorId: string): Promise<boolean>;
+  createGmailSyncLog(log: InsertGmailSyncLog): Promise<GmailSyncLog>;
+  getGmailSyncLogs(doctorId: string, limit?: number): Promise<GmailSyncLog[]>;
+  getEmailThreadByExternalId(externalThreadId: string): Promise<EmailThread | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3596,6 +3611,70 @@ export class DatabaseStorage implements IStorage {
       .from(appointments)
       .where(eq(appointments.googleCalendarEventId, eventId));
     return appointment;
+  }
+
+  // Gmail sync operations
+  async createGmailSync(sync: InsertGmailSync): Promise<GmailSync> {
+    const [created] = await db
+      .insert(gmailSync)
+      .values(sync)
+      .returning();
+    return created;
+  }
+
+  async getGmailSync(doctorId: string): Promise<GmailSync | undefined> {
+    const [sync] = await db
+      .select()
+      .from(gmailSync)
+      .where(eq(gmailSync.doctorId, doctorId));
+    return sync;
+  }
+
+  async updateGmailSync(
+    doctorId: string,
+    data: Partial<GmailSync>
+  ): Promise<GmailSync | undefined> {
+    const [updated] = await db
+      .update(gmailSync)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(gmailSync.doctorId, doctorId))
+      .returning();
+    return updated;
+  }
+
+  async deleteGmailSync(doctorId: string): Promise<boolean> {
+    const result = await db
+      .delete(gmailSync)
+      .where(eq(gmailSync.doctorId, doctorId));
+    return true;
+  }
+
+  async createGmailSyncLog(log: InsertGmailSyncLog): Promise<GmailSyncLog> {
+    const [created] = await db
+      .insert(gmailSyncLogs)
+      .values(log)
+      .returning();
+    return created;
+  }
+
+  async getGmailSyncLogs(
+    doctorId: string,
+    limit: number = 50
+  ): Promise<GmailSyncLog[]> {
+    return await db
+      .select()
+      .from(gmailSyncLogs)
+      .where(eq(gmailSyncLogs.doctorId, doctorId))
+      .orderBy(desc(gmailSyncLogs.createdAt))
+      .limit(limit);
+  }
+
+  async getEmailThreadByExternalId(externalThreadId: string): Promise<EmailThread | undefined> {
+    const [thread] = await db
+      .select()
+      .from(emailThreads)
+      .where(eq(emailThreads.externalThreadId, externalThreadId));
+    return thread;
   }
 }
 
