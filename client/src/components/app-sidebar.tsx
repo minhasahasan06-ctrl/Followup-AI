@@ -24,6 +24,7 @@ import {
   Shield,
   MapPin,
   Target,
+  Headphones,
 } from "lucide-react";
 import {
   Sidebar,
@@ -141,6 +142,12 @@ const doctorItems = [
     title: "All Patients",
     url: "/",
     icon: Users,
+  },
+  {
+    title: "Assistant Lysa Receptionist",
+    url: "/receptionist",
+    icon: Headphones,
+    badge: "AI",
   },
   {
     title: "Doctor Wellness",
