@@ -4264,6 +4264,721 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     }
   });
 
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA - APPOINTMENT MANAGEMENT ROUTES
+  // ============================================================================
+
+  // Create appointment with conflict detection
+  app.post('/api/v1/appointments', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      if (user.role !== 'doctor' && user.role !== 'patient') {
+        return res.status(403).json({ message: 'Only doctors and patients can manage appointments' });
+      }
+
+      let { patientId, doctorId, startTime, endTime, appointmentType, notes, googleCalendarEventId } = req.body;
+
+      // SECURITY: Enforce participant authorization based on role
+      if (user.role === 'patient') {
+        // Patients can only book appointments for themselves
+        patientId = userId;
+        if (!doctorId) {
+          return res.status(400).json({ message: 'Doctor ID is required' });
+        }
+      } else if (user.role === 'doctor') {
+        // Doctors can book on behalf of patients, but only for themselves
+        doctorId = userId;
+        if (!patientId) {
+          return res.status(400).json({ message: 'Patient ID is required' });
+        }
+      }
+
+      if (!startTime || !endTime || !appointmentType) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      const startDate = new Date(startTime);
+      const endDate = new Date(endTime);
+
+      // Check for conflicts
+      const conflicts = await storage.findAppointmentConflicts(doctorId, startDate, endDate);
+      if (conflicts.length > 0) {
+        return res.status(409).json({ 
+          message: 'Appointment conflicts with existing appointment',
+          conflicts 
+        });
+      }
+
+      const appointment = await storage.createAppointment({
+        patientId,
+        doctorId,
+        startTime: startDate,
+        endTime: endDate,
+        appointmentType,
+        status: 'scheduled',
+        confirmationStatus: 'pending',
+        notes,
+        googleCalendarEventId,
+      });
+
+      res.status(201).json(appointment);
+    } catch (error) {
+      console.error('Error creating appointment:', error);
+      res.status(500).json({ message: 'Failed to create appointment' });
+    }
+  });
+
+  // Get upcoming appointments (MUST be before /:id route)
+  app.get('/api/v1/appointments/upcoming', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const daysAhead = req.query.days ? parseInt(req.query.days as string) : 30;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+
+      const role = user.role as 'doctor' | 'patient';
+      const appointments = await storage.listUpcomingAppointments(userId, role, daysAhead, limit);
+
+      res.json(appointments);
+    } catch (error) {
+      console.error('Error fetching upcoming appointments:', error);
+      res.status(500).json({ message: 'Failed to fetch upcoming appointments' });
+    }
+  });
+
+  // List appointments with filters
+  app.get('/api/v1/appointments', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { doctorId, patientId, startDate, endDate, status, limit, offset } = req.query;
+
+      // Build filter object
+      const filters: any = {
+        limit: limit ? parseInt(limit as string) : 50,
+        offset: offset ? parseInt(offset as string) : 0,
+      };
+
+      if (doctorId) filters.doctorId = doctorId as string;
+      if (patientId) filters.patientId = patientId as string;
+      if (startDate) filters.startDate = new Date(startDate as string);
+      if (endDate) filters.endDate = new Date(endDate as string);
+      if (status) filters.status = status as string;
+
+      const appointments = await storage.listAppointments(filters);
+      res.json(appointments);
+    } catch (error) {
+      console.error('Error listing appointments:', error);
+      res.status(500).json({ message: 'Failed to list appointments' });
+    }
+  });
+
+  // Get appointment by ID
+  app.get('/api/v1/appointments/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { id } = req.params;
+      const appointment = await storage.getAppointment(id);
+
+      if (!appointment) {
+        return res.status(404).json({ message: 'Appointment not found' });
+      }
+
+      // SECURITY: Only participants can view appointment details
+      if (user.role === 'patient' && appointment.patientId !== userId) {
+        return res.status(403).json({ message: 'You can only view your own appointments' });
+      }
+      if (user.role === 'doctor' && appointment.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only view appointments with your patients' });
+      }
+
+      res.json(appointment);
+    } catch (error) {
+      console.error('Error fetching appointment:', error);
+      res.status(500).json({ message: 'Failed to fetch appointment' });
+    }
+  });
+
+  // Update appointment
+  app.patch('/api/v1/appointments/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { id } = req.params;
+      const existingAppointment = await storage.getAppointment(id);
+
+      if (!existingAppointment) {
+        return res.status(404).json({ message: 'Appointment not found' });
+      }
+
+      // SECURITY: Only allow updates if user is participant
+      if (user.role === 'patient' && existingAppointment.patientId !== userId) {
+        return res.status(403).json({ message: 'You can only update your own appointments' });
+      }
+      if (user.role === 'doctor' && existingAppointment.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only update appointments for your patients' });
+      }
+
+      const updates = req.body;
+
+      // SECURITY: Prevent changing participant IDs
+      delete updates.patientId;
+      delete updates.doctorId;
+
+      const appointment = await storage.updateAppointment(id, updates);
+
+      res.json(appointment);
+    } catch (error) {
+      console.error('Error updating appointment:', error);
+      res.status(500).json({ message: 'Failed to update appointment' });
+    }
+  });
+
+  // Confirm appointment
+  app.post('/api/v1/appointments/:id/confirm', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { id } = req.params;
+      const existingAppointment = await storage.getAppointment(id);
+
+      if (!existingAppointment) {
+        return res.status(404).json({ message: 'Appointment not found' });
+      }
+
+      // SECURITY: Only participants can confirm
+      if (user.role === 'patient' && existingAppointment.patientId !== userId) {
+        return res.status(403).json({ message: 'You can only confirm your own appointments' });
+      }
+      if (user.role === 'doctor' && existingAppointment.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only confirm appointments with your patients' });
+      }
+
+      const appointment = await storage.confirmAppointment(id, new Date());
+
+      res.json(appointment);
+    } catch (error) {
+      console.error('Error confirming appointment:', error);
+      res.status(500).json({ message: 'Failed to confirm appointment' });
+    }
+  });
+
+  // Cancel appointment
+  app.post('/api/v1/appointments/:id/cancel', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { id } = req.params;
+      const { reason } = req.body;
+
+      if (!reason) {
+        return res.status(400).json({ message: 'Cancellation reason is required' });
+      }
+
+      const existingAppointment = await storage.getAppointment(id);
+
+      if (!existingAppointment) {
+        return res.status(404).json({ message: 'Appointment not found' });
+      }
+
+      // SECURITY: Only participants can cancel
+      if (user.role === 'patient' && existingAppointment.patientId !== userId) {
+        return res.status(403).json({ message: 'You can only cancel your own appointments' });
+      }
+      if (user.role === 'doctor' && existingAppointment.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only cancel appointments with your patients' });
+      }
+
+      const appointment = await storage.cancelAppointment(id, userId, reason);
+
+      res.json(appointment);
+    } catch (error) {
+      console.error('Error cancelling appointment:', error);
+      res.status(500).json({ message: 'Failed to cancel appointment' });
+    }
+  });
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA - AVAILABILITY MANAGEMENT ROUTES
+  // ============================================================================
+
+  // Set doctor availability
+  app.post('/api/v1/availability', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can set availability' });
+      }
+
+      const { dayOfWeek, startTime, endTime, isRecurring, specificDate, validFrom, validUntil } = req.body;
+
+      if (!startTime || !endTime) {
+        return res.status(400).json({ message: 'Start time and end time are required' });
+      }
+
+      const availability = await storage.setDoctorAvailability({
+        doctorId: userId,
+        dayOfWeek: dayOfWeek || null,
+        startTime,
+        endTime,
+        isRecurring: isRecurring || false,
+        specificDate: specificDate ? new Date(specificDate) : null,
+        validFrom: validFrom ? new Date(validFrom) : new Date(),
+        validUntil: validUntil ? new Date(validUntil) : null,
+      });
+
+      res.status(201).json(availability);
+    } catch (error) {
+      console.error('Error setting availability:', error);
+      res.status(500).json({ message: 'Failed to set availability' });
+    }
+  });
+
+  // Get doctor availability
+  app.get('/api/v1/availability/:doctorId', isAuthenticated, async (req: any, res) => {
+    try {
+      const { doctorId } = req.params;
+      const { startDate, endDate } = req.query;
+
+      const dateRange = (startDate && endDate) 
+        ? { start: new Date(startDate as string), end: new Date(endDate as string) }
+        : undefined;
+
+      const availability = await storage.getDoctorAvailability(doctorId, dateRange);
+
+      res.json(availability);
+    } catch (error) {
+      console.error('Error fetching availability:', error);
+      res.status(500).json({ message: 'Failed to fetch availability' });
+    }
+  });
+
+  // Remove availability block
+  app.delete('/api/v1/availability/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can remove availability' });
+      }
+
+      const { id } = req.params;
+      await storage.removeDoctorAvailability(id);
+
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error removing availability:', error);
+      res.status(500).json({ message: 'Failed to remove availability' });
+    }
+  });
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA - EMAIL MANAGEMENT ROUTES
+  // ============================================================================
+
+  // Create email thread
+  app.post('/api/v1/emails/threads', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can manage email threads' });
+      }
+
+      const { subject, patientId, category, priority, gmailThreadId } = req.body;
+
+      if (!subject) {
+        return res.status(400).json({ message: 'Subject is required' });
+      }
+
+      const thread = await storage.createEmailThread({
+        doctorId: userId,
+        subject,
+        patientId: patientId || null,
+        category: category || 'general',
+        priority: priority || 'normal',
+        status: 'active',
+        isRead: false,
+        messageCount: 0,
+        lastMessageAt: new Date(),
+        gmailThreadId: gmailThreadId || null,
+      });
+
+      res.status(201).json(thread);
+    } catch (error) {
+      console.error('Error creating email thread:', error);
+      res.status(500).json({ message: 'Failed to create email thread' });
+    }
+  });
+
+  // List email threads
+  app.get('/api/v1/emails/threads', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view email threads' });
+      }
+
+      const { status, category, isRead, patientId, limit, offset } = req.query;
+
+      const filters: any = {};
+      if (status) filters.status = status as string;
+      if (category) filters.category = category as string;
+      if (isRead !== undefined) filters.isRead = isRead === 'true';
+      if (patientId) filters.patientId = patientId as string;
+      if (limit) filters.limit = parseInt(limit as string);
+      if (offset) filters.offset = parseInt(offset as string);
+
+      const threads = await storage.listEmailThreads(userId, filters);
+      res.json(threads);
+    } catch (error) {
+      console.error('Error listing email threads:', error);
+      res.status(500).json({ message: 'Failed to list email threads' });
+    }
+  });
+
+  // Get email thread by ID
+  app.get('/api/v1/emails/threads/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const thread = await storage.getEmailThread(id);
+
+      if (!thread) {
+        return res.status(404).json({ message: 'Email thread not found' });
+      }
+
+      res.json(thread);
+    } catch (error) {
+      console.error('Error fetching email thread:', error);
+      res.status(500).json({ message: 'Failed to fetch email thread' });
+    }
+  });
+
+  // Mark thread as read
+  app.post('/api/v1/emails/threads/:id/read', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const thread = await storage.markThreadRead(id);
+
+      if (!thread) {
+        return res.status(404).json({ message: 'Email thread not found' });
+      }
+
+      res.json(thread);
+    } catch (error) {
+      console.error('Error marking thread as read:', error);
+      res.status(500).json({ message: 'Failed to mark thread as read' });
+    }
+  });
+
+  // Get messages in a thread
+  app.get('/api/v1/emails/threads/:id/messages', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const messages = await storage.getThreadMessages(id);
+      res.json(messages);
+    } catch (error) {
+      console.error('Error fetching thread messages:', error);
+      res.status(500).json({ message: 'Failed to fetch thread messages' });
+    }
+  });
+
+  // Create email message in thread
+  app.post('/api/v1/emails/messages', isAuthenticated, async (req: any, res) => {
+    try {
+      const { threadId, sender, senderEmail, body, isFromDoctor, gmailMessageId } = req.body;
+
+      if (!threadId || !sender || !senderEmail || !body) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      const message = await storage.createEmailMessage({
+        threadId,
+        sender,
+        senderEmail,
+        body,
+        isFromDoctor: isFromDoctor || false,
+        isSent: false,
+        gmailMessageId: gmailMessageId || null,
+      });
+
+      res.status(201).json(message);
+    } catch (error) {
+      console.error('Error creating email message:', error);
+      res.status(500).json({ message: 'Failed to create email message' });
+    }
+  });
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA - CALL MANAGEMENT ROUTES
+  // ============================================================================
+
+  // Create call log
+  app.post('/api/v1/calls', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can manage call logs' });
+      }
+
+      const { 
+        patientId, 
+        callerName, 
+        callerPhone, 
+        direction, 
+        callType, 
+        twilioCallSid 
+      } = req.body;
+
+      if (!callerName || !callerPhone || !direction || !callType) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      const callLog = await storage.createCallLog({
+        doctorId: userId,
+        patientId: patientId || null,
+        callerName,
+        callerPhone,
+        direction,
+        callType,
+        status: 'initiated',
+        startTime: new Date(),
+        requiresFollowup: false,
+        twilioCallSid: twilioCallSid || null,
+      });
+
+      res.status(201).json(callLog);
+    } catch (error) {
+      console.error('Error creating call log:', error);
+      res.status(500).json({ message: 'Failed to create call log' });
+    }
+  });
+
+  // List call logs
+  app.get('/api/v1/calls', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view call logs' });
+      }
+
+      const { status, requiresFollowup, patientId, limit, offset } = req.query;
+
+      const filters: any = {};
+      if (status) filters.status = status as string;
+      if (requiresFollowup !== undefined) filters.requiresFollowup = requiresFollowup === 'true';
+      if (patientId) filters.patientId = patientId as string;
+      if (limit) filters.limit = parseInt(limit as string);
+      if (offset) filters.offset = parseInt(offset as string);
+
+      const callLogs = await storage.listCallLogs(userId, filters);
+      res.json(callLogs);
+    } catch (error) {
+      console.error('Error listing call logs:', error);
+      res.status(500).json({ message: 'Failed to list call logs' });
+    }
+  });
+
+  // Get call log by ID
+  app.get('/api/v1/calls/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const callLog = await storage.getCallLog(id);
+
+      if (!callLog) {
+        return res.status(404).json({ message: 'Call log not found' });
+      }
+
+      res.json(callLog);
+    } catch (error) {
+      console.error('Error fetching call log:', error);
+      res.status(500).json({ message: 'Failed to fetch call log' });
+    }
+  });
+
+  // Update call log
+  app.patch('/api/v1/calls/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+
+      const callLog = await storage.updateCallLog(id, updates);
+
+      if (!callLog) {
+        return res.status(404).json({ message: 'Call log not found' });
+      }
+
+      res.json(callLog);
+    } catch (error) {
+      console.error('Error updating call log:', error);
+      res.status(500).json({ message: 'Failed to update call log' });
+    }
+  });
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA - APPOINTMENT REMINDERS ROUTES
+  // ============================================================================
+
+  // Create appointment reminder
+  app.post('/api/v1/reminders', isAuthenticated, async (req: any, res) => {
+    try {
+      const { appointmentId, reminderType, scheduledFor, channel } = req.body;
+
+      if (!appointmentId || !reminderType || !scheduledFor || !channel) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      const reminder = await storage.createAppointmentReminder({
+        appointmentId,
+        reminderType,
+        scheduledFor: new Date(scheduledFor),
+        channel,
+        status: 'pending',
+        confirmed: false,
+        retryCount: 0,
+      });
+
+      res.status(201).json(reminder);
+    } catch (error) {
+      console.error('Error creating reminder:', error);
+      res.status(500).json({ message: 'Failed to create reminder' });
+    }
+  });
+
+  // Get reminders for an appointment
+  app.get('/api/v1/appointments/:appointmentId/reminders', isAuthenticated, async (req: any, res) => {
+    try {
+      const { appointmentId } = req.params;
+      const reminders = await storage.getAppointmentReminders(appointmentId);
+      res.json(reminders);
+    } catch (error) {
+      console.error('Error fetching reminders:', error);
+      res.status(500).json({ message: 'Failed to fetch reminders' });
+    }
+  });
+
+  // List due reminders (for background worker)
+  app.get('/api/v1/reminders/due', isAuthenticated, async (req: any, res) => {
+    try {
+      const beforeTime = req.query.before 
+        ? new Date(req.query.before as string)
+        : new Date();
+      
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+
+      const reminders = await storage.listDueReminders(beforeTime, limit);
+      res.json(reminders);
+    } catch (error) {
+      console.error('Error fetching due reminders:', error);
+      res.status(500).json({ message: 'Failed to fetch due reminders' });
+    }
+  });
+
+  // Mark reminder as sent
+  app.post('/api/v1/reminders/:id/sent', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { twilioSid, sesSid } = req.body;
+
+      const reminder = await storage.markReminderSent(id, new Date(), twilioSid, sesSid);
+
+      if (!reminder) {
+        return res.status(404).json({ message: 'Reminder not found' });
+      }
+
+      res.json(reminder);
+    } catch (error) {
+      console.error('Error marking reminder as sent:', error);
+      res.status(500).json({ message: 'Failed to mark reminder as sent' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
