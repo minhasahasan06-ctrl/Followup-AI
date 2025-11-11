@@ -64,6 +64,8 @@ import {
   emailMessages,
   callLogs,
   appointmentReminders,
+  googleCalendarSync,
+  googleCalendarSyncLogs,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -194,6 +196,10 @@ import {
   type InsertCallLog,
   type AppointmentReminder,
   type InsertAppointmentReminder,
+  type GoogleCalendarSync,
+  type InsertGoogleCalendarSync,
+  type GoogleCalendarSyncLog,
+  type InsertGoogleCalendarSyncLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, sql, gte, lte, like, ilike, inArray, between } from "drizzle-orm";
@@ -576,6 +582,14 @@ export interface IStorage {
   }): Promise<{ appointment?: Appointment; log: AppointmentTriageLog }>;
   createAppointmentTriageLog(logData: InsertAppointmentTriageLog): Promise<AppointmentTriageLog>;
   getAppointmentTriageLogs(patientId: string, limit?: number): Promise<AppointmentTriageLog[]>;
+  
+  // Google Calendar sync operations
+  createGoogleCalendarSync(sync: InsertGoogleCalendarSync): Promise<GoogleCalendarSync>;
+  getGoogleCalendarSync(doctorId: string): Promise<GoogleCalendarSync | undefined>;
+  updateGoogleCalendarSync(doctorId: string, data: Partial<GoogleCalendarSync>): Promise<GoogleCalendarSync | undefined>;
+  createGoogleCalendarSyncLog(log: InsertGoogleCalendarSyncLog): Promise<GoogleCalendarSyncLog>;
+  getGoogleCalendarSyncLogs(doctorId: string, limit?: number): Promise<GoogleCalendarSyncLog[]>;
+  getAppointmentByGoogleEventId(eventId: string): Promise<Appointment | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3525,6 +3539,63 @@ export class DatabaseStorage implements IStorage {
       .where(eq(appointmentTriageLogs.id, id))
       .returning();
     return log;
+  }
+
+  // Google Calendar sync operations
+  async createGoogleCalendarSync(sync: InsertGoogleCalendarSync): Promise<GoogleCalendarSync> {
+    const [created] = await db
+      .insert(googleCalendarSync)
+      .values(sync)
+      .returning();
+    return created;
+  }
+
+  async getGoogleCalendarSync(doctorId: string): Promise<GoogleCalendarSync | undefined> {
+    const [sync] = await db
+      .select()
+      .from(googleCalendarSync)
+      .where(eq(googleCalendarSync.doctorId, doctorId));
+    return sync;
+  }
+
+  async updateGoogleCalendarSync(
+    doctorId: string,
+    data: Partial<GoogleCalendarSync>
+  ): Promise<GoogleCalendarSync | undefined> {
+    const [updated] = await db
+      .update(googleCalendarSync)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(googleCalendarSync.doctorId, doctorId))
+      .returning();
+    return updated;
+  }
+
+  async createGoogleCalendarSyncLog(log: InsertGoogleCalendarSyncLog): Promise<GoogleCalendarSyncLog> {
+    const [created] = await db
+      .insert(googleCalendarSyncLogs)
+      .values(log)
+      .returning();
+    return created;
+  }
+
+  async getGoogleCalendarSyncLogs(
+    doctorId: string,
+    limit: number = 50
+  ): Promise<GoogleCalendarSyncLog[]> {
+    return await db
+      .select()
+      .from(googleCalendarSyncLogs)
+      .where(eq(googleCalendarSyncLogs.doctorId, doctorId))
+      .orderBy(desc(googleCalendarSyncLogs.createdAt))
+      .limit(limit);
+  }
+
+  async getAppointmentByGoogleEventId(eventId: string): Promise<Appointment | undefined> {
+    const [appointment] = await db
+      .select()
+      .from(appointments)
+      .where(eq(appointments.googleCalendarEventId, eventId));
+    return appointment;
   }
 }
 

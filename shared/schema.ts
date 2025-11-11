@@ -2744,3 +2744,88 @@ export const insertAppointmentReminderSchema = createInsertSchema(appointmentRem
 
 export type InsertAppointmentReminder = z.infer<typeof insertAppointmentReminderSchema>;
 export type AppointmentReminder = typeof appointmentReminders.$inferSelect;
+
+// Google Calendar sync tracking (for doctor's calendars)
+export const googleCalendarSync = pgTable("google_calendar_sync", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().unique().references(() => users.id),
+  
+  // OAuth tokens (encrypted in production)
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpiry: timestamp("token_expiry"),
+  
+  // Calendar details
+  calendarId: varchar("calendar_id"), // Google Calendar ID (usually email)
+  calendarName: varchar("calendar_name"),
+  
+  // Sync status
+  syncEnabled: boolean("sync_enabled").default(true),
+  syncDirection: varchar("sync_direction").default("bidirectional"), // 'to_google', 'from_google', 'bidirectional'
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: varchar("last_sync_status"), // 'success', 'partial', 'failed'
+  lastSyncError: text("last_sync_error"),
+  
+  // Incremental sync tokens (for efficient syncing)
+  syncToken: text("sync_token"), // Google Calendar sync token for incremental updates
+  pageToken: text("page_token"), // For paginated results
+  
+  // Sync statistics
+  totalEventsSynced: integer("total_events_synced").default(0),
+  lastEventSyncedAt: timestamp("last_event_synced_at"),
+  
+  // Conflict resolution
+  conflictResolution: varchar("conflict_resolution").default("google_wins"), // 'google_wins', 'local_wins', 'manual'
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorIdx: index("google_calendar_sync_doctor_idx").on(table.doctorId),
+}));
+
+export const insertGoogleCalendarSyncSchema = createInsertSchema(googleCalendarSync).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertGoogleCalendarSync = z.infer<typeof insertGoogleCalendarSyncSchema>;
+export type GoogleCalendarSync = typeof googleCalendarSync.$inferSelect;
+
+// Google Calendar sync logs (audit trail)
+export const googleCalendarSyncLogs = pgTable("google_calendar_sync_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  syncId: varchar("sync_id").references(() => googleCalendarSync.id),
+  
+  // Sync details
+  syncType: varchar("sync_type").notNull(), // 'full', 'incremental', 'manual'
+  syncDirection: varchar("sync_direction").notNull(), // 'to_google', 'from_google', 'bidirectional'
+  
+  // Results
+  status: varchar("status").notNull(), // 'success', 'partial', 'failed'
+  eventsCreated: integer("events_created").default(0),
+  eventsUpdated: integer("events_updated").default(0),
+  eventsDeleted: integer("events_deleted").default(0),
+  conflictsDetected: integer("conflicts_detected").default(0),
+  
+  // Error tracking
+  error: text("error"),
+  errorDetails: jsonb("error_details"),
+  
+  // Performance
+  durationMs: integer("duration_ms"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  doctorIdx: index("google_calendar_sync_logs_doctor_idx").on(table.doctorId),
+  createdAtIdx: index("google_calendar_sync_logs_created_idx").on(table.createdAt),
+}));
+
+export const insertGoogleCalendarSyncLogSchema = createInsertSchema(googleCalendarSyncLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertGoogleCalendarSyncLog = z.infer<typeof insertGoogleCalendarSyncLogSchema>;
+export type GoogleCalendarSyncLog = typeof googleCalendarSyncLogs.$inferSelect;
