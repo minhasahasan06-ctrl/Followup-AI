@@ -58,6 +58,12 @@ import {
   rlRewards,
   dailyEngagement,
   doctorWellness,
+  appointments,
+  doctorAvailability,
+  emailThreads,
+  emailMessages,
+  callLogs,
+  appointmentReminders,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -176,6 +182,18 @@ import {
   type InsertDailyEngagement,
   type DoctorWellness,
   type InsertDoctorWellness,
+  type Appointment,
+  type InsertAppointment,
+  type DoctorAvailability,
+  type InsertDoctorAvailability,
+  type EmailThread,
+  type InsertEmailThread,
+  type EmailMessage,
+  type InsertEmailMessage,
+  type CallLog,
+  type InsertCallLog,
+  type AppointmentReminder,
+  type InsertAppointmentReminder,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, sql, gte, lte, like, ilike, inArray, between } from "drizzle-orm";
@@ -475,6 +493,74 @@ export interface IStorage {
   getMilestones(userId: string): Promise<Milestone[]>;
   createMilestone(milestone: InsertMilestone): Promise<Milestone>;
   updateMilestone(id: string, data: Partial<Milestone>): Promise<Milestone | undefined>;
+  
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA FEATURES
+  // ============================================================================
+  
+  // Appointment operations
+  createAppointment(appointment: InsertAppointment): Promise<Appointment>;
+  getAppointment(id: string): Promise<Appointment | undefined>;
+  getAppointmentByExternalId(googleCalendarEventId: string): Promise<Appointment | undefined>;
+  listAppointments(filters: {
+    doctorId?: string;
+    patientId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<Appointment[]>;
+  listUpcomingAppointments(userId: string, role: 'doctor' | 'patient', daysAhead?: number, limit?: number): Promise<Appointment[]>;
+  updateAppointment(id: string, data: Partial<Appointment>): Promise<Appointment | undefined>;
+  confirmAppointment(id: string, confirmedAt: Date): Promise<Appointment | undefined>;
+  cancelAppointment(id: string, cancelledBy: string, reason: string): Promise<Appointment | undefined>;
+  findAppointmentConflicts(doctorId: string, startTime: Date, endTime: Date, excludeId?: string): Promise<Appointment[]>;
+  
+  // Doctor availability operations
+  setDoctorAvailability(availability: InsertDoctorAvailability): Promise<DoctorAvailability>;
+  getDoctorAvailability(doctorId: string, dateRange?: { start: Date; end: Date }): Promise<DoctorAvailability[]>;
+  removeDoctorAvailability(id: string): Promise<void>;
+  
+  // Email thread operations
+  createEmailThread(thread: InsertEmailThread): Promise<EmailThread>;
+  getEmailThread(id: string): Promise<EmailThread | undefined>;
+  listEmailThreads(doctorId: string, filters?: { 
+    status?: string; 
+    category?: string; 
+    isRead?: boolean; 
+    patientId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<EmailThread[]>;
+  updateEmailThread(id: string, data: Partial<EmailThread>): Promise<EmailThread | undefined>;
+  markThreadRead(threadId: string): Promise<EmailThread | undefined>;
+  
+  // Email message operations
+  createEmailMessage(message: InsertEmailMessage): Promise<EmailMessage>;
+  getThreadMessages(threadId: string): Promise<EmailMessage[]>;
+  markEmailSent(id: string, sentAt: Date): Promise<EmailMessage | undefined>;
+  
+  // Call log operations
+  createCallLog(log: InsertCallLog): Promise<CallLog>;
+  getCallLog(id: string): Promise<CallLog | undefined>;
+  listCallLogs(doctorId: string, filters?: { 
+    status?: string; 
+    requiresFollowup?: boolean; 
+    patientId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<CallLog[]>;
+  listCallLogsByPatient(patientId: string, limit?: number): Promise<CallLog[]>;
+  updateCallLog(id: string, data: Partial<CallLog>): Promise<CallLog | undefined>;
+  
+  // Appointment reminder operations
+  createAppointmentReminder(reminder: InsertAppointmentReminder): Promise<AppointmentReminder>;
+  getAppointmentReminders(appointmentId: string): Promise<AppointmentReminder[]>;
+  listDueReminders(beforeTime: Date, limit?: number): Promise<AppointmentReminder[]>;
+  markReminderSent(id: string, sentAt: Date, twilioSid?: string, sesSid?: string): Promise<AppointmentReminder | undefined>;
+  markReminderFailed(id: string, error: string): Promise<AppointmentReminder | undefined>;
+  confirmReminder(id: string): Promise<AppointmentReminder | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2793,6 +2879,509 @@ export class DatabaseStorage implements IStorage {
       .where(eq(milestones.id, id))
       .returning();
     return milestone;
+  }
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA FEATURES - APPOINTMENTS
+  // ============================================================================
+
+  async createAppointment(appointmentData: InsertAppointment): Promise<Appointment> {
+    const [appointment] = await db
+      .insert(appointments)
+      .values(appointmentData)
+      .returning();
+    return appointment;
+  }
+
+  async getAppointment(id: string): Promise<Appointment | undefined> {
+    const [appointment] = await db
+      .select()
+      .from(appointments)
+      .where(eq(appointments.id, id));
+    return appointment;
+  }
+
+  async getAppointmentByExternalId(googleCalendarEventId: string): Promise<Appointment | undefined> {
+    const [appointment] = await db
+      .select()
+      .from(appointments)
+      .where(eq(appointments.googleCalendarEventId, googleCalendarEventId));
+    return appointment;
+  }
+
+  async listAppointments(filters: {
+    doctorId?: string;
+    patientId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<Appointment[]> {
+    const conditions = [];
+    
+    if (filters.doctorId) {
+      conditions.push(eq(appointments.doctorId, filters.doctorId));
+    }
+    if (filters.patientId) {
+      conditions.push(eq(appointments.patientId, filters.patientId));
+    }
+    if (filters.startDate) {
+      conditions.push(gte(appointments.startTime, filters.startDate));
+    }
+    if (filters.endDate) {
+      conditions.push(lte(appointments.startTime, filters.endDate));
+    }
+    if (filters.status) {
+      conditions.push(eq(appointments.status, filters.status));
+    }
+
+    let query = db
+      .select()
+      .from(appointments)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(appointments.startTime));
+
+    if (filters.limit) {
+      query = query.limit(filters.limit);
+    }
+    if (filters.offset) {
+      query = query.offset(filters.offset);
+    }
+
+    return await query;
+  }
+
+  async listUpcomingAppointments(
+    userId: string, 
+    role: 'doctor' | 'patient', 
+    daysAhead: number = 30, 
+    limit: number = 50
+  ): Promise<Appointment[]> {
+    const now = new Date();
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + daysAhead);
+
+    const condition = role === 'doctor' 
+      ? eq(appointments.doctorId, userId)
+      : eq(appointments.patientId, userId);
+
+    return await db
+      .select()
+      .from(appointments)
+      .where(
+        and(
+          condition,
+          gte(appointments.startTime, now),
+          lte(appointments.startTime, futureDate)
+        )
+      )
+      .orderBy(appointments.startTime)
+      .limit(limit);
+  }
+
+  async updateAppointment(id: string, data: Partial<Appointment>): Promise<Appointment | undefined> {
+    const [appointment] = await db
+      .update(appointments)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(appointments.id, id))
+      .returning();
+    return appointment;
+  }
+
+  async confirmAppointment(id: string, confirmedAt: Date): Promise<Appointment | undefined> {
+    const [appointment] = await db
+      .update(appointments)
+      .set({
+        confirmationStatus: 'confirmed',
+        confirmedAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(appointments.id, id))
+      .returning();
+    return appointment;
+  }
+
+  async cancelAppointment(
+    id: string, 
+    cancelledBy: string, 
+    reason: string
+  ): Promise<Appointment | undefined> {
+    const [appointment] = await db
+      .update(appointments)
+      .set({
+        status: 'cancelled',
+        cancelledBy,
+        cancellationReason: reason,
+        cancelledAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(appointments.id, id))
+      .returning();
+    return appointment;
+  }
+
+  async findAppointmentConflicts(
+    doctorId: string,
+    startTime: Date,
+    endTime: Date,
+    excludeId?: string
+  ): Promise<Appointment[]> {
+    const conditions = [
+      eq(appointments.doctorId, doctorId),
+      or(
+        // New appointment starts during existing
+        and(
+          gte(sql`${appointments.startTime}`, startTime),
+          lte(sql`${appointments.startTime}`, endTime)
+        ),
+        // New appointment ends during existing
+        and(
+          gte(sql`${appointments.endTime}`, startTime),
+          lte(sql`${appointments.endTime}`, endTime)
+        ),
+        // New appointment completely contains existing
+        and(
+          lte(sql`${appointments.startTime}`, startTime),
+          gte(sql`${appointments.endTime}`, endTime)
+        )
+      ),
+      // Only check non-cancelled appointments
+      sql`${appointments.status} != 'cancelled'`,
+    ];
+
+    if (excludeId) {
+      conditions.push(sql`${appointments.id} != ${excludeId}`);
+    }
+
+    return await db
+      .select()
+      .from(appointments)
+      .where(and(...conditions));
+  }
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA FEATURES - AVAILABILITY
+  // ============================================================================
+
+  async setDoctorAvailability(availabilityData: InsertDoctorAvailability): Promise<DoctorAvailability> {
+    const [availability] = await db
+      .insert(doctorAvailability)
+      .values(availabilityData)
+      .returning();
+    return availability;
+  }
+
+  async getDoctorAvailability(
+    doctorId: string,
+    dateRange?: { start: Date; end: Date }
+  ): Promise<DoctorAvailability[]> {
+    const conditions = [eq(doctorAvailability.doctorId, doctorId)];
+
+    if (dateRange) {
+      conditions.push(
+        or(
+          // Recurring availability (no specific date)
+          and(
+            eq(doctorAvailability.isRecurring, true),
+            sql`${doctorAvailability.specificDate} IS NULL`,
+            lte(doctorAvailability.validFrom, dateRange.end),
+            or(
+              sql`${doctorAvailability.validUntil} IS NULL`,
+              gte(doctorAvailability.validUntil, dateRange.start)
+            )
+          ),
+          // Specific date overrides
+          and(
+            sql`${doctorAvailability.specificDate} IS NOT NULL`,
+            gte(doctorAvailability.specificDate, dateRange.start),
+            lte(doctorAvailability.specificDate, dateRange.end)
+          )
+        )
+      );
+    }
+
+    return await db
+      .select()
+      .from(doctorAvailability)
+      .where(and(...conditions))
+      .orderBy(doctorAvailability.dayOfWeek, doctorAvailability.startTime);
+  }
+
+  async removeDoctorAvailability(id: string): Promise<void> {
+    await db
+      .delete(doctorAvailability)
+      .where(eq(doctorAvailability.id, id));
+  }
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA FEATURES - EMAIL
+  // ============================================================================
+
+  async createEmailThread(threadData: InsertEmailThread): Promise<EmailThread> {
+    const [thread] = await db
+      .insert(emailThreads)
+      .values(threadData)
+      .returning();
+    return thread;
+  }
+
+  async getEmailThread(id: string): Promise<EmailThread | undefined> {
+    const [thread] = await db
+      .select()
+      .from(emailThreads)
+      .where(eq(emailThreads.id, id));
+    return thread;
+  }
+
+  async listEmailThreads(
+    doctorId: string,
+    filters?: {
+      status?: string;
+      category?: string;
+      isRead?: boolean;
+      patientId?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<EmailThread[]> {
+    const conditions = [eq(emailThreads.doctorId, doctorId)];
+
+    if (filters?.status) {
+      conditions.push(eq(emailThreads.status, filters.status));
+    }
+    if (filters?.category) {
+      conditions.push(eq(emailThreads.category, filters.category));
+    }
+    if (filters?.isRead !== undefined) {
+      conditions.push(eq(emailThreads.isRead, filters.isRead));
+    }
+    if (filters?.patientId) {
+      conditions.push(eq(emailThreads.patientId, filters.patientId));
+    }
+
+    let query = db
+      .select()
+      .from(emailThreads)
+      .where(and(...conditions))
+      .orderBy(desc(emailThreads.lastMessageAt));
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit);
+    }
+    if (filters?.offset) {
+      query = query.offset(filters.offset);
+    }
+
+    return await query;
+  }
+
+  async updateEmailThread(id: string, data: Partial<EmailThread>): Promise<EmailThread | undefined> {
+    const [thread] = await db
+      .update(emailThreads)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(emailThreads.id, id))
+      .returning();
+    return thread;
+  }
+
+  async markThreadRead(threadId: string): Promise<EmailThread | undefined> {
+    const [thread] = await db
+      .update(emailThreads)
+      .set({ isRead: true, updatedAt: new Date() })
+      .where(eq(emailThreads.id, threadId))
+      .returning();
+    return thread;
+  }
+
+  async createEmailMessage(messageData: InsertEmailMessage): Promise<EmailMessage> {
+    const [message] = await db
+      .insert(emailMessages)
+      .values(messageData)
+      .returning();
+
+    // Update thread message count and last message time
+    await db
+      .update(emailThreads)
+      .set({
+        messageCount: sql`${emailThreads.messageCount} + 1`,
+        lastMessageAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(emailThreads.id, messageData.threadId));
+
+    return message;
+  }
+
+  async getThreadMessages(threadId: string): Promise<EmailMessage[]> {
+    return await db
+      .select()
+      .from(emailMessages)
+      .where(eq(emailMessages.threadId, threadId))
+      .orderBy(emailMessages.createdAt);
+  }
+
+  async markEmailSent(id: string, sentAt: Date): Promise<EmailMessage | undefined> {
+    const [message] = await db
+      .update(emailMessages)
+      .set({ isSent: true, sentAt })
+      .where(eq(emailMessages.id, id))
+      .returning();
+    return message;
+  }
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA FEATURES - CALL LOGS
+  // ============================================================================
+
+  async createCallLog(logData: InsertCallLog): Promise<CallLog> {
+    const [log] = await db
+      .insert(callLogs)
+      .values(logData)
+      .returning();
+    return log;
+  }
+
+  async getCallLog(id: string): Promise<CallLog | undefined> {
+    const [log] = await db
+      .select()
+      .from(callLogs)
+      .where(eq(callLogs.id, id));
+    return log;
+  }
+
+  async listCallLogs(
+    doctorId: string,
+    filters?: {
+      status?: string;
+      requiresFollowup?: boolean;
+      patientId?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<CallLog[]> {
+    const conditions = [eq(callLogs.doctorId, doctorId)];
+
+    if (filters?.status) {
+      conditions.push(eq(callLogs.status, filters.status));
+    }
+    if (filters?.requiresFollowup !== undefined) {
+      conditions.push(eq(callLogs.requiresFollowup, filters.requiresFollowup));
+    }
+    if (filters?.patientId) {
+      conditions.push(eq(callLogs.patientId, filters.patientId));
+    }
+
+    let query = db
+      .select()
+      .from(callLogs)
+      .where(and(...conditions))
+      .orderBy(desc(callLogs.startTime));
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit);
+    }
+    if (filters?.offset) {
+      query = query.offset(filters.offset);
+    }
+
+    return await query;
+  }
+
+  async listCallLogsByPatient(patientId: string, limit: number = 50): Promise<CallLog[]> {
+    return await db
+      .select()
+      .from(callLogs)
+      .where(eq(callLogs.patientId, patientId))
+      .orderBy(desc(callLogs.startTime))
+      .limit(limit);
+  }
+
+  async updateCallLog(id: string, data: Partial<CallLog>): Promise<CallLog | undefined> {
+    const [log] = await db
+      .update(callLogs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(callLogs.id, id))
+      .returning();
+    return log;
+  }
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA FEATURES - REMINDERS
+  // ============================================================================
+
+  async createAppointmentReminder(reminderData: InsertAppointmentReminder): Promise<AppointmentReminder> {
+    const [reminder] = await db
+      .insert(appointmentReminders)
+      .values(reminderData)
+      .returning();
+    return reminder;
+  }
+
+  async getAppointmentReminders(appointmentId: string): Promise<AppointmentReminder[]> {
+    return await db
+      .select()
+      .from(appointmentReminders)
+      .where(eq(appointmentReminders.appointmentId, appointmentId))
+      .orderBy(appointmentReminders.scheduledFor);
+  }
+
+  async listDueReminders(beforeTime: Date, limit: number = 100): Promise<AppointmentReminder[]> {
+    return await db
+      .select()
+      .from(appointmentReminders)
+      .where(
+        and(
+          eq(appointmentReminders.status, 'pending'),
+          lte(appointmentReminders.scheduledFor, beforeTime)
+        )
+      )
+      .orderBy(appointmentReminders.scheduledFor)
+      .limit(limit);
+  }
+
+  async markReminderSent(
+    id: string,
+    sentAt: Date,
+    twilioSid?: string,
+    sesSid?: string
+  ): Promise<AppointmentReminder | undefined> {
+    const [reminder] = await db
+      .update(appointmentReminders)
+      .set({
+        status: 'sent',
+        sentAt,
+        twilioMessageSid: twilioSid || sql`${appointmentReminders.twilioMessageSid}`,
+        sesMessageId: sesSid || sql`${appointmentReminders.sesMessageId}`,
+      })
+      .where(eq(appointmentReminders.id, id))
+      .returning();
+    return reminder;
+  }
+
+  async markReminderFailed(id: string, error: string): Promise<AppointmentReminder | undefined> {
+    const [reminder] = await db
+      .update(appointmentReminders)
+      .set({
+        status: 'failed',
+        error,
+        retryCount: sql`${appointmentReminders.retryCount} + 1`,
+      })
+      .where(eq(appointmentReminders.id, id))
+      .returning();
+    return reminder;
+  }
+
+  async confirmReminder(id: string): Promise<AppointmentReminder | undefined> {
+    const [reminder] = await db
+      .update(appointmentReminders)
+      .set({
+        confirmed: true,
+        confirmedAt: new Date(),
+      })
+      .where(eq(appointmentReminders.id, id))
+      .returning();
+    return reminder;
   }
 }
 
