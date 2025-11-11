@@ -25,6 +25,13 @@ import {
   agentPromptSchema,
   doctorWellnessSchema 
 } from "./mlValidation";
+import {
+  categorizeEmail,
+  generateEmailReply,
+  batchCategorizeEmails,
+  extractActionItems
+} from "./emailAIService";
+import { aiRateLimit, batchRateLimit } from "./rateLimiting";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
@@ -4856,6 +4863,179 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     } catch (error) {
       console.error('Error creating email message:', error);
       res.status(500).json({ message: 'Failed to create email message' });
+    }
+  });
+
+  // ============================================================================
+  // ASSISTANT LYSA - AI EMAIL FEATURES
+  // ============================================================================
+
+  // AI: Categorize a single email
+  app.post('/api/v1/emails/categorize', isAuthenticated, aiRateLimit, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can use AI email features' });
+      }
+
+      const { subject, content, senderContext } = req.body;
+
+      // INPUT VALIDATION
+      if (!subject || typeof subject !== 'string' || subject.length > 500) {
+        return res.status(400).json({ message: 'Subject is required and must be a string (max 500 chars)' });
+      }
+
+      if (!content || typeof content !== 'string' || content.length > 10000) {
+        return res.status(400).json({ message: 'Content is required and must be a string (max 10000 chars)' });
+      }
+
+      if (senderContext && typeof senderContext !== 'object') {
+        return res.status(400).json({ message: 'senderContext must be an object' });
+      }
+
+      const categorization = await categorizeEmail(subject, content, senderContext);
+      res.json(categorization);
+    } catch (error) {
+      console.error('Error categorizing email:', error);
+      res.status(500).json({ message: 'Failed to categorize email' });
+    }
+  });
+
+  // AI: Generate reply for email thread
+  app.post('/api/v1/emails/threads/:threadId/generate-reply', isAuthenticated, aiRateLimit, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can generate email replies' });
+      }
+
+      const { threadId } = req.params;
+
+      // INPUT VALIDATION
+      if (!threadId || typeof threadId !== 'string') {
+        return res.status(400).json({ message: 'Invalid thread ID' });
+      }
+
+      const thread = await storage.getEmailThread(threadId);
+
+      if (!thread) {
+        return res.status(404).json({ message: 'Email thread not found' });
+      }
+
+      // SECURITY: Only the thread owner can generate replies
+      if (thread.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only generate replies for your own threads' });
+      }
+
+      const messages = await storage.getThreadMessages(threadId);
+
+      // DEFENSIVE: Handle empty thread case
+      if (!messages || messages.length === 0) {
+        return res.status(400).json({ message: 'Cannot generate reply for thread with no messages' });
+      }
+
+      const doctorContext = {
+        doctorName: `${user.firstName} ${user.lastName}`,
+        specialty: user.specialty || undefined,
+        clinicName: user.organization || undefined,
+      };
+
+      const reply = await generateEmailReply(thread, messages, doctorContext);
+      res.json(reply);
+    } catch (error) {
+      console.error('Error generating email reply:', error);
+      res.status(500).json({ message: 'Failed to generate email reply' });
+    }
+  });
+
+  // AI: Batch categorize multiple emails
+  app.post('/api/v1/emails/batch-categorize', isAuthenticated, batchRateLimit, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can use AI email features' });
+      }
+
+      const { emails } = req.body;
+
+      // INPUT VALIDATION
+      if (!Array.isArray(emails) || emails.length === 0) {
+        return res.status(400).json({ message: 'Emails array is required and must not be empty' });
+      }
+
+      if (emails.length > 50) {
+        return res.status(400).json({ message: 'Maximum 50 emails per batch' });
+      }
+
+      // Validate each email object
+      for (let i = 0; i < emails.length; i++) {
+        const email = emails[i];
+        if (!email.id || typeof email.id !== 'string') {
+          return res.status(400).json({ message: `Email at index ${i} missing valid id` });
+        }
+        if (!email.subject || typeof email.subject !== 'string' || email.subject.length > 500) {
+          return res.status(400).json({ message: `Email at index ${i} missing valid subject (max 500 chars)` });
+        }
+        if (!email.content || typeof email.content !== 'string' || email.content.length > 10000) {
+          return res.status(400).json({ message: `Email at index ${i} missing valid content (max 10000 chars)` });
+        }
+      }
+
+      const results = await batchCategorizeEmails(emails);
+      
+      // Convert Map to object for JSON response
+      const resultsObj: Record<string, any> = {};
+      results.forEach((value, key) => {
+        resultsObj[key] = value;
+      });
+
+      res.json(resultsObj);
+    } catch (error) {
+      console.error('Error batch categorizing emails:', error);
+      res.status(500).json({ message: 'Failed to batch categorize emails' });
+    }
+  });
+
+  // AI: Extract action items from email
+  app.post('/api/v1/emails/extract-actions', isAuthenticated, aiRateLimit, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can use AI email features' });
+      }
+
+      const { content } = req.body;
+
+      // INPUT VALIDATION
+      if (!content || typeof content !== 'string' || content.length > 10000) {
+        return res.status(400).json({ message: 'Content is required and must be a string (max 10000 chars)' });
+      }
+
+      const actionItems = await extractActionItems(content);
+      res.json({ actionItems });
+    } catch (error) {
+      console.error('Error extracting action items:', error);
+      res.status(500).json({ message: 'Failed to extract action items' });
     }
   });
 
