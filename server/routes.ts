@@ -32,6 +32,13 @@ import {
   extractActionItems
 } from "./emailAIService";
 import { aiRateLimit, batchRateLimit } from "./rateLimiting";
+import {
+  detectAppointmentIntent,
+  parseRelativeDate,
+  parseTime,
+  checkAvailability,
+  bookAppointmentFromChat
+} from "./chatReceptionistService";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
@@ -1323,7 +1330,42 @@ PROFESSIONAL DEMEANOR:
 - Keep responses focused and actionable
 - Provide references and citations when relevant
 
-Remember: Your role is to be an intelligent, proactive, and highly competent assistant that makes the doctor's work easier and more effective. Anticipate needs, offer insights, and always maintain the highest standards of professionalism and medical accuracy.`;
+RECEPTIONIST CAPABILITIES:
+You can help doctors manage appointments through natural conversation. When a doctor mentions booking, scheduling, or checking availability, you should:
+
+1. DETECT INTENT:
+   - "Book John for tomorrow at 2pm" → Book appointment
+   - "What's my availability on Monday?" → Check availability
+   - "Cancel the 3pm appointment" → Cancel appointment
+   - "Reschedule Sarah's appointment" → Reschedule
+
+2. EXTRACT DETAILS:
+   - Patient name or ID
+   - Date (tomorrow, next Monday, Dec 5, etc.)
+   - Time (2pm, 14:00, morning, afternoon)
+   - Reason for visit
+   - Duration (default 30 minutes)
+
+3. CONFIRM BEFORE BOOKING:
+   Always confirm details before creating an appointment:
+   "I'll book an appointment for [Patient] on [Date] at [Time] for [Reason]. Shall I proceed?"
+
+4. HANDLE MISSING INFORMATION:
+   If information is missing, ask politely:
+   - "Which patient should I schedule?"
+   - "What date works best?"
+   - "What time would you prefer?"
+   - "What's the reason for the visit?"
+
+5. SUGGEST ALTERNATIVES:
+   If a slot is unavailable, offer alternatives:
+   "That time is already booked. I have availability at 2:30pm or 3pm. Which works better?"
+
+6. PROVIDE AVAILABILITY:
+   When asked about availability, list available slots:
+   "On Monday, you have openings at 9am, 10:30am, 2pm, and 3:30pm."
+
+Remember: Your role is to be an intelligent, proactive, and highly competent assistant that makes the doctor's work easier and more effective. Anticipate needs, offer insights, handle appointments seamlessly, and always maintain the highest standards of professionalism and medical accuracy.`;
 
       const sessionMessages = await storage.getSessionMessages(session.id);
       const isFirstMessage = sessionMessages.length === 0;
@@ -1332,8 +1374,172 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
         content: msg.content,
       }));
 
+      // RECEPTIONIST FEATURE: Detect and handle appointment booking for doctors using Lysa
+      let appointmentContext = '';
+      if (isDoctor && agentType === 'lysa') {
+        const intent = await detectAppointmentIntent(content, userId, recentMessages);
+
+        // Check if doctor is confirming a previous booking request
+        const isConfirmation = /\b(yes|confirm|go ahead|proceed|book it|do it)\b/i.test(content);
+        const lastMessage = recentMessages.length > 0 ? recentMessages[recentMessages.length - 1] : null;
+        const lastMessageWasBookingProposal = lastMessage && lastMessage.role === 'assistant' && 
+                                              /shall I proceed|would you like me to book|confirm to proceed/i.test(lastMessage.content);
+
+        if (isConfirmation && lastMessageWasBookingProposal) {
+          // Doctor is confirming - extract booking details from last assistant message
+          // This requires re-parsing the previous intent
+          const previousUserMessage = recentMessages.length >= 2 ? recentMessages[recentMessages.length - 2] : null;
+          if (previousUserMessage && previousUserMessage.role === 'user') {
+            const previousIntent = await detectAppointmentIntent(previousUserMessage.content, userId, recentMessages.slice(0, -2));
+            
+            if (previousIntent.isAppointmentRequest && previousIntent.intentType === 'book') {
+              const appointmentDate = parseRelativeDate(previousIntent.extractedInfo.date!);
+              const appointmentTime = parseTime(previousIntent.extractedInfo.time!);
+
+              if (appointmentDate && appointmentTime && !['morning', 'afternoon', 'evening'].includes(appointmentTime)) {
+                const doctorPatients = await storage.getDoctorPatients(userId);
+                const patient = doctorPatients.find(p => 
+                  `${p.firstName} ${p.lastName}`.toLowerCase().includes(previousIntent.extractedInfo.patientName!.toLowerCase())
+                );
+
+                if (patient) {
+                  const bookingResult = await bookAppointmentFromChat(
+                    userId,
+                    patient.id,
+                    appointmentDate,
+                    appointmentTime,
+                    previousIntent.extractedInfo.reason || 'General consultation',
+                    30
+                  );
+
+                  if (bookingResult.success && bookingResult.appointment) {
+                    appointmentContext = `\n\nAPPOINTMENT CONFIRMED AND BOOKED:
+- Patient: ${patient.firstName} ${patient.lastName}
+- Date: ${bookingResult.appointment.date}
+- Time: ${bookingResult.appointment.startTime}
+- Reason: ${bookingResult.appointment.reason}
+- Status: ${bookingResult.appointment.status}
+
+The appointment has been successfully added to the schedule. Please acknowledge the confirmed booking.`;
+                  } else {
+                    appointmentContext = `\n\nAPPOINTMENT BOOKING FAILED:
+Error: ${bookingResult.error}
+
+Please explain this error to the doctor.`;
+                  }
+                }
+              }
+            }
+          }
+        } else if (intent.isAppointmentRequest && intent.intentType === 'book' && intent.confidence > 70) {
+          // Check if we have all required fields
+          const hasAllFields = intent.extractedInfo.patientName && 
+                               intent.extractedInfo.date && 
+                               intent.extractedInfo.time;
+
+          if (hasAllFields) {
+            // Parse date and time
+            const appointmentDate = parseRelativeDate(intent.extractedInfo.date!);
+            const appointmentTime = parseTime(intent.extractedInfo.time!);
+
+            if (appointmentDate && appointmentTime && !['morning', 'afternoon', 'evening'].includes(appointmentTime)) {
+              // Find patient by name
+              const doctorPatients = await storage.getDoctorPatients(userId);
+              const patient = doctorPatients.find(p => 
+                `${p.firstName} ${p.lastName}`.toLowerCase().includes(intent.extractedInfo.patientName!.toLowerCase())
+              );
+
+              if (patient) {
+                // CHECK AVAILABILITY ONLY - Don't book yet, ask for confirmation
+                const slots = await checkAvailability(userId, appointmentDate, appointmentTime);
+                const targetSlot = slots.find(s => s.time === appointmentTime && s.available);
+
+                if (targetSlot) {
+                  appointmentContext = `\n\nAPPOINTMENT READY TO BOOK:
+- Patient: ${patient.firstName} ${patient.lastName}
+- Date: ${appointmentDate.toISOString().split('T')[0]}
+- Time: ${appointmentTime}
+- Reason: ${intent.extractedInfo.reason || 'General consultation'}
+- Status: Time slot is available
+
+IMPORTANT: Ask the doctor to confirm before booking. Say: "I can book this appointment. Shall I proceed?" or similar confirmation question.
+DO NOT book until the doctor confirms.`;
+                } else {
+                  appointmentContext = `\n\nTIME SLOT UNAVAILABLE:
+The requested time ${appointmentTime} on ${appointmentDate.toISOString().split('T')[0]} is not available.
+
+Please suggest alternative times from available slots.`;
+                  
+                  // Get alternative slots
+                  const alternativeSlots = slots.filter(s => s.available).slice(0, 5);
+                  if (alternativeSlots.length > 0) {
+                    appointmentContext += `\n\nAvailable alternatives: ${alternativeSlots.map(s => s.time).join(', ')}`;
+                  }
+                }
+              } else {
+                appointmentContext = `\n\nPATIENT NOT FOUND:
+Could not find patient "${intent.extractedInfo.patientName}" in the doctor's patient list.
+
+Please ask the doctor to clarify the patient's full name or provide the patient ID.`;
+              }
+            } else if (appointmentTime && ['morning', 'afternoon', 'evening'].includes(appointmentTime)) {
+              // Check availability for time preference
+              if (appointmentDate) {
+                const slots = await checkAvailability(userId, appointmentDate, appointmentTime);
+                const availableSlots = slots.filter(s => s.available).slice(0, 5);
+
+                if (availableSlots.length > 0) {
+                  const slotList = availableSlots.map(s => s.time).join(', ');
+                  appointmentContext = `\n\nAVAILABLE ${appointmentTime.toUpperCase()} SLOTS ON ${intent.extractedInfo.date}:
+${slotList}
+
+Please ask the doctor which specific time they prefer and confirm the patient name.`;
+                } else {
+                  appointmentContext = `\n\nNO AVAILABILITY:
+No ${appointmentTime} slots available on ${intent.extractedInfo.date}.
+
+Please suggest alternative dates or times.`;
+                }
+              }
+            }
+          } else {
+            // Missing fields - let GPT-4 ask for them using the system prompt guidance
+            appointmentContext = `\n\nAPPOINTMENT BOOKING IN PROGRESS:
+Missing information: ${intent.missingFields.join(', ')}
+
+Please ask the doctor for the missing details: ${intent.suggestions.join(' ')}`;
+          }
+        } else if (intent.isAppointmentRequest && intent.intentType === 'check_availability' && intent.confidence > 70) {
+          // Check availability request
+          if (intent.extractedInfo.date) {
+            const appointmentDate = parseRelativeDate(intent.extractedInfo.date);
+            if (appointmentDate) {
+              const timePreference = intent.extractedInfo.time ? parseTime(intent.extractedInfo.time) : undefined;
+              const slots = await checkAvailability(userId, appointmentDate, timePreference || undefined);
+              const availableSlots = slots.filter(s => s.available).slice(0, 10);
+
+              if (availableSlots.length > 0) {
+                const slotList = availableSlots.map(s => s.time).join(', ');
+                appointmentContext = `\n\nAVAILABLE SLOTS ON ${intent.extractedInfo.date}:
+${slotList}
+
+Please present these available times to the doctor.`;
+              } else {
+                appointmentContext = `\n\nNO AVAILABILITY:
+No available slots on ${intent.extractedInfo.date}.
+
+Please suggest alternative dates.`;
+              }
+            }
+          } else {
+            appointmentContext = `\n\nAVAILABILITY CHECK IN PROGRESS:
+Please ask the doctor which date they want to check.`;
+          }
+        }
+      }
+
       // Add greeting requirement for first message
-      let augmentedSystemPrompt = systemPrompt;
+      let augmentedSystemPrompt = systemPrompt + appointmentContext;
       if (isFirstMessage && agentType === 'clona') {
         augmentedSystemPrompt += `\n\nIMPORTANT: This is the FIRST message in this conversation. You MUST start your response with a warm, personalized greeting. Ask the user's name if you don't know it, and ask how they're feeling today. Make them feel welcomed and cared for.`;
       } else if (isFirstMessage && agentType === 'lysa') {
