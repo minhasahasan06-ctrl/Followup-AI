@@ -2829,3 +2829,90 @@ export const insertGoogleCalendarSyncLogSchema = createInsertSchema(googleCalend
 
 export type InsertGoogleCalendarSyncLog = z.infer<typeof insertGoogleCalendarSyncLogSchema>;
 export type GoogleCalendarSyncLog = typeof googleCalendarSyncLogs.$inferSelect;
+
+// ===== GMAIL SYNC (HIPAA CRITICAL) =====
+// SECURITY REQUIREMENTS FOR PRODUCTION:
+// 1. OAuth tokens MUST be encrypted at rest (AWS KMS envelope encryption)
+// 2. Requires Google Workspace BAA - NOT regular Gmail
+// 3. PHI detection/redaction required before syncing email content
+// 4. Patient consent workflow required before syncing any emails
+// 5. Immutable audit trail for all sync/access events
+// 6. Token rotation policies and revocation workflows
+// 7. Role-based access control enforcement
+// 8. Domain validation to ensure Google Workspace account
+export const gmailSync = pgTable("gmail_sync", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().unique().references(() => users.id),
+  
+  // OAuth tokens - TODO: ENCRYPT WITH AWS KMS IN PRODUCTION
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpiry: timestamp("token_expiry"),
+  tokenScopes: text("token_scopes").array(), // Track granted scopes for audit
+  
+  // Google Workspace validation
+  googleWorkspaceDomain: varchar("google_workspace_domain"), // Must be validated
+  googleWorkspaceBaaConfirmed: boolean("google_workspace_baa_confirmed").default(false),
+  
+  // Sync configuration
+  syncEnabled: boolean("sync_enabled").default(false), // Default OFF for safety
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: varchar("last_sync_status"),
+  lastSyncError: text("last_sync_error"),
+  
+  // Sync statistics
+  totalEmailsSynced: integer("total_emails_synced").default(0),
+  
+  // PHI protection
+  phiRedactionEnabled: boolean("phi_redaction_enabled").default(true),
+  consentConfirmed: boolean("consent_confirmed").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorIdx: index("gmail_sync_doctor_idx").on(table.doctorId),
+}));
+
+export const insertGmailSyncSchema = createInsertSchema(gmailSync).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertGmailSync = z.infer<typeof insertGmailSyncSchema>;
+export type GmailSync = typeof gmailSync.$inferSelect;
+
+// Gmail sync audit logs (HIPAA immutable audit trail)
+export const gmailSyncLogs = pgTable("gmail_sync_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  syncId: varchar("sync_id").references(() => gmailSync.id),
+  
+  // Sync details
+  action: varchar("action").notNull(), // 'sync', 'send', 'access', 'token_refresh'
+  status: varchar("status").notNull(),
+  emailsFetched: integer("emails_fetched").default(0),
+  phiDetected: boolean("phi_detected").default(false),
+  
+  // Error tracking
+  error: text("error"),
+  errorDetails: jsonb("error_details"),
+  
+  // Audit metadata
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  doctorIdx: index("gmail_sync_logs_doctor_idx").on(table.doctorId),
+  createdAtIdx: index("gmail_sync_logs_created_idx").on(table.createdAt),
+  actionIdx: index("gmail_sync_logs_action_idx").on(table.action),
+}));
+
+export const insertGmailSyncLogSchema = createInsertSchema(gmailSyncLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertGmailSyncLog = z.infer<typeof insertGmailSyncLogSchema>;
+export type GmailSyncLog = typeof gmailSyncLogs.$inferSelect;
