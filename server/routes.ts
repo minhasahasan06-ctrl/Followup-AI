@@ -4193,7 +4193,7 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
     }
   });
 
-  // Get doctor wellness history (doctors only)
+  // Get doctor wellness summary (doctors only)
   app.get('/api/v1/ml/doctor-wellness', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user!.id;
@@ -4205,7 +4205,59 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
 
       const days = parseInt(req.query.days as string) || 30;
       const history = await storage.getDoctorWellnessHistory(userId, days);
-      res.json(history);
+      
+      // Calculate summary statistics
+      if (history.length === 0) {
+        return res.json(null);
+      }
+
+      // Ensure history is sorted descending (most recent first)
+      const sortedHistory = history.sort((a, b) => {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+
+      const mostRecent = sortedHistory[0];
+      const now = new Date();
+      
+      // Filter last 7 days
+      const last7Days = sortedHistory.filter(h => {
+        const daysDiff = Math.floor((now.getTime() - new Date(h.date).getTime()) / (1000 * 60 * 60 * 24));
+        return daysDiff <= 7;
+      });
+
+      const weeklyAvgStress = last7Days.length > 0
+        ? (last7Days.reduce((sum, h) => sum + h.stressLevel, 0) / last7Days.length).toFixed(1)
+        : mostRecent.stressLevel.toFixed(1);
+
+      // Filter last 30 days
+      const last30Days = sortedHistory.filter(h => {
+        const daysDiff = Math.floor((now.getTime() - new Date(h.date).getTime()) / (1000 * 60 * 60 * 24));
+        return daysDiff <= 30;
+      });
+      const monthlyAvg = last30Days.length > 0
+        ? last30Days.reduce((sum, h) => sum + h.stressLevel, 0) / last30Days.length
+        : mostRecent.stressLevel;
+
+      let monthlyTrend = 'stable';
+      if (parseFloat(weeklyAvgStress) > monthlyAvg + 1) {
+        monthlyTrend = 'increasing';
+      } else if (parseFloat(weeklyAvgStress) < monthlyAvg - 1) {
+        monthlyTrend = 'decreasing';
+      }
+
+      // Safely handle date conversion
+      const recentDate = new Date(mostRecent.date);
+      const summary = {
+        id: mostRecent.id,
+        stressLevel: mostRecent.stressLevel,
+        burnoutRisk: mostRecent.burnoutRisk || 'low',
+        workLifeBalance: mostRecent.workLifeBalance || 'Consider taking breaks',
+        lastUpdate: isNaN(recentDate.getTime()) ? new Date().toISOString() : recentDate.toISOString(),
+        weeklyAvgStress,
+        monthlyTrend,
+      };
+
+      res.json(summary);
     } catch (error) {
       console.error('Error fetching doctor wellness history:', error);
       res.status(500).json({ message: 'Failed to fetch wellness history' });

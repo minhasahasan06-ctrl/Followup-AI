@@ -2675,9 +2675,9 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(habits, eq(habitCompletions.habitId, habits.id))
       .where(and(
         eq(habits.userId, userId),
-        gte(habitCompletions.completedAt, since)
+        gte(habitCompletions.completionDate, since)
       ))
-      .orderBy(desc(habitCompletions.completedAt));
+      .orderBy(desc(habitCompletions.completionDate));
     return completions.map(c => c.habit_completions);
   }
 
