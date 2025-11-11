@@ -4716,11 +4716,26 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
   // Get email thread by ID
   app.get('/api/v1/emails/threads/:id', isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view email threads' });
+      }
+
       const { id } = req.params;
       const thread = await storage.getEmailThread(id);
 
       if (!thread) {
         return res.status(404).json({ message: 'Email thread not found' });
+      }
+
+      // SECURITY: Only the thread owner can view it
+      if (thread.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only view your own email threads' });
       }
 
       res.json(thread);
@@ -4733,14 +4748,31 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
   // Mark thread as read
   app.post('/api/v1/emails/threads/:id/read', isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can manage email threads' });
+      }
+
       const { id } = req.params;
-      const thread = await storage.markThreadRead(id);
+      const thread = await storage.getEmailThread(id);
 
       if (!thread) {
         return res.status(404).json({ message: 'Email thread not found' });
       }
 
-      res.json(thread);
+      // SECURITY: Only the thread owner can mark as read
+      if (thread.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only mark your own threads as read' });
+      }
+
+      const updatedThread = await storage.markThreadRead(id);
+
+      res.json(updatedThread);
     } catch (error) {
       console.error('Error marking thread as read:', error);
       res.status(500).json({ message: 'Failed to mark thread as read' });
@@ -4750,7 +4782,28 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
   // Get messages in a thread
   app.get('/api/v1/emails/threads/:id/messages', isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view email messages' });
+      }
+
       const { id } = req.params;
+      const thread = await storage.getEmailThread(id);
+
+      if (!thread) {
+        return res.status(404).json({ message: 'Email thread not found' });
+      }
+
+      // SECURITY: Only the thread owner can view messages
+      if (thread.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only view messages in your own threads' });
+      }
+
       const messages = await storage.getThreadMessages(id);
       res.json(messages);
     } catch (error) {
@@ -4762,10 +4815,31 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
   // Create email message in thread
   app.post('/api/v1/emails/messages', isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can send email messages' });
+      }
+
       const { threadId, sender, senderEmail, body, isFromDoctor, gmailMessageId } = req.body;
 
       if (!threadId || !sender || !senderEmail || !body) {
         return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      const thread = await storage.getEmailThread(threadId);
+
+      if (!thread) {
+        return res.status(404).json({ message: 'Email thread not found' });
+      }
+
+      // SECURITY: Only the thread owner can create messages
+      if (thread.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only send messages in your own threads' });
       }
 
       const message = await storage.createEmailMessage({
@@ -4868,11 +4942,26 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
   // Get call log by ID
   app.get('/api/v1/calls/:id', isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view call logs' });
+      }
+
       const { id } = req.params;
       const callLog = await storage.getCallLog(id);
 
       if (!callLog) {
         return res.status(404).json({ message: 'Call log not found' });
+      }
+
+      // SECURITY: Only the call owner can view it
+      if (callLog.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only view your own call logs' });
       }
 
       res.json(callLog);
@@ -4885,14 +4974,35 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
   // Update call log
   app.patch('/api/v1/calls/:id', isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can update call logs' });
+      }
+
       const { id } = req.params;
-      const updates = req.body;
+      const existingCallLog = await storage.getCallLog(id);
 
-      const callLog = await storage.updateCallLog(id, updates);
-
-      if (!callLog) {
+      if (!existingCallLog) {
         return res.status(404).json({ message: 'Call log not found' });
       }
+
+      // SECURITY: Only the call owner can update it
+      if (existingCallLog.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only update your own call logs' });
+      }
+
+      const updates = req.body;
+
+      // SECURITY: Prevent changing doctorId or patientId
+      delete updates.doctorId;
+      delete updates.patientId;
+
+      const callLog = await storage.updateCallLog(id, updates);
 
       res.json(callLog);
     } catch (error) {
@@ -4934,7 +5044,31 @@ Remember: Your role is to be an intelligent, proactive, and highly competent ass
   // Get reminders for an appointment
   app.get('/api/v1/appointments/:appointmentId/reminders', isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
       const { appointmentId } = req.params;
+      const appointment = await storage.getAppointment(appointmentId);
+
+      if (!appointment) {
+        return res.status(404).json({ message: 'Appointment not found' });
+      }
+
+      // SECURITY: Only appointment participants can view reminders
+      if (user.role === 'patient' && appointment.patientId !== userId) {
+        return res.status(403).json({ message: 'You can only view reminders for your own appointments' });
+      }
+      if (user.role === 'doctor' && appointment.doctorId !== userId) {
+        return res.status(403).json({ message: 'You can only view reminders for appointments with your patients' });
+      }
+
       const reminders = await storage.getAppointmentReminders(appointmentId);
       res.json(reminders);
     } catch (error) {
