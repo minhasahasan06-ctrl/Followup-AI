@@ -2323,3 +2323,356 @@ export const insertDoctorWellnessSchema = createInsertSchema(doctorWellness).omi
 
 export type InsertDoctorWellness = z.infer<typeof insertDoctorWellnessSchema>;
 export type DoctorWellness = typeof doctorWellness.$inferSelect;
+
+// ============================================================================
+// RECEPTIONIST & ASSISTANT LYSA FEATURES
+// ============================================================================
+
+// Appointments - Schedule and manage patient appointments
+export const appointments = pgTable("appointments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Participants
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  patientId: varchar("patient_id").references(() => users.id), // Nullable for external patients
+  patientName: varchar("patient_name"), // For external patients not in system
+  patientEmail: varchar("patient_email"),
+  patientPhone: varchar("patient_phone"),
+  
+  // Appointment details
+  title: varchar("title").notNull(),
+  description: text("description"),
+  appointmentType: varchar("appointment_type").notNull(), // 'consultation', 'followup', 'emergency', 'virtual', 'in-person'
+  
+  // Scheduling
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
+  duration: integer("duration").notNull(), // minutes
+  
+  // Location (for in-person appointments)
+  location: varchar("location"),
+  roomNumber: varchar("room_number"),
+  
+  // Virtual meeting details
+  meetingLink: varchar("meeting_link"),
+  meetingPlatform: varchar("meeting_platform"), // 'zoom', 'meet', 'teams'
+  
+  // Status tracking
+  status: varchar("status").notNull().default("scheduled"), // 'scheduled', 'confirmed', 'checked-in', 'in-progress', 'completed', 'cancelled', 'no-show', 'rescheduled'
+  confirmationStatus: varchar("confirmation_status").default("pending"), // 'pending', 'confirmed', 'declined'
+  confirmedAt: timestamp("confirmed_at"),
+  
+  // Cancellation/rescheduling
+  cancelledBy: varchar("cancelled_by"), // userId who cancelled
+  cancellationReason: text("cancellation_reason"),
+  cancelledAt: timestamp("cancelled_at"),
+  rescheduledFrom: varchar("rescheduled_from"), // original appointment ID
+  
+  // AI booking (if booked through Assistant Lysa)
+  bookedByAI: boolean("booked_by_ai").default(false),
+  aiBookingContext: jsonb("ai_booking_context").$type<{ intent: string; confidence: number; extractedInfo: any }>(),
+  
+  // Notes
+  doctorNotes: text("doctor_notes"),
+  patientNotes: text("patient_notes"),
+  
+  // Google Calendar integration
+  googleCalendarEventId: varchar("google_calendar_event_id"),
+  
+  // Reminders sent
+  remindersSent: jsonb("reminders_sent").$type<Array<{ type: string; sentAt: string }>>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorTimeIdx: index("appointments_doctor_time_idx").on(table.doctorId, table.startTime),
+  patientTimeIdx: index("appointments_patient_time_idx").on(table.patientId, table.startTime),
+  statusIdx: index("appointments_status_idx").on(table.status),
+}));
+
+export const insertAppointmentSchema = createInsertSchema(appointments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
+export type Appointment = typeof appointments.$inferSelect;
+
+// Doctor Availability - Define doctor's working hours and availability
+export const doctorAvailability = pgTable("doctor_availability", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Recurring schedule
+  dayOfWeek: integer("day_of_week").notNull(), // 0=Sunday, 1=Monday, ..., 6=Saturday
+  startTime: varchar("start_time").notNull(), // "09:00"
+  endTime: varchar("end_time").notNull(), // "17:00"
+  
+  // Override specific dates
+  specificDate: timestamp("specific_date"), // For one-time availability changes
+  isAvailable: boolean("is_available").default(true), // false for blocked time
+  
+  // Break times
+  breakStart: varchar("break_start"), // "12:00"
+  breakEnd: varchar("break_end"), // "13:00"
+  
+  // Slot configuration
+  slotDuration: integer("slot_duration").default(30), // minutes per appointment
+  bufferBetweenSlots: integer("buffer_between_slots").default(5), // minutes
+  maxSlotsPerDay: integer("max_slots_per_day"),
+  
+  // Appointment types allowed during this time
+  allowedTypes: jsonb("allowed_types").$type<string[]>(), // ['consultation', 'followup']
+  
+  // Reason for unavailability
+  reason: text("reason"), // "Vacation", "Conference", etc.
+  
+  // Recurring pattern
+  isRecurring: boolean("is_recurring").default(true),
+  validFrom: timestamp("valid_from").notNull(),
+  validUntil: timestamp("valid_until"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorDayIdx: index("doctor_availability_doctor_day_idx").on(table.doctorId, table.dayOfWeek),
+  dateIdx: index("doctor_availability_date_idx").on(table.specificDate),
+}));
+
+export const insertDoctorAvailabilitySchema = createInsertSchema(doctorAvailability).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorAvailability = z.infer<typeof insertDoctorAvailabilitySchema>;
+export type DoctorAvailability = typeof doctorAvailability.$inferSelect;
+
+// Email Threads - Organize email conversations
+export const emailThreads = pgTable("email_threads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Doctor who owns this thread
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Thread participants
+  patientId: varchar("patient_id").references(() => users.id), // Nullable for external contacts
+  externalEmail: varchar("external_email"), // For emails not from registered patients
+  
+  // Thread metadata
+  subject: varchar("subject").notNull(),
+  snippet: text("snippet"), // Preview of first message
+  
+  // Categorization (AI-powered)
+  category: varchar("category"), // 'appointment', 'inquiry', 'followup', 'urgent', 'administrative'
+  priority: varchar("priority").default("normal"), // 'low', 'normal', 'high', 'urgent'
+  
+  // Status
+  status: varchar("status").default("active"), // 'active', 'archived', 'spam', 'trash'
+  isRead: boolean("is_read").default(false),
+  isStarred: boolean("is_starred").default(false),
+  
+  // AI assistance
+  aiSuggestedReply: text("ai_suggested_reply"),
+  aiCategory: varchar("ai_category"), // AI's categorization
+  aiUrgency: varchar("ai_urgency"), // AI-detected urgency level
+  aiExtractedInfo: jsonb("ai_extracted_info").$type<{ action: string; date?: string; appointment?: any }>(),
+  
+  // Gmail integration
+  gmailThreadId: varchar("gmail_thread_id"),
+  
+  // Tracking
+  lastMessageAt: timestamp("last_message_at"),
+  messageCount: integer("message_count").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorIdx: index("email_threads_doctor_idx").on(table.doctorId),
+  patientIdx: index("email_threads_patient_idx").on(table.patientId),
+  statusIdx: index("email_threads_status_idx").on(table.status),
+  categoryIdx: index("email_threads_category_idx").on(table.category),
+}));
+
+export const insertEmailThreadSchema = createInsertSchema(emailThreads).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEmailThread = z.infer<typeof insertEmailThreadSchema>;
+export type EmailThread = typeof emailThreads.$inferSelect;
+
+// Email Messages - Individual emails within threads
+export const emailMessages = pgTable("email_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  threadId: varchar("thread_id").notNull().references(() => emailThreads.id, { onDelete: "cascade" }),
+  
+  // Sender/recipient
+  fromEmail: varchar("from_email").notNull(),
+  fromName: varchar("from_name"),
+  toEmail: jsonb("to_email").$type<string[]>().notNull(),
+  ccEmail: jsonb("cc_email").$type<string[]>(),
+  bccEmail: jsonb("bcc_email").$type<string[]>(),
+  
+  // Content
+  subject: varchar("subject"),
+  body: text("body").notNull(),
+  bodyHtml: text("body_html"),
+  
+  // Metadata
+  isFromDoctor: boolean("is_from_doctor").default(false),
+  isDraft: boolean("is_draft").default(false),
+  isSent: boolean("is_sent").default(false),
+  
+  // AI generation
+  generatedByAI: boolean("generated_by_ai").default(false),
+  aiPrompt: text("ai_prompt"), // Original prompt if AI-generated
+  aiTone: varchar("ai_tone"), // 'professional', 'friendly', 'urgent'
+  
+  // Attachments
+  attachments: jsonb("attachments").$type<Array<{ name: string; url: string; size: number; type: string }>>(),
+  
+  // Gmail integration
+  gmailMessageId: varchar("gmail_message_id"),
+  
+  // Delivery tracking
+  sentAt: timestamp("sent_at"),
+  deliveredAt: timestamp("delivered_at"),
+  readAt: timestamp("read_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  threadIdx: index("email_messages_thread_idx").on(table.threadId),
+  sentIdx: index("email_messages_sent_idx").on(table.sentAt),
+}));
+
+export const insertEmailMessageSchema = createInsertSchema(emailMessages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEmailMessage = z.infer<typeof insertEmailMessageSchema>;
+export type EmailMessage = typeof emailMessages.$inferSelect;
+
+// Call Logs - Track phone calls and voicemails
+export const callLogs = pgTable("call_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Doctor who owns this call
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Caller information
+  patientId: varchar("patient_id").references(() => users.id), // Nullable for unknown callers
+  callerPhone: varchar("caller_phone").notNull(),
+  callerName: varchar("caller_name"),
+  
+  // Call details
+  direction: varchar("direction").notNull(), // 'inbound', 'outbound'
+  callType: varchar("call_type").notNull(), // 'appointment', 'inquiry', 'emergency', 'followup', 'voicemail'
+  
+  // Timing
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time"),
+  duration: integer("duration"), // seconds
+  
+  // Status
+  status: varchar("status").notNull(), // 'answered', 'missed', 'busy', 'failed', 'voicemail'
+  isCallback: boolean("is_callback").default(false),
+  callbackScheduledFor: timestamp("callback_scheduled_for"),
+  
+  // Twilio integration
+  twilioCallSid: varchar("twilio_call_sid"),
+  recordingUrl: varchar("recording_url"),
+  recordingDuration: integer("recording_duration"), // seconds
+  
+  // Voicemail & transcription
+  voicemailUrl: varchar("voicemail_url"),
+  transcription: text("transcription"),
+  transcriptionConfidence: decimal("transcription_confidence", { precision: 3, scale: 2 }),
+  
+  // AI analysis
+  aiSummary: text("ai_summary"),
+  aiIntent: varchar("ai_intent"), // 'book_appointment', 'question', 'emergency', 'followup'
+  aiSentiment: varchar("ai_sentiment"), // 'positive', 'neutral', 'negative', 'urgent'
+  aiExtractedInfo: jsonb("ai_extracted_info").$type<{ 
+    reason?: string; 
+    appointmentRequest?: { date: string; time: string }; 
+    urgency?: string;
+    actionItems?: string[];
+  }>(),
+  
+  // Notes
+  notes: text("notes"),
+  tags: jsonb("tags").$type<string[]>(),
+  
+  // Follow-up
+  requiresFollowup: boolean("requires_followup").default(false),
+  followupCompletedAt: timestamp("followup_completed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorIdx: index("call_logs_doctor_idx").on(table.doctorId),
+  patientIdx: index("call_logs_patient_idx").on(table.patientId),
+  statusIdx: index("call_logs_status_idx").on(table.status),
+  timeIdx: index("call_logs_time_idx").on(table.startTime),
+}));
+
+export const insertCallLogSchema = createInsertSchema(callLogs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCallLog = z.infer<typeof insertCallLogSchema>;
+export type CallLog = typeof callLogs.$inferSelect;
+
+// Appointment Reminders - Track reminder delivery
+export const appointmentReminders = pgTable("appointment_reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  appointmentId: varchar("appointment_id").notNull().references(() => appointments.id, { onDelete: "cascade" }),
+  
+  // Reminder configuration
+  reminderType: varchar("reminder_type").notNull(), // 'sms', 'email', 'voice'
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  timingType: varchar("timing_type").notNull(), // '24h', '1h', '15min'
+  
+  // Delivery status
+  status: varchar("status").default("pending"), // 'pending', 'sent', 'delivered', 'failed', 'cancelled'
+  sentAt: timestamp("sent_at"),
+  deliveredAt: timestamp("delivered_at"),
+  
+  // Response tracking
+  confirmed: boolean("confirmed").default(false),
+  confirmedAt: timestamp("confirmed_at"),
+  declined: boolean("declined").default(false),
+  declinedAt: timestamp("declined_at"),
+  
+  // Content
+  messageContent: text("message_content"),
+  
+  // Delivery details
+  twilioMessageSid: varchar("twilio_message_sid"), // For SMS
+  sesMessageId: varchar("ses_message_id"), // For email
+  twilioCallSid: varchar("twilio_call_sid"), // For voice
+  
+  // Error tracking
+  error: text("error"),
+  retryCount: integer("retry_count").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  appointmentIdx: index("appointment_reminders_appointment_idx").on(table.appointmentId),
+  scheduledIdx: index("appointment_reminders_scheduled_idx").on(table.scheduledFor),
+  statusIdx: index("appointment_reminders_status_idx").on(table.status),
+}));
+
+export const insertAppointmentReminderSchema = createInsertSchema(appointmentReminders).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAppointmentReminder = z.infer<typeof insertAppointmentReminderSchema>;
+export type AppointmentReminder = typeof appointmentReminders.$inferSelect;
