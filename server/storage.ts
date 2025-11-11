@@ -561,6 +561,21 @@ export interface IStorage {
   markReminderSent(id: string, sentAt: Date, twilioSid?: string, sesSid?: string): Promise<AppointmentReminder | undefined>;
   markReminderFailed(id: string, error: string): Promise<AppointmentReminder | undefined>;
   confirmReminder(id: string): Promise<AppointmentReminder | undefined>;
+  
+  // Appointment triage operations
+  updateAppointmentTriageResult(params: {
+    appointmentId?: string;
+    patientId: string;
+    symptoms: string;
+    urgencyLevel: 'emergency' | 'urgent' | 'routine' | 'non-urgent';
+    triageAssessment: TriageAssessment;
+    redFlags: string[];
+    recommendations: string[];
+    patientSelfAssessment?: string;
+    durationMs: number;
+  }): Promise<{ appointment?: Appointment; log: AppointmentTriageLog }>;
+  createAppointmentTriageLog(logData: InsertAppointmentTriageLog): Promise<AppointmentTriageLog>;
+  getAppointmentTriageLogs(patientId: string, limit?: number): Promise<AppointmentTriageLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3382,6 +3397,134 @@ export class DatabaseStorage implements IStorage {
       .where(eq(appointmentReminders.id, id))
       .returning();
     return reminder;
+  }
+
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA FEATURES - SYMPTOM TRIAGE
+  // ============================================================================
+
+  async updateAppointmentTriageResult(params: {
+    appointmentId?: string;
+    patientId: string;
+    symptoms: string;
+    urgencyLevel: 'emergency' | 'urgent' | 'routine' | 'non-urgent';
+    triageAssessment: TriageAssessment;
+    redFlags: string[];
+    recommendations: string[];
+    patientSelfAssessment?: string;
+    durationMs: number;
+  }): Promise<{ appointment?: Appointment; log: AppointmentTriageLog }> {
+    return await db.transaction(async (trx) => {
+      let appointment: Appointment | undefined;
+
+      // If appointmentId provided, update the appointment
+      if (params.appointmentId) {
+        // Fetch appointment with row-level lock to prevent concurrent modifications
+        const [existingAppt] = await trx
+          .select()
+          .from(appointments)
+          .where(eq(appointments.id, params.appointmentId))
+          .for('update');
+
+        if (!existingAppt) {
+          throw new Error(`Appointment not found: ${params.appointmentId}`);
+        }
+
+        // Verify patient ownership
+        if (existingAppt.patientId !== params.patientId) {
+          throw new Error(`Patient mismatch: appointment belongs to different patient`);
+        }
+
+        // Prevent modification of cancelled appointments
+        if (existingAppt.status === 'cancelled') {
+          throw new Error(`Cannot triage cancelled appointment`);
+        }
+
+        // Check for concurrent triage (if triageAssessedAt is newer than expected)
+        if (existingAppt.triageAssessedAt && existingAppt.triageAssessedAt > new Date(Date.now() - params.durationMs)) {
+          throw new Error(`Concurrent triage detected: appointment was recently triaged`);
+        }
+
+        // Update appointment with triage results
+        const [updated] = await trx
+          .update(appointments)
+          .set({
+            symptoms: params.symptoms,
+            urgencyLevel: params.urgencyLevel,
+            triageAssessment: params.triageAssessment,
+            triageAssessedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(appointments.id, params.appointmentId))
+          .returning();
+
+        appointment = updated;
+      }
+
+      // Always create audit log
+      const [log] = await trx
+        .insert(appointmentTriageLogs)
+        .values({
+          appointmentId: params.appointmentId || null,
+          patientId: params.patientId,
+          symptoms: params.symptoms,
+          patientSelfAssessment: params.patientSelfAssessment || null,
+          urgencyLevel: params.urgencyLevel,
+          triageAssessment: params.triageAssessment,
+          redFlags: params.redFlags,
+          recommendations: params.recommendations,
+          assessmentMethod: params.triageAssessment.assessedBy,
+          durationMs: params.durationMs,
+          createdAt: new Date(),
+        })
+        .returning();
+
+      return { appointment, log };
+    });
+  }
+
+  async createAppointmentTriageLog(logData: InsertAppointmentTriageLog): Promise<AppointmentTriageLog> {
+    const [log] = await db
+      .insert(appointmentTriageLogs)
+      .values(logData)
+      .returning();
+    return log;
+  }
+
+  async getAppointmentTriageLogs(
+    patientId: string,
+    limit: number = 10
+  ): Promise<AppointmentTriageLog[]> {
+    return await db
+      .select()
+      .from(appointmentTriageLogs)
+      .where(eq(appointmentTriageLogs.patientId, patientId))
+      .orderBy(desc(appointmentTriageLogs.createdAt))
+      .limit(limit);
+  }
+
+  async updateTriageLogReview(
+    id: string,
+    reviewData: {
+      clinicianAgreed: boolean;
+      clinicianOverrideLevel?: string;
+      clinicianOverrideReason?: string;
+      reviewedBy: string;
+    }
+  ): Promise<AppointmentTriageLog | undefined> {
+    const [log] = await db
+      .update(appointmentTriageLogs)
+      .set({
+        clinicianReviewed: true,
+        clinicianAgreed: reviewData.clinicianAgreed,
+        clinicianOverrideLevel: reviewData.clinicianOverrideLevel,
+        clinicianOverrideReason: reviewData.clinicianOverrideReason,
+        reviewedBy: reviewData.reviewedBy,
+        reviewedAt: new Date(),
+      })
+      .where(eq(appointmentTriageLogs.id, id))
+      .returning();
+    return log;
   }
 }
 
