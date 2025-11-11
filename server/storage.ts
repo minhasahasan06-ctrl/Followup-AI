@@ -178,7 +178,7 @@ import {
   type InsertDoctorWellness,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, sql, gte } from "drizzle-orm";
+import { eq, and, or, desc, sql, gte, lte, like, ilike, inArray, between } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -722,8 +722,8 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(dailyFollowups.patientId, patientId),
-          sql`${dailyFollowups.date} >= ${startOfDay}`,
-          sql`${dailyFollowups.date} <= ${endOfDay}`
+          gte(dailyFollowups.date, startOfDay),
+          lte(dailyFollowups.date, endOfDay)
         )
       );
     return followup;
@@ -833,8 +833,8 @@ export class DatabaseStorage implements IStorage {
   ): Promise<ChatSession[]> {
     const conditions = [
       eq(chatSessions.patientId, patientId),
-      sql`${chatSessions.startedAt} >= ${startDate}`,
-      sql`${chatSessions.startedAt} <= ${endDate}`
+      gte(chatSessions.startedAt, startDate),
+      lte(chatSessions.startedAt, endDate)
     ];
     
     if (agentType) {
@@ -934,10 +934,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMedicationByName(patientId: string, name: string): Promise<Medication | undefined> {
+    const normalizedName = name.toLowerCase();
     const [medication] = await db
       .select()
       .from(medications)
-      .where(sql`${medications.patientId} = ${patientId} AND LOWER(${medications.name}) = ${name.toLowerCase()} AND ${medications.active} = true`);
+      .where(
+        and(
+          eq(medications.patientId, patientId),
+          sql`LOWER(${medications.name}) = ${normalizedName}`,
+          eq(medications.active, true)
+        )
+      );
     return medication;
   }
 
@@ -1667,10 +1674,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async searchDrugs(query: string): Promise<Drug[]> {
+    const searchPattern = `%${query.toLowerCase()}%`;
     const results = await db
       .select()
       .from(drugs)
-      .where(sql`LOWER(${drugs.name}) LIKE ${`%${query.toLowerCase()}%`} OR LOWER(${drugs.genericName}) LIKE ${`%${query.toLowerCase()}%`}`)
+      .where(
+        or(
+          sql`LOWER(${drugs.name}) LIKE ${searchPattern}`,
+          sql`LOWER(${drugs.genericName}) LIKE ${searchPattern}`
+        )
+      )
       .limit(20);
     return results;
   }
@@ -1688,7 +1701,16 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(drugInteractions)
       .where(
-        sql`(${drugInteractions.drug1Id} = ${drug1Id} AND ${drugInteractions.drug2Id} = ${drug2Id}) OR (${drugInteractions.drug1Id} = ${drug2Id} AND ${drugInteractions.drug2Id} = ${drug1Id})`
+        or(
+          and(
+            eq(drugInteractions.drug1Id, drug1Id),
+            eq(drugInteractions.drug2Id, drug2Id)
+          ),
+          and(
+            eq(drugInteractions.drug1Id, drug2Id),
+            eq(drugInteractions.drug2Id, drug1Id)
+          )
+        )
       );
     return interaction;
   }
@@ -1706,7 +1728,10 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(interactionAlerts)
       .where(
-        sql`${interactionAlerts.patientId} = ${patientId} AND ${interactionAlerts.alertStatus} = 'active'`
+        and(
+          eq(interactionAlerts.patientId, patientId),
+          eq(interactionAlerts.alertStatus, 'active')
+        )
       )
       .orderBy(desc(interactionAlerts.criticalityScore), desc(interactionAlerts.createdAt));
     return alerts;
@@ -1816,8 +1841,8 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(immuneBiomarkers.userId, userId),
-          sql`${immuneBiomarkers.measuredAt} >= ${startDate}`,
-          sql`${immuneBiomarkers.measuredAt} <= ${endDate}`
+          gte(immuneBiomarkers.measuredAt, startDate),
+          lte(immuneBiomarkers.measuredAt, endDate)
         )
       )
       .orderBy(desc(immuneBiomarkers.measuredAt));
@@ -2008,7 +2033,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(correlationPatterns.userId, userId),
-          sql`${correlationPatterns.severity} IN ('high', 'critical')`
+          inArray(correlationPatterns.severity, ['high', 'critical'])
         )
       )
       .orderBy(desc(correlationPatterns.createdAt));
@@ -2157,7 +2182,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(trialMatchScores.userId, userId),
-          sql`${trialMatchScores.overallScore} >= ${minScore}`
+          gte(trialMatchScores.overallScore, minScore)
         )
       )
       .orderBy(desc(trialMatchScores.overallScore));
@@ -2213,7 +2238,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(deteriorationPredictions.userId, userId),
-          sql`${deteriorationPredictions.riskLevel} IN ('high', 'critical')`
+          inArray(deteriorationPredictions.riskLevel, ['high', 'critical'])
         )
       )
       .orderBy(desc(deteriorationPredictions.predictionDate));
@@ -2451,7 +2476,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(meals.patientId, patientId),
-          sql`${meals.scheduledTime} BETWEEN ${startDate} AND ${endDate}`
+          between(meals.scheduledTime, startDate, endDate)
         )
       )
       .orderBy(meals.scheduledTime);
@@ -2545,7 +2570,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(companionCheckIns.patientId, patientId),
-          sql`${companionCheckIns.checkedInAt} >= ${since}`
+          gte(companionCheckIns.checkedInAt, since)
         )
       )
       .orderBy(desc(companionCheckIns.checkedInAt));

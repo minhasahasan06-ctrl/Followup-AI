@@ -97,7 +97,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             role: 'patient',
             phoneNumber: '+15551234567',
             phoneVerified: true,
-            twoFactorEnabled: false,
+            emailVerified: true,
+            termsAccepted: true,
+            termsAcceptedAt: new Date(),
           });
           console.log('[DEV-ONLY] ✅ Created test patient user');
         }
@@ -114,10 +116,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             role: 'doctor',
             phoneNumber: '+15551234568',
             phoneVerified: true,
-            twoFactorEnabled: false,
+            emailVerified: true,
             medicalLicenseNumber: 'TEST-LICENSE-12345',
             organization: 'Test Hospital',
-            verified: true,
+            licenseVerified: true,
+            adminVerified: true,
+            adminVerifiedAt: new Date(),
+            termsAccepted: true,
+            termsAcceptedAt: new Date(),
           });
           console.log('[DEV-ONLY] ✅ Created test doctor user');
         }
@@ -131,29 +137,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     // Dev-only quick login endpoints
     app.post('/api/dev/login-as-patient', async (req: any, res) => {
-      const testPatientId = 'dev-patient-00000000-0000-0000-0000-000000000001';
-      req.session.userId = testPatientId;
-      await req.session.save();
-      console.log('[DEV-ONLY] 👤 Logged in as test patient');
-      res.json({ 
-        message: 'Logged in as test patient', 
-        userId: testPatientId,
-        email: 'patient@test.com',
-        role: 'patient'
-      });
+      try {
+        const testPatientId = 'dev-patient-00000000-0000-0000-0000-000000000001';
+        
+        // Get user from database
+        const user = await storage.getUser(testPatientId);
+        if (!user) {
+          return res.status(404).json({ message: 'Test patient user not found. Please restart the server.' });
+        }
+        
+        // Set session
+        req.session.userId = testPatientId;
+        await new Promise<void>((resolve, reject) => {
+          req.session.save((err: any) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+        
+        console.log('[DEV-ONLY] 👤 Logged in as test patient');
+        res.json({ 
+          message: 'Logged in as test patient', 
+          user: user
+        });
+      } catch (error: any) {
+        console.error('[DEV-ONLY] Error in dev patient login:', error);
+        res.status(500).json({ message: 'Failed to login as test patient', error: error.message });
+      }
     });
 
     app.post('/api/dev/login-as-doctor', async (req: any, res) => {
-      const testDoctorId = 'dev-doctor-00000000-0000-0000-0000-000000000002';
-      req.session.userId = testDoctorId;
-      await req.session.save();
-      console.log('[DEV-ONLY] 👨‍⚕️ Logged in as test doctor');
-      res.json({ 
-        message: 'Logged in as test doctor', 
-        userId: testDoctorId,
-        email: 'doctor@test.com',
-        role: 'doctor'
-      });
+      try {
+        const testDoctorId = 'dev-doctor-00000000-0000-0000-0000-000000000002';
+        
+        // Get user from database
+        const user = await storage.getUser(testDoctorId);
+        if (!user) {
+          return res.status(404).json({ message: 'Test doctor user not found. Please restart the server.' });
+        }
+        
+        // Set session
+        req.session.userId = testDoctorId;
+        await new Promise<void>((resolve, reject) => {
+          req.session.save((err: any) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+        
+        console.log('[DEV-ONLY] 👨‍⚕️ Logged in as test doctor');
+        res.json({ 
+          message: 'Logged in as test doctor', 
+          user: user
+        });
+      } catch (error: any) {
+        console.error('[DEV-ONLY] Error in dev doctor login:', error);
+        res.status(500).json({ message: 'Failed to login as test doctor', error: error.message });
+      }
     });
 
     app.get('/api/dev/test-users', async (req, res) => {
