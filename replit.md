@@ -6,6 +6,26 @@ Followup AI is a comprehensive HIPAA-compliant health monitoring platform for im
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+### November 11, 2025 - Assistant Lysa Receptionist Backend (Tasks 13-16, 20)
+Implemented comprehensive receptionist backend services with HIPAA-compliant authentication and security:
+
+1. **Google Calendar Integration** - Bidirectional sync, OAuth 2.0, conflict detection
+2. **Gmail Integration** - Email operations with PHI redaction flags (requires Google Workspace BAA for production)
+3. **Twilio Voice AI** - IVR system, appointment scheduling, voicemail transcription
+4. **Automated Reminders** - SMS (Twilio) and Email (AWS SES) 24h before appointments
+5. **AI Chatbot** - GPT-4o powered clinic chatbot with fallback responses (all endpoints authenticated, doctor-only access)
+
+**Security Fixes Applied:**
+- All chatbot endpoints require doctor authentication
+- OpenAI client instantiation gated behind BAA verification  
+- Reminder service properly fetches appointments across all doctors
+
+**New Storage Methods:** `getUserByPhoneNumber()`, `getAllDoctors()`
+**New Services:** `googleCalendarSyncService`, `gmailService`, `twilioVoiceService`, `appointmentReminderService`, `chatbotService`
+**New Tables:** `google_calendar_sync`, `gmail_sync`, `email_threads`, `email_messages`
+
 ## System Architecture
 
 ### Frontend

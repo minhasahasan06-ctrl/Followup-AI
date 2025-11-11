@@ -5835,6 +5835,79 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // ===== CHATBOT SERVICE =====
+  const { chatbotService, initChatbotService } = await import('./chatbotService');
+  initChatbotService(storage);
+
+  // Initialize chatbot session (doctor only - for embedding on clinic website)
+  app.post('/api/v1/chatbot/init', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can initialize chatbot' });
+      }
+
+      const { sessionId } = req.body;
+      const doctorId = req.user.id;
+      const context = await chatbotService.initializeSession(doctorId, sessionId);
+      res.json({
+        sessionId,
+        initialMessage: context.messages[context.messages.length - 1].content,
+      });
+    } catch (error) {
+      console.error('Error initializing chatbot:', error);
+      res.status(500).json({ message: 'Failed to initialize chatbot' });
+    }
+  });
+
+  // Send message to chatbot (doctor only)
+  app.post('/api/v1/chatbot/message', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access chatbot' });
+      }
+
+      const { sessionId, message } = req.body;
+      const doctorId = req.user.id;
+      const result = await chatbotService.sendMessage(sessionId, message, doctorId);
+      res.json(result);
+    } catch (error) {
+      console.error('Error sending message to chatbot:', error);
+      res.status(500).json({ message: 'Failed to send message' });
+    }
+  });
+
+  // Get chat history (doctor only)
+  app.get('/api/v1/chatbot/history/:sessionId', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access chat history' });
+      }
+
+      const { sessionId } = req.params;
+      const history = await chatbotService.getChatHistory(sessionId);
+      res.json({ messages: history });
+    } catch (error) {
+      console.error('Error fetching chat history:', error);
+      res.status(500).json({ message: 'Failed to fetch chat history' });
+    }
+  });
+
+  // End chatbot session (doctor only)
+  app.post('/api/v1/chatbot/end', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can end chatbot session' });
+      }
+
+      const { sessionId } = req.body;
+      await chatbotService.endSession(sessionId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error ending chatbot session:', error);
+      res.status(500).json({ message: 'Failed to end session' });
+    }
+  });
+
   // ===== APPOINTMENT REMINDER SERVICE =====
   const { appointmentReminderService, initAppointmentReminderService } = await import('./appointmentReminderService');
   initAppointmentReminderService(storage);
