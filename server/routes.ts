@@ -5592,6 +5592,131 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // ===== GOOGLE CALENDAR SYNC ROUTES =====
+  // Import at top of file
+  const { googleCalendarSyncService } = await import('./googleCalendarSyncService');
+
+  // Get Google Calendar auth URL
+  app.get('/api/v1/calendar/auth-url', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can connect Google Calendar' });
+      }
+
+      const authUrl = googleCalendarSyncService.getAuthUrl(req.user.id);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error('Error generating auth URL:', error);
+      res.status(500).json({ message: 'Failed to generate auth URL' });
+    }
+  });
+
+  // OAuth callback
+  app.get('/api/calendar/oauth/callback', async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const state = req.query.state as string; // doctorId
+      
+      if (!code || !state) {
+        return res.status(400).send('Missing code or state parameter');
+      }
+
+      const result = await googleCalendarSyncService.handleOAuthCallback(code, state);
+      
+      if (result.success) {
+        res.redirect('/?calendar=connected');
+      } else {
+        res.redirect('/?calendar=error&message=' + encodeURIComponent(result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error in OAuth callback:', error);
+      res.status(500).send('Failed to complete OAuth');
+    }
+  });
+
+  // Get sync status
+  app.get('/api/v1/calendar/sync/status', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access calendar sync' });
+      }
+
+      const syncConfig = await storage.getGoogleCalendarSync(req.user.id);
+      res.json(syncConfig || { connected: false });
+    } catch (error) {
+      console.error('Error fetching sync status:', error);
+      res.status(500).json({ message: 'Failed to fetch sync status' });
+    }
+  });
+
+  // Trigger manual sync
+  app.post('/api/v1/calendar/sync/trigger', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can sync calendar' });
+      }
+
+      const result = await googleCalendarSyncService.performSync(req.user.id, 'manual');
+      res.json(result);
+    } catch (error) {
+      console.error('Error triggering sync:', error);
+      res.status(500).json({ message: 'Failed to trigger sync' });
+    }
+  });
+
+  // Update sync settings
+  app.patch('/api/v1/calendar/sync/settings', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can update sync settings' });
+      }
+
+      const { syncEnabled, syncDirection, conflictResolution } = req.body;
+      
+      const updated = await storage.updateGoogleCalendarSync(req.user.id, {
+        syncEnabled,
+        syncDirection,
+        conflictResolution,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error('Error updating sync settings:', error);
+      res.status(500).json({ message: 'Failed to update sync settings' });
+    }
+  });
+
+  // Get sync logs
+  app.get('/api/v1/calendar/sync/logs', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view sync logs' });
+      }
+
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const logs = await storage.getGoogleCalendarSyncLogs(req.user.id, limit);
+      res.json(logs);
+    } catch (error) {
+      console.error('Error fetching sync logs:', error);
+      res.status(500).json({ message: 'Failed to fetch sync logs' });
+    }
+  });
+
+  // Disconnect Google Calendar
+  app.post('/api/v1/calendar/disconnect', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can disconnect calendar' });
+      }
+
+      const result = await googleCalendarSyncService.disconnect(req.user.id);
+      res.json(result);
+    } catch (error) {
+      console.error('Error disconnecting calendar:', error);
+      res.status(500).json({ message: 'Failed to disconnect calendar' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
