@@ -78,12 +78,13 @@ export default function Login() {
 
   const devLoginAsPatient = async () => {
     try {
-      // Dev login sets session cookie
-      await api.post("/dev/login-as-patient");
+      // Dev login sets session cookie and returns user data
+      const response = await api.post("/dev/login-as-patient");
+      const user = response.data.user;
       
-      // Fetch user data from session
-      const userResponse = await api.get("/auth/user");
-      const user = userResponse.data;
+      if (!user) {
+        throw new Error("User data not returned from server");
+      }
       
       // Set mock tokens and user in localStorage for AuthContext
       const mockTokens = {
@@ -99,11 +100,12 @@ export default function Login() {
         description: "Logged in as test patient",
       });
       
-      window.location.href = "/";
-    } catch (error) {
+      setLocation("/");
+    } catch (error: any) {
+      console.error("Dev login error:", error);
       toast({
         title: "Dev Login Failed",
-        description: "Unable to login as test patient",
+        description: error.response?.data?.message || error.message || "Unable to login as test patient",
         variant: "destructive",
       });
     }
@@ -111,12 +113,13 @@ export default function Login() {
 
   const devLoginAsDoctor = async () => {
     try {
-      // Dev login sets session cookie
-      await api.post("/dev/login-as-doctor");
+      // Dev login sets session cookie and returns user data
+      const response = await api.post("/dev/login-as-doctor");
+      const user = response.data.user;
       
-      // Fetch user data from session
-      const userResponse = await api.get("/auth/user");
-      const user = userResponse.data;
+      if (!user) {
+        throw new Error("User data not returned from server");
+      }
       
       // Set mock tokens and user in localStorage for AuthContext
       const mockTokens = {
@@ -132,11 +135,12 @@ export default function Login() {
         description: "Logged in as test doctor",
       });
       
-      window.location.href = "/";
-    } catch (error) {
+      setLocation("/");
+    } catch (error: any) {
+      console.error("Dev login error:", error);
       toast({
         title: "Dev Login Failed",
-        description: "Unable to login as test doctor",
+        description: error.response?.data?.message || error.message || "Unable to login as test doctor",
         variant: "destructive",
       });
     }
