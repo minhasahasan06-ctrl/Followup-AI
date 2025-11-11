@@ -102,7 +102,13 @@ class AppointmentReminderService {
     const tomorrow = startOfDay(addDays(new Date(), 1));
     const dayAfterTomorrow = endOfDay(addDays(new Date(), 1));
 
-    const allAppointments = await this.storage.getAppointmentsByDoctor('');
+    const allDoctors = await this.storage.getAllDoctors();
+    const allAppointments: any[] = [];
+
+    for (const doctor of allDoctors) {
+      const doctorAppointments = await this.storage.getAppointmentsByDoctor(doctor.id);
+      allAppointments.push(...doctorAppointments);
+    }
     
     return allAppointments.filter((appointment) => {
       const appointmentDate = new Date(appointment.startTime);
