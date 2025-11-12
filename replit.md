@@ -28,20 +28,30 @@ Preferred communication style: Simple, everyday language.
 6. **HIPAA Compliance** - BAA checks, PHI handling, audit logging
 
 **How to Run Python Backend:**
-```bash
-# Option 1: Direct execution
-python3 start_python_server.py
 
-# Option 2: With uvicorn
-uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
+Since the Replit workflow runs JavaScript by default, manually start Python:
+
+1. **Stop the current workflow** (click Stop button in Replit)
+2. **Run Python backend**:
+```bash
+python3 start_python_server.py
 ```
 
-**Production Security Hardening Required (Before Production Deployment):**
-⚠️ **CRITICAL**: The following security improvements are needed for production:
-1. **Cognito Audience Validation** - Add `aud` claim validation in JWT verification
-2. **JWKS Cache Refresh** - Implement cache expiry and kid rotation handling (currently cached forever)
-3. **Dev-Mode Security** - Require explicit opt-in with unique secret per deployment (currently uses fallback)
-4. **DATABASE_URL Flexibility** - Allow alternative configs for testing while maintaining production validation
+Or use uvicorn directly:
+```bash
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
+```
+
+The Python backend will start on port 5000 with:
+- API Docs: http://localhost:5000/docs
+- Health Check: http://localhost:5000/health
+
+**Security Status:**
+✅ **ALL CRITICAL SECURITY ISSUES FIXED:**
+1. ✅ **Cognito Audience Validation** - Validates `aud`/`client_id` claims when AWS_COGNITO_CLIENT_ID is set
+2. ✅ **JWKS Cache Refresh** - 1-hour TTL with automatic kid rotation handling and stale cache fallback
+3. ✅ **Dev-Mode Security** - Requires explicit DEV_MODE_SECRET (min 32 chars), fails closed in production
+4. ✅ **DATABASE_URL Flexibility** - Optional with validate_database_url() method for flexible testing
 
 **Current Status:**
 - ✅ Python backend structurally complete and functional
