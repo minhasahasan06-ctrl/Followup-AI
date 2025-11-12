@@ -76,7 +76,8 @@ def verify_cognito_token(token: str) -> Optional[Dict[str, Any]]:
         jwks = get_cognito_jwks()
         
         key = None
-        for k in jwks.get('keys', []):
+        keys = jwks.get('keys', []) if jwks else []
+        for k in keys:
             if k.get('kid') == kid:
                 key = k
                 break
@@ -84,7 +85,8 @@ def verify_cognito_token(token: str) -> Optional[Dict[str, Any]]:
         if not key:
             print(f"Public key not found for kid: {kid}. Refreshing JWKS cache...")
             jwks = get_cognito_jwks(force_refresh=True)
-            for k in jwks.get('keys', []):
+            keys = jwks.get('keys', []) if jwks else []
+            for k in keys:
                 if k.get('kid') == kid:
                     key = k
                     break
