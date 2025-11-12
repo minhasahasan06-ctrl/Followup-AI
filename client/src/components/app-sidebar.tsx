@@ -25,6 +25,8 @@ import {
   MapPin,
   Target,
   Headphones,
+  Search,
+  UserPlus,
 } from "lucide-react";
 import {
   Sidebar,
@@ -65,6 +67,16 @@ const patientItems = [
     title: "Previous Sessions",
     url: "/previous-sessions",
     icon: History,
+  },
+  {
+    title: "Find Doctors",
+    url: "/doctor-search",
+    icon: Search,
+  },
+  {
+    title: "My Doctors",
+    url: "/my-doctors",
+    icon: UserPlus,
   },
   {
     title: "Wellness",
