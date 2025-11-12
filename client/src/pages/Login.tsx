@@ -151,13 +151,15 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <div className="flex items-center gap-3 mb-2">
-            <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Stethoscope className="h-7 w-7" />
-            </div>
-            <div>
-              <CardTitle className="text-2xl">Welcome Back</CardTitle>
-              <CardDescription>Log in to your Followup AI account</CardDescription>
-            </div>
+            <Link href="/" className="flex items-center gap-3 group" data-testid="link-logo-home">
+              <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary text-primary-foreground hover-elevate">
+                <Stethoscope className="h-7 w-7" />
+              </div>
+              <div>
+                <CardTitle className="text-2xl group-hover:text-primary transition-colors">Welcome Back</CardTitle>
+                <CardDescription>Log in to your Followup AI account</CardDescription>
+              </div>
+            </Link>
           </div>
         </CardHeader>
         <CardContent>
