@@ -25,6 +25,15 @@ class User(Base):
     specialty = Column(String, nullable=True)
     years_of_experience = Column(Integer, nullable=True)
     
+    linkedin_url = Column(String, nullable=True)
+    hospital_id = Column(Integer, nullable=True)
+    hospital_name = Column(String, nullable=True)
+    location_city = Column(String, nullable=True, index=True)
+    location_state = Column(String, nullable=True, index=True)
+    location_country = Column(String, nullable=True, index=True)
+    availability_status = Column(String, default="available")
+    bio = Column(String, nullable=True)
+    
     immune_system_status = Column(String, nullable=True)
     medical_conditions = Column(String, nullable=True)
     
