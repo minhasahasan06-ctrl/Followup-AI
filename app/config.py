@@ -4,15 +4,7 @@ from typing import Optional
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        if not self.DATABASE_URL:
-            raise ValueError(
-                "DATABASE_URL environment variable is required. "
-                "Please set it to your PostgreSQL connection string."
-            )
+    DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
     
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
     AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
@@ -33,11 +25,22 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: Optional[str] = os.getenv("TWILIO_AUTH_TOKEN")
     TWILIO_PHONE_NUMBER: Optional[str] = os.getenv("TWILIO_PHONE_NUMBER")
     
-    SESSION_SECRET: str = os.getenv("SESSION_SECRET", "dev-secret-key-change-in-production")
+    DEV_MODE_SECRET: Optional[str] = os.getenv("DEV_MODE_SECRET")
+    SESSION_SECRET: Optional[str] = os.getenv("SESSION_SECRET")
     
     CORS_ORIGINS: list = ["http://localhost:5000", "http://127.0.0.1:5000"]
     
     ENVIRONMENT: str = os.getenv("NODE_ENV", "development")
+    
+    def validate_database_url(self):
+        if not self.DATABASE_URL:
+            raise ValueError(
+                "DATABASE_URL environment variable is required for database operations. "
+                "Please set it to your PostgreSQL connection string."
+            )
+    
+    def is_dev_mode_enabled(self) -> bool:
+        return self.DEV_MODE_SECRET is not None and len(self.DEV_MODE_SECRET) >= 32
     
     class Config:
         env_file = ".env"
