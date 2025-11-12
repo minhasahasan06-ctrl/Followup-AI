@@ -105,6 +105,7 @@ class DoctorSearchService:
         if not doctor:
             return None
         
+        created_at_value = doctor.created_at
         return {
             "id": doctor.id,
             "first_name": doctor.first_name,
@@ -120,7 +121,7 @@ class DoctorSearchService:
             "linkedin_url": doctor.linkedin_url,
             "availability_status": doctor.availability_status,
             "bio": doctor.bio,
-            "created_at": doctor.created_at.isoformat() if doctor.created_at else None,
+            "created_at": created_at_value.isoformat() if created_at_value is not None else None,
         }
     
     @staticmethod
@@ -141,11 +142,13 @@ class DoctorSearchService:
             .all()
         )
         
-        return [
-            {
+        result = []
+        for conn, doctor in connections:
+            connected_at_value = conn.connected_at
+            result.append({
                 "connection_id": conn.id,
                 "connection_type": conn.connection_type,
-                "connected_at": conn.connected_at.isoformat() if conn.connected_at else None,
+                "connected_at": connected_at_value.isoformat() if connected_at_value is not None else None,
                 "doctor": {
                     "id": doctor.id,
                     "first_name": doctor.first_name,
@@ -157,9 +160,8 @@ class DoctorSearchService:
                     "linkedin_url": doctor.linkedin_url,
                     "availability_status": doctor.availability_status,
                 }
-            }
-            for conn, doctor in connections
-        ]
+            })
+        return result
     
     @staticmethod
     def connect_patient_to_doctor(

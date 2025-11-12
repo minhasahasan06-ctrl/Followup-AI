@@ -59,6 +59,9 @@ import NutritionInsights from "@/pages/NutritionInsights";
 import HealthCompanion from "@/pages/HealthCompanion";
 import VoiceFollowups from "@/pages/VoiceFollowups";
 import Habits from "@/pages/Habits";
+import DoctorSearch from "@/pages/DoctorSearch";
+import DoctorProfile from "@/pages/DoctorProfile";
+import MyDoctors from "@/pages/MyDoctors";
 
 function PatientRouter() {
   return (
@@ -67,6 +70,9 @@ function PatientRouter() {
       <Route path="/chat" component={Chat} />
       <Route path="/habits" component={Habits} />
       <Route path="/previous-sessions" component={PreviousSessions} />
+      <Route path="/doctor-search" component={DoctorSearch} />
+      <Route path="/doctor/:doctorId" component={DoctorProfile} />
+      <Route path="/my-doctors" component={MyDoctors} />
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/counseling" component={Counseling} />
       <Route path="/consents" component={ConsentManagement} />
