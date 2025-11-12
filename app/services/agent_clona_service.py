@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 import json
 from datetime import datetime
 
-from app.config import settings, get_openai_client
+from app.config import settings, get_openai_client, check_openai_baa_compliance
 from app.models.user import User
 from app.services.doctor_search_service import DoctorSearchService
 
@@ -52,6 +52,9 @@ For symptom analysis, structure your responses like this:
         """
         Analyze patient symptoms and provide recommendations.
         
+        HIPAA COMPLIANCE: Only works if OpenAI BAA is signed.
+        PHI (Patient Health Information) is transmitted to OpenAI.
+        
         Args:
             db: Database session
             patient: Patient user object
@@ -61,6 +64,7 @@ For symptom analysis, structure your responses like this:
         Returns:
             Dictionary with analysis, recommendations, and suggested doctors
         """
+        check_openai_baa_compliance()
         client = get_openai_client()
         
         messages = [{"role": "system", "content": AgentClonaService.SYSTEM_PROMPT}]
@@ -151,6 +155,8 @@ If you suggest a medical specialty, structure your response to include a JSON bl
         """
         Generate targeted questions for differential diagnosis.
         
+        HIPAA COMPLIANCE: Requires OpenAI BAA.
+        
         Args:
             symptom_category: Main category (e.g., "respiratory", "cardiac", "digestive")
             initial_symptoms: List of symptoms patient mentioned
@@ -158,6 +164,7 @@ If you suggest a medical specialty, structure your response to include a JSON bl
         Returns:
             List of follow-up questions
         """
+        check_openai_baa_compliance()
         client = get_openai_client()
         
         prompt = f"""Given a patient with immunocompromised status presenting with {symptom_category} symptoms:
@@ -203,6 +210,8 @@ Format as a JSON array of strings."""
         """
         Recommend appropriate lab tests based on symptoms.
         
+        HIPAA COMPLIANCE: Requires OpenAI BAA. PHI transmitted.
+        
         Args:
             symptoms: List of patient symptoms
             patient_history: Optional medical history
@@ -210,6 +219,7 @@ Format as a JSON array of strings."""
         Returns:
             Dictionary with recommended tests and reasoning
         """
+        check_openai_baa_compliance()
         client = get_openai_client()
         
         history_context = ""
@@ -263,6 +273,8 @@ Format as JSON:
         """
         Suggest treatment approaches based on possible conditions.
         
+        HIPAA COMPLIANCE: Requires OpenAI BAA. PHI transmitted.
+        
         Args:
             diagnosis_considerations: Possible conditions being considered
             patient_medications: Current medications (to check interactions)
@@ -270,6 +282,7 @@ Format as JSON:
         Returns:
             Treatment suggestions with medication, lifestyle, and monitoring recommendations
         """
+        check_openai_baa_compliance()
         client = get_openai_client()
         
         meds_context = ""
