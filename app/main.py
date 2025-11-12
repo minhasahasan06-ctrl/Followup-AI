@@ -8,7 +8,8 @@ from app.routers import (
     chatbot,
     consultations,
     research,
-    voice
+    voice,
+    doctors
 )
 
 app = FastAPI(
@@ -31,6 +32,7 @@ app.include_router(chatbot.router)
 app.include_router(consultations.router)
 app.include_router(research.router)
 app.include_router(voice.router)
+app.include_router(doctors.router)
 
 Base.metadata.create_all(bind=engine)
 
