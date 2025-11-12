@@ -9,7 +9,8 @@ from app.routers import (
     consultations,
     research,
     voice,
-    doctors
+    doctors,
+    agent_clona
 )
 
 app = FastAPI(
@@ -33,6 +34,7 @@ app.include_router(consultations.router)
 app.include_router(research.router)
 app.include_router(voice.router)
 app.include_router(doctors.router)
+app.include_router(agent_clona.router)
 
 Base.metadata.create_all(bind=engine)
 
