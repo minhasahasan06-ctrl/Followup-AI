@@ -53,3 +53,18 @@ async def get_current_patient(
             detail="Only patients can access this resource"
         )
     return current_user
+
+
+def require_role(role: str):
+    """
+    Dependency factory that creates a role-checking dependency.
+    Usage: current_user = Depends(require_role("patient"))
+    """
+    async def role_checker(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role != role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Only {role}s can access this resource"
+            )
+        return current_user
+    return role_checker
