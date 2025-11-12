@@ -5,6 +5,9 @@ from app.config import settings
 
 settings.validate_database_url()
 
+if not settings.DATABASE_URL:
+    raise ValueError("DATABASE_URL is required")
+
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
