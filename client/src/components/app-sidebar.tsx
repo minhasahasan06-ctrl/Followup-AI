@@ -41,7 +41,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 
 const patientItems = [
   {
@@ -189,10 +189,15 @@ const doctorItems = [
 ];
 
 export function AppSidebar() {
-  const [location] = useLocation();
-  const { user } = useAuth();
+  const [location, setLocation] = useLocation();
+  const { user, logout } = useAuth();
   const isDoctor = user?.role === "doctor";
   const menuItems = isDoctor ? doctorItems : patientItems;
+
+  const handleLogout = () => {
+    logout();
+    setLocation("/login");
+  };
 
   return (
     <Sidebar>
@@ -243,7 +248,7 @@ export function AppSidebar() {
         <Button 
           variant="outline" 
           className="w-full justify-start gap-2"
-          onClick={() => window.location.href = "/api/logout"}
+          onClick={handleLogout}
           data-testid="button-logout"
         >
           <LogOut className="h-4 w-4" />
