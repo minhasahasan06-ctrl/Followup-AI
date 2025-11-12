@@ -10,6 +10,22 @@ Followup AI is a comprehensive HIPAA-compliant health monitoring platform for im
 
 ## Recent Changes
 
+### November 12, 2025 - Frontend Logout and Navigation Fixes
+**Fixed logout functionality and login page logo navigation.**
+
+**Issues Resolved:**
+1. ✅ **Logout Button Fix** - Both patient and doctor portals now properly log out and redirect to login page (previously showed "failed")
+2. ✅ **Login Logo Navigation** - Clicking Followup AI logo on login page now redirects to home page
+
+**Changes Made:**
+- Updated `client/src/components/app-sidebar.tsx` - Logout button now calls AuthContext logout() and redirects properly
+- Updated `client/src/pages/Login.tsx` - Made logo/header clickable with Link component to redirect to "/"
+
+**Verified with E2E Tests:**
+- ✅ Patient login, navigation, and logout flow working
+- ✅ Doctor login, navigation, and logout flow working
+- ✅ Logo redirect from login to home page working
+
 ### November 12, 2025 - Complete Python Backend Migration
 **Complete conversion of entire backend from JavaScript/TypeScript to Python FastAPI for cleaner architecture.**
 
