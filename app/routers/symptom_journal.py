@@ -695,3 +695,201 @@ async def get_patient_weekly_summary(
             "pdf_s3_key": s.pdf_s3_key
         } for s in summaries]
     }
+
+
+@router.get("/compare", dependencies=[Depends(require_role("patient"))])
+async def compare_measurements(
+    body_area: BodyArea,
+    measurement_id_1: int,
+    measurement_id_2: int,
+    current_user: User = Depends(require_role("patient")),
+    db: Session = Depends(get_db)
+):
+    """
+    Compare two symptom measurements side-by-side
+    Shows change percentages and visual differences
+    Patient access only - own data
+    SECURITY: All measurements and images must belong to authenticated user
+    """
+    # SECURITY: Fetch both measurements with patient_id verification
+    m1 = db.query(SymptomMeasurement).filter(
+        and_(
+            SymptomMeasurement.id == measurement_id_1,
+            SymptomMeasurement.patient_id == current_user.id,  # CRITICAL: Must match authenticated user
+            SymptomMeasurement.body_area == body_area
+        )
+    ).first()
+    
+    m2 = db.query(SymptomMeasurement).filter(
+        and_(
+            SymptomMeasurement.id == measurement_id_2,
+            SymptomMeasurement.patient_id == current_user.id,  # CRITICAL: Must match authenticated user
+            SymptomMeasurement.body_area == body_area
+        )
+    ).first()
+    
+    if not m1 or not m2:
+        raise HTTPException(status_code=404, detail="One or both measurements not found or access denied")
+    
+    # SECURITY: Verify both measurements belong to same patient (defense in depth)
+    if m1.patient_id != m2.patient_id or m1.patient_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot compare measurements from different patients")
+    
+    # SECURITY: Get images with patient_id verification (defense in depth)
+    img1 = db.query(SymptomImage).filter(
+        and_(
+            SymptomImage.id == m1.image_id,
+            SymptomImage.patient_id == current_user.id  # CRITICAL: Verify image ownership
+        )
+    ).first() if m1.image_id else None
+    
+    img2 = db.query(SymptomImage).filter(
+        and_(
+            SymptomImage.id == m2.image_id,
+            SymptomImage.patient_id == current_user.id  # CRITICAL: Verify image ownership
+        )
+    ).first() if m2.image_id else None
+    
+    # Generate presigned URLs
+    img1_url = generate_presigned_url(img1.s3_bucket, img1.s3_key) if img1 else None
+    img2_url = generate_presigned_url(img2.s3_bucket, img2.s3_key) if img2 else None
+    
+    # Calculate changes
+    color_change = None
+    brightness_change = None
+    area_change = None
+    
+    if m1.avg_red and m2.avg_red:
+        color_change = {
+            "red_change": round(m2.avg_red - m1.avg_red, 2),
+            "green_change": round(m2.avg_green - m1.avg_green, 2),
+            "blue_change": round(m2.avg_blue - m1.avg_blue, 2),
+            "overall_change_percent": round(
+                abs((m2.brightness - m1.brightness) / m1.brightness * 100) if m1.brightness > 0 else 0,
+                1
+            )
+        }
+    
+    if m1.roi_area_pixels and m2.roi_area_pixels:
+        area_change = {
+            "area_change_pixels": m2.roi_area_pixels - m1.roi_area_pixels,
+            "area_change_percent": round(
+                ((m2.roi_area_pixels - m1.roi_area_pixels) / m1.roi_area_pixels * 100) if m1.roi_area_pixels > 0 else 0,
+                1
+            )
+        }
+    
+    # Time difference
+    time_diff = (m2.created_at - m1.created_at).total_seconds() / 86400  # Days
+    
+    return {
+        "body_area": body_area.value,
+        "comparison": {
+            "measurement_1": {
+                "id": m1.id,
+                "date": m1.created_at,
+                "image_url": img1_url,
+                "color_metrics": {
+                    "red": m1.avg_red,
+                    "green": m1.avg_green,
+                    "blue": m1.avg_blue,
+                    "brightness": m1.brightness
+                },
+                "area_pixels": m1.roi_area_pixels,
+                "respiratory_rate": m1.respiratory_rate_bpm,
+                "ai_observations": m1.ai_observations
+            },
+            "measurement_2": {
+                "id": m2.id,
+                "date": m2.created_at,
+                "image_url": img2_url,
+                "color_metrics": {
+                    "red": m2.avg_red,
+                    "green": m2.avg_green,
+                    "blue": m2.avg_blue,
+                    "brightness": m2.brightness
+                },
+                "area_pixels": m2.roi_area_pixels,
+                "respiratory_rate": m2.respiratory_rate_bpm,
+                "ai_observations": m2.ai_observations
+            },
+            "changes": {
+                "days_between": round(time_diff, 1),
+                "color_change": color_change,
+                "area_change": area_change,
+                "respiratory_rate_change": round(m2.respiratory_rate_bpm - m1.respiratory_rate_bpm, 1) if m1.respiratory_rate_bpm and m2.respiratory_rate_bpm else None
+            }
+        }
+    }
+
+
+@router.post("/generate-weekly-pdf/{patient_id}", dependencies=[Depends(require_role("doctor"))])
+async def generate_weekly_pdf_report(
+    patient_id: str,
+    week_start: datetime,
+    week_end: datetime,
+    current_user: User = Depends(require_role("doctor")),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a weekly PDF report for doctor review
+    Doctor access only - requires active patient connection
+    """
+    # Verify active doctor-patient connection
+    connection = db.query(PatientDoctorConnection).filter(
+        and_(
+            PatientDoctorConnection.patient_id == patient_id,
+            PatientDoctorConnection.doctor_id == current_user.id,
+            PatientDoctorConnection.status == "connected"
+        )
+    ).first()
+    
+    if not connection:
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to generate reports for this patient"
+        )
+    
+    # Get or create weekly summary
+    summary = db.query(WeeklySummary).filter(
+        and_(
+            WeeklySummary.patient_id == patient_id,
+            WeeklySummary.week_start == week_start,
+            WeeklySummary.week_end == week_end
+        )
+    ).first()
+    
+    if not summary:
+        # Create new summary
+        summary = WeeklySummary(
+            patient_id=patient_id,
+            week_start=week_start,
+            week_end=week_end,
+            measurements_count={},
+            significant_changes=[],
+            alert_count=0,
+            pdf_generated=False
+        )
+        db.add(summary)
+        db.commit()
+        db.refresh(summary)
+    
+    # Generate PDF using service (implementation in next update)
+    from app.services.pdf_service import generate_symptom_journal_pdf
+    
+    try:
+        pdf_url = await generate_symptom_journal_pdf(db, patient_id, week_start, week_end)
+        
+        # Update summary with PDF info
+        summary.pdf_generated = True
+        summary.pdf_s3_key = pdf_url
+        db.commit()
+        
+        return {
+            "summary_id": summary.id,
+            "pdf_url": pdf_url,
+            "week_start": week_start,
+            "week_end": week_end
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")

@@ -17,6 +17,19 @@ from app.models.pain_tracking import (
     PainQuestionnaire,
     PainTrendSummary
 )
+from app.models.symptom_journal import (
+    SymptomImage,
+    SymptomMeasurement,
+    SymptomAlert,
+    WeeklySummary
+)
+from app.models.exam_coach import (
+    ExamSession,
+    ExamStep,
+    CoachingFeedback,
+    ExamPacket,
+    ExamProtocol
+)
 
 __all__ = [
     "User",
@@ -38,4 +51,13 @@ __all__ = [
     "PainMeasurement",
     "PainQuestionnaire",
     "PainTrendSummary",
+    "SymptomImage",
+    "SymptomMeasurement",
+    "SymptomAlert",
+    "WeeklySummary",
+    "ExamSession",
+    "ExamStep",
+    "CoachingFeedback",
+    "ExamPacket",
+    "ExamProtocol",
 ]
