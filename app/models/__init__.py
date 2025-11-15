@@ -12,6 +12,11 @@ from app.models.patient_doctor_connection import (
     PatientConsultation,
     AISymptomSession
 )
+from app.models.pain_tracking import (
+    PainMeasurement,
+    PainQuestionnaire,
+    PainTrendSummary
+)
 
 __all__ = [
     "User",
@@ -30,4 +35,7 @@ __all__ = [
     "PatientDoctorConnection",
     "PatientConsultation",
     "AISymptomSession",
+    "PainMeasurement",
+    "PainQuestionnaire",
+    "PainTrendSummary",
 ]
