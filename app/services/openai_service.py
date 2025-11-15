@@ -171,3 +171,59 @@ Keep it concise and actionable (200-300 words max).
     except Exception as e:
         print(f"Error generating weekly summary: {e}")
         return "Unable to generate summary at this time."
+
+
+class OpenAIService:
+    """
+    OpenAI Service wrapper for exam coach and other AI-powered features
+    HIPAA Compliance: Uses BAA-protected OpenAI API
+    """
+    
+    def __init__(self):
+        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    
+    async def analyze_image_with_context(
+        self,
+        image_base64: str,
+        context: str,
+        prompt: str
+    ) -> Dict:
+        """
+        Analyze an image with given context and custom prompt
+        Used for exam coach real-time feedback
+        """
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a medical coaching assistant providing real-time feedback for self-examination quality. Focus on image quality, positioning, and visibility - NOT diagnosis."
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": f"{context}\n\n{prompt}"},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{image_base64}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=500
+            )
+            
+            return {
+                "analysis": response.choices[0].message.content,
+                "success": True
+            }
+        except Exception as e:
+            print(f"Error analyzing image: {str(e)}")
+            return {
+                "analysis": "Unable to analyze image at this time.",
+                "success": False,
+                "error": str(e)
+            }

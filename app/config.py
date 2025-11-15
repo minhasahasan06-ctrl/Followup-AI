@@ -1,6 +1,7 @@
 import os
 from pydantic_settings import BaseSettings
 from typing import Optional
+from openai import OpenAI
 
 
 class Settings(BaseSettings):
@@ -47,6 +48,17 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def get_openai_client() -> OpenAI:
+    """
+    Get configured OpenAI client instance
+    HIPAA Compliance: Uses API key from environment
+    """
+    if not settings.OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY environment variable is required")
+    
+    return OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 def check_openai_baa_compliance():
