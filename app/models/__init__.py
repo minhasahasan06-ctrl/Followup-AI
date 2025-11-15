@@ -30,6 +30,13 @@ from app.models.exam_coach import (
     ExamPacket,
     ExamProtocol
 )
+from app.models.medication_side_effects import (
+    MedicationTimeline,
+    DosageChange,
+    SymptomLog,
+    SideEffectCorrelation,
+    MedicationEffectsSummary
+)
 
 __all__ = [
     "User",
@@ -60,4 +67,9 @@ __all__ = [
     "CoachingFeedback",
     "ExamPacket",
     "ExamProtocol",
+    "MedicationTimeline",
+    "DosageChange",
+    "SymptomLog",
+    "SideEffectCorrelation",
+    "MedicationEffectsSummary",
 ]
