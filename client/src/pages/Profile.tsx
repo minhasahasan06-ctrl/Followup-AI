@@ -228,6 +228,18 @@ export default function Profile() {
                     data-testid="input-bio"
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="linkedin">LinkedIn Profile</Label>
+                  <Input
+                    id="linkedin"
+                    placeholder="https://www.linkedin.com/in/yourprofile"
+                    defaultValue={doctorProfile?.linkedinUrl || ""}
+                    data-testid="input-linkedin"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Add your LinkedIn profile URL to help patients learn more about you
+                  </p>
+                </div>
                 <Button data-testid="button-save-professional">Save Professional Information</Button>
               </CardContent>
             </Card>

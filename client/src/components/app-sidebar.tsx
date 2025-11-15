@@ -1,4 +1,5 @@
 import {
+  Calendar,
   Activity,
   Bot,
   Calendar,
@@ -29,6 +30,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import {
+  Calendar,
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -77,6 +79,11 @@ const patientItems = [
     title: "My Doctors",
     url: "/my-doctors",
     icon: UserPlus,
+  },
+  {
+    title: "Consultation Requests",
+    url: "/consultation-requests",
+    icon: Calendar,
   },
   {
     title: "Wellness",

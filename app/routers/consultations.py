@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.dependencies import get_current_doctor
+from app.dependencies import get_current_doctor, get_current_user
 from app.models.user import User
 from app.services.doctor_consultation_service import DoctorConsultationService
 from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 
 router = APIRouter(prefix="/api/v1/consultations", tags=["consultations"])
 
@@ -71,3 +73,202 @@ async def decline_consultation(
         response.reason or "No reason provided"
     )
     return result
+
+
+# Patient Consultation Request Endpoints
+
+class PatientConsultationRequest(BaseModel):
+    doctor_id: str
+    reason: str
+    preferred_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.post("/patient/request")
+async def create_patient_consultation_request(
+    request: PatientConsultationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Patient requests a consultation with a connected doctor.
+    """
+    if current_user.role != "patient":
+        raise HTTPException(status_code=403, detail="Only patients can request consultations")
+    
+    from app.models.doctor_search import PatientDoctorConnection
+    
+    # Verify patient is connected to this doctor
+    connection = db.query(PatientDoctorConnection).filter(
+        PatientDoctorConnection.patient_id == current_user.id,
+        PatientDoctorConnection.doctor_id == request.doctor_id,
+        PatientDoctorConnection.status == "connected"
+    ).first()
+    
+    if not connection:
+        raise HTTPException(
+            status_code=403, 
+            detail="You must be connected to this doctor before requesting a consultation"
+        )
+    
+    from app.models.consultation import PatientConsultation
+    
+    consultation = PatientConsultation(
+        patient_id=current_user.id,
+        doctor_id=request.doctor_id,
+        reason=request.reason,
+        preferred_date=request.preferred_date,
+        notes=request.notes,
+        status="pending"
+    )
+    
+    db.add(consultation)
+    db.commit()
+    db.refresh(consultation)
+    
+    return {
+        "success": True,
+        "consultation_id": consultation.id,
+        "status": "pending",
+        "message": "Consultation request submitted successfully"
+    }
+
+
+@router.get("/patient/my-requests")
+async def get_my_consultation_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all consultation requests for the current patient.
+    """
+    if current_user.role != "patient":
+        raise HTTPException(status_code=403, detail="Only patients can view their consultation requests")
+    
+    from app.models.consultation import PatientConsultation
+    
+    requests = db.query(PatientConsultation).filter(
+        PatientConsultation.patient_id == current_user.id
+    ).order_by(PatientConsultation.created_at.desc()).all()
+    
+    return {
+        "requests": [
+            {
+                "id": req.id,
+                "doctor_id": req.doctor_id,
+                "reason": req.reason,
+                "preferred_date": req.preferred_date,
+                "notes": req.notes,
+                "status": req.status,
+                "created_at": req.created_at.isoformat() if req.created_at else None,
+                "scheduled_date": req.scheduled_date.isoformat() if req.scheduled_date else None
+            }
+            for req in requests
+        ]
+    }
+
+
+@router.get("/doctor/patient-requests")
+async def get_patient_consultation_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all pending consultation requests from patients for the current doctor.
+    """
+    if current_user.role != "doctor":
+        raise HTTPException(status_code=403, detail="Only doctors can view patient consultation requests")
+    
+    from app.models.consultation import PatientConsultation
+    
+    requests = db.query(PatientConsultation).filter(
+        PatientConsultation.doctor_id == current_user.id
+    ).order_by(PatientConsultation.created_at.desc()).all()
+    
+    return {
+        "requests": [
+            {
+                "id": req.id,
+                "patient_id": req.patient_id,
+                "reason": req.reason,
+                "preferred_date": req.preferred_date,
+                "notes": req.notes,
+                "status": req.status,
+                "created_at": req.created_at.isoformat() if req.created_at else None,
+                "scheduled_date": req.scheduled_date.isoformat() if req.scheduled_date else None
+            }
+            for req in requests
+        ]
+    }
+
+
+class ConsultationApproval(BaseModel):
+    scheduled_date: str
+
+
+@router.post("/patient-request/{request_id}/approve")
+async def approve_patient_consultation(
+    request_id: int,
+    approval: ConsultationApproval,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Doctor approves a patient consultation request and schedules it.
+    """
+    if current_user.role != "doctor":
+        raise HTTPException(status_code=403, detail="Only doctors can approve consultations")
+    
+    from app.models.consultation import PatientConsultation
+    
+    consultation = db.query(PatientConsultation).filter(
+        PatientConsultation.id == request_id,
+        PatientConsultation.doctor_id == current_user.id
+    ).first()
+    
+    if not consultation:
+        raise HTTPException(status_code=404, detail="Consultation request not found")
+    
+    consultation.status = "approved"
+    consultation.scheduled_date = approval.scheduled_date
+    
+    db.commit()
+    db.refresh(consultation)
+    
+    return {
+        "success": True,
+        "message": "Consultation approved and scheduled",
+        "scheduled_date": consultation.scheduled_date
+    }
+
+
+@router.post("/patient-request/{request_id}/decline")
+async def decline_patient_consultation(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Doctor declines a patient consultation request.
+    """
+    if current_user.role != "doctor":
+        raise HTTPException(status_code=403, detail="Only doctors can decline consultations")
+    
+    from app.models.consultation import PatientConsultation
+    
+    consultation = db.query(PatientConsultation).filter(
+        PatientConsultation.id == request_id,
+        PatientConsultation.doctor_id == current_user.id
+    ).first()
+    
+    if not consultation:
+        raise HTTPException(status_code=404, detail="Consultation request not found")
+    
+    consultation.status = "declined"
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Consultation request declined"
+    }
