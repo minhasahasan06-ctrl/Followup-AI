@@ -83,6 +83,12 @@ const patientItems = [
     badge: "AI",
   },
   {
+    title: "Medication Effects",
+    url: "/medication-effects",
+    icon: Pill,
+    badge: "AI",
+  },
+  {
     title: "Previous Sessions",
     url: "/previous-sessions",
     icon: History,

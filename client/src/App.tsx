@@ -66,6 +66,7 @@ import ConsultationRequests from "@/pages/ConsultationRequests";
 import PainDetection from "@/pages/PainDetection";
 import SymptomJournal from "@/pages/SymptomJournal";
 import ExamCoach from "@/pages/ExamCoach";
+import MedicationEffects from "@/pages/MedicationEffects";
 
 function PatientRouter() {
   return (
@@ -75,6 +76,7 @@ function PatientRouter() {
       <Route path="/pain-detection" component={PainDetection} />
       <Route path="/symptom-journal" component={SymptomJournal} />
       <Route path="/exam-coach" component={ExamCoach} />
+      <Route path="/medication-effects" component={MedicationEffects} />
       <Route path="/habits" component={Habits} />
       <Route path="/previous-sessions" component={PreviousSessions} />
       <Route path="/doctor-search" component={DoctorSearch} />
