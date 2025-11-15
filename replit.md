@@ -107,6 +107,72 @@ AI-powered guided self-examination system teaching patients standardized exam te
 
 **Security Review Status**: ✅ PASSED - All endpoints follow HIPAA compliance patterns
 
+### Medication Side-Effect Predictor (November 2025)
+**Complete Full-Stack Implementation**
+AI-powered system correlating patient symptoms with medication timelines to detect potential side effects:
+
+**Backend (Python FastAPI):**
+- **Database Models** (app/models/medication_side_effects.py):
+  - MedicationTimeline: Track medications (name, dosage, start/stop dates, prescriber)
+  - DosageChange: Record dosage modifications with timestamps
+  - SymptomLog: Multi-source symptom capture (manual, daily followup, Agent Clona chat)
+  - SideEffectCorrelation: AI-analyzed medication-symptom patterns
+  - CorrelationAnalysis: Batch analysis sessions with metadata
+- **Medication Timeline API** (app/routers/medication_timeline.py):
+  - 6 REST endpoints: CRUD operations, dosage tracking, active medication queries
+  - Role-based access: Patients (self-only), Doctors (with active patient connection)
+- **Symptom Logging API** (app/routers/symptom_logging.py):
+  - 6 REST endpoints: Create, query, update, delete symptoms
+  - Multi-source tracking: manual entries, voice followups, Agent Clona extractions
+  - Defense-in-depth security: patient existence check → ownership/connection validation
+- **AI Correlation Engine** (app/services/medication_correlation.py):
+  - OpenAI GPT-4o analysis of medication-symptom temporal patterns
+  - Time-to-onset calculation, likelihood scoring (STRONG/LIKELY/POSSIBLE/UNLIKELY)
+  - Patient impact classification (severe/moderate/mild)
+  - AI-generated recommendations and reasoning
+- **Side-Effect Analysis API** (app/routers/medication_side_effects.py):
+  - POST /analyze/me: Trigger new AI-powered correlation analysis
+  - GET /correlations/me: Retrieve all correlations for patient
+  - GET /summary/me: Get aggregated effects summary by medication
+  - GET /correlation/{id}: Detailed view of specific correlation
+
+**Frontend (client/src/pages/MedicationEffects.tsx):**
+- **Three-Tab Interface:**
+  - Overview: Medication cards with correlation counts and previews
+  - By Medication: Split view (medication list + detailed correlations)
+  - Recommendations: AI-generated action items with structured cards
+- **Configuration Dialog:**
+  - Analysis period slider (7-365 days)
+  - Minimum confidence threshold slider (0-100%)
+  - "Apply & Analyze" triggers custom analysis
+- **Correlation Details:**
+  - Confidence score percentage with color-coded badges
+  - Time to onset (hours after medication)
+  - Patient impact classification (severe/moderate/mild)
+  - Temporal pattern descriptions
+  - AI reasoning callouts with Sparkles icon
+  - Recommended actions
+- **Summary Statistics:**
+  - Total medications analyzed
+  - Total correlations found
+  - Strong correlations count (urgent attention)
+  - Analysis period (days)
+- **Design Compliance:**
+  - Medical Teal primary color (180 45% 45%)
+  - Status colors: Rose (critical), Coral (warning), Teal (success)
+  - Proper spacing, typography hierarchy, loading states
+  - Accessible with data-testid coverage
+- **TanStack Query Integration:**
+  - Parameterized query keys for flexible caching
+  - Cache invalidation with exact: false for fresh data
+  - Mutation feedback with toast notifications
+
+**Security Review Status**: ✅ PASSED - Defense-in-depth authorization, patient enumeration prevention, proper role-based access control
+
+**Regulatory Compliance**: Uses "change detection/monitoring" language (NOT diagnosis) for regulatory compliance
+
+**Architect Review Status**: ✅ PRODUCTION-READY - All critical issues resolved (tab navigation, configuration UI, structured recommendations, cache invalidation)
+
 ### Running the Python Backend
 The new features (HCEC, Symptom Journal enhancements) require the Python FastAPI backend on port 8000:
 
