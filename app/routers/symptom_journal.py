@@ -24,6 +24,7 @@ from app.models.patient_doctor_connection import PatientDoctorConnection
 from app.dependencies import require_role
 from app.services.openai_service import analyze_symptom_image, generate_weekly_summary
 from app.services.s3_service import upload_symptom_image, generate_presigned_url
+from app.services.respiratory_analysis import RespiratoryAnalysisService
 
 
 router = APIRouter(prefix="/api/v1/symptom-journal", tags=["Symptom Journal"])
@@ -893,3 +894,115 @@ async def generate_weekly_pdf_report(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+
+# Pydantic model for respiratory analysis request
+class RespiratoryAnalysisRequest(BaseModel):
+    video_frames: List[str] = Field(..., description="List of base64-encoded video frames")
+    duration_seconds: float = Field(..., gt=0, description="Duration of video in seconds")
+
+
+@router.post("/analyze-respiratory", dependencies=[Depends(require_role("patient"))])
+async def analyze_respiratory_rate(
+    request: RespiratoryAnalysisRequest,
+    current_user: User = Depends(require_role("patient")),
+    db: Session = Depends(get_db)
+):
+    """
+    Analyze respiratory rate from video frames
+    Patient access only - own data
+    HIPAA Compliance: Uses BAA-protected OpenAI API for analysis
+    
+    Args:
+        request: Video frames (base64) and duration
+        
+    Returns:
+        Respiratory rate analysis with BPM estimate and confidence
+    """
+    # VALIDATION: Check for empty or insufficient frames
+    if not request.video_frames or len(request.video_frames) < 1:
+        raise HTTPException(
+            status_code=422,
+            detail="At least 1 video frame is required for respiratory analysis"
+        )
+    
+    try:
+        # Initialize respiratory analysis service
+        respiratory_service = RespiratoryAnalysisService()
+        
+        # Analyze chest movement with validated frames
+        analysis_result = await respiratory_service.analyze_chest_movement(
+            video_frames=request.video_frames,
+            duration_seconds=request.duration_seconds
+        )
+        
+        # Get respiratory rate
+        respiratory_rate = analysis_result.get("estimated_respiratory_rate_bpm")
+        confidence_score = analysis_result.get("confidence_score", 0.0)
+        
+        # PERSISTENCE: Save to database for trend analysis
+        if respiratory_rate and confidence_score >= 0.3:  # Only save if confident enough
+            new_measurement = SymptomMeasurement(
+                patient_id=current_user.id,
+                body_area=BodyArea.CHEST,
+                respiratory_rate_bpm=respiratory_rate,
+                rr_confidence=confidence_score,
+                ai_observations=analysis_result.get("observations", ""),
+                patient_notes=f"Respiratory analysis: {analysis_result.get('movement_pattern', 'N/A')} pattern, {analysis_result.get('respiratory_effort', 'N/A')} effort"
+            )
+            db.add(new_measurement)
+            db.commit()
+            db.refresh(new_measurement)
+        
+        # Assess pattern if rate is available
+        pattern_assessment = None
+        if respiratory_rate:
+            pattern_assessment = respiratory_service.assess_respiratory_pattern(
+                respiratory_rate=respiratory_rate
+            )
+        
+        # Get previous measurements for trend analysis
+        previous_measurements = db.query(SymptomMeasurement).filter(
+            and_(
+                SymptomMeasurement.patient_id == current_user.id,
+                SymptomMeasurement.body_area == BodyArea.CHEST,
+                SymptomMeasurement.respiratory_rate_bpm.isnot(None)
+            )
+        ).order_by(desc(SymptomMeasurement.created_at)).limit(7).all()
+        
+        previous_rates = [m.respiratory_rate_bpm for m in previous_measurements if m.respiratory_rate_bpm]
+        
+        # Compare trends
+        trend_analysis = None
+        if respiratory_rate:
+            trend_analysis = respiratory_service.compare_respiratory_trends(
+                current_rate=respiratory_rate,
+                previous_rates=previous_rates,
+                days_range=7
+            )
+        
+        return {
+            "success": True,
+            "respiratory_analysis": {
+                "estimated_bpm": respiratory_rate,
+                "confidence_score": analysis_result.get("confidence_score"),
+                "movement_pattern": analysis_result.get("movement_pattern"),
+                "respiratory_effort": analysis_result.get("respiratory_effort"),
+                "observations": analysis_result.get("observations"),
+                "quality_assessment": analysis_result.get("quality_assessment"),
+                "quality_issues": analysis_result.get("quality_issues", [])
+            },
+            "pattern_assessment": pattern_assessment,
+            "trend_analysis": trend_analysis,
+            "metadata": {
+                "duration_seconds": request.duration_seconds,
+                "frames_analyzed": analysis_result.get("frames_analyzed"),
+                "analysis_method": analysis_result.get("method")
+            }
+        }
+        
+    except Exception as e:
+        print(f"Respiratory analysis error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to analyze respiratory rate: {str(e)}"
+        )

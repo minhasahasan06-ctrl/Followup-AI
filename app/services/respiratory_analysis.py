@@ -70,19 +70,50 @@ Remember: Provide monitoring observations ONLY, not medical diagnoses."""
                 additional_images=sampled_frames[1:] if len(sampled_frames) > 1 else []
             )
             
-            # Parse response
+            # VALIDATION: Parse and validate JSON response
             import json
-            result = json.loads(response)
-            
-            # Add metadata
-            result["analysis_duration_seconds"] = duration_seconds
-            result["frames_analyzed"] = len(sampled_frames)
-            result["method"] = "ai_video_analysis"
-            
-            return result
+            try:
+                result = json.loads(response)
+                
+                # Validate required fields
+                required_fields = [
+                    "chest_movements_detected",
+                    "estimated_respiratory_rate_bpm",
+                    "confidence_score",
+                    "movement_pattern",
+                    "observations"
+                ]
+                
+                for field in required_fields:
+                    if field not in result:
+                        raise ValueError(f"Missing required field: {field}")
+                
+                # Add metadata
+                result["analysis_duration_seconds"] = duration_seconds
+                result["frames_analyzed"] = len(sampled_frames)
+                result["method"] = "ai_video_analysis"
+                
+                return result
+                
+            except (json.JSONDecodeError, ValueError) as parse_error:
+                # Return structured error if JSON is malformed
+                print(f"JSON parsing error: {str(parse_error)}\nResponse: {response}")
+                return {
+                    "chest_movements_detected": 0,
+                    "estimated_respiratory_rate_bpm": None,
+                    "confidence_score": 0.0,
+                    "movement_pattern": "unknown",
+                    "respiratory_effort": "unknown",
+                    "observations": f"Analysis response was malformed: {str(parse_error)}",
+                    "quality_assessment": "poor",
+                    "quality_issues": ["malformed_response"],
+                    "error": str(parse_error),
+                    "raw_response": response[:200]  # First 200 chars for debugging
+                }
             
         except Exception as e:
             # Return fallback response if AI analysis fails
+            print(f"Respiratory analysis error: {str(e)}")
             return {
                 "chest_movements_detected": 0,
                 "estimated_respiratory_rate_bpm": None,

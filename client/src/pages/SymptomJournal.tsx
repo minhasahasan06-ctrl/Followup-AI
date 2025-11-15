@@ -64,6 +64,13 @@ export default function SymptomJournal() {
   const [patientNotes, setPatientNotes] = useState("");
   const [activeTab, setActiveTab] = useState("capture");
   
+  // Respiratory analysis state
+  const [isRecordingVideo, setIsRecordingVideo] = useState(false);
+  const [recordedVideoBlob, setRecordedVideoBlob] = useState<Blob | null>(null);
+  const [respiratoryResult, setRespiratoryResult] = useState<any | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  
   const { toast } = useToast();
 
   // Fetch recent measurements
@@ -89,6 +96,37 @@ export default function SymptomJournal() {
   const { data: trendsData } = useQuery({
     queryKey: [trendsUrl || "/api/v1/symptom-journal/trends/disabled"],
     enabled: !!selectedBodyArea && !!trendsUrl,
+  });
+
+  // Analyze respiratory rate mutation
+  const analyzeRespiratoryRate = useMutation({
+    mutationFn: async ({ videoFrames, duration }: { videoFrames: string[]; duration: number }) => {
+      const res = await apiRequest("/api/v1/symptom-journal/analyze-respiratory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          video_frames: videoFrames,
+          duration_seconds: duration
+        }),
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setRespiratoryResult(data);
+      toast({
+        title: "Respiratory Analysis Complete",
+        description: data.respiratory_analysis?.estimated_bpm 
+          ? `Estimated: ${data.respiratory_analysis.estimated_bpm} breaths/min`
+          : "Analysis complete. Check results below.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Analysis Failed",
+        description: error.message || "Failed to analyze respiratory rate",
+        variant: "destructive",
+      });
+    },
   });
 
   // Upload symptom image mutation
@@ -247,6 +285,122 @@ export default function SymptomJournal() {
     uploadSymptomImage.mutate({ imageBlob: blob, notes: patientNotes });
   };
 
+  // Start video recording for respiratory analysis
+  const startVideoRecording = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480, facingMode: "user" },
+        audio: false
+      });
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        videoRef.current.play();
+      }
+      
+      streamRef.current = mediaStream;
+      setStream(mediaStream);
+      
+      // Create MediaRecorder
+      recordedChunksRef.current = [];
+      const recorder = new MediaRecorder(mediaStream, {
+        mimeType: 'video/webm;codecs=vp8'
+      });
+      
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+      
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+        setRecordedVideoBlob(blob);
+        processVideoForRespiratoryAnalysis(blob);
+      };
+      
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecordingVideo(true);
+      
+      // Auto-stop after 10 seconds
+      setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+          stopVideoRecording();
+        }
+      }, 10000);
+      
+    } catch (error) {
+      console.error("Error accessing camera for video:", error);
+      toast({
+        title: "Camera Error",
+        description: "Failed to access camera for video recording.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Stop video recording
+  const stopVideoRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecordingVideo(false);
+    stopCamera();
+  };
+
+  // Extract frames from video and analyze
+  const processVideoForRespiratoryAnalysis = async (videoBlob: Blob) => {
+    try {
+      const video = document.createElement('video');
+      video.src = URL.createObjectURL(videoBlob);
+      video.muted = true;
+      
+      await new Promise((resolve) => {
+        video.onloadedmetadata = resolve;
+      });
+      
+      const duration = video.duration;
+      const framesToExtract = 10; // Extract 10 frames
+      const frameInterval = duration / framesToExtract;
+      const frames: string[] = [];
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = 320; // Smaller size for API efficiency
+      canvas.height = 240;
+      const ctx = canvas.getContext('2d');
+      
+      for (let i = 0; i < framesToExtract; i++) {
+        video.currentTime = i * frameInterval;
+        await new Promise((resolve) => {
+          video.onseeked = resolve;
+        });
+        
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const base64Frame = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+          frames.push(base64Frame);
+        }
+      }
+      
+      URL.revokeObjectURL(video.src);
+      
+      // Send to backend for analysis
+      analyzeRespiratoryRate.mutate({
+        videoFrames: frames,
+        duration: duration
+      });
+      
+    } catch (error) {
+      console.error("Error processing video:", error);
+      toast({
+        title: "Processing Error",
+        description: "Failed to process video for analysis",
+        variant: "destructive",
+      });
+    }
+  };
+
   // HIPAA Privacy: Cleanup camera stream on unmount
   useEffect(() => {
     return () => {
@@ -341,6 +495,115 @@ export default function SymptomJournal() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Respiratory Rate Analysis (Chest area only) */}
+              {selectedBodyArea === "chest" && (
+                <Card className="bg-muted/50">
+                  <CardContent className="pt-6 space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Heart className="h-4 w-4" />
+                      Respiratory Rate Analysis
+                    </div>
+                    
+                    {!recordedVideoBlob && !respiratoryResult ? (
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          Record a 10-second video of your chest breathing normally. AI will estimate your respiratory rate.
+                        </p>
+                        
+                        {!isRecordingVideo ? (
+                          <Button 
+                            onClick={startVideoRecording} 
+                            className="w-full"
+                            data-testid="button-start-respiratory-recording"
+                          >
+                            <Camera className="mr-2 h-4 w-4" />
+                            Start Respiratory Recording (10s)
+                          </Button>
+                        ) : (
+                          <div className="space-y-3">
+                            <video
+                              ref={videoRef}
+                              className="w-full rounded-lg border"
+                              autoPlay
+                              playsInline
+                              muted
+                              data-testid="video-respiratory-preview"
+                            />
+                            <div className="flex gap-2">
+                              <Button 
+                                onClick={stopVideoRecording}
+                                variant="destructive"
+                                className="flex-1"
+                                data-testid="button-stop-respiratory-recording"
+                              >
+                                Stop Recording
+                              </Button>
+                            </div>
+                            <Alert>
+                              <Info className="h-4 w-4" />
+                              <AlertDescription>
+                                Recording will auto-stop after 10 seconds. Breathe normally.
+                              </AlertDescription>
+                            </Alert>
+                          </div>
+                        )}
+                      </div>
+                    ) : respiratoryResult ? (
+                      <div className="space-y-4">
+                        <Alert className={
+                          respiratoryResult.pattern_assessment?.rate_category === "within_typical_range" 
+                            ? "bg-green-50 border-green-200" 
+                            : "bg-yellow-50 border-yellow-200"
+                        }>
+                          <Heart className="h-4 w-4" />
+                          <AlertDescription>
+                            <div className="space-y-2">
+                              <div className="text-lg font-semibold">
+                                {respiratoryResult.respiratory_analysis?.estimated_bpm || "N/A"} breaths/min
+                              </div>
+                              <div className="text-sm">
+                                {respiratoryResult.respiratory_analysis?.observations}
+                              </div>
+                              {respiratoryResult.pattern_assessment && (
+                                <div className="text-sm mt-2">
+                                  <strong>{respiratoryResult.pattern_assessment.observation}</strong>
+                                  <br />
+                                  {respiratoryResult.pattern_assessment.monitoring_note}
+                                </div>
+                              )}
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                        
+                        {respiratoryResult.trend_analysis && (
+                          <div className="text-sm space-y-1">
+                            <div className="font-medium">Trend Analysis:</div>
+                            <div>{respiratoryResult.trend_analysis.observation}</div>
+                          </div>
+                        )}
+                        
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setRecordedVideoBlob(null);
+                            setRespiratoryResult(null);
+                          }}
+                          className="w-full"
+                          data-testid="button-record-again"
+                        >
+                          Record Again
+                        </Button>
+                      </div>
+                    ) : analyzeRespiratoryRate.isPending && (
+                      <div className="text-center py-4">
+                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary" data-testid="spinner-analyzing"></div>
+                        <p className="mt-2 text-sm text-muted-foreground">Analyzing respiratory rate...</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Camera/Upload Section */}
               {!capturedImage ? (
