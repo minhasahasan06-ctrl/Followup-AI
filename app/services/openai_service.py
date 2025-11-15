@@ -184,46 +184,69 @@ class OpenAIService:
     
     async def analyze_image_with_context(
         self,
-        image_base64: str,
+        image_data: str,
         context: str,
-        prompt: str
-    ) -> Dict:
+        additional_images: List[str] = None,
+        prompt: str = None
+    ) -> str:
         """
-        Analyze an image with given context and custom prompt
-        Used for exam coach real-time feedback
+        Analyze image(s) with given context and optional custom prompt
+        Used for exam coach real-time feedback and respiratory analysis
+        
+        Args:
+            image_data: Base64 encoded primary image
+            context: Context about what's being analyzed (can include prompt)
+            additional_images: Optional list of additional base64 images (for video frames)
+            prompt: Optional separate prompt (if not included in context)
+        
+        Returns:
+            String response from AI (caller should parse JSON if needed)
         """
         try:
+            # Build message content
+            message_content = []
+            
+            # Add text context/prompt
+            text_content = context
+            if prompt:
+                text_content = f"{context}\n\n{prompt}"
+            message_content.append({"type": "text", "text": text_content})
+            
+            # Add primary image
+            message_content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{image_data}"
+                }
+            })
+            
+            # Add additional images if provided (for video frames)
+            if additional_images:
+                for img_data in additional_images[:9]:  # Limit to 10 total images
+                    message_content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{img_data}"
+                        }
+                    })
+            
             response = await self.client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a medical coaching assistant providing real-time feedback for self-examination quality. Focus on image quality, positioning, and visibility - NOT diagnosis."
+                        "content": "You are a medical assistant providing monitoring feedback and observations. Focus on objective observations, NOT medical diagnoses."
                     },
                     {
                         "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"{context}\n\n{prompt}"},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_base64}"
-                                }
-                            }
-                        ]
+                        "content": message_content
                     }
                 ],
                 max_tokens=500
             )
             
-            return {
-                "analysis": response.choices[0].message.content,
-                "success": True
-            }
+            return response.choices[0].message.content
+            
         except Exception as e:
             print(f"Error analyzing image: {str(e)}")
-            return {
-                "analysis": "Unable to analyze image at this time.",
-                "success": False,
-                "error": str(e)
-            }
+            raise Exception(f"Image analysis failed: {str(e)}")
