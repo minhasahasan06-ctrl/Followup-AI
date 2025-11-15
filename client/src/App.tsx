@@ -62,6 +62,7 @@ import Habits from "@/pages/Habits";
 import DoctorSearch from "@/pages/DoctorSearch";
 import DoctorProfile from "@/pages/DoctorProfile";
 import MyDoctors from "@/pages/MyDoctors";
+import ConsultationRequests from "@/pages/ConsultationRequests";
 
 function PatientRouter() {
   return (
@@ -73,6 +74,7 @@ function PatientRouter() {
       <Route path="/doctor-search" component={DoctorSearch} />
       <Route path="/doctor/:doctorId" component={DoctorProfile} />
       <Route path="/my-doctors" component={MyDoctors} />
+      <Route path="/consultation-requests" component={ConsultationRequests} />
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/counseling" component={Counseling} />
       <Route path="/consents" component={ConsentManagement} />
