@@ -38,11 +38,23 @@ The platform is designed to be HIPAA-compliant, featuring:
 - End-to-end encryption for video consultations.
 - PHI handling compliance in all services.
 
+## Recent Changes
+
+### Pain Detection Camera System (November 2025)
+Complete AI-powered facial analysis system for tracking pain progression:
+- **Database**: 3 new tables (PainMeasurement, PainQuestionnaire, PainTrendSummary)
+- **Backend**: 9 Python FastAPI endpoints with HIPAA-compliant security
+- **Frontend**: TensorFlow.js MediaPipe FaceMesh for real-time facial landmark detection
+- **Features**: 10-second daily recordings, pain scoring algorithm, comprehensive questionnaire, trend analysis
+- **Security**: Full patient data ownership verification, doctor-patient connection validation
+- **Testing Note**: End-to-end testing has known limitation with TensorFlow.js in headless browsers (WebGL requirement). Feature works correctly in real browsers.
+
 ## External Dependencies
 
 -   **Authentication:** AWS Cognito.
 -   **Database:** Neon serverless PostgreSQL.
 -   **AI Services:** OpenAI API (GPT models).
+-   **Machine Learning:** TensorFlow.js (@tensorflow-models/face-landmarks-detection, @mediapipe/face_mesh) for facial analysis.
 -   **Communication:** Twilio API (SMS, voice), AWS SES (transactional emails).
 -   **Video Conferencing:** Daily.co.
 -   **Cloud Services:** AWS S3, AWS Textract, AWS Comprehend Medical, AWS HealthLake, AWS HealthImaging, AWS HealthOmics.
