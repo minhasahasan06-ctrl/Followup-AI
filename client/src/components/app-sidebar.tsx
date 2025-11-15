@@ -71,6 +71,12 @@ const patientItems = [
     badge: "AI",
   },
   {
+    title: "Symptom Journal",
+    url: "/symptom-journal",
+    icon: Activity,
+    badge: "AI",
+  },
+  {
     title: "Previous Sessions",
     url: "/previous-sessions",
     icon: History,
