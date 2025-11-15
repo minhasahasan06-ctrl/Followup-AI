@@ -1,5 +1,4 @@
 import {
-  Calendar,
   Activity,
   Bot,
   Calendar,
@@ -30,7 +29,6 @@ import {
   UserPlus,
 } from "lucide-react";
 import {
-  Calendar,
   Sidebar,
   SidebarContent,
   SidebarGroup,

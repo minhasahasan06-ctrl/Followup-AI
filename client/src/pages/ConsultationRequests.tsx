@@ -37,27 +37,30 @@ interface Doctor {
 interface ConsultationRequest {
   id: number;
   doctor_id: string;
-  reason: string;
-  preferred_date: string | null;
-  notes: string | null;
+  consultation_reason: string;
+  symptoms: string | null;
+  urgency: string;
+  mode: string;
   status: string;
   created_at: string;
-  scheduled_date: string | null;
+  scheduled_for: string | null;
 }
 
 export default function ConsultationRequests() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedDoctor, setSelectedDoctor] = useState("");
-  const [reason, setReason] = useState("");
-  const [preferredDate, setPreferredDate] = useState("");
-  const [notes, setNotes] = useState("");
+  const [consultationReason, setConsultationReason] = useState("");
+  const [symptoms, setSymptoms] = useState("");
+  const [urgency, setUrgency] = useState("routine");
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const { data: connectedDoctors } = useQuery<{ doctors: Doctor[] }>({
-    queryKey: ["/api/doctors/connected"],
+  const { data: connectedDoctorsResponse } = useQuery<{ connections: Array<{ doctor: Doctor }> }>({
+    queryKey: ["/api/doctors/my-doctors/list"],
     enabled: user?.role === "patient",
   });
+
+  const connectedDoctors = connectedDoctorsResponse?.connections.map(c => c.doctor) || [];
 
   const { data: consultationRequests } = useQuery<{ requests: ConsultationRequest[] }>({
     queryKey: ["/api/v1/consultations/patient/my-requests"],
@@ -67,9 +70,9 @@ export default function ConsultationRequests() {
   const createRequestMutation = useMutation({
     mutationFn: async (data: {
       doctor_id: string;
-      reason: string;
-      preferred_date?: string;
-      notes?: string;
+      consultation_reason: string;
+      symptoms?: string;
+      urgency?: string;
     }) => {
       return await apiRequest("POST", "/api/v1/consultations/patient/request", data);
     },
@@ -81,9 +84,9 @@ export default function ConsultationRequests() {
       });
       setDialogOpen(false);
       setSelectedDoctor("");
-      setReason("");
-      setPreferredDate("");
-      setNotes("");
+      setConsultationReason("");
+      setSymptoms("");
+      setUrgency("routine");
     },
     onError: (error: Error) => {
       toast({
@@ -96,7 +99,7 @@ export default function ConsultationRequests() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedDoctor || !reason) {
+    if (!selectedDoctor || !consultationReason) {
       toast({
         title: "Missing information",
         description: "Please select a doctor and provide a reason",
@@ -107,19 +110,19 @@ export default function ConsultationRequests() {
 
     createRequestMutation.mutate({
       doctor_id: selectedDoctor,
-      reason,
-      preferred_date: preferredDate || undefined,
-      notes: notes || undefined,
+      consultation_reason: consultationReason,
+      symptoms: symptoms || undefined,
+      urgency: urgency || "routine",
     });
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "pending":
+      case "requested":
         return (
-          <Badge variant="secondary" data-testid="badge-status-pending">
+          <Badge variant="secondary" data-testid="badge-status-requested">
             <AlertCircle className="h-3 w-3 mr-1" />
-            Pending
+            Requested
           </Badge>
         );
       case "approved":
@@ -142,7 +145,7 @@ export default function ConsultationRequests() {
   };
 
   const getDoctorName = (doctorId: string) => {
-    const doctor = connectedDoctors?.doctors.find((d) => d.id === doctorId);
+    const doctor = connectedDoctors.find((d) => d.id === doctorId);
     return doctor ? `Dr. ${doctor.firstName} ${doctor.lastName}` : "Unknown Doctor";
   };
 
@@ -189,47 +192,56 @@ export default function ConsultationRequests() {
                     <SelectValue placeholder="Choose a doctor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {connectedDoctors?.doctors.map((doctor) => (
-                      <SelectItem key={doctor.id} value={doctor.id}>
-                        Dr. {doctor.firstName} {doctor.lastName} - {doctor.specialty}
-                      </SelectItem>
-                    ))}
+                    {connectedDoctors.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground">
+                        No connected doctors. Please connect with a doctor first.
+                      </div>
+                    ) : (
+                      connectedDoctors.map((doctor) => (
+                        <SelectItem key={doctor.id} value={doctor.id}>
+                          Dr. {doctor.firstName} {doctor.lastName} - {doctor.specialty}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="reason">Reason for Consultation *</Label>
+                <Label htmlFor="consultation-reason">Reason for Consultation *</Label>
                 <Textarea
-                  id="reason"
-                  placeholder="Describe your symptoms or concerns..."
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  data-testid="input-reason"
+                  id="consultation-reason"
+                  placeholder="Why do you need to see the doctor?"
+                  value={consultationReason}
+                  onChange={(e) => setConsultationReason(e.target.value)}
+                  data-testid="input-consultation-reason"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="preferred-date">Preferred Date</Label>
-                <Input
-                  id="preferred-date"
-                  type="date"
-                  value={preferredDate}
-                  onChange={(e) => setPreferredDate(e.target.value)}
-                  data-testid="input-preferred-date"
+                <Label htmlFor="symptoms">Symptoms</Label>
+                <Textarea
+                  id="symptoms"
+                  placeholder="Describe your symptoms..."
+                  value={symptoms}
+                  onChange={(e) => setSymptoms(e.target.value)}
+                  data-testid="input-symptoms"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="notes">Additional Notes</Label>
-                <Textarea
-                  id="notes"
-                  placeholder="Any additional information..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  data-testid="input-notes"
-                />
+                <Label htmlFor="urgency">Urgency</Label>
+                <Select value={urgency} onValueChange={setUrgency}>
+                  <SelectTrigger data-testid="select-urgency">
+                    <SelectValue placeholder="Select urgency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="routine">Routine</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectItem value="emergency">Emergency</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex gap-2">
@@ -291,8 +303,8 @@ export default function ConsultationRequests() {
                       <FileText className="h-4 w-4" />
                       <span className="font-medium">Reason:</span>
                     </div>
-                    <p className="text-sm" data-testid={`text-reason-${request.id}`}>
-                      {request.reason}
+                    <p className="text-sm" data-testid={`text-consultation-reason-${request.id}`}>
+                      {request.consultation_reason}
                     </p>
                   </div>
 
@@ -307,35 +319,42 @@ export default function ConsultationRequests() {
                   </div>
                 </div>
 
-                {request.preferred_date && (
+                {request.symptoms && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4" />
-                      <span className="font-medium">Preferred Date:</span>
+                      <FileText className="h-4 w-4" />
+                      <span className="font-medium">Symptoms:</span>
                     </div>
-                    <p className="text-sm">{request.preferred_date}</p>
+                    <p className="text-sm text-muted-foreground">{request.symptoms}</p>
                   </div>
                 )}
 
-                {request.scheduled_date && request.status === "approved" && (
+                <div className="flex items-center gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <AlertCircle className="h-4 w-4" />
+                      <span className="font-medium">Urgency:</span>
+                    </div>
+                    <Badge variant="secondary">{request.urgency}</Badge>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      <span className="font-medium">Mode:</span>
+                    </div>
+                    <Badge variant="outline">{request.mode}</Badge>
+                  </div>
+                </div>
+
+                {request.scheduled_for && request.status === "approved" && (
                   <div className="p-4 bg-muted rounded-md">
                     <div className="flex items-center gap-2 text-sm font-medium mb-1">
                       <CheckCircle className="h-4 w-4 text-primary" />
                       Scheduled For:
                     </div>
                     <p className="text-sm font-semibold" data-testid={`text-scheduled-${request.id}`}>
-                      {new Date(request.scheduled_date).toLocaleString()}
+                      {new Date(request.scheduled_for).toLocaleString()}
                     </p>
-                  </div>
-                )}
-
-                {request.notes && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <FileText className="h-4 w-4" />
-                      <span className="font-medium">Additional Notes:</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{request.notes}</p>
                   </div>
                 )}
               </CardContent>
