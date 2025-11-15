@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -6,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import {
   Activity,
   Heart,
@@ -18,7 +21,9 @@ import {
   MessageSquare,
   Clock,
   FileText,
+  Download,
 } from "lucide-react";
+import { startOfWeek, endOfWeek, subWeeks, format } from "date-fns";
 import type { User, DailyFollowup, Medication, ChatMessage } from "@shared/schema";
 
 interface ChatSession {
@@ -41,6 +46,11 @@ interface ChatSession {
 export default function PatientReview() {
   const params = useParams();
   const patientId = params.id;
+  const { toast } = useToast();
+  
+  // PDF Report state
+  const [selectedWeekOffset, setSelectedWeekOffset] = useState(0); // 0 = current week, 1 = last week, etc.
+  const [referenceDate] = useState(() => new Date()); // FIX: Memoized to prevent inconsistent week ranges
 
   const { data: patient } = useQuery<User>({
     queryKey: [`/api/doctor/patients/${patientId}`],
@@ -60,6 +70,56 @@ export default function PatientReview() {
 
   const { data: chatSessions } = useQuery<ChatSession[]>({
     queryKey: [`/api/doctor/patient-sessions/${patientId}`],
+  });
+
+  // PDF Generation Mutation
+  const generatePDF = useMutation({
+    mutationFn: async () => {
+      const weekStart = startOfWeek(subWeeks(referenceDate, selectedWeekOffset), { weekStartsOn: 1 }); // Monday
+      const weekEnd = endOfWeek(subWeeks(referenceDate, selectedWeekOffset), { weekStartsOn: 1 }); // Sunday
+
+      // FIX: Handle blob response, not JSON
+      const res = await fetch(`/api/v1/symptom-journal/generate-weekly-pdf/${patientId}?${new URLSearchParams({
+        week_start: weekStart.toISOString(),
+        week_end: weekEnd.toISOString(),
+      })}`, {
+        method: "POST",
+        credentials: 'include', // Include session cookies
+      });
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(error || "Failed to generate PDF");
+      }
+
+      // FIX: Backend streams PDF blob, not JSON
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      
+      // Trigger download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `symptom-report-${format(weekStart, 'yyyy-MM-dd')}-to-${format(weekEnd, 'yyyy-MM-dd')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      return { success: true };
+    },
+    onSuccess: () => {
+      toast({
+        title: "PDF Generated",
+        description: "Weekly report has been downloaded successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message || "Failed to generate PDF report. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const getInitials = (firstName?: string | null, lastName?: string | null) => {
@@ -98,7 +158,7 @@ export default function PatientReview() {
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Tabs defaultValue="timeline" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="timeline" data-testid="tab-timeline">
                 <Calendar className="h-4 w-4 mr-2" />
                 Timeline
@@ -114,6 +174,10 @@ export default function PatientReview() {
               <TabsTrigger value="sessions" data-testid="tab-sessions">
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Chat Sessions
+              </TabsTrigger>
+              <TabsTrigger value="reports" data-testid="tab-reports">
+                <FileText className="h-4 w-4 mr-2" />
+                Reports
               </TabsTrigger>
             </TabsList>
 
@@ -344,6 +408,84 @@ export default function PatientReview() {
                       )}
                     </div>
                   </ScrollArea>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="reports">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Weekly Symptom Journal Reports</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Generate comprehensive PDF reports of patient symptom tracking
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Week Selection */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Select Week</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[0, 1, 2, 3, 4, 5, 6, 7].map((offset) => {
+                        const weekStart = startOfWeek(subWeeks(referenceDate, offset), { weekStartsOn: 1 });
+                        const weekEnd = endOfWeek(subWeeks(referenceDate, offset), { weekStartsOn: 1 });
+                        return (
+                          <Button
+                            key={offset}
+                            variant={selectedWeekOffset === offset ? "default" : "outline"}
+                            onClick={() => setSelectedWeekOffset(offset)}
+                            className="justify-start"
+                            data-testid={`button-week-${offset}`}
+                          >
+                            <Calendar className="mr-2 h-4 w-4" />
+                            {offset === 0 ? "This Week" : offset === 1 ? "Last Week" : `${offset} Weeks Ago`}
+                            <div className="ml-auto text-xs opacity-75">
+                              {format(weekStart, "MMM d")} - {format(weekEnd, "MMM d")}
+                            </div>
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Generate Button */}
+                  <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/50">
+                    <FileText className="h-8 w-8 text-muted-foreground" />
+                    <div className="flex-1">
+                      <h4 className="font-medium">Generate PDF Report</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Create a comprehensive weekly report including measurements, trends, and AI observations
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => generatePDF.mutate()}
+                      disabled={generatePDF.isPending}
+                      data-testid="button-generate-pdf"
+                    >
+                      {generatePDF.isPending ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="mr-2 h-4 w-4" />
+                          Generate PDF
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Info Card */}
+                  <div className="p-4 border rounded-lg">
+                    <h4 className="font-medium mb-2">What's Included in the Report</h4>
+                    <ul className="space-y-1 text-sm text-muted-foreground">
+                      <li>• Patient symptom measurements with images</li>
+                      <li>• Color and area change tracking</li>
+                      <li>• Respiratory rate trends (if available)</li>
+                      <li>• AI-generated observations and alerts</li>
+                      <li>• Week-over-week comparison data</li>
+                    </ul>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
