@@ -49,6 +49,76 @@ Complete AI-powered facial analysis system for tracking pain progression:
 - **Security**: Full patient data ownership verification, doctor-patient connection validation
 - **Testing Note**: End-to-end testing has known limitation with TensorFlow.js in headless browsers (WebGL requirement). Feature works correctly in real browsers.
 
+### Home Clinical Exam Coach (HCEC) System (November 2025)
+**Complete End-to-End Implementation**
+AI-powered guided self-examination system teaching patients standardized exam techniques before doctor consultations:
+
+**Backend (Python FastAPI - app/routers/exam_coach.py):**
+- 7 REST API endpoints with HIPAA-compliant security:
+  - POST /start-session: Initialize exam session with protocol selection
+  - POST /analyze-frame: Real-time AI frame analysis (OpenAI Vision API)
+  - POST /complete-step: Upload captured images/videos with quality scores
+  - GET /session/{id}: Retrieve session details with all steps
+  - GET /packets: List patient's exam packets
+  - GET /protocols: Get available exam protocols
+- **Database Models** (app/models/exam_coach.py):
+  - ExamSession: Track coaching sessions
+  - ExamStep: Individual examination steps
+  - CoachingFeedback: AI-generated real-time feedback
+  - ExamPacket: Compiled exam data for doctor review
+  - ExamProtocol: Standardized examination templates
+- **Built-in Protocols**: Skin inspection, throat examination, leg edema, range of motion, respiratory effort
+- **AI Services**: OpenAIService class for real-time coaching feedback (lighting, angle, distance, visibility)
+- **Security**: Patient-only access with ownership verification on ALL database queries
+
+**Frontend (client/src/pages/ExamCoach.tsx):**
+- Complete 3-tab coaching interface:
+  - Tab 1: Select Exam - Choose from available protocols
+  - Tab 2: Coaching - Real-time camera with AI overlay feedback
+  - Tab 3: Complete - Review and finalize exam packet
+- Real-time AI analysis every 3 seconds with visual coaching overlays
+- Voice guidance using Web Speech API for hands-free operation
+- Step-by-step wizard with progress tracking
+- HIPAA-compliant camera cleanup on component unmount
+- Complete data-testid coverage for testing
+- Integrated into App.tsx routing (/exam-coach) and sidebar navigation
+
+**Security Review Status**: ✅ PASSED - All HIPAA violations resolved, defense-in-depth patient ownership verification implemented
+
+### Symptom Journal Enhancements (November 2025)
+**Backend Services Added (Python FastAPI):**
+
+1. **Respiratory Rate Analysis** (app/services/respiratory_analysis.py):
+   - AI-powered chest movement analysis using OpenAI Vision
+   - Breaths per minute calculation from video clips
+   - POST /api/v1/symptom-journal/analyze-respiratory endpoint
+
+2. **Comparison View** (app/routers/symptom_journal.py):
+   - GET /api/v1/symptom-journal/compare endpoint
+   - Side-by-side measurement comparison with change percentages
+   - Defense-in-depth security: patient ownership verification on measurements AND images
+   - Color change tracking, brightness analysis, area change calculations
+
+3. **Weekly PDF Reports** (app/services/pdf_service.py):
+   - POST /api/v1/symptom-journal/generate-weekly-pdf endpoint
+   - Structured timeline with images, measurements, and trends
+   - Charts for symptom progression over time
+   - Formatted for doctor review
+
+**Security Review Status**: ✅ PASSED - All endpoints follow HIPAA compliance patterns
+
+### Running the Python Backend
+The new features (HCEC, Symptom Journal enhancements) require the Python FastAPI backend on port 8000:
+
+```bash
+# From workspace root:
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Note**: Both backends must run simultaneously:
+- JavaScript/Express on port 5000 (legacy - current workflow)
+- Python/FastAPI on port 8000 (new features - manual start required)
+
 ## External Dependencies
 
 -   **Authentication:** AWS Cognito.
