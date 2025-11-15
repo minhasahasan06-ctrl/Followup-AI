@@ -135,8 +135,16 @@ AI-powered system correlating patient symptoms with medication timelines to dete
   - GET /correlations/me: Retrieve all correlations for patient
   - GET /summary/me: Get aggregated effects summary by medication
   - GET /correlation/{id}: Detailed view of specific correlation
+  - **GET /doctor/patient/{id}/consultation-report**: Doctor-facing comprehensive report (medications + symptoms + correlations + recommendations)
+- **Agent Clona Integration** (app/routers/agent_clona.py + app/services/symptom_extraction_service.py):
+  - Background symptom extraction from Agent Clona conversations
+  - OpenAI GPT-4o extraction with schema mapping to SymptomLog
+  - Fresh database session in background tasks (avoids closed connection issues)
+  - Automatic feeding into medication correlation analysis
 
-**Frontend (client/src/pages/MedicationEffects.tsx):**
+**Frontend:**
+
+**Patient Dashboard** (client/src/pages/MedicationEffects.tsx):
 - **Three-Tab Interface:**
   - Overview: Medication cards with correlation counts and previews
   - By Medication: Split view (medication list + detailed correlations)
@@ -152,26 +160,30 @@ AI-powered system correlating patient symptoms with medication timelines to dete
   - Temporal pattern descriptions
   - AI reasoning callouts with Sparkles icon
   - Recommended actions
-- **Summary Statistics:**
-  - Total medications analyzed
-  - Total correlations found
-  - Strong correlations count (urgent attention)
-  - Analysis period (days)
-- **Design Compliance:**
-  - Medical Teal primary color (180 45% 45%)
-  - Status colors: Rose (critical), Coral (warning), Teal (success)
-  - Proper spacing, typography hierarchy, loading states
-  - Accessible with data-testid coverage
 - **TanStack Query Integration:**
   - Parameterized query keys for flexible caching
   - Cache invalidation with exact: false for fresh data
   - Mutation feedback with toast notifications
 
+**Doctor Consultation Report** (client/src/pages/DoctorMedicationReport.tsx):
+- **Route:** `/doctor/medication-report/:id` (doctor-only)
+- **Summary Cards:** Active medications, total symptoms, correlations found, critical findings
+- **Four-Tab Interface:**
+  - Critical Findings: Top 10 strong correlations requiring immediate attention
+  - Medications: Per-medication view with dosage, correlations, and symptoms
+  - Symptoms: Grouped by source (manual, Agent Clona, daily followup, etc.)
+  - Recommendations: Priority-ranked clinical action items with AI reasoning
+- **Features:**
+  - Color-coded severity (rose=critical, coral=warning, amber=caution)
+  - Analysis status alerts (outdated analysis warning)
+  - Complete data-testid coverage for e2e testing
+  - Download PDF button (placeholder for future PDF generation)
+
 **Security Review Status**: ✅ PASSED - Defense-in-depth authorization, patient enumeration prevention, proper role-based access control
 
 **Regulatory Compliance**: Uses "change detection/monitoring" language (NOT diagnosis) for regulatory compliance
 
-**Architect Review Status**: ✅ PRODUCTION-READY - All critical issues resolved (tab navigation, configuration UI, structured recommendations, cache invalidation)
+**Architect Review Status**: ✅ PRODUCTION-READY
 
 ### Running the Python Backend
 The new features (HCEC, Symptom Journal enhancements) require the Python FastAPI backend on port 8000:

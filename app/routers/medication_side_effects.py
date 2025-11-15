@@ -6,7 +6,7 @@ HIPAA-compliant with defense-in-depth security
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from app.database import get_db
@@ -280,3 +280,181 @@ async def get_correlation_details(
     verify_patient_access(correlation.patient_id, current_user, db)
     
     return CorrelationResponse.model_validate(correlation)
+
+
+# ============================================================================
+# Doctor Consultation Report Endpoints
+# ============================================================================
+
+@router.get("/doctor/patient/{patient_id}/consultation-report")
+async def get_doctor_consultation_report(
+    patient_id: str,
+    days_back: int = Query(default=90, ge=7, le=365),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Doctor-facing comprehensive medication effects report for patient consultation
+    
+    Security: Doctors only - requires active patient-doctor connection
+    Returns: Complete medication timeline + symptoms + correlations + recommendations
+    """
+    # Verify doctor role
+    if current_user.role != "doctor":
+        raise HTTPException(status_code=403, detail="Only doctors can access consultation reports")
+    
+    # Verify active doctor-patient connection
+    connection = db.query(PatientDoctorConnection).filter(
+        PatientDoctorConnection.patient_id == patient_id,
+        PatientDoctorConnection.doctor_id == current_user.id,
+        PatientDoctorConnection.status == "connected"
+    ).first()
+    
+    if not connection:
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to view this patient's data. Patient must be connected to you."
+        )
+    
+    cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+    
+    # Fetch patient's active medications
+    from app.models.medication_side_effects import MedicationTimeline
+    
+    active_medications = db.query(MedicationTimeline).filter(
+        MedicationTimeline.patient_id == patient_id,
+        MedicationTimeline.is_active == True
+    ).all()
+    
+    all_medications = db.query(MedicationTimeline).filter(
+        MedicationTimeline.patient_id == patient_id,
+        MedicationTimeline.started_at >= cutoff_date
+    ).all()
+    
+    # Fetch recent symptoms (all sources)
+    recent_symptoms = db.query(SymptomLog).filter(
+        SymptomLog.patient_id == patient_id,
+        SymptomLog.reported_at >= cutoff_date
+    ).order_by(SymptomLog.reported_at.desc()).all()
+    
+    # Fetch correlations
+    correlations = db.query(SideEffectCorrelation).filter(
+        SideEffectCorrelation.patient_id == patient_id,
+        SideEffectCorrelation.analysis_date >= cutoff_date
+    ).all()
+    
+    # Group correlations by strength
+    strong_correlations = [c for c in correlations if c.correlation_strength == CorrelationStrength.STRONG]
+    likely_correlations = [c for c in correlations if c.correlation_strength == CorrelationStrength.LIKELY]
+    possible_correlations = [c for c in correlations if c.correlation_strength == CorrelationStrength.POSSIBLE]
+    
+    # Get most recent analysis summary
+    from app.models.medication_side_effects import MedicationEffectsSummary
+    
+    summary = db.query(MedicationEffectsSummary).filter(
+        MedicationEffectsSummary.patient_id == patient_id
+    ).order_by(MedicationEffectsSummary.created_at.desc()).first()
+    
+    # Build medication details with correlations
+    medication_details = []
+    for med in active_medications:
+        med_correlations = [c for c in correlations if c.medication_timeline_id == med.id]
+        
+        medication_details.append({
+            "medication_name": med.medication_name,
+            "generic_name": med.generic_name,
+            "drug_class": med.drug_class,
+            "dosage": med.dosage,
+            "frequency": med.frequency,
+            "route": med.route,
+            "started_at": med.started_at.isoformat() if med.started_at else None,
+            "prescribed_by": med.prescribed_by,
+            "prescription_reason": med.prescription_reason,
+            "correlation_count": len(med_correlations),
+            "strong_correlation_count": sum(1 for c in med_correlations if c.correlation_strength == CorrelationStrength.STRONG),
+            "correlations": [
+                {
+                    "symptom_name": c.symptom_name,
+                    "correlation_strength": c.correlation_strength.value,
+                    "confidence_score": c.confidence_score,
+                    "time_to_onset_hours": c.time_to_onset_hours,
+                    "patient_impact": c.patient_impact,
+                    "action_recommended": c.action_recommended,
+                    "temporal_pattern": c.temporal_pattern
+                }
+                for c in sorted(med_correlations, key=lambda x: x.confidence_score, reverse=True)[:5]
+            ]
+        })
+    
+    # Symptom summary by source
+    from app.models.medication_side_effects import SymptomSource
+    symptom_sources = {}
+    for symptom in recent_symptoms:
+        source_name = symptom.source.value if symptom.source else "unknown"
+        if source_name not in symptom_sources:
+            symptom_sources[source_name] = []
+        symptom_sources[source_name].append({
+            "symptom_name": symptom.symptom_name,
+            "severity": symptom.severity,
+            "reported_at": symptom.reported_at.isoformat() if symptom.reported_at else None,
+            "description": symptom.symptom_description
+        })
+    
+    # Clinical recommendations (from AI analysis)
+    clinical_recommendations = []
+    if summary and summary.recommendations:
+        clinical_recommendations = summary.recommendations
+    else:
+        # Generate basic recommendations from strong correlations
+        for corr in strong_correlations[:5]:  # Top 5 strong correlations
+            clinical_recommendations.append({
+                "priority": "HIGH",
+                "medication": corr.medication_name,
+                "symptom": corr.symptom_name,
+                "action": corr.action_recommended,
+                "reasoning": corr.ai_reasoning
+            })
+    
+    return {
+        "patient_id": patient_id,
+        "report_generated_at": datetime.utcnow().isoformat(),
+        "analysis_period_days": days_back,
+        "doctor_id": current_user.id,
+        "doctor_name": f"{current_user.first_name} {current_user.last_name}" if hasattr(current_user, 'first_name') else "Doctor",
+        
+        # Medication Summary
+        "active_medications_count": len(active_medications),
+        "all_medications_in_period": len(all_medications),
+        "medications": medication_details,
+        
+        # Symptom Summary
+        "total_symptoms_reported": len(recent_symptoms),
+        "symptoms_by_source": symptom_sources,
+        "unique_symptoms": len(set(s.symptom_name for s in recent_symptoms)),
+        
+        # Correlation Summary
+        "total_correlations": len(correlations),
+        "strong_correlations_count": len(strong_correlations),
+        "likely_correlations_count": len(likely_correlations),
+        "possible_correlations_count": len(possible_correlations),
+        "critical_findings": [
+            {
+                "id": c.id,
+                "medication_name": c.medication_name,
+                "symptom_name": c.symptom_name,
+                "confidence_score": c.confidence_score,
+                "patient_impact": c.patient_impact,
+                "action_recommended": c.action_recommended,
+                "temporal_pattern": c.temporal_pattern,
+                "ai_reasoning": c.ai_reasoning
+            }
+            for c in strong_correlations[:10]  # Top 10 critical findings
+        ],
+        
+        # Clinical Recommendations
+        "clinical_recommendations": clinical_recommendations,
+        
+        # Analysis metadata
+        "last_analysis_date": summary.created_at.isoformat() if summary else None,
+        "analysis_status": "current" if summary and (datetime.utcnow() - summary.created_at).days < 7 else "needs_update"
+    }

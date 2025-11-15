@@ -67,6 +67,7 @@ import PainDetection from "@/pages/PainDetection";
 import SymptomJournal from "@/pages/SymptomJournal";
 import ExamCoach from "@/pages/ExamCoach";
 import MedicationEffects from "@/pages/MedicationEffects";
+import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
 
 function PatientRouter() {
   return (
@@ -113,6 +114,7 @@ function DoctorRouter() {
       <Route path="/receptionist" component={ReceptionistDashboard} />
       <Route path="/doctor-wellness" component={DoctorWellness} />
       <Route path="/doctor/patient/:id" component={PatientReview} />
+      <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/chat" component={Chat} />
       <Route path="/counseling" component={Counseling} />
