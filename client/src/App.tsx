@@ -63,12 +63,14 @@ import DoctorSearch from "@/pages/DoctorSearch";
 import DoctorProfile from "@/pages/DoctorProfile";
 import MyDoctors from "@/pages/MyDoctors";
 import ConsultationRequests from "@/pages/ConsultationRequests";
+import PainDetection from "@/pages/PainDetection";
 
 function PatientRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/chat" component={Chat} />
+      <Route path="/pain-detection" component={PainDetection} />
       <Route path="/habits" component={Habits} />
       <Route path="/previous-sessions" component={PreviousSessions} />
       <Route path="/doctor-search" component={DoctorSearch} />

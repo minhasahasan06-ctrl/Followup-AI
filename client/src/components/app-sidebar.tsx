@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   Calendar,
+  Camera,
   FileText,
   Heart,
   Home,
@@ -61,6 +62,12 @@ const patientItems = [
     title: "Habit Tracker",
     url: "/habits",
     icon: Target,
+    badge: "AI",
+  },
+  {
+    title: "Pain Detection",
+    url: "/pain-detection",
+    icon: Camera,
     badge: "AI",
   },
   {
