@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ChatMessage } from "@/components/ChatMessage";
+import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -96,10 +97,12 @@ export default function Chat() {
           <div>
             <h1 className="text-2xl font-semibold" data-testid="text-agent-name">{agentName}</h1>
             <p className="text-sm text-muted-foreground" data-testid="text-agent-description">
-              Powered by GPT-4 {isDoctor ? "- Clinical Insights" : "- Health Support"}
+              Powered by GPT-4 {isDoctor ? "- Clinical Insights" : "- Your Health Companion"}
             </p>
           </div>
         </div>
+        {/* Legal Disclaimer */}
+        {!isDoctor && <LegalDisclaimer variant="wellness" className="mt-4" />}
       </div>
 
       {!isDoctor && activeAlerts.length > 0 && (
