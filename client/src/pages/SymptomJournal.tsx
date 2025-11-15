@@ -21,7 +21,8 @@ import {
   User, 
   Activity,
   Heart,
-  Info
+  Info,
+  GitCompare
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -71,6 +72,11 @@ export default function SymptomJournal() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   
+  // Comparison view state
+  const [showComparison, setShowComparison] = useState(false);
+  const [selectedMeasurement1, setSelectedMeasurement1] = useState<number | null>(null);
+  const [selectedMeasurement2, setSelectedMeasurement2] = useState<number | null>(null);
+  
   const { toast } = useToast();
 
   // Fetch recent measurements
@@ -96,6 +102,20 @@ export default function SymptomJournal() {
   const { data: trendsData } = useQuery({
     queryKey: [trendsUrl || "/api/v1/symptom-journal/trends/disabled"],
     enabled: !!selectedBodyArea && !!trendsUrl,
+  });
+
+  // Fetch comparison data
+  const comparisonUrl = selectedMeasurement1 && selectedMeasurement2 && selectedBodyArea
+    ? `/api/v1/symptom-journal/compare?${new URLSearchParams({
+        body_area: selectedBodyArea,
+        measurement_id_1: selectedMeasurement1.toString(),
+        measurement_id_2: selectedMeasurement2.toString(),
+      })}`
+    : null;
+
+  const { data: comparisonData, isLoading: comparisonLoading } = useQuery({
+    queryKey: [comparisonUrl || "/api/v1/symptom-journal/compare/disabled"],
+    enabled: !!comparisonUrl,
   });
 
   // Analyze respiratory rate mutation
@@ -715,9 +735,218 @@ export default function SymptomJournal() {
 
         {/* History Tab */}
         <TabsContent value="history" className="mt-6">
+          {/* Comparison View Section */}
+          {showComparison && recentData && recentData.measurements.length >= 2 && (
+            <Card className="mb-6">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <GitCompare className="h-5 w-5" />
+                    Compare Measurements
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowComparison(false);
+                      setSelectedMeasurement1(null);
+                      setSelectedMeasurement2(null);
+                    }}
+                    data-testid="button-close-comparison"
+                  >
+                    Close
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Measurement Selection */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="measurement-1">First Measurement</Label>
+                    <Select 
+                      value={selectedMeasurement1?.toString() || ""} 
+                      onValueChange={(val) => setSelectedMeasurement1(parseInt(val))}
+                    >
+                      <SelectTrigger id="measurement-1" data-testid="select-measurement-1">
+                        <SelectValue placeholder="Select measurement" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {recentData.measurements.map((m) => (
+                          <SelectItem 
+                            key={m.id} 
+                            value={m.id.toString()}
+                            disabled={m.id === selectedMeasurement2}
+                            data-testid={`option-m1-${m.id}`}
+                          >
+                            {format(new Date(m.created_at), "MMM d, yyyy h:mm a")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="measurement-2">Second Measurement</Label>
+                    <Select 
+                      value={selectedMeasurement2?.toString() || ""} 
+                      onValueChange={(val) => setSelectedMeasurement2(parseInt(val))}
+                    >
+                      <SelectTrigger id="measurement-2" data-testid="select-measurement-2">
+                        <SelectValue placeholder="Select measurement" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {recentData.measurements.map((m) => (
+                          <SelectItem 
+                            key={m.id} 
+                            value={m.id.toString()}
+                            disabled={m.id === selectedMeasurement1}
+                            data-testid={`option-m2-${m.id}`}
+                          >
+                            {format(new Date(m.created_at), "MMM d, yyyy h:mm a")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Comparison Results */}
+                {comparisonLoading && (
+                  <div className="text-center py-8" data-testid="spinner-comparison-loading">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <p className="mt-2 text-sm text-muted-foreground">Loading comparison...</p>
+                  </div>
+                )}
+
+                {selectedMeasurement1 && selectedMeasurement2 && !comparisonData && !comparisonLoading && (
+                  <Alert variant="destructive" data-testid="alert-comparison-error">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      Failed to load comparison data. Please try again or select different measurements.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {comparisonData && !comparisonLoading && comparisonData.comparison && (
+                  <div className="space-y-6">
+                    {/* Side-by-Side Images */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="text-sm text-muted-foreground mb-2" data-testid="text-date-m1">
+                            {format(new Date(comparisonData.comparison.measurement_1.date), "MMM d, yyyy h:mm a")}
+                          </div>
+                          {comparisonData.comparison.measurement_1.image_url && (
+                            <img
+                              src={comparisonData.comparison.measurement_1.image_url}
+                              alt="Measurement 1"
+                              className="w-full rounded border"
+                              data-testid="img-comparison-1"
+                            />
+                          )}
+                          {comparisonData.comparison.measurement_1.ai_observations && (
+                            <div className="mt-3 text-sm" data-testid="text-observations-m1">
+                              <strong>AI Notes:</strong> {comparisonData.comparison.measurement_1.ai_observations}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="text-sm text-muted-foreground mb-2" data-testid="text-date-m2">
+                            {format(new Date(comparisonData.comparison.measurement_2.date), "MMM d, yyyy h:mm a")}
+                          </div>
+                          {comparisonData.comparison.measurement_2.image_url && (
+                            <img
+                              src={comparisonData.comparison.measurement_2.image_url}
+                              alt="Measurement 2"
+                              className="w-full rounded border"
+                              data-testid="img-comparison-2"
+                            />
+                          )}
+                          {comparisonData.comparison.measurement_2.ai_observations && (
+                            <div className="mt-3 text-sm" data-testid="text-observations-m2">
+                              <strong>AI Notes:</strong> {comparisonData.comparison.measurement_2.ai_observations}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Change Metrics */}
+                    <Alert data-testid="alert-change-summary">
+                      <Activity className="h-4 w-4" />
+                      <AlertDescription>
+                        <div className="space-y-2">
+                          <div className="font-semibold">
+                            Changes over {comparisonData.comparison.changes.days_between} days
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4 mt-2">
+                            {comparisonData.comparison.changes.color_change !== null && (
+                              <div className="flex items-center gap-2" data-testid="text-color-change">
+                                <strong>Color:</strong>
+                                <span className={
+                                  Math.abs(comparisonData.comparison.changes.color_change) > 10 
+                                    ? "text-orange-600 font-semibold" 
+                                    : ""
+                                }>
+                                  {comparisonData.comparison.changes.color_change > 0 ? "+" : ""}
+                                  {comparisonData.comparison.changes.color_change.toFixed(1)}%
+                                </span>
+                              </div>
+                            )}
+                            
+                            {comparisonData.comparison.changes.area_change !== null && (
+                              <div className="flex items-center gap-2" data-testid="text-area-change">
+                                <strong>Area:</strong>
+                                <span className={
+                                  Math.abs(comparisonData.comparison.changes.area_change) > 15 
+                                    ? "text-orange-600 font-semibold" 
+                                    : ""
+                                }>
+                                  {comparisonData.comparison.changes.area_change > 0 ? "+" : ""}
+                                  {comparisonData.comparison.changes.area_change.toFixed(1)}%
+                                </span>
+                              </div>
+                            )}
+                            
+                            {comparisonData.comparison.changes.respiratory_rate_change !== null && (
+                              <div className="flex items-center gap-2" data-testid="text-respiratory-change">
+                                <strong>Respiratory Rate:</strong>
+                                <span>
+                                  {comparisonData.comparison.changes.respiratory_rate_change > 0 ? "+" : ""}
+                                  {comparisonData.comparison.changes.respiratory_rate_change} breaths/min
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
-              <CardTitle>Recent Measurements</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Recent Measurements</CardTitle>
+                {recentData && recentData.measurements.length >= 2 && !showComparison && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowComparison(true)}
+                    data-testid="button-show-comparison"
+                  >
+                    <GitCompare className="mr-2 h-4 w-4" />
+                    Compare
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {loadingRecent ? (
