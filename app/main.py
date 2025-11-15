@@ -16,7 +16,8 @@ from app.routers import (
     symptom_journal,
     exam_coach,
     medication_timeline,
-    symptom_logging
+    symptom_logging,
+    medication_side_effects
 )
 
 app = FastAPI(
@@ -47,6 +48,7 @@ app.include_router(symptom_journal.router)
 app.include_router(exam_coach.router)
 app.include_router(medication_timeline.router)
 app.include_router(symptom_logging.router)
+app.include_router(medication_side_effects.router)
 
 Base.metadata.create_all(bind=engine)
 
