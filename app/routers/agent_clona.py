@@ -4,14 +4,15 @@ Provides symptom analysis, differential diagnosis, and doctor suggestions.
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.services.agent_clona_service import AgentClonaService
+from app.services.symptom_extraction_service import SymptomExtractionService
 
 
 router = APIRouter(prefix="/api/agent-clona", tags=["agent-clona"])
@@ -49,15 +50,46 @@ class TreatmentSuggestionRequest(BaseModel):
     patient_medications: Optional[List[str]] = None
 
 
+def extract_symptoms_background(
+    patient_id: str,
+    patient_message: str,
+    ai_response: str
+):
+    """
+    Background task to extract and save symptoms from chat conversation.
+    
+    FIX: Creates fresh DB session to avoid using closed request-scoped session.
+    """
+    # Create fresh database session for background task
+    db = SessionLocal()
+    try:
+        SymptomExtractionService.extract_and_save_symptoms(
+            db=db,
+            patient_id=patient_id,
+            patient_message=patient_message,
+            ai_response=ai_response
+        )
+    except Exception as e:
+        print(f"Background symptom extraction error: {e}")
+    finally:
+        db.close()
+
+
 @router.post("/chat", response_model=SymptomAnalysisResponse)
 async def chat_with_clona(
     request: ChatRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(require_role("patient")),
     db: Session = Depends(get_db)
 ):
     """
     Enhanced chat with Agent Clona for symptom analysis.
     Provides differential diagnosis, lab test recommendations, and doctor suggestions.
+    
+    AUTOMATIC SYMPTOM EXTRACTION:
+    - Analyzes patient messages for symptom mentions
+    - Automatically creates SymptomLog entries in background
+    - Integrates with Medication Side-Effect Predictor
     """
     try:
         conversation = [
@@ -70,6 +102,15 @@ async def chat_with_clona(
             patient=current_user,
             symptom_description=request.message,
             conversation_history=conversation
+        )
+        
+        # Background task: Extract and save symptoms from this conversation
+        # FIX: No DB session passed - background task creates its own
+        background_tasks.add_task(
+            extract_symptoms_background,
+            patient_id=current_user.id,
+            patient_message=request.message,
+            ai_response=analysis["ai_response"]
         )
         
         return analysis
