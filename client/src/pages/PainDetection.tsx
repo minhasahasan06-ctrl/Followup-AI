@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Camera, AlertCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
@@ -427,10 +428,13 @@ export default function PainDetection() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
+      {/* Legal Disclaimer */}
+      <LegalDisclaimer variant="monitoring" />
+      
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Pain Detection</h1>
-          <p className="text-muted-foreground">Track pain progression through facial analysis</p>
+          <h1 className="text-3xl font-bold">Discomfort Monitoring</h1>
+          <p className="text-muted-foreground">Track changes in discomfort levels through facial analysis</p>
         </div>
       </div>
 

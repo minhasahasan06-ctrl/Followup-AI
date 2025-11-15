@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -200,12 +201,15 @@ export default function MedicationEffects() {
 
   return (
     <div className="container mx-auto p-6 max-w-7xl" data-testid="container-medication-effects">
+      {/* Legal Disclaimer */}
+      <LegalDisclaimer variant="monitoring" className="mb-6" />
+
       {/* Header with Analysis Config - FIX: Add configuration UI */}
       <div className="mb-8 flex items-start justify-between">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">Medication Effects Analysis</h1>
+          <h1 className="text-4xl font-bold tracking-tight">Medication Change Tracking</h1>
           <p className="text-slate-600 text-lg">
-            AI-powered insights into how your medications correlate with your symptoms
+            Monitor how your medications may correlate with changes in your symptoms over time
           </p>
         </div>
         

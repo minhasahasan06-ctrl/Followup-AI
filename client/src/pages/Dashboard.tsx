@@ -4,6 +4,7 @@ import { FollowUpCard } from "@/components/FollowUpCard";
 import { ReminderCard } from "@/components/ReminderCard";
 import { EmergencyAlert } from "@/components/EmergencyAlert";
 import DynamicWelcome from "@/components/DynamicWelcome";
+import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,9 @@ export default function Dashboard() {
 
       {/* Dynamic Welcome Screen */}
       <DynamicWelcome userName={user?.firstName} />
+
+      {/* Legal Disclaimer */}
+      <LegalDisclaimer variant="wellness" />
 
       <div>
         <h2 className="text-2xl font-semibold mb-2" data-testid="text-health-summary">Today's Health Summary</h2>
