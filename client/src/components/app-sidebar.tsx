@@ -77,6 +77,12 @@ const patientItems = [
     badge: "AI",
   },
   {
+    title: "Exam Coach",
+    url: "/exam-coach",
+    icon: Camera,
+    badge: "AI",
+  },
+  {
     title: "Previous Sessions",
     url: "/previous-sessions",
     icon: History,
