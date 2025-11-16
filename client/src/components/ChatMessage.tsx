@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 interface MedicalEntity {
   text: string;
-  type: "medication" | "symptom" | "diagnosis" | "dosage";
+  type: "medication" | "symptom" | "finding" | "dosage";
 }
 
 interface ChatMessageProps {
@@ -28,7 +28,7 @@ export function ChatMessage({
   const entityColors = {
     medication: "bg-chart-2/20 text-chart-2 border-chart-2/30",
     symptom: "bg-chart-3/20 text-chart-3 border-chart-3/30",
-    diagnosis: "bg-primary/20 text-primary border-primary/30",
+    finding: "bg-primary/20 text-primary border-primary/30",
     dosage: "bg-chart-4/20 text-chart-4 border-chart-4/30",
   };
 
