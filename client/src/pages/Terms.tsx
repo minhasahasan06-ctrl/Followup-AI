@@ -41,14 +41,25 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">2. Medical Disclaimer</h2>
+            <h2 className="text-2xl font-semibold mb-4">2. Medical Disclaimer and Platform Purpose</h2>
+            <p className="text-muted-foreground leading-relaxed mb-4 font-semibold">
+              <strong>NOT A MEDICAL DEVICE:</strong> Followup AI is a wellness monitoring and lifestyle tracking platform 
+              designed for personal health awareness. This platform is NOT a medical device and is NOT intended to diagnose, 
+              treat, cure, or prevent any disease.
+            </p>
             <p className="text-muted-foreground leading-relaxed mb-4">
-              Followup AI is a health monitoring and wellness platform designed to support immunocompromised patients. 
-              Our AI agents (Agent Clona and Assistant Lysa) provide informational support only.
+              Our platform provides change detection and wellness monitoring tools that track personal health trends over time. 
+              All information, insights, and patterns detected are for informational purposes only and should be discussed 
+              with your healthcare provider before making any medical decisions.
+            </p>
+            <p className="text-muted-foreground leading-relaxed mb-4">
+              <strong>User Responsibility:</strong> You are solely responsible for all medical decisions regarding your health. 
+              The platform does not provide medical advice, diagnosis, or treatment. Always seek the advice of your physician 
+              or other qualified health provider with any questions regarding a medical condition.
             </p>
             <p className="text-muted-foreground leading-relaxed font-semibold">
-              This platform does not provide medical advice, diagnosis, or treatment. Always seek the advice of your 
-              physician or other qualified health provider with any questions regarding a medical condition.
+              <strong>Emergency Notice:</strong> If you are experiencing a medical emergency, call 911 or seek immediate 
+              medical attention. Do not rely on this platform for emergency medical situations.
             </p>
           </section>
 
@@ -86,16 +97,21 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">6. AI-Generated Content and Medical Verification</h2>
+            <h2 className="text-2xl font-semibold mb-4">6. AI-Generated Wellness Insights and Healthcare Provider Discussion</h2>
             <p className="text-muted-foreground leading-relaxed mb-3">
-              Agent Clona and Assistant Lysa use artificial intelligence to provide health insights and support. 
-              AI-generated content should be reviewed and verified by qualified healthcare professionals before 
-              making any medical decisions.
+              Agent Clona (Your Health Companion) and Assistant Lysa use artificial intelligence to provide wellness insights, 
+              health pattern tracking, and informational support. AI-generated content represents change detection and trend 
+              analysis for personal awareness only—NOT medical diagnosis or treatment recommendations.
             </p>
-            <p className="text-muted-foreground leading-relaxed font-semibold">
-              When Agent Clona suggests a treatment or medical recommendation, we strongly encourage you to verify this 
-              information with a licensed healthcare provider. You can request an instant consultation through our platform 
-              to connect with a doctor for professional medical advice.
+            <p className="text-muted-foreground leading-relaxed mb-3 font-semibold">
+              <strong>Critical Requirement:</strong> All AI-generated insights, patterns, and information must be discussed 
+              with your healthcare provider before making any medical decisions. The platform detects changes in your personal 
+              health patterns but cannot diagnose medical conditions or recommend treatments.
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              When the platform identifies health pattern changes or wellness trends, we strongly encourage you to share 
+              this information with a licensed healthcare provider for proper medical evaluation. You can request a 
+              consultation through our platform to discuss these patterns with a qualified doctor.
             </p>
           </section>
 
