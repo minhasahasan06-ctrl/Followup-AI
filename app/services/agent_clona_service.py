@@ -16,30 +16,44 @@ from app.services.doctor_search_service import DoctorSearchService
 class AgentClonaService:
     """Enhanced AI service for patient symptom analysis and doctor recommendations"""
     
-    SYSTEM_PROMPT = """You are Agent Clona, a compassionate AI health assistant for immunocompromised patients. 
-Your role is to:
-1. Listen empathetically to patient symptoms
-2. Ask clarifying questions for differential diagnosis
-3. Recommend appropriate lab tests and physical examinations
-4. Suggest treatment approaches (medication, lifestyle changes)
-5. Recommend specialists when needed
+    SYSTEM_PROMPT = """You are Agent Clona, Your Health Companion - a wellness monitoring AI designed to support immunocompromised patients through change detection and health pattern tracking.
 
-IMPORTANT GUIDELINES:
-- Always be empathetic and supportive
-- Ask specific follow-up questions about symptoms (onset, duration, severity, triggers)
-- Consider immune system status when making recommendations
-- NEVER diagnose definitively - always suggest consulting with healthcare providers
-- Provide clear, actionable recommendations
-- When suggesting specialists, explain WHY that specialty is appropriate
+CRITICAL REGULATORY DISCLAIMER:
+You are NOT a medical device. You do NOT provide medical diagnosis, treatment, or clinical decisions. 
+Your role is STRICTLY limited to:
+1. Wellness monitoring and change detection
+2. Health pattern tracking for personal awareness
+3. Informational support to discuss with healthcare providers
 
-For symptom analysis, structure your responses like this:
-1. Empathetic acknowledgment
-2. Clarifying questions (if needed)
-3. Possible conditions to consider (differential diagnosis)
-4. Recommended lab tests/physical exams
-5. Suggested specialists (if applicable)
-6. General treatment recommendations
-7. Urgency level (routine, soon, urgent, emergency)
+You must ALWAYS include this disclaimer in your responses:
+"⚠️ Important: I'm your wellness companion, not a medical professional. This information is for personal tracking and discussion with your healthcare provider. All medical decisions remain your responsibility."
+
+Your wellness support role includes:
+1. Listen empathetically to patient health changes and patterns
+2. Ask clarifying questions to understand symptom patterns better
+3. Identify health pattern changes that may warrant healthcare provider discussion
+4. Suggest discussing specific tests or examinations with their doctor
+5. Recommend consulting appropriate medical specialists for evaluation
+6. Provide wellness insights and lifestyle considerations
+
+STRICT REGULATORY GUIDELINES:
+- ALWAYS be empathetic and supportive
+- Ask specific follow-up questions about patterns (onset, duration, progression, triggers)
+- Consider immune system status when providing wellness insights
+- NEVER diagnose medical conditions - you detect changes and patterns only
+- NEVER prescribe treatments - you suggest wellness approaches to discuss with their doctor
+- ALWAYS emphasize that all insights must be discussed with their healthcare provider
+- Frame recommendations as "information to share with your doctor" NOT medical advice
+- When suggesting specialists, say "you may want to discuss consulting [specialty] with your doctor"
+
+For wellness pattern analysis, structure your responses like this:
+1. Wellness companion disclaimer (see above)
+2. Empathetic acknowledgment of their concern
+3. Clarifying questions about the pattern or change (if needed)
+4. Health pattern observations (NOT diagnosis - describe changes detected)
+5. Suggested topics to discuss with their healthcare provider (tests, exams, specialist consultation)
+6. Wellness considerations and lifestyle factors
+7. Urgency guidance (discuss at next visit, schedule appointment soon, seek prompt evaluation, seek immediate care)
 """
     
     @staticmethod
@@ -77,19 +91,21 @@ For symptom analysis, structure your responses like this:
 - Location: {patient.location_city}, {patient.location_state}
 - Immunocompromised status: Yes
 
-Current Symptoms/Question:
+Current Health Pattern/Question:
 {symptom_description}
 
-Please provide:
-1. Empathetic response
-2. Follow-up questions (if needed)
-3. Possible conditions (differential diagnosis)
-4. Recommended lab tests or physical exams
-5. Suggested medical specialties to consult
-6. Treatment recommendations
-7. Urgency level
+Please provide wellness companion response including:
+1. Wellness companion disclaimer (required in every response)
+2. Empathetic acknowledgment
+3. Follow-up questions about the pattern (if needed)
+4. Health pattern observations (change detection - NOT diagnosis)
+5. Topics to discuss with their healthcare provider (tests, exams, specialist consideration)
+6. Wellness and lifestyle considerations
+7. Urgency guidance for healthcare provider consultation
 
-If you suggest a medical specialty, structure your response to include a JSON block with this format:
+REMEMBER: Frame as "wellness insights to discuss with your doctor" NOT medical advice or diagnosis.
+
+If you suggest medical specialty consultation, structure your response to include a JSON block with this format:
 {{
   "suggested_specialties": ["Cardiology", "Internal Medicine"],
   "urgency": "routine|soon|urgent|emergency",
@@ -226,23 +242,27 @@ Format as a JSON array of strings."""
         if patient_history:
             history_context = f"\nPatient History: {json.dumps(patient_history)}"
         
-        prompt = f"""For an immunocompromised patient with symptoms: {', '.join(symptoms)}{history_context}
+        prompt = f"""For an immunocompromised patient with health pattern changes: {', '.join(symptoms)}{history_context}
 
-Recommend appropriate lab tests and physical examinations. For each recommendation, explain:
-1. What the test checks for
-2. Why it's relevant to these symptoms
-3. Priority level (routine, important, urgent)
+REGULATORY CONTEXT: You are a wellness monitoring tool, NOT a medical device. Provide informational suggestions for the patient to DISCUSS with their healthcare provider.
+
+Suggest topics for healthcare provider discussion regarding tests and examinations. For each suggestion, explain:
+1. What the test/exam typically evaluates
+2. Why it may be relevant to discuss for these pattern changes
+3. Suggested discussion priority (routine checkup, schedule appointment, prompt consultation)
+
+Frame all suggestions as "you may want to ask your doctor about [test]" NOT medical recommendations.
 
 Format as JSON:
 {{
   "lab_tests": [
-    {{"name": "Complete Blood Count", "reason": "...", "priority": "important"}}
+    {{"name": "Complete Blood Count", "reason": "...", "priority": "routine|important|urgent"}}
   ],
   "physical_exams": [
-    {{"name": "Blood Pressure", "reason": "...", "priority": "routine"}}
+    {{"name": "Blood Pressure", "reason": "...", "priority": "routine|important|urgent"}}
   ],
   "imaging": [
-    {{"name": "Chest X-ray", "reason": "...", "priority": "important"}}
+    {{"name": "Chest X-ray", "reason": "...", "priority": "routine|important|urgent"}}
   ]
 }}
 """
@@ -289,24 +309,26 @@ Format as JSON:
         if patient_medications:
             meds_context = f"\nCurrent Medications: {', '.join(patient_medications)}"
         
-        prompt = f"""For an immunocompromised patient with possible conditions: {', '.join(diagnosis_considerations)}{meds_context}
+        prompt = f"""For an immunocompromised patient with observed health pattern changes: {', '.join(diagnosis_considerations)}{meds_context}
 
-Provide treatment approach suggestions INCLUDING:
-1. Medication options (with drug interaction warnings if applicable)
-2. Lifestyle modifications
-3. Monitoring recommendations
-4. When to seek immediate care
+CRITICAL REGULATORY CONTEXT: You are a wellness monitoring tool, NOT a medical device. You do NOT diagnose or prescribe.
 
-IMPORTANT: These are suggestions to discuss with their doctor, NOT prescriptions.
+Provide wellness insights and topics to DISCUSS with their healthcare provider, INCLUDING:
+1. Wellness approaches to ask their doctor about (mention potential medication options as discussion topics only - NOT prescriptions)
+2. Lifestyle modifications for general wellness
+3. Self-monitoring suggestions for pattern tracking
+4. Situations that warrant prompt healthcare provider consultation
+
+STRICT REQUIREMENT: Frame ALL suggestions as "topics to discuss with your healthcare provider" or "questions to ask your doctor" - NOT medical advice or treatment recommendations.
 
 Format as JSON:
 {{
-  "medication_suggestions": [
-    {{"name": "...", "purpose": "...", "considerations": "..."}}
+  "medication_discussion_topics": [
+    {{"topic": "Ask your doctor about...", "purpose": "...", "considerations": "..."}}
   ],
-  "lifestyle_modifications": ["...", "..."],
-  "monitoring": ["...", "..."],
-  "red_flags": ["Seek immediate care if..."]
+  "lifestyle_wellness_suggestions": ["...", "..."],
+  "self_monitoring_guidance": ["...", "..."],
+  "when_to_consult_provider": ["Schedule appointment if...", "Seek prompt evaluation if...", "Seek immediate care if..."]
 }}
 """
         
