@@ -77,11 +77,26 @@ async def detect_pain_facial_deviation(
     
     PATIENT ONLY: Analyzes new measurement against personal baseline.
     Automatically called when new pain measurement is recorded.
+    
+    SECURITY: Returns 404 if measurement doesn't belong to patient (prevents enumeration).
     """
     if current_user.role != "patient":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only patients can detect deviations for their own measurements"
+        )
+    
+    # Verify measurement exists and belongs to patient
+    from app.models.pain_tracking import PainMeasurement
+    measurement = db.query(PainMeasurement).filter(
+        PainMeasurement.id == measurement_id,
+        PainMeasurement.patient_id == current_user.id
+    ).first()
+    
+    if not measurement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Measurement not found"
         )
     
     deviation = DeviationDetectionService.detect_pain_facial_deviation(
@@ -103,11 +118,26 @@ async def detect_pain_self_reported_deviation(
     Detect deviation for self-reported pain score.
     
     PATIENT ONLY: Analyzes new pain report against personal baseline.
+    
+    SECURITY: Returns 404 if questionnaire doesn't belong to patient (prevents enumeration).
     """
     if current_user.role != "patient":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only patients can detect deviations for their own measurements"
+        )
+    
+    # Verify questionnaire exists and belongs to patient
+    from app.models.pain_tracking import PainQuestionnaire
+    questionnaire = db.query(PainQuestionnaire).filter(
+        PainQuestionnaire.id == questionnaire_id,
+        PainQuestionnaire.patient_id == current_user.id
+    ).first()
+    
+    if not questionnaire:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Questionnaire not found"
         )
     
     deviation = DeviationDetectionService.detect_pain_self_reported_deviation(
@@ -129,11 +159,26 @@ async def detect_respiratory_rate_deviation(
     Detect deviation for respiratory rate measurement.
     
     PATIENT ONLY: Analyzes new respiratory rate against personal baseline.
+    
+    SECURITY: Returns 404 if measurement doesn't belong to patient (prevents enumeration).
     """
     if current_user.role != "patient":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only patients can detect deviations for their own measurements"
+        )
+    
+    # Verify measurement exists and belongs to patient
+    from app.models.symptom_journal import SymptomMeasurement
+    measurement = db.query(SymptomMeasurement).filter(
+        SymptomMeasurement.id == measurement_id,
+        SymptomMeasurement.patient_id == current_user.id
+    ).first()
+    
+    if not measurement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Measurement not found"
         )
     
     deviation = DeviationDetectionService.detect_respiratory_rate_deviation(
@@ -155,11 +200,26 @@ async def detect_symptom_severity_deviation(
     Detect deviation for symptom severity.
     
     PATIENT ONLY: Analyzes new symptom against personal baseline.
+    
+    SECURITY: Returns 404 if symptom doesn't belong to patient (prevents enumeration).
     """
     if current_user.role != "patient":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only patients can detect deviations for their own measurements"
+        )
+    
+    # Verify symptom log exists and belongs to patient
+    from app.models.medication_side_effects import SymptomLog
+    symptom_log = db.query(SymptomLog).filter(
+        SymptomLog.id == symptom_log_id,
+        SymptomLog.patient_id == current_user.id
+    ).first()
+    
+    if not symptom_log:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Symptom log not found"
         )
     
     deviation = DeviationDetectionService.detect_symptom_severity_deviation(
