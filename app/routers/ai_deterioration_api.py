@@ -27,6 +27,9 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 import secrets
+import requests
+from jose import jwt, JWTError
+from functools import lru_cache
 
 # Import database and models
 from app.database import get_db
@@ -104,28 +107,171 @@ class AlertAcknowledge(BaseModel):
     acknowledged_by: str
 
 
-# ==================== Dependency Injection ====================
+# ==================== AWS Cognito JWT Validation ====================
+
+@lru_cache()
+def get_cognito_public_keys():
+    """Fetch and cache Cognito JWKS (JSON Web Key Set)"""
+    region = os.getenv("AWS_COGNITO_REGION", "us-east-1")
+    pool_id = os.getenv("AWS_COGNITO_USER_POOL_ID")
+    
+    if not pool_id:
+        raise HTTPException(
+            status_code=500,
+            detail="AWS_COGNITO_USER_POOL_ID not configured"
+        )
+    
+    jwks_url = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/jwks.json"
+    
+    try:
+        response = requests.get(jwks_url, timeout=5)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch Cognito public keys: {str(e)}"
+        )
+
+
+def verify_cognito_jwt(token: str) -> Dict[str, Any]:
+    """
+    Verify AWS Cognito JWT token
+    
+    Validates:
+    - Signature using Cognito public keys (RS256)
+    - Token expiration
+    - Token issuer matches Cognito user pool
+    - Audience matches client ID
+    
+    Returns decoded token claims
+    """
+    region = os.getenv("AWS_COGNITO_REGION", "us-east-1")
+    pool_id = os.getenv("AWS_COGNITO_USER_POOL_ID")
+    client_id = os.getenv("AWS_COGNITO_CLIENT_ID")
+    
+    if not pool_id or not client_id:
+        raise HTTPException(
+            status_code=500,
+            detail="Cognito configuration missing"
+        )
+    
+    # Get JWKS
+    jwks = get_cognito_public_keys()
+    
+    # Decode token header to get key ID
+    try:
+        headers = jwt.get_unverified_headers(token)
+        kid = headers.get("kid")
+        
+        if not kid:
+            raise HTTPException(status_code=401, detail="Invalid token: missing kid")
+        
+        # Find matching public key
+        public_key = None
+        for key in jwks.get("keys", []):
+            if key["kid"] == kid:
+                public_key = key
+                break
+        
+        if not public_key:
+            raise HTTPException(status_code=401, detail="Invalid token: public key not found")
+        
+        # Verify token signature and claims
+        issuer = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
+        
+        payload = jwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            audience=client_id,
+            issuer=issuer,
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_aud": True,
+                "verify_iss": True
+            }
+        )
+        
+        return payload
+        
+    except JWTError as e:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid token: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Token verification failed: {str(e)}"
+        )
+
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """
-    Extract user from AWS Cognito JWT token
+    Extract and validate user from AWS Cognito JWT token
     
-    In production, this would:
-    1. Validate JWT signature with Cognito public keys
-    2. Extract user_id, role, email from token claims
-    3. Verify token hasn't expired
+    Production-ready JWT validation:
+    - Validates signature using Cognito public keys
+    - Verifies expiration, issuer, audience
+    - Extracts user claims (sub, email, cognito:groups)
     
-    For now, returns mock user for development
+    Returns user dict with:
+    - user_id: Cognito sub (unique user identifier)
+    - email: User email address
+    - role: Extracted from cognito:groups or custom:role claim
     """
     if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
+        raise HTTPException(
+            status_code=401,
+            detail="Missing Authorization header"
+        )
     
-    # TODO: Implement full JWT validation with AWS Cognito
-    # For now, return mock user
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Authorization header format. Expected: Bearer <token>"
+        )
+    
+    token = authorization.replace("Bearer ", "").strip()
+    
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Empty token"
+        )
+    
+    # Verify JWT and extract claims
+    claims = verify_cognito_jwt(token)
+    
+    # Extract user information
+    user_id = claims.get("sub")
+    email = claims.get("email", "")
+    
+    # Extract role from cognito:groups or custom:role claim
+    groups = claims.get("cognito:groups", [])
+    custom_role = claims.get("custom:role", "")
+    
+    if "Doctors" in groups or "doctor" in custom_role.lower():
+        role = "doctor"
+    elif "Patients" in groups or "patient" in custom_role.lower():
+        role = "patient"
+    else:
+        role = "patient"  # Default to patient for safety
+    
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token: missing user ID (sub claim)"
+        )
+    
     return {
-        "user_id": "dev_user_123",
-        "role": "doctor",
-        "email": "dev@followupai.health"
+        "user_id": user_id,
+        "email": email,
+        "role": role,
+        "cognito_groups": groups
     }
 
 async def audit_log_request(
