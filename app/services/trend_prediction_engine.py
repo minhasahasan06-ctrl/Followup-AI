@@ -596,7 +596,7 @@ class TrendPredictionEngine:
             'voice_pitch': baseline.voice_pitch_baseline
         }
     
-    async def assess_risk(self, patient_id: str) -> Dict[str, Any]:
+    async def assess_risk(self, db: Session, patient_id: str) -> Dict[str, Any]:
         """
         Comprehensive risk assessment for a patient
         
@@ -605,6 +605,7 @@ class TrendPredictionEngine:
         and returns risk score with wellness recommendations
         
         Args:
+            db: Database session
             patient_id: Patient ID to assess
         
         Returns:
@@ -624,18 +625,18 @@ class TrendPredictionEngine:
         # Get recent metrics (last 7 days)
         cutoff_date = datetime.utcnow() - timedelta(days=7)
         
-        video_metrics = self.db.query(VideoMetrics).filter(
+        video_metrics = db.query(VideoMetrics).filter(
             VideoMetrics.patient_id == patient_id,
             VideoMetrics.analysis_timestamp >= cutoff_date
         ).all()
         
-        audio_metrics = self.db.query(AudioMetrics).filter(
+        audio_metrics = db.query(AudioMetrics).filter(
             AudioMetrics.patient_id == patient_id,
             AudioMetrics.analysis_timestamp >= cutoff_date
         ).all()
         
         # Get or create patient baseline
-        baseline_data = await self._get_patient_baseline(patient_id)
+        baseline_data = self._get_patient_baseline(db, patient_id)
         
         # Calculate deviations from baseline
         deviations = []
@@ -713,18 +714,19 @@ class TrendPredictionEngine:
             'wellness_recommendations': wellness_recommendations
         }
     
-    async def check_risk_transition(self, patient_id: str, new_risk_level: str) -> None:
+    async def check_risk_transition(self, db: Session, patient_id: str, new_risk_level: str) -> None:
         """
         Check if patient's risk level has changed and trigger alerts if needed
         
         Args:
+            db: Database session
             patient_id: Patient ID
             new_risk_level: New risk level ('green', 'yellow', 'red')
         """
         from app.models.trend_models import TrendSnapshot, RiskEvent
         
         # Get previous risk level
-        previous_snapshot = self.db.query(TrendSnapshot).filter(
+        previous_snapshot = db.query(TrendSnapshot).filter(
             TrendSnapshot.patient_id == patient_id
         ).order_by(TrendSnapshot.snapshot_timestamp.desc()).first()
         
@@ -756,15 +758,15 @@ class TrendPredictionEngine:
                 }
             )
             
-            self.db.add(risk_event)
-            self.db.commit()
-            self.db.refresh(risk_event)
+            db.add(risk_event)
+            db.commit()
+            db.refresh(risk_event)
             
             # Trigger alert evaluation (imported to avoid circular dependency)
             try:
                 from app.services.alert_orchestration_engine import AlertOrchestrationEngine
                 
-                alert_engine = AlertOrchestrationEngine(self.db)
+                alert_engine = AlertOrchestrationEngine(db)
                 await alert_engine.evaluate_risk_event(risk_event, patient_id)
             except Exception as e:
                 logger.error(f"Error triggering alerts for risk transition: {e}")
