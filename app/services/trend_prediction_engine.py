@@ -595,6 +595,239 @@ class TrendPredictionEngine:
             'skin_pallor': baseline.skin_pallor_baseline,
             'voice_pitch': baseline.voice_pitch_baseline
         }
+    
+    async def assess_risk(self, patient_id: str) -> Dict[str, Any]:
+        """
+        Comprehensive risk assessment for a patient
+        
+        This is the main API method called by endpoints
+        Analyzes recent video/audio metrics, calculates deviations,
+        and returns risk score with wellness recommendations
+        
+        Args:
+            patient_id: Patient ID to assess
+        
+        Returns:
+            Dict containing:
+            - risk_score: float (0.0-1.0)
+            - risk_level: str ('green', 'yellow', 'red')
+            - confidence: float (0.0-1.0)
+            - anomaly_count: int
+            - deviation_metrics: Dict[str, Any]
+            - contributing_factors: List[Dict[str, Any]]
+            - wellness_recommendations: List[str]
+        """
+        from app.models.video_ai_models import VideoMetrics
+        from app.models.audio_ai_models import AudioMetrics
+        from datetime import timedelta
+        
+        # Get recent metrics (last 7 days)
+        cutoff_date = datetime.utcnow() - timedelta(days=7)
+        
+        video_metrics = self.db.query(VideoMetrics).filter(
+            VideoMetrics.patient_id == patient_id,
+            VideoMetrics.analysis_timestamp >= cutoff_date
+        ).all()
+        
+        audio_metrics = self.db.query(AudioMetrics).filter(
+            AudioMetrics.patient_id == patient_id,
+            AudioMetrics.analysis_timestamp >= cutoff_date
+        ).all()
+        
+        # Get or create patient baseline
+        baseline_data = await self._get_patient_baseline(patient_id)
+        
+        # Calculate deviations from baseline
+        deviations = []
+        anomaly_count = 0
+        
+        # Video metric deviations
+        for metric in video_metrics[-5:]:  # Last 5 recordings
+            if metric.respiratory_rate_bpm:
+                baseline_rr = baseline_data.get('respiratory_rate', 16)
+                z_score = abs((metric.respiratory_rate_bpm - baseline_rr) / max(baseline_rr * 0.15, 2))
+                if z_score > 2.0:
+                    anomaly_count += 1
+                    deviations.append({
+                        'metric': 'respiratory_rate',
+                        'current': metric.respiratory_rate_bpm,
+                        'baseline': baseline_rr,
+                        'z_score': z_score,
+                        'description': 'Respiratory rate deviation from baseline'
+                    })
+            
+            if metric.skin_pallor_score and metric.skin_pallor_score > 0.6:
+                anomaly_count += 1
+                deviations.append({
+                    'metric': 'skin_pallor',
+                    'current': metric.skin_pallor_score,
+                    'description': 'Elevated skin pallor score'
+                })
+        
+        # Audio metric deviations
+        for metric in audio_metrics[-5:]:
+            if metric.cough_count and metric.cough_count > 5:
+                anomaly_count += 1
+                deviations.append({
+                    'metric': 'cough_count',
+                    'current': metric.cough_count,
+                    'description': 'Frequent coughing detected'
+                })
+        
+        # Calculate composite risk score (0.0-1.0)
+        risk_score = min(1.0, anomaly_count * 0.15 + len(deviations) * 0.1)
+        
+        # Classify risk level
+        if risk_score < 0.3:
+            risk_level = "green"
+        elif risk_score < 0.7:
+            risk_level = "yellow"
+        else:
+            risk_level = "red"
+        
+        # Calculate confidence based on data availability
+        total_metrics = len(video_metrics) + len(audio_metrics)
+        confidence = min(1.0, total_metrics / 10)  # High confidence with 10+ metrics
+        
+        # Generate contributing factors
+        contributing_factors = []
+        for dev in deviations[:5]:  # Top 5 deviations
+            contributing_factors.append({
+                'factor': dev['metric'],
+                'severity': 'high' if dev.get('z_score', 0) > 3 else 'medium',
+                'description': dev['description']
+            })
+        
+        # Generate wellness recommendations
+        wellness_recommendations = self._generate_wellness_recommendations(
+            risk_level, anomaly_count, deviations
+        )
+        
+        return {
+            'risk_score': float(risk_score),
+            'risk_level': risk_level,
+            'confidence': float(confidence),
+            'anomaly_count': anomaly_count,
+            'deviation_metrics': {dev['metric']: dev for dev in deviations},
+            'contributing_factors': contributing_factors,
+            'wellness_recommendations': wellness_recommendations
+        }
+    
+    async def check_risk_transition(self, patient_id: str, new_risk_level: str) -> None:
+        """
+        Check if patient's risk level has changed and trigger alerts if needed
+        
+        Args:
+            patient_id: Patient ID
+            new_risk_level: New risk level ('green', 'yellow', 'red')
+        """
+        from app.models.trend_models import TrendSnapshot, RiskEvent
+        
+        # Get previous risk level
+        previous_snapshot = self.db.query(TrendSnapshot).filter(
+            TrendSnapshot.patient_id == patient_id
+        ).order_by(TrendSnapshot.snapshot_timestamp.desc()).first()
+        
+        previous_risk_level = previous_snapshot.risk_level if previous_snapshot else "green"
+        
+        # Check if risk level changed
+        if previous_risk_level != new_risk_level:
+            # Determine event type
+            risk_levels = {"green": 0, "yellow": 1, "red": 2}
+            if risk_levels.get(new_risk_level, 0) > risk_levels.get(previous_risk_level, 0):
+                event_type = "risk_increase"
+            else:
+                event_type = "risk_decrease"
+            
+            # Calculate risk delta
+            risk_delta = risk_levels.get(new_risk_level, 0) - risk_levels.get(previous_risk_level, 0)
+            
+            # Create risk event
+            risk_event = RiskEvent(
+                patient_id=patient_id,
+                event_type=event_type,
+                previous_risk_level=previous_risk_level,
+                new_risk_level=new_risk_level,
+                risk_delta=float(risk_delta) * 0.5,  # Scale to 0-1
+                triggered_alert=False,  # Alert engine will update this
+                event_details={
+                    'transition': f"{previous_risk_level} -> {new_risk_level}",
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+            )
+            
+            self.db.add(risk_event)
+            self.db.commit()
+            self.db.refresh(risk_event)
+            
+            # Trigger alert evaluation (imported to avoid circular dependency)
+            try:
+                from app.services.alert_orchestration_engine import AlertOrchestrationEngine
+                
+                alert_engine = AlertOrchestrationEngine(self.db)
+                await alert_engine.evaluate_risk_event(risk_event, patient_id)
+            except Exception as e:
+                logger.error(f"Error triggering alerts for risk transition: {e}")
+    
+    def _generate_wellness_recommendations(
+        self,
+        risk_level: str,
+        anomaly_count: int,
+        deviations: List[Dict[str, Any]]
+    ) -> List[str]:
+        """
+        Generate wellness recommendations based on risk assessment
+        
+        IMPORTANT: Uses wellness language, NOT diagnostic language
+        """
+        recommendations = []
+        
+        if risk_level == "red":
+            recommendations.append(
+                "🔴 Wellness monitoring indicates notable changes in your health patterns. "
+                "We strongly recommend contacting your healthcare provider soon to discuss these observations."
+            )
+        elif risk_level == "yellow":
+            recommendations.append(
+                "🟡 Wellness monitoring detected some changes in your patterns. "
+                "Consider scheduling a wellness check with your healthcare provider to discuss these observations."
+            )
+        else:
+            recommendations.append(
+                "🟢 Wellness patterns appear stable. Continue regular monitoring to track your wellness journey."
+            )
+        
+        # Specific recommendations based on deviations
+        metrics_mentioned = set()
+        for dev in deviations[:3]:  # Top 3 deviations
+            metric = dev['metric']
+            if metric not in metrics_mentioned:
+                metrics_mentioned.add(metric)
+                
+                if 'respiratory' in metric:
+                    recommendations.append(
+                        "🫁 Breathing pattern changes detected. Discuss respiratory wellness with your provider."
+                    )
+                elif 'skin' in metric or 'pallor' in metric:
+                    recommendations.append(
+                        "🔍 Skin tone analysis detected changes. This may relate to circulation, hydration, or other wellness factors."
+                    )
+                elif 'cough' in metric:
+                    recommendations.append(
+                        "🤧 Cough frequency increased. If persistent, discuss with your healthcare team."
+                    )
+        
+        # General wellness recommendations
+        recommendations.append(
+            "💡 Continue regular wellness monitoring to help you and your healthcare team track patterns over time."
+        )
+        
+        recommendations.append(
+            "ℹ️ This system provides wellness monitoring and change detection, not medical diagnosis. "
+            "Always consult your healthcare provider for medical advice."
+        )
+        
+        return recommendations
 
 
 # Global instance

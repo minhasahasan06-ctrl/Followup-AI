@@ -714,6 +714,85 @@ class AudioAIEngine:
             'wheeze_type': "none",
             'stridor_detected': False
         }
+    
+    def generate_recommendations(self, metrics: Dict[str, Any]) -> List[str]:
+        """
+        Generate wellness recommendations based on audio metrics
+        
+        IMPORTANT: Uses wellness language, NOT diagnostic language
+        All recommendations suggest discussing with healthcare provider
+        
+        Args:
+            metrics: Dictionary of audio analysis metrics
+        
+        Returns:
+            List of wellness recommendation strings
+        """
+        recommendations = []
+        
+        # Breath metrics recommendations
+        breath_rate = metrics.get("breath_rate_per_minute", 0)
+        if breath_rate > 0:
+            if breath_rate < 10:
+                recommendations.append(
+                    "🫁 Breathing rate appears slower than typical. Consider discussing respiratory wellness patterns with your healthcare provider."
+                )
+            elif breath_rate > 25:
+                recommendations.append(
+                    "🫁 Breathing rate appears elevated. This can have many wellness causes - please discuss with your provider."
+                )
+        
+        # Cough recommendations
+        cough_count = metrics.get("cough_count", 0)
+        if cough_count > 5:
+            recommendations.append(
+                "🤧 Frequent coughing detected in recording. If this pattern persists, consider discussing with your healthcare team."
+            )
+        
+        # Wheeze recommendations
+        wheeze_detected = metrics.get("wheeze_detected", False)
+        if wheeze_detected:
+            recommendations.append(
+                "🎵 Audio pattern analysis detected wheezing sounds. We recommend discussing respiratory wellness with your healthcare provider."
+            )
+        
+        # Voice hoarseness recommendations
+        hoarseness = metrics.get("hoarseness_score", 0)
+        if hoarseness > 0.6:
+            recommendations.append(
+                "🗣️ Voice quality analysis suggests hoarseness. This can relate to hydration, vocal strain, or other factors. Consider discussing with your provider if persistent."
+            )
+        
+        # Speech pace recommendations
+        speech_pace = metrics.get("speech_pace_words_per_minute", 0)
+        pace_variability = metrics.get("speech_pace_variability", 0)
+        
+        if pace_variability > 0.5:
+            recommendations.append(
+                "💬 Speech pace shows high variability. This is normal but worth noting for wellness discussions with your provider."
+            )
+        
+        # Audio quality recommendations
+        audio_quality = metrics.get("audio_quality_score", 100)
+        noise_level = metrics.get("background_noise_level_db", 0)
+        
+        if audio_quality < 60 or noise_level > -20:
+            recommendations.append(
+                "🎤 Technical note: For better wellness monitoring, try recording in a quiet environment. Reduce background noise for more accurate analysis."
+            )
+        
+        # General recommendation if no specific issues
+        if not recommendations:
+            recommendations.append(
+                "✅ Audio analysis completed successfully. Continue regular wellness monitoring to track changes over time. Discuss any concerns with your healthcare provider."
+            )
+        
+        # Always add general wellness reminder
+        recommendations.append(
+            "ℹ️ This system provides wellness monitoring and change detection, not medical diagnosis. Always consult your healthcare provider for medical advice."
+        )
+        
+        return recommendations
 
 
 # Global instance

@@ -682,6 +682,83 @@ class VideoAIEngine:
                 return True, float(tremor_freq)
         
         return False, 0.0
+    
+    def generate_recommendations(self, metrics: Dict[str, Any]) -> List[str]:
+        """
+        Generate wellness recommendations based on video metrics
+        
+        IMPORTANT: Uses wellness language, NOT diagnostic language
+        All recommendations suggest discussing with healthcare provider
+        
+        Args:
+            metrics: Dictionary of video analysis metrics
+        
+        Returns:
+            List of wellness recommendation strings
+        """
+        recommendations = []
+        
+        # Respiratory rate recommendations
+        resp_rate = metrics.get("respiratory_rate_bpm", 0)
+        if resp_rate > 0:
+            if resp_rate < 12:
+                recommendations.append(
+                    "📊 Breathing rate appears slower than typical baseline. Consider discussing respiratory wellness with your healthcare provider."
+                )
+            elif resp_rate > 20:
+                recommendations.append(
+                    "📊 Breathing rate appears elevated. This could indicate various wellness factors - please discuss with your provider."
+                )
+        
+        # Skin pallor recommendations
+        pallor_score = metrics.get("skin_pallor_score", 0)
+        if pallor_score > 0.6:
+            recommendations.append(
+                "🔍 Skin tone analysis detected changes. This may relate to hydration, circulation, or other wellness factors. Consider discussing with your healthcare team."
+            )
+        
+        # Eye sclera (jaundice) recommendations
+        sclera_yellow = metrics.get("eye_sclera_yellowness", 0)
+        if sclera_yellow > 0.5:
+            recommendations.append(
+                "👁️ Eye analysis detected yellowish tones. While this can have many causes, we recommend scheduling a wellness check to discuss with your provider."
+            )
+        
+        # Facial swelling recommendations
+        swelling_score = metrics.get("facial_swelling_score", 0)
+        if swelling_score > 0.5:
+            recommendations.append(
+                "📈 Facial landmark analysis detected changes that may indicate fluid retention or swelling. Please discuss these observations with your healthcare provider."
+            )
+        
+        # Head movement/tremor recommendations
+        tremor_detected = metrics.get("tremor_detected", False)
+        if tremor_detected:
+            recommendations.append(
+                "🎯 Movement analysis detected tremor patterns. This can have many causes - consider discussing movement wellness with your provider."
+            )
+        
+        # Lighting/quality recommendations
+        lighting = metrics.get("lighting_quality", 1.0)
+        frame_quality = metrics.get("frame_quality", 1.0)
+        
+        if lighting < 0.6 or frame_quality < 0.6:
+            recommendations.append(
+                "💡 Technical note: Improved lighting and camera stability will enhance future wellness monitoring accuracy. Try recording in a well-lit area with the camera held steady."
+            )
+        
+        # General recommendation if no specific issues
+        if not recommendations:
+            recommendations.append(
+                "✅ Video analysis completed successfully. Continue regular wellness monitoring to track changes over time. Discuss any concerns with your healthcare provider."
+            )
+        
+        # Always add general wellness reminder
+        recommendations.append(
+            "ℹ️ This system provides wellness monitoring and change detection, not medical diagnosis. Always consult your healthcare provider for medical advice."
+        )
+        
+        return recommendations
 
 
 # Global instance
