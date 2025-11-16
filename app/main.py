@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from app.config import settings, check_openai_baa_compliance
 from app.database import Base, engine
 from app.routers import (
@@ -20,13 +21,34 @@ from app.routers import (
     medication_side_effects,
     baseline,
     deviation,
-    risk_score
+    risk_score,
+    ml_inference
 )
+
+# Import ML model lifecycle management
+from app.services.ml_inference import load_ml_models, unload_ml_models
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan manager
+    Loads ML models at startup and cleans up on shutdown
+    """
+    # Startup: Load ML models
+    await load_ml_models()
+    
+    yield
+    
+    # Shutdown: Cleanup ML models
+    await unload_ml_models()
+
 
 app = FastAPI(
     title="Followup AI - HIPAA-Compliant Health Platform",
-    description="AI-powered health platform for immunocompromised patients",
-    version="1.0.0"
+    description="AI-powered health platform for immunocompromised patients with ML inference",
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -55,6 +77,7 @@ app.include_router(medication_side_effects.router)
 app.include_router(baseline.router)
 app.include_router(deviation.router)
 app.include_router(risk_score.router)
+app.include_router(ml_inference.router)  # ML inference endpoints
 
 Base.metadata.create_all(bind=engine)
 
