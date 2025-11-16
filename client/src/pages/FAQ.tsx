@@ -119,8 +119,8 @@ export default function FAQ() {
                   <h3 className="font-semibold mb-3">Is Agent Clona free to use?</h3>
                   <p className="text-sm text-muted-foreground">
                     Yes! Agent Clona Basic is completely free and includes unlimited chat for common health questions and 
-                    general wellness advice. For advanced features like personalized treatment plans, real-time diagnosis, 
-                    and disease outcome prediction, upgrade to Premium for $19.99/month.
+                    general wellness advice. For advanced features like personalized wellness insights, health pattern tracking, 
+                    and trend analysis, upgrade to Premium for $19.99/month.
                   </p>
                 </CardContent>
               </Card>

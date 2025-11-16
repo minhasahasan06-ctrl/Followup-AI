@@ -451,7 +451,7 @@ export default function SymptomJournal() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2" data-testid="text-page-title">Symptom Journal</h1>
         <p className="text-muted-foreground">
-          Track visual changes in different body areas. This is for monitoring only - not for medical diagnosis.
+          Track visual changes in different body areas. This is for monitoring only - not for change detection purposes.
         </p>
       </div>
 
@@ -459,7 +459,7 @@ export default function SymptomJournal() {
       <Alert className="mb-6">
         <Info className="h-4 w-4" />
         <AlertDescription>
-          <strong>Important:</strong> This tool monitors changes over time and does not provide medical diagnoses. 
+          <strong>Important:</strong> This tool monitors changes over time for personal tracking purposes only. 
           If you notice concerning changes or experience severe symptoms, contact your healthcare provider immediately.
         </AlertDescription>
       </Alert>

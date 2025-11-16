@@ -99,16 +99,16 @@ export default function DoctorDashboard() {
         </Card>
       ) : (clinicalRecommendations.length > 0 || researchRecommendations.length > 0) && (
         <div className="grid gap-4 md:grid-cols-2">
-          {/* Clinical Decision Support */}
+          {/* Clinical Insights */}
           {clinicalRecommendations.length > 0 && (
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-primary" />
-                  <CardTitle className="text-lg">Clinical Decision Support</CardTitle>
+                  <CardTitle className="text-lg">Clinical Insights</CardTitle>
                 </div>
                 <CardDescription>
-                  AI-powered recommendations from Assistant Lysa
+                  AI-powered information from Assistant Lysa for discussion with patients
                 </CardDescription>
               </CardHeader>
               <CardContent>

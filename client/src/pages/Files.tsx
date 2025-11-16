@@ -93,7 +93,7 @@ export default function Files() {
               <div className="text-center py-12 text-muted-foreground">
                 <FlaskConical className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No lab results uploaded yet</p>
-                <p className="text-sm mt-1">Upload blood work, urinalysis, and other diagnostic test results</p>
+                <p className="text-sm mt-1">Upload blood work, urinalysis, and other lab test results</p>
               </div>
             </CardContent>
           </Card>

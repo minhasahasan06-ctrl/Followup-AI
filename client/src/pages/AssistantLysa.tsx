@@ -176,7 +176,7 @@ export default function AssistantLysa() {
                 <h3 className="text-xl font-semibold mb-3">Clinical Conversation Partner</h3>
                 <p className="text-muted-foreground mb-4">
                   Chat with Lysa about complex cases. She understands medical context and can help you 
-                  think through differential diagnoses and treatment options.
+                  think through clinical patterns and treatment considerations.
                 </p>
                 <ul className="space-y-2 text-sm">
                   <li className="flex items-start gap-2">
