@@ -161,6 +161,8 @@ def verify_cognito_jwt(token: str) -> Dict[str, Any]:
     
     # Decode token header to get key ID
     try:
+        from jose import jwk
+        
         headers = jwt.get_unverified_headers(token)
         kid = headers.get("kid")
         
@@ -168,21 +170,24 @@ def verify_cognito_jwt(token: str) -> Dict[str, Any]:
             raise HTTPException(status_code=401, detail="Invalid token: missing kid")
         
         # Find matching public key
-        public_key = None
+        public_key_dict = None
         for key in jwks.get("keys", []):
             if key["kid"] == kid:
-                public_key = key
+                public_key_dict = key
                 break
         
-        if not public_key:
+        if not public_key_dict:
             raise HTTPException(status_code=401, detail="Invalid token: public key not found")
+        
+        # Construct RSA public key from JWKS entry
+        public_key = jwk.construct(public_key_dict)
         
         # Verify token signature and claims
         issuer = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
         
         payload = jwt.decode(
             token,
-            public_key,
+            public_key.to_pem().decode('utf-8'),
             algorithms=["RS256"],
             audience=client_id,
             issuer=issuer,
