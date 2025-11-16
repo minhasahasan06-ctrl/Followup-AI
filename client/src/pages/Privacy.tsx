@@ -33,6 +33,21 @@ export default function Privacy() {
 
         <div className="prose prose-slate dark:prose-invert max-w-none space-y-8">
           <section>
+            <h2 className="text-2xl font-semibold mb-4">Platform Purpose and Data Usage</h2>
+            <p className="text-muted-foreground leading-relaxed mb-4 font-semibold">
+              <strong>Wellness Monitoring Platform:</strong> Followup AI is a wellness monitoring and lifestyle tracking 
+              platform designed for personal health awareness. We collect and process your health data exclusively for 
+              wellness monitoring, change detection, and personal tracking purposes—NOT for medical diagnosis, treatment, 
+              or clinical decision-making.
+            </p>
+            <p className="text-muted-foreground leading-relaxed mb-4">
+              <strong>Data Ownership:</strong> You own all health data you provide to the platform. We are the custodians 
+              of your data, not the owners. You have complete control over what data you share, who can access it, and 
+              you can export or delete your data at any time.
+            </p>
+          </section>
+
+          <section>
             <h2 className="text-2xl font-semibold mb-4">Our Commitment to Your Privacy</h2>
             <p className="text-muted-foreground leading-relaxed">
               Followup AI is committed to protecting the privacy and security of your health information. This Privacy 
@@ -106,22 +121,26 @@ export default function Privacy() {
             <h2 className="text-2xl font-semibold mb-4">How We Use Your Information</h2>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li>
-                <strong>Personalized Health Support:</strong> Agent Clona uses your data to provide customized 
-                health monitoring and wellness recommendations
+                <strong>Personal Wellness Tracking:</strong> Agent Clona (Your Health Companion) uses your data to provide 
+                personalized wellness insights, change detection, and health pattern tracking for your personal awareness
               </li>
               <li>
-                <strong>Doctor Access:</strong> With your explicit consent, assigned doctors can review your health 
-                data through Assistant Lysa
+                <strong>Healthcare Provider Information Sharing:</strong> With your explicit consent, assigned doctors can 
+                review your health patterns and trends through Assistant Lysa to support their clinical evaluation
               </li>
               <li>
                 <strong>Platform Improvement:</strong> Aggregated, de-identified data helps us improve AI models 
-                and platform features
+                and platform features for better wellness monitoring capabilities
               </li>
               <li>
-                <strong>Research:</strong> Only with your explicit consent through our Research Consent program, 
-                your anonymized data may be used for medical research
+                <strong>Research (Optional):</strong> Only with your explicit consent through our Research Consent program, 
+                your anonymized data may be used for health research to advance wellness monitoring technology
               </li>
             </ul>
+            <p className="text-muted-foreground leading-relaxed mt-4 font-semibold">
+              <strong>Important:</strong> All data usage is strictly for wellness monitoring and personal tracking purposes. 
+              We do not use your data for medical diagnosis, treatment decisions, or clinical recommendations.
+            </p>
           </section>
 
           <section>
