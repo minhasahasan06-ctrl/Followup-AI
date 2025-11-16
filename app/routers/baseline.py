@@ -12,7 +12,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.database import get_db
-from app.config import get_current_user
+from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.health_baseline import HealthBaseline
 from app.services.baseline_service import BaselineCalculationService

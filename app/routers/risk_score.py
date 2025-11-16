@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict
 
 from app.database import get_db
-from app.config import get_current_user
+from app.dependencies import get_current_user
 from app.models.user import User
 from app.services.risk_scoring_service import RiskScoringService, RiskScore
 
