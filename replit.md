@@ -32,6 +32,7 @@ The preferred backend is a Python FastAPI implementation, utilizing SQLAlchemy O
 -   **Home Clinical Exam Coach (HCEC):** AI-powered guided self-examination system using OpenAI Vision for real-time feedback on standardized exam techniques.
 -   **Symptom Journal Enhancements:** Includes AI-powered respiratory rate analysis, comparison views for measurements, and weekly PDF reports for doctors.
 -   **Medication Side-Effect Predictor:** AI-powered system correlating patient symptoms with medication timelines to detect potential side effects.
+-   **Deterioration Prediction System (NEW):** Comprehensive health change detection system with baseline calculation (7-day rolling stats), deviation detection (z-score analysis, trend detection), and risk scoring (0-15 scale composite score with wellness recommendations). Patient-facing dashboard shows daily risk score, trend charts, z-score visualizations, and actionable wellness guidance.
 
 ### Security and Compliance
 The platform is HIPAA-compliant, featuring AWS Cognito for authentication and role-based access control, BAA verification for all integrations, comprehensive audit logging for PHI access, end-to-end encryption for video consultations, and strict PHI handling compliance across all services. The platform is strategically positioned as a General Wellness Product, avoiding medical device classification by prohibiting diagnostic or treatment claims and emphasizing wellness monitoring and discussion with healthcare providers.
