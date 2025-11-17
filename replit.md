@@ -23,7 +23,28 @@ The frontend is built with React, TypeScript, Vite, Wouter for routing, TanStack
 ### Backend
 The primary backend is a Python FastAPI application (port 8000), utilizing SQLAlchemy ORM for PostgreSQL, AWS Cognito for authentication (JWTs with role-based access control), and Pydantic for validation. A Node.js Express server (port 5000) handles legacy endpoints and serves the frontend.
 
-**Python Backend (Port 8000)**: 52 AI endpoints across 4 engines (Video AI, Audio AI, Trend Prediction, Alert Orchestration). Requires manual start: `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
+**Python Backend (Port 8000)**: 52 AI endpoints across 4 engines (Video AI, Audio AI, Trend Prediction, Alert Orchestration) + Guided Video Examination System. 
+
+**IMPORTANT - Starting Both Servers:**
+The platform requires BOTH servers running simultaneously:
+1. Node.js Express (port 5000) - Auto-starts with default workflow
+2. Python FastAPI (port 8000) - Must be started manually
+
+**Option A - Use the provided startup script:**
+```bash
+bash start-all-services.sh
+```
+
+**Option B - Manual start in separate terminals:**
+Terminal 1: `npm run dev` (Node.js)
+Terminal 2: `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` (Python)
+
+**Option C - Single command (background mode):**
+```bash
+npm run dev & python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload & wait
+```
+
+The Python backend is required for the Guided Video Examination feature at `/ai-video`
 
 **Comprehensive API Documentation**: See `AI_API_DOCUMENTATION.md` for complete endpoint reference with curl examples, authentication, request/response formats, and testing workflows.
 
