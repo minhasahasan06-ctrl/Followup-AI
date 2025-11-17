@@ -3,7 +3,6 @@ Video AI Engine - Production-Grade Video Analysis
 Features: Respiratory rate, skin pallor, eye sclera, facial swelling, head movement, lighting, quality scoring
 """
 
-import cv2
 import numpy as np
 from typing import Dict, Any, Optional, List, Tuple
 import logging
@@ -11,12 +10,20 @@ from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-# ML libraries
+# ML libraries with graceful degradation
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    cv2 = None
+
 try:
     import mediapipe as mp
     MEDIAPIPE_AVAILABLE = True
 except ImportError:
     MEDIAPIPE_AVAILABLE = False
+    mp = None
 
 try:
     from scipy import signal, stats
@@ -24,6 +31,9 @@ try:
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False
+    signal = None
+    stats = None
+    fft = None
 
 logger = logging.getLogger(__name__)
 
