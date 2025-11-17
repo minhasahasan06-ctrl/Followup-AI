@@ -2916,3 +2916,101 @@ export const insertGmailSyncLogSchema = createInsertSchema(gmailSyncLogs).omit({
 
 export type InsertGmailSyncLog = z.infer<typeof insertGmailSyncLogSchema>;
 export type GmailSyncLog = typeof gmailSyncLogs.$inferSelect;
+
+// Video Exam Sessions - Guided live video examination workflow
+export const videoExamSessions = pgTable("video_exam_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Session timing
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+  
+  // Combined recording storage (if all segments are merged)
+  combinedS3Key: varchar("combined_s3_key"),
+  combinedS3Bucket: varchar("combined_s3_bucket"),
+  combinedKmsKeyId: varchar("combined_kms_key_id"),
+  combinedFileSizeBytes: integer("combined_file_size_bytes"),
+  
+  // Combined analysis reference
+  combinedAnalysisId: varchar("combined_analysis_id"),
+  
+  // Session status: 'in_progress', 'completed', 'abandoned'
+  status: varchar("status").notNull().default("in_progress"),
+  
+  // Metadata
+  totalSegments: integer("total_segments").default(0),
+  completedSegments: integer("completed_segments").default(0),
+  skippedSegments: integer("skipped_segments").default(0),
+  totalDurationSeconds: integer("total_duration_seconds").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("video_exam_sessions_patient_idx").on(table.patientId),
+  statusIdx: index("video_exam_sessions_status_idx").on(table.status),
+  createdAtIdx: index("video_exam_sessions_created_idx").on(table.createdAt),
+}));
+
+export const insertVideoExamSessionSchema = createInsertSchema(videoExamSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertVideoExamSession = z.infer<typeof insertVideoExamSessionSchema>;
+export type VideoExamSession = typeof videoExamSessions.$inferSelect;
+
+// Video Exam Segments - Individual examination recordings
+export const videoExamSegments = pgTable("video_exam_segments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => videoExamSessions.id, { onDelete: "cascade" }),
+  
+  // Exam type: 'respiratory', 'skin_pallor', 'eye_sclera', 'swelling', 'tremor', 'tongue', 'custom'
+  examType: varchar("exam_type").notNull(),
+  sequenceOrder: integer("sequence_order").notNull(), // 1-7
+  
+  // Recording status
+  skipped: boolean("skipped").default(false),
+  prepDurationSeconds: integer("prep_duration_seconds").default(30),
+  
+  // Timing
+  captureStartedAt: timestamp("capture_started_at"),
+  captureEndedAt: timestamp("capture_ended_at"),
+  durationSeconds: integer("duration_seconds"),
+  
+  // S3 storage (encrypted with KMS)
+  s3Key: varchar("s3_key"),
+  s3Bucket: varchar("s3_bucket"),
+  kmsKeyId: varchar("kms_key_id"),
+  fileSizeBytes: integer("file_size_bytes"),
+  
+  // AI Analysis reference
+  analysisId: varchar("analysis_id"),
+  
+  // Processing status: 'pending', 'processing', 'completed', 'failed', 'skipped'
+  status: varchar("status").notNull().default("pending"),
+  
+  // Custom abnormality description (for examType='custom')
+  customLocation: text("custom_location"),
+  customDescription: text("custom_description"),
+  
+  // Audit metadata
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  sessionIdx: index("video_exam_segments_session_idx").on(table.sessionId),
+  examTypeIdx: index("video_exam_segments_exam_type_idx").on(table.examType),
+  statusIdx: index("video_exam_segments_status_idx").on(table.status),
+}));
+
+export const insertVideoExamSegmentSchema = createInsertSchema(videoExamSegments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertVideoExamSegment = z.infer<typeof insertVideoExamSegmentSchema>;
+export type VideoExamSegment = typeof videoExamSegments.$inferSelect;
