@@ -13,8 +13,19 @@ Followup AI is a HIPAA-compliant health monitoring platform for immunocompromise
 ### Frontend
 The frontend is built with React, TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, and Tailwind CSS for styling. It uses Radix UI and shadcn/ui for a clinical aesthetic, supporting role-based routing and context-based theming.
 
+**AI Dashboard Pages** (routes at `/ai-video`, `/ai-audio`, `/ai-alerts`):
+- **AIVideoDashboard**: Upload videos for analysis, view respiratory rate/skin changes/facial metrics, session history
+- **AIAudioDashboard**: Upload audio for analysis, view breath cycles/speech pace/cough detection, session history
+- **AIAlertsDashboard**: Manage health change alerts, configure notification rules, review alert history
+
+**Backend Routing**: The queryClient is configured to automatically route Python AI endpoints (`/api/v1/video-ai/*`, `/api/v1/audio-ai/*`, `/api/v1/trends/*`, `/api/v1/alerts/*`) to the FastAPI backend on port 8000, while all other endpoints go to the Express server on port 5000.
+
 ### Backend
-The primary backend is a Python FastAPI application, utilizing SQLAlchemy ORM for PostgreSQL, AWS Cognito for authentication (JWTs with role-based access control), and Pydantic for validation.
+The primary backend is a Python FastAPI application (port 8000), utilizing SQLAlchemy ORM for PostgreSQL, AWS Cognito for authentication (JWTs with role-based access control), and Pydantic for validation. A Node.js Express server (port 5000) handles legacy endpoints and serves the frontend.
+
+**Python Backend (Port 8000)**: 52 AI endpoints across 4 engines (Video AI, Audio AI, Trend Prediction, Alert Orchestration). Requires manual start: `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
+
+**Comprehensive API Documentation**: See `AI_API_DOCUMENTATION.md` for complete endpoint reference with curl examples, authentication, request/response formats, and testing workflows.
 
 ### Core Features & Technical Implementations
 -   **AI Integration:** Leverages OpenAI API (GPT-4o) for symptom analysis, wellness suggestions, doctor assistance, sentiment analysis, and medical entity extraction.
