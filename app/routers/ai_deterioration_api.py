@@ -46,11 +46,17 @@ from app.services.trend_prediction_engine import TrendPredictionEngine
 from app.services.alert_orchestration_engine import AlertOrchestrationEngine
 
 # AWS S3 client for encrypted media storage
+# Extract region code from AWS_REGION (handles both "us-east-1" and "US East (N. Virginia) us-east-1" formats)
+aws_region = os.getenv("AWS_REGION", "us-east-1")
+if " " in aws_region:
+    # Extract region code from format like "Asia Pacific (Sydney) ap-southeast-2"
+    aws_region = aws_region.split()[-1]
+
 s3_client = boto3.client(
     's3',
     aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
     aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    region_name=os.getenv("AWS_REGION", "us-east-1")
+    region_name=aws_region
 )
 S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME", "followupai-media")
 KMS_KEY_ID = os.getenv("AWS_KMS_KEY_ID")  # For S3 SSE-KMS encryption
