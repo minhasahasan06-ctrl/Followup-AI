@@ -75,6 +75,14 @@ The Python backend is required for the Guided Video Examination feature at `/ai-
         - **Advanced Pattern Detection**: Accessory muscle scoring, gasping detection, chest shape asymmetry, thoracoabdominal synchrony
         - **Database Models**: RespiratoryBaseline (patient baselines) and RespiratoryMetric (time-series metrics)
         - **Service Architecture**: respiratory_metrics_service.py handles all temporal analytics and database persistence
+    -   **Disease-Specific Personalization System:** Multi-domain condition profiles covering 12 chronic conditions with integrated respiratory + edema monitoring emphasis:
+        - **Respiratory Conditions (8)**: asthma, COPD, heart failure, pulmonary embolism, pneumonia, pulmonary TB, bronchiectasis, allergic reactions
+        - **Edema-Focused Conditions (4)**: kidney disease, liver disease, thyroid disorders, lymphedema
+        - **Edema Emphasis Profiles**: Each condition specifies priority (critical/high/medium/low), expected pattern (bilateral/unilateral/facial), focus locations, personalized PEI thresholds, pitting grade watchpoints
+        - **Critical Prioritization**: Heart failure → bilateral leg edema monitoring; allergic reactions → urgent facial swelling alerts; lymphedema → asymmetry detection (>20% threshold)
+        - **Multi-Condition Merging**: Intelligent profile combination for patients with multiple conditions (takes highest priority, most sensitive thresholds, combined focus locations)
+        - **Service Methods**: get_edema_config(), get_edema_examination_focus() for personalized examination workflows
+        - **Documentation**: DISEASE_SPECIFIC_EDEMA_MONITORING.md
     -   **Audio AI Engine:** Extracts metrics like breath cycles, speech pace, cough detection, wheeze detection, and voice quality.
     -   **Trend Prediction Engine:** Performs baseline calculation, Z-score analysis, anomaly detection, Bayesian risk modeling, and time-series trend analysis to generate a composite risk score.
     -   **Alert Orchestration Engine:** Provides multi-channel delivery (dashboard, email, SMS) with rule-based systems and HIPAA compliance.
