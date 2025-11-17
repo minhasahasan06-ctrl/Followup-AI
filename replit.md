@@ -66,7 +66,15 @@ The Python backend is required for the Guided Video Examination feature at `/ai-
 -   **Deterioration Prediction System:** Comprehensive health change detection with baseline calculation, deviation detection (z-score analysis), and risk scoring (0-15 scale).
 -   **ML Inference Infrastructure:** Self-hosted machine learning inference system with a model registry, Redis caching, async thread pool inference, HIPAA-compliant audit logging, batch processing, and ONNX optimization. Includes pre-trained Clinical-BERT and custom LSTM models.
 -   **AI Deterioration Detection System (Production-Ready):** A full-stack SaaS platform featuring:
-    -   **Video AI Engine:** Extracts metrics like respiratory rate, skin pallor, sclera yellowness, facial swelling, and head tremor.
+    -   **Video AI Engine:** Extracts metrics like respiratory rate, skin pallor, sclera yellowness, facial swelling, head tremor, nail bed analysis (anaemia, nicotine stains, burns, abnormalities).
+    -   **Comprehensive Respiratory Metrics System:** 
+        - **Respiratory Variability Index (RVI)**: Measures breathing stability (coefficient of variation over 1-5 min)
+        - **Baseline Tracking**: Auto-calculated patient baseline RR with exponential moving average updates
+        - **Temporal Analytics**: Rolling 24-hour average, 3-day trend slope (linear regression)
+        - **Anomaly Detection**: Z-score computation vs patient baseline (|Z| > 2 = significant anomaly)
+        - **Advanced Pattern Detection**: Accessory muscle scoring, gasping detection, chest shape asymmetry, thoracoabdominal synchrony
+        - **Database Models**: RespiratoryBaseline (patient baselines) and RespiratoryMetric (time-series metrics)
+        - **Service Architecture**: respiratory_metrics_service.py handles all temporal analytics and database persistence
     -   **Audio AI Engine:** Extracts metrics like breath cycles, speech pace, cough detection, wheeze detection, and voice quality.
     -   **Trend Prediction Engine:** Performs baseline calculation, Z-score analysis, anomaly detection, Bayesian risk modeling, and time-series trend analysis to generate a composite risk score.
     -   **Alert Orchestration Engine:** Provides multi-channel delivery (dashboard, email, SMS) with rule-based systems and HIPAA compliance.
