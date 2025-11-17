@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import { apiRequest } from "@/lib/queryClient";
 import { 
   Camera,
   CameraOff,
@@ -38,6 +39,24 @@ export function VideoRecorder({
   const [error, setError] = useState<string>('');
   const [recordingTime, setRecordingTime] = useState(0);
 
+  // HIPAA Audit: Log camera access to backend
+  const logCameraAccess = async (status: 'granted' | 'denied', errorMsg?: string) => {
+    try {
+      const formData = new FormData();
+      formData.append('status', status);
+      formData.append('exam_type', examType);
+      if (errorMsg) formData.append('error_message', errorMsg);
+      
+      await apiRequest('/api/v1/video-ai/exam-sessions/audit/camera-access', {
+        method: 'POST',
+        body: formData,
+      });
+    } catch (error) {
+      console.error('Failed to log camera access:', error);
+      // Don't block the workflow if audit logging fails
+    }
+  };
+
   // Request camera access
   const startCamera = async () => {
     setCameraStatus('requesting');
@@ -60,21 +79,29 @@ export function VideoRecorder({
       }
 
       setCameraStatus('ready');
+      
+      // HIPAA Compliance: Log camera access granted
+      await logCameraAccess('granted');
     } catch (err) {
       console.error('Camera access error:', err);
       setCameraStatus('error');
       
+      let errorMessage = 'An unexpected error occurred while accessing the camera.';
+      
       if (err instanceof DOMException) {
         if (err.name === 'NotAllowedError') {
-          setError('Camera access denied. Please allow camera permissions in your browser settings.');
+          errorMessage = 'Camera access denied. Please allow camera permissions in your browser settings.';
         } else if (err.name === 'NotFoundError') {
-          setError('No camera found. Please connect a camera and try again.');
+          errorMessage = 'No camera found. Please connect a camera and try again.';
         } else {
-          setError('Failed to access camera. Please check your browser permissions.');
+          errorMessage = 'Failed to access camera. Please check your browser permissions.';
         }
-      } else {
-        setError('An unexpected error occurred while accessing the camera.');
       }
+      
+      setError(errorMessage);
+      
+      // HIPAA Compliance: Log camera access denied
+      await logCameraAccess('denied', errorMessage);
     }
   };
 
