@@ -44,15 +44,17 @@ const EXAM_CONFIG: Record<ExamType, {
     title: "Respiratory Rate & Pattern",
     icon: Wind,
     instructions: [
-      "Position yourself so your chest and face are clearly visible",
-      "Sit in a relaxed position with good lighting",
-      "Breathe normally - don't alter your breathing pattern",
-      "The camera will record for 30 seconds to analyze your breathing"
+      "🪑 SITTING POSITION (RECOMMENDED): Sit upright in a chair with back support, feet flat on floor, hands on thighs. Relax shoulders.",
+      "🛏️ LYING DOWN (ALTERNATIVE): Lie flat on back, arms at sides, thin pillow under head (optional). Relax completely.",
+      "📹 Position camera at chest level (sitting) or above chest (lying down)",
+      "🫁 Breathe naturally for 60-90 seconds - don't alter your breathing",
+      "💡 Ensure good lighting on your chest area"
     ],
     tips: [
-      "Remove any tight clothing that restricts chest movement",
-      "Avoid talking during the recording",
-      "Stay as still as possible while breathing normally"
+      "Sitting position provides most accurate measurements (recommended for Asthma, COPD, Heart Failure patients)",
+      "Remove tight clothing that restricts chest movement",
+      "Avoid talking during recording - stay still while breathing normally",
+      "Camera will analyze: breathing rate, rhythm stability, neck muscle use, chest shape, breathing coordination"
     ],
     color: "text-blue-500"
   },
