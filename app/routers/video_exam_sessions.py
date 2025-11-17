@@ -21,6 +21,39 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/v1/video-ai/exam-sessions", tags=["video-exam-sessions"])
 
+
+# Camera Access Audit Endpoint
+@router.post("/audit/camera-access")
+async def log_camera_access_event(
+    status: str = Form(...),  # 'granted' or 'denied'
+    exam_type: Optional[str] = Form(None),
+    error_message: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    HIPAA compliance endpoint: Log camera access attempts
+    Frontend must call this when requesting camera access
+    """
+    try:
+        AuditLogger.log_camera_access(
+            user_id=current_user.id,
+            status=status,
+            exam_type=exam_type
+        )
+        
+        return {
+            "logged": True,
+            "status": status,
+            "message": f"Camera access {status} event logged"
+        }
+    except Exception as e:
+        # Don't fail the request if logging fails
+        print(f"[AUDIT ERROR] Failed to log camera access: {str(e)}")
+        return {
+            "logged": False,
+            "error": str(e)
+        }
+
 # AWS S3 configuration
 S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME", "followup-ai-hipaa-storage")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
