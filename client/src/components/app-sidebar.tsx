@@ -28,6 +28,10 @@ import {
   Headphones,
   Search,
   UserPlus,
+  Video,
+  Mic,
+  Bell,
+  TrendingUp,
 } from "lucide-react";
 import {
   Sidebar,
@@ -68,6 +72,24 @@ const patientItems = [
     title: "Pain Detection",
     url: "/pain-detection",
     icon: Camera,
+    badge: "AI",
+  },
+  {
+    title: "Video AI Analysis",
+    url: "/ai-video",
+    icon: Video,
+    badge: "AI",
+  },
+  {
+    title: "Audio AI Analysis",
+    url: "/ai-audio",
+    icon: Mic,
+    badge: "AI",
+  },
+  {
+    title: "Health Alerts",
+    url: "/ai-alerts",
+    icon: Bell,
     badge: "AI",
   },
   {
