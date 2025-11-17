@@ -16,6 +16,7 @@ import secrets
 from app.database import get_db
 from app.models import User, VideoExamSession, VideoExamSegment
 from app.auth import get_current_user
+from app.services.audit_logger import AuditLogger
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/v1/video-ai/exam-sessions", tags=["video-exam-sessions"])
@@ -101,6 +102,12 @@ async def start_exam_session(
         db.commit()
         db.refresh(session)
         
+        # HIPAA Audit Log
+        AuditLogger.log_video_exam_session_started(
+            user_id=current_user.id,
+            session_id=str(session.id)
+        )
+        
         return StartSessionResponse(
             session_id=str(session.id),
             started_at=session.started_at.isoformat(),
@@ -175,6 +182,17 @@ async def upload_exam_segment(
         
         s3_client.put_object(**upload_params)
         
+        # HIPAA Audit Log - S3 Upload
+        AuditLogger.log_s3_operation(
+            user_id=current_user.id,
+            operation="upload",
+            s3_key=s3_key,
+            bucket=S3_BUCKET,
+            encrypted=True,
+            kms_key_id=KMS_KEY_ID,
+            status="success"
+        )
+        
         # Create segment record
         segment = VideoExamSegment(
             session_id=session_id,
@@ -203,6 +221,17 @@ async def upload_exam_segment(
         
         db.commit()
         db.refresh(segment)
+        
+        # HIPAA Audit Log - Video Segment Upload
+        AuditLogger.log_video_segment_uploaded(
+            user_id=current_user.id,
+            session_id=session_id,
+            segment_id=str(segment.id),
+            exam_type=exam_type,
+            s3_key=s3_key,
+            file_size_bytes=file_size,
+            encrypted=True
+        )
         
         # TODO: Trigger AI analysis asynchronously
         # This would call the video AI engine to analyze the specific exam type
@@ -251,6 +280,15 @@ async def complete_exam_session(
         session.updated_at = datetime.utcnow()
         
         db.commit()
+        
+        # HIPAA Audit Log - Session Completion
+        AuditLogger.log_video_exam_session_completed(
+            user_id=current_user.id,
+            session_id=session_id,
+            completed_segments=session.completed_segments,
+            skipped_segments=session.skipped_segments,
+            total_duration_seconds=session.total_duration_seconds
+        )
         
         # TODO: Trigger combined AI analysis across all segments
         
