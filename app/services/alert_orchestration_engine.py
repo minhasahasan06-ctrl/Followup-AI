@@ -28,6 +28,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Helper function to parse AWS region
+def parse_aws_region(region_str: str) -> str:
+    """Extract actual region code from potentially formatted string"""
+    if not region_str:
+        return 'us-east-1'
+    # Extract region code pattern (e.g., "ap-southeast-2" from "Asia Pacific (Sydney) ap-southeast-2")
+    parts = region_str.split()
+    for part in parts:
+        if '-' in part and len(part) > 5:  # Region codes have hyphens
+            return part
+    return region_str.strip()
+
 # Notification channel availability
 SES_AVAILABLE = bool(os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"))
 TWILIO_AVAILABLE = bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN"))
@@ -35,7 +47,9 @@ TWILIO_AVAILABLE = bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AU
 if SES_AVAILABLE:
     try:
         import boto3
-        ses_client = boto3.client('ses', region_name=os.getenv("AWS_REGION", "us-east-1"))
+        aws_region = parse_aws_region(os.getenv("AWS_REGION", "us-east-1"))
+        ses_client = boto3.client('ses', region_name=aws_region)
+        logger.info(f"SES client initialized successfully with region: {aws_region}")
     except Exception as e:
         logger.warning(f"SES client initialization failed: {e}")
         SES_AVAILABLE = False
