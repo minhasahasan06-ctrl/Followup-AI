@@ -10,28 +10,23 @@ from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-# Audio processing libraries
-try:
-    import librosa
-    import soundfile as sf
-    LIBROSA_AVAILABLE = True
-except ImportError:
-    LIBROSA_AVAILABLE = False
-
-try:
-    from scipy import signal, stats
-    from scipy.fft import fft
-    SCIPY_AVAILABLE = True
-except ImportError:
-    SCIPY_AVAILABLE = False
-
-try:
-    import noisereduce as nr
-    NOISEREDUCE_AVAILABLE = True
-except ImportError:
-    NOISEREDUCE_AVAILABLE = False
-
 logger = logging.getLogger(__name__)
+
+# Lazy loading flags - imports happen on first use
+_LIBROSA_CHECKED = False
+_SCIPY_CHECKED = False
+_NOISEREDUCE_CHECKED = False
+LIBROSA_AVAILABLE = False
+SCIPY_AVAILABLE = False
+NOISEREDUCE_AVAILABLE = False
+
+# Global references (populated on first use)
+librosa = None
+sf = None
+signal = None
+stats = None
+fft = None
+nr = None
 
 
 class AudioAIEngine:
@@ -41,8 +36,50 @@ class AudioAIEngine:
     """
     
     def __init__(self):
+        global librosa, sf, signal, stats, fft, nr
+        global LIBROSA_AVAILABLE, SCIPY_AVAILABLE, NOISEREDUCE_AVAILABLE
+        global _LIBROSA_CHECKED, _SCIPY_CHECKED, _NOISEREDUCE_CHECKED
+        
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.sample_rate = 16000  # Standard for speech processing
+        
+        # Lazy load librosa
+        if not _LIBROSA_CHECKED:
+            try:
+                import librosa as librosa_module
+                import soundfile as sf_module
+                librosa = librosa_module
+                sf = sf_module
+                LIBROSA_AVAILABLE = True
+            except ImportError:
+                logger.warning("Librosa/soundfile not available - audio processing disabled")
+                LIBROSA_AVAILABLE = False
+            _LIBROSA_CHECKED = True
+        
+        # Lazy load scipy
+        if not _SCIPY_CHECKED:
+            try:
+                from scipy import signal as scipy_signal, stats as scipy_stats
+                from scipy.fft import fft as scipy_fft
+                signal = scipy_signal
+                stats = scipy_stats
+                fft = scipy_fft
+                SCIPY_AVAILABLE = True
+            except ImportError:
+                logger.warning("SciPy not available - advanced signal processing disabled")
+                SCIPY_AVAILABLE = False
+            _SCIPY_CHECKED = True
+        
+        # Lazy load noisereduce
+        if not _NOISEREDUCE_CHECKED:
+            try:
+                import noisereduce as nr_module
+                nr = nr_module
+                NOISEREDUCE_AVAILABLE = True
+            except ImportError:
+                logger.warning("Noisereduce not available - noise reduction disabled")
+                NOISEREDUCE_AVAILABLE = False
+            _NOISEREDUCE_CHECKED = True
     
     async def analyze_audio(
         self,
