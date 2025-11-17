@@ -23,7 +23,8 @@ from app.routers import (
     deviation,
     risk_score,
     ml_inference,
-    ai_deterioration_api
+    ai_deterioration_api,
+    video_exam_sessions
 )
 
 # Import ML model lifecycle management
@@ -86,6 +87,9 @@ app.include_router(ai_deterioration_api.video_router)
 app.include_router(ai_deterioration_api.audio_router)
 app.include_router(ai_deterioration_api.trend_router)
 app.include_router(ai_deterioration_api.alert_router)
+
+# Guided Video Examination System
+app.include_router(video_exam_sessions.router)
 
 Base.metadata.create_all(bind=engine)
 
