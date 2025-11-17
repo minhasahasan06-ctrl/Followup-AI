@@ -10,32 +10,22 @@ from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-# ML libraries with graceful degradation
-try:
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
-    cv2 = None
-
-try:
-    import mediapipe as mp
-    MEDIAPIPE_AVAILABLE = True
-except ImportError:
-    MEDIAPIPE_AVAILABLE = False
-    mp = None
-
-try:
-    from scipy import signal, stats
-    from scipy.fft import fft
-    SCIPY_AVAILABLE = True
-except ImportError:
-    SCIPY_AVAILABLE = False
-    signal = None
-    stats = None
-    fft = None
-
 logger = logging.getLogger(__name__)
+
+# Lazy loading flags - imports happen on first use
+_CV2_CHECKED = False
+_MEDIAPIPE_CHECKED = False
+_SCIPY_CHECKED = False
+CV2_AVAILABLE = False
+MEDIAPIPE_AVAILABLE = False
+SCIPY_AVAILABLE = False
+
+# Global references (populated on first use)
+cv2 = None
+mp = None
+signal = None
+stats = None
+fft = None
 
 
 class VideoAIEngine:
@@ -45,10 +35,50 @@ class VideoAIEngine:
     """
     
     def __init__(self):
+        global cv2, mp, signal, stats, fft
+        global CV2_AVAILABLE, MEDIAPIPE_AVAILABLE, SCIPY_AVAILABLE
+        global _CV2_CHECKED, _MEDIAPIPE_CHECKED, _SCIPY_CHECKED
+        
         self.executor = ThreadPoolExecutor(max_workers=2)
         
+        # Lazy load cv2
+        if not _CV2_CHECKED:
+            try:
+                import cv2 as cv2_module
+                cv2 = cv2_module
+                CV2_AVAILABLE = True
+            except ImportError:
+                logger.warning("OpenCV not available - video processing limited")
+                CV2_AVAILABLE = False
+            _CV2_CHECKED = True
+        
+        # Lazy load mediapipe
+        if not _MEDIAPIPE_CHECKED:
+            try:
+                import mediapipe as mp_module
+                mp = mp_module
+                MEDIAPIPE_AVAILABLE = True
+            except ImportError:
+                logger.warning("MediaPipe not available - face landmark detection disabled")
+                MEDIAPIPE_AVAILABLE = False
+            _MEDIAPIPE_CHECKED = True
+        
+        # Lazy load scipy
+        if not _SCIPY_CHECKED:
+            try:
+                from scipy import signal as scipy_signal, stats as scipy_stats
+                from scipy.fft import fft as scipy_fft
+                signal = scipy_signal
+                stats = scipy_stats
+                fft = scipy_fft
+                SCIPY_AVAILABLE = True
+            except ImportError:
+                logger.warning("SciPy not available - advanced signal processing disabled")
+                SCIPY_AVAILABLE = False
+            _SCIPY_CHECKED = True
+        
         # Initialize MediaPipe FaceMesh
-        if MEDIAPIPE_AVAILABLE:
+        if MEDIAPIPE_AVAILABLE and mp:
             self.mp_face_mesh = mp.solutions.face_mesh
             self.mp_drawing = mp.solutions.drawing_utils
             self.face_mesh = self.mp_face_mesh.FaceMesh(
@@ -59,7 +89,6 @@ class VideoAIEngine:
                 min_tracking_confidence=0.5
             )
         else:
-            logger.warning("MediaPipe not available - face landmark detection disabled")
             self.face_mesh = None
     
     async def analyze_video(

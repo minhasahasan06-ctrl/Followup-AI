@@ -69,6 +69,9 @@ import ExamCoach from "@/pages/ExamCoach";
 import MedicationEffects from "@/pages/MedicationEffects";
 import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
 import DeteriorationDashboard from "@/pages/DeteriorationDashboard";
+import AIVideoDashboard from "@/pages/AIVideoDashboard";
+import AIAudioDashboard from "@/pages/AIAudioDashboard";
+import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
 
 function PatientRouter() {
   return (
@@ -80,6 +83,9 @@ function PatientRouter() {
       <Route path="/exam-coach" component={ExamCoach} />
       <Route path="/medication-effects" component={MedicationEffects} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
+      <Route path="/ai-video" component={AIVideoDashboard} />
+      <Route path="/ai-audio" component={AIAudioDashboard} />
+      <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/habits" component={Habits} />
       <Route path="/previous-sessions" component={PreviousSessions} />
       <Route path="/doctor-search" component={DoctorSearch} />
