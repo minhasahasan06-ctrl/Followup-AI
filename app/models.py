@@ -208,3 +208,82 @@ class RespiratoryConditionThreshold(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class EdemaMetric(Base):
+    """Edema (swelling) analysis metrics from video examination"""
+    __tablename__ = "edema_metrics"
+    
+    id = Column(String, primary_key=True, server_default=func.gen_random_uuid())
+    patient_id = Column(String, ForeignKey("users.id"), nullable=False)
+    session_id = Column(String, ForeignKey("video_exam_sessions.id", ondelete="CASCADE"))
+    
+    # Timestamp
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Location tracking (multiple locations can be analyzed in one session)
+    location = Column(String, nullable=False)  # 'face', 'legs', 'feet', 'hands', 'ankles'
+    side = Column(String)  # 'left', 'right', 'bilateral', 'central' (for face)
+    
+    # Edema severity metrics
+    peripheral_edema_index = Column(Float)  # 0-100 scale, volume change % vs baseline
+    volume_ml_estimate = Column(Float)  # Estimated volume in ml
+    baseline_volume_ml = Column(Float)  # Patient baseline volume for this location
+    
+    # Symmetry analysis
+    bilateral_swelling = Column(Boolean, default=False)  # Both sides affected
+    left_volume_ml = Column(Float)  # Left side volume (if bilateral comparison)
+    right_volume_ml = Column(Float)  # Right side volume
+    asymmetry_ratio = Column(Float)  # abs(left - right) / max(left, right)
+    
+    # Pitting edema test analysis
+    pitting_detected = Column(Boolean, default=False)
+    pitting_grade = Column(Integer)  # 1-4 scale (or NULL if no pitting)
+    rebound_time_seconds = Column(Float)  # Time for dimple to disappear
+    pit_depth_mm = Column(Float)  # Estimated pit depth in mm
+    
+    # Visual indicators
+    skin_tightness_score = Column(Float)  # 0-1, visual assessment of skin tautness
+    surface_irregularities = Column(Boolean, default=False)  # Bumpy/uneven surface
+    color_change_detected = Column(Boolean, default=False)  # Redness/discoloration
+    
+    # Confidence and metadata
+    detection_confidence = Column(Float, default=0.0)  # 0-1
+    analysis_method = Column(String, default='video_segmentation')  # or 'pitting_test'
+    metadata = Column(JSON)  # Raw segmentation masks, frames analyzed
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Indices
+    __table_args__ = (
+        Index('idx_edema_patient_time', 'patient_id', 'recorded_at'),
+        Index('idx_edema_location', 'patient_id', 'location'),
+    )
+
+
+class EdemaBaseline(Base):
+    """Patient baseline limb/face volumes for edema comparison"""
+    __tablename__ = "edema_baselines"
+    
+    id = Column(String, primary_key=True, server_default=func.gen_random_uuid())
+    patient_id = Column(String, ForeignKey("users.id"), nullable=False)
+    
+    # Location-specific baselines
+    location = Column(String, nullable=False)  # 'face', 'legs', 'feet', 'hands', 'ankles'
+    side = Column(String)  # 'left', 'right', 'bilateral'
+    
+    # Baseline measurements
+    baseline_volume_ml = Column(Float, nullable=False)
+    baseline_circumference_cm = Column(Float)  # Optional
+    sample_size = Column(Integer, default=0)  # Number of measurements averaged
+    confidence = Column(Float, default=0.0)  # 0-1
+    
+    # Metadata
+    source = Column(String, default='auto')  # 'auto' or 'manual' (clinician)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Unique constraint: one baseline per location/side per patient
+    __table_args__ = (
+        Index('idx_edema_baseline_unique', 'patient_id', 'location', 'side', unique=True),
+    )

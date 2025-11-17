@@ -93,18 +93,20 @@ const EXAM_CONFIG: Record<ExamType, {
     color: "text-amber-500"
   },
   swelling: {
-    title: "Facial & Leg Swelling",
+    title: "Edema (Swelling) Assessment",
     icon: User,
     instructions: [
-      "First, show your full face to the camera (10 seconds)",
-      "Then, show your lower legs and ankles (10 seconds)",
-      "Turn slowly to show both sides if possible",
-      "Keep the camera steady and well-lit"
+      "📹 STEP 1 - Show Both Sides (30 sec): Position camera to show both legs/feet/ankles side-by-side for symmetry comparison",
+      "👆 STEP 2 - Pitting Test (Optional, 15-30 sec): Gently press finger on swollen area for 5-15 seconds, then release",
+      "⏱️ STEP 3 - Record Rebound: Keep camera on pressed area after releasing to measure how fast dimple disappears",
+      "🔄 STEP 4 - Show Face (if swelling present): Front view + side views to assess facial edema",
+      "💡 Ensure good lighting and clear view of skin surface"
     ],
     tips: [
-      "Press gently on swollen areas before recording",
-      "Note any pitting edema (indentation remains)",
-      "Compare both sides of face and legs"
+      "AI analyzes: Location (legs/ankles/feet/face), Symmetry (one side vs both), Pitting grade (1-4), Volume change from baseline",
+      "Pitting Grade Scale: Grade 1 (immediate rebound, 2mm pit), Grade 2 (<15 sec, 3-4mm), Grade 3 (15-60 sec, 5-6mm), Grade 4 (2-3 min, 8mm)",
+      "Compare left vs right - asymmetric swelling may indicate different causes",
+      "Note any skin tightness, shininess, or color changes (redness)"
     ],
     color: "text-purple-500"
   },
