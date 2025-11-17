@@ -37,12 +37,13 @@ async def lifespan(app: FastAPI):
     Loads ML models at startup and cleans up on shutdown
     """
     # Startup: Load ML models
-    await load_ml_models()
+    # Temporarily disabled - transformers models removed
+    # await load_ml_models()
     
     yield
     
     # Shutdown: Cleanup ML models
-    await unload_ml_models()
+    # await unload_ml_models()
 
 
 app = FastAPI(
