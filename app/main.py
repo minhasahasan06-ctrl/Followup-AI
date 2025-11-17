@@ -22,7 +22,8 @@ from app.routers import (
     baseline,
     deviation,
     risk_score,
-    ml_inference
+    ml_inference,
+    ai_deterioration_api
 )
 
 # Import ML model lifecycle management
@@ -77,7 +78,13 @@ app.include_router(medication_side_effects.router)
 app.include_router(baseline.router)
 app.include_router(deviation.router)
 app.include_router(risk_score.router)
-app.include_router(ml_inference.router)  # ML inference endpoints
+app.include_router(ml_inference.router)
+
+# AI Deterioration Detection System - 52 production endpoints
+app.include_router(ai_deterioration_api.video_router)
+app.include_router(ai_deterioration_api.audio_router)
+app.include_router(ai_deterioration_api.trend_router)
+app.include_router(ai_deterioration_api.alert_router)
 
 Base.metadata.create_all(bind=engine)
 
