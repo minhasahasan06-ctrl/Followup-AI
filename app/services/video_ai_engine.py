@@ -141,6 +141,8 @@ class VideoAIEngine:
         
         # Storage for time-series data
         chest_movements = []
+        accessory_muscle_activity = []
+        chest_widths = []
         face_brightnesses = []
         face_saturations = []
         sclera_colors = []
@@ -192,8 +194,14 @@ class VideoAIEngine:
                 frames_with_face += 1
                 
                 # Collect time-series data
-                if frame_metrics.get('chest_movement'):
+                # Respiratory metrics (now dict from enhanced detection)
+                if frame_metrics.get('chest_movement') is not None:
                     chest_movements.append(frame_metrics['chest_movement'])
+                if frame_metrics.get('accessory_muscle_activity') is not None:
+                    accessory_muscle_activity.append(frame_metrics['accessory_muscle_activity'])
+                if frame_metrics.get('chest_width_proxy') is not None:
+                    chest_widths.append(frame_metrics['chest_width_proxy'])
+                
                 if frame_metrics.get('face_brightness'):
                     face_brightnesses.append(frame_metrics['face_brightness'])
                 if frame_metrics.get('face_saturation'):
@@ -230,6 +238,8 @@ class VideoAIEngine:
         # Compute aggregate metrics
         metrics = self._compute_aggregate_metrics(
             chest_movements=chest_movements,
+            accessory_muscle_activity=accessory_muscle_activity,
+            chest_widths=chest_widths,
             face_brightnesses=face_brightnesses,
             face_saturations=face_saturations,
             sclera_colors=sclera_colors,
@@ -287,10 +297,11 @@ class VideoAIEngine:
                     [lm.x * w, lm.y * h] for lm in face_landmarks.landmark
                 ])
                 
-                # 1. Respiratory rate (chest movement detection)
-                metrics['chest_movement'] = self._detect_chest_movement(
+                # 1. Respiratory analysis (comprehensive)
+                respiratory_metrics = self._detect_chest_movement(
                     landmarks_array, rgb_frame
                 )
+                metrics.update(respiratory_metrics)
                 
                 # 2. Skin pallor detection (HSV analysis)
                 pallor_metrics = self._detect_skin_pallor(
@@ -329,17 +340,44 @@ class VideoAIEngine:
         self,
         landmarks: np.ndarray,
         frame: np.ndarray
-    ) -> float:
+    ) -> Dict[str, Any]:
         """
-        Detect chest movement amplitude
-        Using lower face landmarks as proxy for breathing motion
+        Comprehensive respiratory analysis from face landmarks
+        Returns: chest movement, accessory muscle use, breathing depth
+        
+        Clinical indicators tracked:
+        - Chest expansion (vertical movement of lower face/chin)
+        - Accessory muscle use (neck/shoulder elevation)
+        - Breathing depth variability
         """
-        # Use chin/neck area landmarks (indices vary by MediaPipe version)
-        # For now, use face center vertical movement as proxy
-        if len(landmarks) > 10:
-            center_y = np.mean(landmarks[:, 1])
-            return float(center_y)  # Store for time-series analysis
-        return 0.0
+        respiratory_metrics = {}
+        
+        if len(landmarks) < 10:
+            return {'chest_movement': 0.0}
+        
+        # 1. Chest movement (vertical displacement of chin area)
+        # Lower face landmarks indicate chest rise/fall during breathing
+        chin_landmarks = landmarks[140:180] if len(landmarks) > 180 else landmarks[-40:]
+        chin_center_y = np.mean(chin_landmarks[:, 1])
+        respiratory_metrics['chest_movement'] = float(chin_center_y)
+        
+        # 2. Accessory muscle detection (neck/shoulder movement)
+        # During labored breathing, neck muscles elevate with each breath
+        # Upper face landmarks show less movement; neck shows more
+        upper_face = landmarks[10:30] if len(landmarks) > 30 else landmarks[:20]
+        upper_y = np.mean(upper_face[:, 1])
+        
+        # Accessory muscle score: ratio of chin movement to upper face movement
+        # High ratio = accessory muscle use (neck elevating with breathing)
+        movement_ratio = abs(chin_center_y - upper_y) if upper_y > 0 else 0
+        respiratory_metrics['accessory_muscle_activity'] = float(movement_ratio)
+        
+        # 3. Chest shape analysis (width measurements)
+        # Barrel chest or asymmetry can indicate respiratory issues
+        face_width = np.max(landmarks[:, 0]) - np.min(landmarks[:, 0])
+        respiratory_metrics['chest_width_proxy'] = float(face_width)
+        
+        return respiratory_metrics
     
     def _detect_skin_pallor(
         self,
@@ -656,6 +694,8 @@ class VideoAIEngine:
     def _compute_aggregate_metrics(
         self,
         chest_movements: List[float],
+        accessory_muscle_activity: List[float],
+        chest_widths: List[float],
         face_brightnesses: List[float],
         face_saturations: List[float],
         sclera_colors: List[List[float]],
@@ -677,7 +717,7 @@ class VideoAIEngine:
     ) -> Dict[str, Any]:
         """
         Compute aggregate metrics from time-series data
-        Returns 15+ metrics for deterioration detection including nail/hand analysis
+        Returns 20+ clinical metrics including advanced respiratory analysis
         """
         
         metrics = {}

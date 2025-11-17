@@ -2,7 +2,7 @@
 SQLAlchemy models for video examination system
 """
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, ForeignKey, Float, JSON, Index
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -92,3 +92,60 @@ class VideoExamSegment(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class RespiratoryBaseline(Base):
+    """Patient respiratory baseline - normal RR for anomaly detection"""
+    __tablename__ = "respiratory_baselines"
+    
+    patient_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    
+    # Baseline statistics
+    baseline_rr_bpm = Column(Float, nullable=False)  # Mean RR
+    baseline_rr_std = Column(Float, nullable=False)  # Standard deviation
+    sample_size = Column(Integer, nullable=False, default=0)  # Number of sessions used
+    confidence = Column(Float, nullable=False, default=0.0)  # Confidence score 0-1
+    
+    # Metadata
+    source = Column(String, default="auto")  # 'auto' or 'manual' (clinician override)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RespiratoryMetric(Base):
+    """Time-series respiratory metrics with rolling statistics"""
+    __tablename__ = "respiratory_metrics"
+    
+    id = Column(String, primary_key=True, server_default=func.gen_random_uuid())
+    patient_id = Column(String, ForeignKey("users.id"), nullable=False)
+    session_id = Column(String, ForeignKey("video_exam_sessions.id", ondelete="CASCADE"))
+    
+    # Timestamp
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Core respiratory metrics
+    rr_bpm = Column(Float)  # Respiratory rate (breaths per minute)
+    rr_confidence = Column(Float, default=0.0)  # Detection confidence 0-1
+    
+    # Advanced metrics
+    breath_interval_std = Column(Float)  # Variability in breath intervals
+    variability_index = Column(Float)  # Coefficient of variation
+    accessory_muscle_score = Column(Float)  # Neck muscle use indicator
+    chest_expansion_amplitude = Column(Float)  # Chest movement amplitude
+    gasping_detected = Column(Boolean, default=False)  # Irregular gasping pattern
+    chest_shape_asymmetry = Column(Float)  # Barrel chest / asymmetry score
+    thoracoabdominal_synchrony = Column(Float)  # Breathing synchrony (0-1)
+    
+    # Temporal analytics
+    z_score_vs_baseline = Column(Float)  # Anomaly score vs patient baseline
+    rolling_daily_avg = Column(Float)  # Mean RR last 24 hours
+    rolling_three_day_slope = Column(Float)  # Trend: positive=worsening, negative=improving
+    
+    # Raw data for recomputation
+    metadata = Column(JSON)  # Stores raw chest movement trace, fps, etc.
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Indices for efficient queries
+    __table_args__ = (
+        Index('idx_respiratory_patient_time', 'patient_id', 'recorded_at'),
+    )
