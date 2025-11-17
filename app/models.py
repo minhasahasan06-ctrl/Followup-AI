@@ -149,3 +149,62 @@ class RespiratoryMetric(Base):
     __table_args__ = (
         Index('idx_respiratory_patient_time', 'patient_id', 'recorded_at'),
     )
+
+
+class RespiratoryConditionProfile(Base):
+    """Patient respiratory condition profiles for personalized monitoring"""
+    __tablename__ = "respiratory_condition_profiles"
+    
+    id = Column(String, primary_key=True, server_default=func.gen_random_uuid())
+    patient_id = Column(String, ForeignKey("users.id"), nullable=False)
+    
+    # Condition type (patient-entered, not AI-diagnosed)
+    condition = Column(String, nullable=False)  # 'asthma', 'copd', 'heart_failure', etc.
+    severity = Column(String, default='moderate')  # 'mild', 'moderate', 'severe'
+    
+    # Personalization overrides
+    baseline_rr_override = Column(Float)  # Clinician-set expected baseline (optional)
+    notes = Column(Text)  # Patient or clinician notes
+    
+    # Metadata
+    patient_entered = Column(Boolean, default=True)
+    clinician_verified = Column(Boolean, default=False)
+    active = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Indices for efficient queries
+    __table_args__ = (
+        Index('idx_condition_patient', 'patient_id', 'condition'),
+        Index('idx_condition_active', 'patient_id', 'active'),
+    )
+
+
+class RespiratoryConditionThreshold(Base):
+    """Reference table for disease-specific threshold modifiers"""
+    __tablename__ = "respiratory_condition_thresholds"
+    
+    id = Column(String, primary_key=True)
+    condition = Column(String, unique=True, nullable=False)
+    
+    # Threshold modifiers (applied to base thresholds)
+    baseline_rr_offset = Column(Float, default=0.0)  # Add to normal baseline (e.g., COPD +3 bpm)
+    rvi_mild_threshold = Column(Float, default=20.0)  # RVI% for mild alert
+    rvi_critical_threshold = Column(Float, default=40.0)  # RVI% for critical alert
+    
+    # Alert emphasis weights (0-1, higher = more important)
+    accessory_muscle_weight = Column(Float, default=0.5)
+    gasping_weight = Column(Float, default=0.5)
+    asymmetry_weight = Column(Float, default=0.5)
+    synchrony_weight = Column(Float, default=0.5)
+    
+    # Sudden change detection
+    sudden_rr_change_threshold = Column(Float, default=6.0)  # bpm change in 30 min
+    
+    # Wellness messaging templates
+    mild_alert_template = Column(Text)
+    critical_alert_template = Column(Text)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
