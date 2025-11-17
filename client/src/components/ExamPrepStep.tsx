@@ -57,18 +57,20 @@ const EXAM_CONFIG: Record<ExamType, {
     color: "text-blue-500"
   },
   skin_pallor: {
-    title: "Skin Pallor & Color Changes",
+    title: "Skin, Nails & Nail Bed Examination",
     icon: Hand,
     instructions: [
-      "Show your palms to the camera in good lighting",
-      "Then show the soles of your feet (if possible)",
-      "Hold each position steady for 10-15 seconds",
+      "Show your palms to the camera in good lighting (10 seconds)",
+      "Show the backs of your hands with focus on nails and nail beds (10 seconds)",
+      "Show the soles of your feet if possible (10 seconds)",
+      "Hold each position steady for clear AI analysis",
       "Ensure natural lighting for accurate color detection"
     ],
     tips: [
-      "Avoid colored lighting or filters",
-      "Keep hands relaxed and flat",
-      "Compare both hands for symmetry"
+      "AI checks for: anaemia (pale nail beds), nicotine stains, burns, discoloration",
+      "Compare both hands/feet for symmetry",
+      "Avoid colored lighting or nail polish if possible",
+      "Keep hands relaxed and fingers spread to show nails clearly"
     ],
     color: "text-rose-500"
   },

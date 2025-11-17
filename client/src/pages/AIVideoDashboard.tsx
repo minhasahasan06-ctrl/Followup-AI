@@ -138,7 +138,7 @@ export default function AIVideoDashboard() {
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle2 className="h-4 w-4 text-chart-2 flex-shrink-0 mt-0.5" />
-                    <span>Skin pallor & color changes (palms/soles)</span>
+                    <span>Skin pallor & color changes (palms/soles/nails/nail beds) for anaemia, nicotine stains, burns, or any other abnormality</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle2 className="h-4 w-4 text-chart-2 flex-shrink-0 mt-0.5" />

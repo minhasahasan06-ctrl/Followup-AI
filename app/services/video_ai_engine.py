@@ -1,6 +1,8 @@
 """
 Video AI Engine - Production-Grade Video Analysis
-Features: Respiratory rate, skin pallor, eye sclera, facial swelling, head movement, lighting, quality scoring
+Features: Respiratory rate, skin/nail/nail bed analysis (anaemia, nicotine stains, burns), 
+eye sclera, facial swelling, head movement, lighting, quality scoring
+Comprehensive hand detection: palms, backs of hands, nails, nail beds
 """
 
 import numpy as np
@@ -146,8 +148,18 @@ class VideoAIEngine:
         head_positions = []
         frame_qualities = []
         
+        # Hand and nail analysis storage
+        hand_detections = []
+        hand_brightnesses = []
+        hand_saturations = []
+        nail_pallor_scores = []
+        nicotine_detections = []
+        burn_detections = []
+        discoloration_detections = []
+        
         frames_analyzed = 0
         frames_with_face = 0
+        frames_with_hands = 0
         
         # Process frames (sample every Nth frame for efficiency)
         sample_rate = max(1, int(fps / 5))  # Analyze 5 frames per second
@@ -193,6 +205,23 @@ class VideoAIEngine:
                 if frame_metrics.get('head_position'):
                     head_positions.append(frame_metrics['head_position'])
             
+            # Collect hand and nail metrics
+            if frame_metrics.get('hands_detected'):
+                frames_with_hands += 1
+                hand_detections.append(True)
+                if frame_metrics.get('hand_brightness'):
+                    hand_brightnesses.append(frame_metrics['hand_brightness'])
+                if frame_metrics.get('hand_saturation'):
+                    hand_saturations.append(frame_metrics['hand_saturation'])
+                if frame_metrics.get('nail_bed_pallor_score'):
+                    nail_pallor_scores.append(frame_metrics['nail_bed_pallor_score'])
+                if frame_metrics.get('nicotine_stain_detected'):
+                    nicotine_detections.append(frame_metrics['nicotine_stain_detected'])
+                if frame_metrics.get('burn_mark_detected'):
+                    burn_detections.append(frame_metrics['burn_mark_detected'])
+                if frame_metrics.get('abnormal_discoloration'):
+                    discoloration_detections.append(frame_metrics['abnormal_discoloration'])
+            
             # Frame quality
             frame_qualities.append(frame_metrics.get('frame_quality', 50))
         
@@ -207,10 +236,17 @@ class VideoAIEngine:
             landmark_distances=landmark_distances,
             head_positions=head_positions,
             frame_qualities=frame_qualities,
+            hand_brightnesses=hand_brightnesses,
+            hand_saturations=hand_saturations,
+            nail_pallor_scores=nail_pallor_scores,
+            nicotine_detections=nicotine_detections,
+            burn_detections=burn_detections,
+            discoloration_detections=discoloration_detections,
             fps=fps,
             duration=duration,
             frames_analyzed=frames_analyzed,
             frames_with_face=frames_with_face,
+            frames_with_hands=frames_with_hands,
             patient_baseline=patient_baseline
         )
         
@@ -311,14 +347,16 @@ class VideoAIEngine:
         landmarks: np.ndarray
     ) -> Dict[str, float]:
         """
-        Detect skin pallor using HSV color space
-        Returns brightness and saturation metrics
+        Comprehensive skin, nail, and nail bed analysis
+        Detects: anaemia (pale nail beds), nicotine stains, burns, discoloration
+        Analyzes: face, palms, hands, nails, nail beds
         """
-        # Extract face ROI (cheeks area)
+        metrics = {}
+        
+        # 1. Face skin analysis (cheeks area)
         x_min, y_min = landmarks.min(axis=0).astype(int)
         x_max, y_max = landmarks.max(axis=0).astype(int)
         
-        # Expand ROI slightly
         padding = 20
         x_min = max(0, x_min - padding)
         y_min = max(0, y_min - padding)
@@ -327,17 +365,159 @@ class VideoAIEngine:
         
         face_roi = frame[y_min:y_max, x_min:x_max]
         
-        # Convert to HSV
+        # Face HSV analysis
         hsv = cv2.cvtColor(face_roi, cv2.COLOR_RGB2HSV)
+        metrics['face_brightness'] = float(np.mean(hsv[:, :, 2]))
+        metrics['face_saturation'] = float(np.mean(hsv[:, :, 1]))
         
-        # Extract metrics
-        brightness = np.mean(hsv[:, :, 2])  # Value channel
-        saturation = np.mean(hsv[:, :, 1])  # Saturation channel
+        # 2. Hand and nail detection (when visible in frame)
+        # Detect skin-colored regions outside face for hands/palms
+        hand_nail_metrics = self._detect_hands_and_nails(frame, landmarks)
+        metrics.update(hand_nail_metrics)
         
-        return {
-            'face_brightness': float(brightness),
-            'face_saturation': float(saturation)
-        }
+        return metrics
+    
+    def _detect_hands_and_nails(
+        self,
+        frame: np.ndarray,
+        face_landmarks: np.ndarray
+    ) -> Dict[str, Any]:
+        """
+        Detect hands, nails, and nail beds for comprehensive skin examination
+        Checks for: anaemia, nicotine stains, burns, abnormal coloration
+        
+        NOTE: V1 Implementation - Requires clinical validation and refinement:
+        - HSV thresholds are calibrated for light-medium skin tones
+        - Anaemia scoring uses absolute thresholds (needs relative baseline comparison)
+        - Detection confidence may vary across diverse skin tones
+        - Production deployment should use adaptive thresholds based on patient baseline
+        """
+        try:
+            h, w, _ = frame.shape
+            
+            # Create face mask to exclude face region
+            face_x_min, face_y_min = face_landmarks.min(axis=0).astype(int)
+            face_x_max, face_y_max = face_landmarks.max(axis=0).astype(int)
+            
+            # Convert to HSV for skin detection
+            hsv_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+            
+            # Skin color detection in HSV (broad range to capture different skin tones)
+            # Lower/upper bounds for skin detection
+            lower_skin = np.array([0, 20, 70], dtype=np.uint8)
+            upper_skin = np.array([20, 255, 255], dtype=np.uint8)
+            skin_mask = cv2.inRange(hsv_frame, lower_skin, upper_skin)
+            
+            # Alternative range for darker skin tones
+            lower_skin2 = np.array([0, 10, 60], dtype=np.uint8)
+            upper_skin2 = np.array([50, 150, 255], dtype=np.uint8)
+            skin_mask2 = cv2.inRange(hsv_frame, lower_skin2, upper_skin2)
+            skin_mask = cv2.bitwise_or(skin_mask, skin_mask2)
+            
+            # Zero out face region to prioritize hand detection
+            # Add padding to ensure complete face exclusion
+            face_padding = 40
+            face_y_min_padded = max(0, face_y_min - face_padding)
+            face_y_max_padded = min(h, face_y_max + face_padding)
+            face_x_min_padded = max(0, face_x_min - face_padding)
+            face_x_max_padded = min(w, face_x_max + face_padding)
+            skin_mask[face_y_min_padded:face_y_max_padded, face_x_min_padded:face_x_max_padded] = 0
+            
+            # Find contours (potential hands)
+            contours, _ = cv2.findContours(skin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            metrics = {
+                'hands_detected': False,
+                'hand_brightness': 0.0,
+                'hand_saturation': 0.0,
+                'nail_bed_pallor_score': 0.0,  # 0-100, higher = more anaemic
+                'nicotine_stain_detected': False,
+                'burn_mark_detected': False,
+                'abnormal_discoloration': False
+            }
+            
+            if len(contours) == 0:
+                return metrics
+            
+            # Find largest contour (likely hand/palm)
+            largest_contour = max(contours, key=cv2.contourArea)
+            contour_area = cv2.contourArea(largest_contour)
+            
+            # Only process if contour is large enough (likely a hand)
+            min_hand_area = (h * w) * 0.05  # At least 5% of frame
+            if contour_area < min_hand_area:
+                return metrics
+            
+            metrics['hands_detected'] = True
+            
+            # Extract hand ROI
+            x, y, rw, rh = cv2.boundingRect(largest_contour)
+            hand_roi = frame[y:y+rh, x:x+rw]
+            
+            if hand_roi.size == 0:
+                return metrics
+            
+            # Analyze hand/palm colors
+            hand_hsv = cv2.cvtColor(hand_roi, cv2.COLOR_RGB2HSV)
+            hand_rgb = hand_roi
+            
+            metrics['hand_brightness'] = float(np.mean(hand_hsv[:, :, 2]))
+            metrics['hand_saturation'] = float(np.mean(hand_hsv[:, :, 1]))
+            
+            # ANAEMIA DETECTION: Check for pale nail beds
+            # Nail beds should have pink/red hue; anaemic nail beds are white/pale
+            # Look for very bright, low-saturation regions (potential nail beds)
+            brightness = hand_hsv[:, :, 2]
+            saturation = hand_hsv[:, :, 1]
+            
+            # Pale regions: high brightness (>180), low saturation (<40)
+            pale_regions = (brightness > 180) & (saturation < 40)
+            pale_percentage = np.sum(pale_regions) / pale_regions.size * 100
+            
+            # Pallor score: higher = more likely anaemic
+            metrics['nail_bed_pallor_score'] = float(min(pale_percentage * 2, 100))
+            
+            # NICOTINE STAIN DETECTION: Yellow/brown discoloration
+            # Look for yellow-orange hue in finger/nail areas
+            hue = hand_hsv[:, :, 0]
+            # Yellow-orange range in HSV (hue 15-35)
+            yellow_regions = (hue > 15) & (hue < 35) & (saturation > 50)
+            yellow_percentage = np.sum(yellow_regions) / yellow_regions.size * 100
+            
+            if yellow_percentage > 5:  # More than 5% yellow = likely staining
+                metrics['nicotine_stain_detected'] = True
+            
+            # BURN DETECTION: Very dark or black spots
+            # Burns appear as dark patches with low brightness
+            dark_regions = brightness < 60
+            dark_percentage = np.sum(dark_regions) / dark_regions.size * 100
+            
+            if dark_percentage > 10:  # Significant dark areas
+                metrics['burn_mark_detected'] = True
+            
+            # GENERAL ABNORMAL DISCOLORATION
+            # Check for unusual color distributions
+            rgb_mean = np.mean(hand_rgb, axis=(0, 1))
+            r_mean, g_mean, b_mean = rgb_mean
+            
+            # Abnormal if significant color imbalance
+            max_diff = max(abs(r_mean - g_mean), abs(g_mean - b_mean), abs(b_mean - r_mean))
+            if max_diff > 50:  # Significant color imbalance
+                metrics['abnormal_discoloration'] = True
+            
+            return metrics
+            
+        except Exception as e:
+            logger.warning(f"Hand/nail detection error: {e}")
+            return {
+                'hands_detected': False,
+                'hand_brightness': 0.0,
+                'hand_saturation': 0.0,
+                'nail_bed_pallor_score': 0.0,
+                'nicotine_stain_detected': False,
+                'burn_mark_detected': False,
+                'abnormal_discoloration': False
+            }
     
     def _detect_sclera_color(
         self,
@@ -482,15 +662,22 @@ class VideoAIEngine:
         landmark_distances: List[Dict],
         head_positions: List[List[float]],
         frame_qualities: List[float],
+        hand_brightnesses: List[float],
+        hand_saturations: List[float],
+        nail_pallor_scores: List[float],
+        nicotine_detections: List[bool],
+        burn_detections: List[bool],
+        discoloration_detections: List[bool],
         fps: float,
         duration: float,
         frames_analyzed: int,
         frames_with_face: int,
+        frames_with_hands: int,
         patient_baseline: Optional[Dict[str, float]]
     ) -> Dict[str, Any]:
         """
         Compute aggregate metrics from time-series data
-        Returns final 10+ metrics for deterioration detection
+        Returns 15+ metrics for deterioration detection including nail/hand analysis
         """
         
         metrics = {}
@@ -584,6 +771,76 @@ class VideoAIEngine:
             metrics['eye_puffiness_left'] = 0.0
             metrics['eye_puffiness_right'] = 0.0
             metrics['facial_asymmetry_score'] = 0.0
+        
+        # ==================== Hand, Nail & Nail Bed Analysis ====================
+        if frames_with_hands > 0:
+            # Hand skin analysis
+            metrics['hands_detected'] = True
+            metrics['frames_with_hands'] = frames_with_hands
+            
+            if len(hand_brightnesses) > 0:
+                metrics['hand_brightness_avg'] = float(np.mean(hand_brightnesses))
+                metrics['hand_saturation_avg'] = float(np.mean(hand_saturations))
+            else:
+                metrics['hand_brightness_avg'] = 0.0
+                metrics['hand_saturation_avg'] = 0.0
+            
+            # Nail bed anaemia detection
+            if len(nail_pallor_scores) > 0:
+                avg_pallor_score = np.mean(nail_pallor_scores)
+                metrics['nail_bed_pallor_score'] = float(avg_pallor_score)
+                
+                # Anaemia risk classification
+                if avg_pallor_score < 30:
+                    metrics['anaemia_risk_level'] = "low"
+                elif avg_pallor_score < 60:
+                    metrics['anaemia_risk_level'] = "medium"
+                else:
+                    metrics['anaemia_risk_level'] = "high"
+            else:
+                metrics['nail_bed_pallor_score'] = 0.0
+                metrics['anaemia_risk_level'] = "unknown"
+            
+            # Nicotine stain detection
+            if len(nicotine_detections) > 0:
+                nicotine_percentage = sum(nicotine_detections) / len(nicotine_detections) * 100
+                metrics['nicotine_stain_detected'] = nicotine_percentage > 30  # >30% of frames
+                metrics['nicotine_stain_confidence'] = float(nicotine_percentage / 100)
+            else:
+                metrics['nicotine_stain_detected'] = False
+                metrics['nicotine_stain_confidence'] = 0.0
+            
+            # Burn mark detection
+            if len(burn_detections) > 0:
+                burn_percentage = sum(burn_detections) / len(burn_detections) * 100
+                metrics['burn_mark_detected'] = burn_percentage > 20  # >20% of frames
+                metrics['burn_mark_confidence'] = float(burn_percentage / 100)
+            else:
+                metrics['burn_mark_detected'] = False
+                metrics['burn_mark_confidence'] = 0.0
+            
+            # Abnormal discoloration
+            if len(discoloration_detections) > 0:
+                discolor_percentage = sum(discoloration_detections) / len(discoloration_detections) * 100
+                metrics['abnormal_discoloration_detected'] = discolor_percentage > 25
+                metrics['discoloration_confidence'] = float(discolor_percentage / 100)
+            else:
+                metrics['abnormal_discoloration_detected'] = False
+                metrics['discoloration_confidence'] = 0.0
+        else:
+            # No hands detected in any frame
+            metrics['hands_detected'] = False
+            metrics['frames_with_hands'] = 0
+            metrics['hand_brightness_avg'] = 0.0
+            metrics['hand_saturation_avg'] = 0.0
+            metrics['nail_bed_pallor_score'] = 0.0
+            metrics['anaemia_risk_level'] = "unknown"
+            metrics['nicotine_stain_detected'] = False
+            metrics['nicotine_stain_confidence'] = 0.0
+            metrics['burn_mark_detected'] = False
+            metrics['burn_mark_confidence'] = 0.0
+            metrics['abnormal_discoloration_detected'] = False
+            metrics['discoloration_confidence'] = 0.0
         
         # ==================== Head Movement / Stability ====================
         if len(head_positions) > 1:
