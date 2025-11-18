@@ -44,6 +44,7 @@ from app.services.video_ai_engine import VideoAIEngine
 from app.services.audio_ai_engine import AudioAIEngine
 from app.services.trend_prediction_engine import TrendPredictionEngine
 from app.services.alert_orchestration_engine import AlertOrchestrationEngine
+from app.services.facial_puffiness_service import FacialPuffinessService
 
 # AWS S3 client for encrypted media storage
 # Extract region code from AWS_REGION (handles both "us-east-1" and "US East (N. Virginia) us-east-1" formats)
@@ -454,6 +455,18 @@ async def analyze_video(
         )
         
         db.add(metrics)
+        
+        # Persist Facial Puffiness Score (FPS) metrics to time-series database
+        if metrics_dict.get('facial_puffiness_score') is not None:
+            fps_service = FacialPuffinessService(db)
+            fps_service.ingest_fps_metrics(
+                patient_id=session.patient_id,
+                session_id=str(session.id),
+                fps_metrics=metrics_dict,
+                frames_analyzed=metrics_dict.get('frames_analyzed', 0),
+                detection_confidence=metrics_dict.get('analysis_confidence', 0.0),
+                timestamp=datetime.utcnow()
+            )
         
         # Update session status
         session.processing_status = "completed"
