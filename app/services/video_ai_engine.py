@@ -603,28 +603,139 @@ class VideoAIEngine:
     def _detect_facial_swelling(
         self,
         landmarks: np.ndarray
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Any]:
         """
-        Detect facial swelling by measuring landmark distances
-        Compare cheek widths, eye areas, etc.
+        Comprehensive Facial Puffiness Score (FPS) calculation
+        Uses MediaPipe Face Mesh landmarks to track facial contour expansion
+        
+        Regions tracked:
+        - Periorbital (around eyes): Critical for thyroid/kidney conditions
+        - Cheeks: General facial swelling
+        - Jawline: Lower face fluid retention
+        - Forehead: Upper face swelling
+        
+        Returns facial contour measurements for temporal tracking
         """
         try:
-            # Calculate face width (left to right cheek)
-            left_cheek = landmarks[234]  # Example left cheek point
-            right_cheek = landmarks[454]  # Example right cheek point
-            cheek_distance = np.linalg.norm(right_cheek - left_cheek)
+            # MediaPipe Face Mesh landmark indices for key regions
+            # Reference: https://github.com/google/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model_uv_visualization.png
             
-            # Calculate eye areas (approximate)
-            # This would need more sophisticated landmark mapping
+            # === PERIORBITAL REGION (Around Eyes) ===
+            # Left eye contour
+            left_eye_outer = landmarks[33]    # Outer corner
+            left_eye_inner = landmarks[133]   # Inner corner
+            left_eye_top = landmarks[159]     # Top of eye
+            left_eye_bottom = landmarks[145]  # Bottom of eye
+            
+            # Right eye contour
+            right_eye_outer = landmarks[263]  # Outer corner
+            right_eye_inner = landmarks[362]  # Inner corner
+            right_eye_top = landmarks[386]    # Top of eye
+            right_eye_bottom = landmarks[374] # Bottom of eye
+            
+            # Periorbital measurements
+            left_eye_width = np.linalg.norm(left_eye_outer - left_eye_inner)
+            left_eye_height = np.linalg.norm(left_eye_top - left_eye_bottom)
+            right_eye_width = np.linalg.norm(right_eye_outer - right_eye_inner)
+            right_eye_height = np.linalg.norm(right_eye_top - right_eye_bottom)
+            
+            # Periorbital puffiness (eye area)
+            left_eye_area = left_eye_width * left_eye_height
+            right_eye_area = right_eye_width * right_eye_height
+            avg_eye_area = (left_eye_area + right_eye_area) / 2
+            
+            # === CHEEK REGION ===
+            left_cheek = landmarks[234]   # Left cheek point
+            right_cheek = landmarks[454]  # Right cheek point
+            nose_bridge = landmarks[168]  # Nose bridge (midpoint reference)
+            
+            # Cheek width and projection
+            cheek_width = np.linalg.norm(right_cheek - left_cheek)
+            left_cheek_projection = np.linalg.norm(left_cheek - nose_bridge)
+            right_cheek_projection = np.linalg.norm(right_cheek - nose_bridge)
+            avg_cheek_projection = (left_cheek_projection + right_cheek_projection) / 2
+            
+            # === JAWLINE REGION ===
+            left_jaw = landmarks[172]     # Left jawline point
+            right_jaw = landmarks[397]    # Right jawline point
+            chin = landmarks[152]         # Chin point
+            
+            # Jawline measurements
+            jawline_width = np.linalg.norm(right_jaw - left_jaw)
+            left_jaw_projection = np.linalg.norm(left_jaw - chin)
+            right_jaw_projection = np.linalg.norm(right_jaw - chin)
+            
+            # === FOREHEAD REGION ===
+            forehead_center = landmarks[10]   # Forehead center
+            left_temple = landmarks[108]      # Left temple
+            right_temple = landmarks[337]     # Right temple
+            
+            # Forehead width
+            forehead_width = np.linalg.norm(right_temple - left_temple)
+            
+            # === OVERALL FACE CONTOUR ===
+            # Face oval perimeter (approximation using key points)
+            face_oval_points = [
+                landmarks[10],   # Forehead
+                landmarks[234],  # Left cheek
+                landmarks[152],  # Chin
+                landmarks[454],  # Right cheek
+            ]
+            
+            # Calculate perimeter
+            face_perimeter = 0.0
+            for i in range(len(face_oval_points)):
+                p1 = face_oval_points[i]
+                p2 = face_oval_points[(i + 1) % len(face_oval_points)]
+                face_perimeter += np.linalg.norm(p2 - p1)
+            
+            # === FACIAL PUFFINESS SCORE (FPS) COMPONENTS ===
+            # These will be compared to baseline to detect expansion
             
             return {
                 'landmark_distances': {
-                    'cheek_width': float(cheek_distance)
+                    # Periorbital (critical for thyroid/kidney)
+                    'left_eye_width': float(left_eye_width),
+                    'left_eye_height': float(left_eye_height),
+                    'left_eye_area': float(left_eye_area),
+                    'right_eye_width': float(right_eye_width),
+                    'right_eye_height': float(right_eye_height),
+                    'right_eye_area': float(right_eye_area),
+                    'avg_eye_area': float(avg_eye_area),
+                    
+                    # Cheek region
+                    'cheek_width': float(cheek_width),
+                    'left_cheek_projection': float(left_cheek_projection),
+                    'right_cheek_projection': float(right_cheek_projection),
+                    'avg_cheek_projection': float(avg_cheek_projection),
+                    
+                    # Jawline
+                    'jawline_width': float(jawline_width),
+                    'left_jaw_projection': float(left_jaw_projection),
+                    'right_jaw_projection': float(right_jaw_projection),
+                    
+                    # Forehead
+                    'forehead_width': float(forehead_width),
+                    
+                    # Overall contour
+                    'face_perimeter': float(face_perimeter)
+                },
+                'fps_components': {
+                    # Individual region scores (normalized 0-100)
+                    # Will be calculated against baseline in aggregate metrics
+                    'periorbital_score': 0.0,  # Computed in aggregate
+                    'cheek_score': 0.0,
+                    'jawline_score': 0.0,
+                    'forehead_score': 0.0,
+                    'overall_contour_score': 0.0
                 }
             }
         except Exception as e:
-            logger.warning(f"Swelling detection error: {e}")
-            return {'landmark_distances': {}}
+            logger.warning(f"Comprehensive swelling detection error: {e}")
+            return {
+                'landmark_distances': {},
+                'fps_components': {}
+            }
     
     def _detect_head_movement(
         self,
@@ -785,32 +896,148 @@ class VideoAIEngine:
             metrics['sclera_blue_component'] = 0.0
             metrics['jaundice_risk_level'] = "unknown"
         
-        # ==================== Facial Swelling ====================
-        if len(landmark_distances) > 0:
-            # Aggregate cheek widths
-            cheek_widths = [d.get('cheek_width', 0) for d in landmark_distances]
-            avg_cheek_width = np.mean(cheek_widths) if cheek_widths else 0
+        # ==================== Comprehensive Facial Puffiness Score (FPS) ====================
+        if len(landmark_distances) > 0 and landmark_distances[0].get('landmark_distances'):
+            # Extract all measurements from landmark tracking
+            # Note: landmark_distances is a list of dicts with 'landmark_distances' key
+            all_measurements = {
+                'periorbital': {
+                    'left_eye_area': [d.get('landmark_distances', {}).get('left_eye_area', 0) for d in landmark_distances],
+                    'right_eye_area': [d.get('landmark_distances', {}).get('right_eye_area', 0) for d in landmark_distances],
+                    'avg_eye_area': [d.get('landmark_distances', {}).get('avg_eye_area', 0) for d in landmark_distances]
+                },
+                'cheek': {
+                    'cheek_width': [d.get('landmark_distances', {}).get('cheek_width', 0) for d in landmark_distances],
+                    'avg_cheek_projection': [d.get('landmark_distances', {}).get('avg_cheek_projection', 0) for d in landmark_distances]
+                },
+                'jawline': {
+                    'jawline_width': [d.get('landmark_distances', {}).get('jawline_width', 0) for d in landmark_distances]
+                },
+                'forehead': {
+                    'forehead_width': [d.get('landmark_distances', {}).get('forehead_width', 0) for d in landmark_distances]
+                },
+                'overall': {
+                    'face_perimeter': [d.get('landmark_distances', {}).get('face_perimeter', 0) for d in landmark_distances]
+                }
+            }
             
-            # Compare to baseline if available
-            swelling_score = 0.0
-            if patient_baseline and 'facial_symmetry_baseline' in patient_baseline:
-                baseline_width = patient_baseline['facial_symmetry_baseline']
-                deviation = (avg_cheek_width - baseline_width) / baseline_width * 100
-                swelling_score = max(0, deviation)
+            # Compute averages for each measurement
+            avg_eye_area = np.mean(all_measurements['periorbital']['avg_eye_area']) if all_measurements['periorbital']['avg_eye_area'] else 0
+            avg_cheek_width = np.mean(all_measurements['cheek']['cheek_width']) if all_measurements['cheek']['cheek_width'] else 0
+            avg_cheek_projection = np.mean(all_measurements['cheek']['avg_cheek_projection']) if all_measurements['cheek']['avg_cheek_projection'] else 0
+            avg_jawline_width = np.mean(all_measurements['jawline']['jawline_width']) if all_measurements['jawline']['jawline_width'] else 0
+            avg_forehead_width = np.mean(all_measurements['forehead']['forehead_width']) if all_measurements['forehead']['forehead_width'] else 0
+            avg_face_perimeter = np.mean(all_measurements['overall']['face_perimeter']) if all_measurements['overall']['face_perimeter'] else 0
             
-            metrics['facial_swelling_score'] = float(swelling_score)
+            # === Calculate FPS Components (compare to baseline) ===
+            periorbital_fps = 0.0
+            cheek_fps = 0.0
+            jawline_fps = 0.0
+            forehead_fps = 0.0
+            overall_fps = 0.0
+            
+            if patient_baseline:
+                # Periorbital FPS (critical for thyroid/kidney conditions)
+                baseline_eye_area = patient_baseline.get('baseline_eye_area', avg_eye_area)
+                if baseline_eye_area > 0:
+                    periorbital_fps = max(0, (avg_eye_area - baseline_eye_area) / baseline_eye_area * 100)
+                
+                # Cheek FPS
+                baseline_cheek_width = patient_baseline.get('baseline_cheek_width', avg_cheek_width)
+                if baseline_cheek_width > 0:
+                    cheek_fps = max(0, (avg_cheek_width - baseline_cheek_width) / baseline_cheek_width * 100)
+                
+                # Jawline FPS
+                baseline_jawline_width = patient_baseline.get('baseline_jawline_width', avg_jawline_width)
+                if baseline_jawline_width > 0:
+                    jawline_fps = max(0, (avg_jawline_width - baseline_jawline_width) / baseline_jawline_width * 100)
+                
+                # Forehead FPS
+                baseline_forehead_width = patient_baseline.get('baseline_forehead_width', avg_forehead_width)
+                if baseline_forehead_width > 0:
+                    forehead_fps = max(0, (avg_forehead_width - baseline_forehead_width) / baseline_forehead_width * 100)
+                
+                # Overall contour FPS
+                baseline_face_perimeter = patient_baseline.get('baseline_face_perimeter', avg_face_perimeter)
+                if baseline_face_perimeter > 0:
+                    overall_fps = max(0, (avg_face_perimeter - baseline_face_perimeter) / baseline_face_perimeter * 100)
+            
+            # === Composite Facial Puffiness Score (FPS) ===
+            # Weighted average: Periorbital 30%, Cheek 30%, Jawline 20%, Forehead 10%, Overall 10%
+            composite_fps = (
+                periorbital_fps * 0.30 +
+                cheek_fps * 0.30 +
+                jawline_fps * 0.20 +
+                forehead_fps * 0.10 +
+                overall_fps * 0.10
+            )
+            
+            # === Store all FPS metrics ===
+            metrics['facial_puffiness_score'] = float(composite_fps)  # NEW: Composite FPS
+            metrics['fps_periorbital'] = float(periorbital_fps)       # NEW: Eye puffiness
+            metrics['fps_cheek'] = float(cheek_fps)                   # NEW: Cheek swelling
+            metrics['fps_jawline'] = float(jawline_fps)               # NEW: Jawline swelling
+            metrics['fps_forehead'] = float(forehead_fps)             # NEW: Forehead swelling
+            metrics['fps_overall_contour'] = float(overall_fps)       # NEW: Overall expansion
+            
+            # Raw measurements (for baseline calculation)
+            metrics['raw_eye_area'] = float(avg_eye_area)
+            metrics['raw_cheek_width'] = float(avg_cheek_width)
+            metrics['raw_cheek_projection'] = float(avg_cheek_projection)
+            metrics['raw_jawline_width'] = float(avg_jawline_width)
+            metrics['raw_forehead_width'] = float(avg_forehead_width)
+            metrics['raw_face_perimeter'] = float(avg_face_perimeter)
+            
+            # Asymmetry detection
+            left_eye_areas = [d.get('landmark_distances', {}).get('left_eye_area', 0) for d in landmark_distances]
+            right_eye_areas = [d.get('landmark_distances', {}).get('right_eye_area', 0) for d in landmark_distances]
+            if left_eye_areas and right_eye_areas:
+                avg_left_eye = np.mean(left_eye_areas)
+                avg_right_eye = np.mean(right_eye_areas)
+                if max(avg_left_eye, avg_right_eye) > 0:
+                    asymmetry = abs(avg_left_eye - avg_right_eye) / max(avg_left_eye, avg_right_eye) * 100
+                    metrics['facial_asymmetry_score'] = float(asymmetry)
+                else:
+                    metrics['facial_asymmetry_score'] = 0.0
+            else:
+                metrics['facial_asymmetry_score'] = 0.0
+            
+            # Legacy compatibility (keep old field names)
+            metrics['facial_swelling_score'] = float(composite_fps)  # Alias for legacy code
             metrics['left_cheek_distance'] = float(avg_cheek_width)
             metrics['right_cheek_distance'] = float(avg_cheek_width)
-            metrics['eye_puffiness_left'] = 0.0  # Placeholder
-            metrics['eye_puffiness_right'] = 0.0  # Placeholder
-            metrics['facial_asymmetry_score'] = float(np.std(cheek_widths)) if cheek_widths else 0.0
+            metrics['eye_puffiness_left'] = float(periorbital_fps)   # Using periorbital FPS
+            metrics['eye_puffiness_right'] = float(periorbital_fps)
+            
+            # FPS risk classification
+            if composite_fps < 10:
+                metrics['facial_puffiness_risk'] = "low"
+            elif composite_fps < 25:
+                metrics['facial_puffiness_risk'] = "medium"
+            else:
+                metrics['facial_puffiness_risk'] = "high"
+                
         else:
+            # No facial landmarks detected
+            metrics['facial_puffiness_score'] = 0.0
+            metrics['fps_periorbital'] = 0.0
+            metrics['fps_cheek'] = 0.0
+            metrics['fps_jawline'] = 0.0
+            metrics['fps_forehead'] = 0.0
+            metrics['fps_overall_contour'] = 0.0
+            metrics['raw_eye_area'] = 0.0
+            metrics['raw_cheek_width'] = 0.0
+            metrics['raw_cheek_projection'] = 0.0
+            metrics['raw_jawline_width'] = 0.0
+            metrics['raw_forehead_width'] = 0.0
+            metrics['raw_face_perimeter'] = 0.0
+            metrics['facial_asymmetry_score'] = 0.0
             metrics['facial_swelling_score'] = 0.0
             metrics['left_cheek_distance'] = 0.0
             metrics['right_cheek_distance'] = 0.0
             metrics['eye_puffiness_left'] = 0.0
             metrics['eye_puffiness_right'] = 0.0
-            metrics['facial_asymmetry_score'] = 0.0
+            metrics['facial_puffiness_risk'] = "unknown"
         
         # ==================== Hand, Nail & Nail Bed Analysis ====================
         if frames_with_hands > 0:
