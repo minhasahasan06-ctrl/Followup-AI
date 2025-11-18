@@ -93,7 +93,7 @@ class RespiratoryMetricsService:
             z_score_vs_baseline=z_score,
             rolling_daily_avg=None,  # Will compute after insert
             rolling_three_day_slope=None,  # Will compute after insert
-            metadata={
+            metrics_metadata={
                 'chest_movements_sample': chest_movements[:100] if len(chest_movements) > 100 else chest_movements,
                 'fps': fps,
                 'session_duration': len(chest_movements) / fps if fps > 0 else 0

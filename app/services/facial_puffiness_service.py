@@ -103,7 +103,7 @@ class FacialPuffinessService:
             raw_face_perimeter=raw_face_perimeter,
             detection_confidence=detection_confidence,
             frames_analyzed=frames_analyzed,
-            metadata={
+            metrics_metadata={
                 'full_fps_metrics': fps_metrics,
                 'timestamp_iso': timestamp.isoformat()
             }
