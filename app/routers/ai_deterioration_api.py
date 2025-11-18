@@ -443,9 +443,13 @@ async def analyze_video(
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=session.s3_key)
         video_bytes = response['Body'].read()
         
-        # Run Video AI Engine
+        # Retrieve patient FPS baseline for personalized comparison
+        fps_service = FacialPuffinessService(db)
+        patient_baseline = fps_service.get_patient_baseline(session.patient_id)
+        
+        # Run Video AI Engine with baseline
         engine = VideoAIEngine(db)
-        metrics_dict = await engine.analyze_video(video_bytes, session.patient_id)
+        metrics_dict = await engine.analyze_video(video_bytes, patient_baseline)
         
         # Create VideoMetrics record
         metrics = VideoMetrics(
