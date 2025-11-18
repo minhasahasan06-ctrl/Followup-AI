@@ -279,3 +279,147 @@ class RespiratoryBaseline(Base):
     
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class SkinAnalysisMetric(Base):
+    """
+    Comprehensive skin analysis metrics from video examination
+    Tracks perfusion, color changes, capillary refill, and nailbed health
+    """
+    __tablename__ = "skin_analysis_metrics"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    patient_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(String, ForeignKey("video_exam_sessions.id", ondelete="CASCADE"), nullable=True)
+    recorded_at = Column(DateTime(timezone=True), nullable=False)
+    
+    # === LAB Color Space Metrics (L*=lightness, a*=red-green, b*=yellow-blue) ===
+    
+    # Facial region (pallor, cyanosis, jaundice detection)
+    facial_l_lightness = Column(Float)  # 0-100 (darker=pallor/cyanosis)
+    facial_a_red_green = Column(Float)  # -128 to 127 (negative=cyanosis, positive=healthy pink)
+    facial_b_yellow_blue = Column(Float)  # -128 to 127 (positive=jaundice)
+    facial_perfusion_index = Column(Float)  # 0-100 composite (low=poor perfusion)
+    
+    # Palmar region (pallor, anemia detection)
+    palmar_l_lightness = Column(Float)
+    palmar_a_red_green = Column(Float)
+    palmar_b_yellow_blue = Column(Float)
+    palmar_perfusion_index = Column(Float)  # 0-100
+    
+    # Nailbed region (cyanosis, anemia, clubbing)
+    nailbed_l_lightness = Column(Float)
+    nailbed_a_red_green = Column(Float)
+    nailbed_b_yellow_blue = Column(Float)
+    nailbed_color_index = Column(Float)  # 0-100 (low=cyanosis/anemia)
+    
+    # === Clinical Color Changes ===
+    pallor_detected = Column(Boolean, default=False)  # Low L* + low a*
+    pallor_severity = Column(Float)  # 0-1 (0=none, 1=severe)
+    pallor_region = Column(String)  # 'facial', 'palmar', 'nailbed', 'generalized'
+    
+    cyanosis_detected = Column(Boolean, default=False)  # Low L* + negative a* + negative b*
+    cyanosis_severity = Column(Float)  # 0-1
+    cyanosis_region = Column(String)  # 'perioral', 'peripheral', 'central'
+    
+    jaundice_detected = Column(Boolean, default=False)  # High b* (yellow)
+    jaundice_severity = Column(Float)  # 0-1
+    jaundice_region = Column(String)  # 'sclera', 'facial', 'generalized'
+    
+    # === Capillary Refill Proxy ===
+    capillary_refill_time_sec = Column(Float)  # Time to 90% recovery after finger press
+    capillary_refill_method = Column(String)  # 'guided_press', 'passive_observation', 'not_measured'
+    capillary_refill_quality = Column(Float)  # 0-1 (confidence in measurement)
+    capillary_refill_abnormal = Column(Boolean, default=False)  # >2 seconds = abnormal
+    
+    # === Nailbed Analysis ===
+    nail_clubbing_detected = Column(Boolean, default=False)  # Distal phalanx bulging
+    nail_clubbing_severity = Column(Float)  # 0-1 (Schamroth window test proxy)
+    nail_pitting_detected = Column(Boolean, default=False)  # Small depressions in nail plate
+    nail_pitting_count = Column(Integer)  # Number of pits detected
+    nail_abnormalities = Column(JSON)  # Array of {type, location, severity} for leukonychia, splinter hemorrhages, etc.
+    
+    # === Texture & Temperature Proxies ===
+    skin_texture_score = Column(Float)  # 0-1 (Laplacian variance - low=smooth, high=rough/dry)
+    hydration_status = Column(String)  # 'dry', 'normal', 'moist'
+    temperature_proxy = Column(String)  # 'cool' (pallor), 'normal', 'warm' (redness/inflammation)
+    
+    # === Rash/Lesion Detection ===
+    rash_detected = Column(Boolean, default=False)
+    rash_distribution = Column(String)  # 'localized', 'scattered', 'generalized'
+    lesions_bruises_detected = Column(Boolean, default=False)
+    lesion_details = Column(JSON)  # Array of {type: 'bruise'|'lesion'|'ulcer', location, size_mm, color}
+    
+    # === Baseline Comparison ===
+    z_score_perfusion_vs_baseline = Column(Float)  # Facial perfusion deviation
+    z_score_capillary_vs_baseline = Column(Float)  # Capillary refill time deviation
+    z_score_nailbed_vs_baseline = Column(Float)  # Nailbed color deviation
+    
+    # === Rolling Temporal Analytics ===
+    rolling_24hr_avg_perfusion = Column(Float)  # 24-hour rolling average
+    rolling_3day_perfusion_slope = Column(Float)  # 3-day trend (positive=improving, negative=worsening)
+    rolling_24hr_avg_capillary_refill = Column(Float)
+    
+    # === Detection Quality ===
+    detection_confidence = Column(Float, default=0.0)  # 0-1
+    frames_analyzed = Column(Integer, default=0)
+    facial_roi_detected = Column(Boolean, default=False)
+    palmar_roi_detected = Column(Boolean, default=False)
+    nailbed_roi_detected = Column(Boolean, default=False)
+    
+    # Metadata for recomputation & debugging
+    metrics_metadata = Column(JSON)  # Raw LAB histograms, landmark coords, video segment timestamps
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Indices for efficient time-series queries
+    __table_args__ = (
+        Index('idx_skin_patient_time', 'patient_id', 'recorded_at'),
+        Index('idx_skin_session', 'session_id'),
+    )
+
+
+class SkinBaseline(Base):
+    """Patient skin baseline measurements for personalized deviation detection"""
+    __tablename__ = "skin_baselines"
+    
+    patient_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    
+    # === Baseline LAB Color Vectors ===
+    
+    # Facial baseline
+    baseline_facial_l = Column(Float, nullable=False)
+    baseline_facial_a = Column(Float, nullable=False)
+    baseline_facial_b = Column(Float, nullable=False)
+    baseline_facial_perfusion = Column(Float, nullable=False)
+    
+    # Palmar baseline
+    baseline_palmar_l = Column(Float, nullable=False)
+    baseline_palmar_a = Column(Float, nullable=False)
+    baseline_palmar_b = Column(Float, nullable=False)
+    baseline_palmar_perfusion = Column(Float, nullable=False)
+    
+    # Nailbed baseline
+    baseline_nailbed_l = Column(Float, nullable=False)
+    baseline_nailbed_a = Column(Float, nullable=False)
+    baseline_nailbed_b = Column(Float, nullable=False)
+    baseline_nailbed_color_index = Column(Float, nullable=False)
+    
+    # === Capillary Refill Baseline ===
+    baseline_capillary_refill_sec = Column(Float, nullable=False, default=1.5)  # Normal <2 sec
+    baseline_capillary_refill_std = Column(Float, nullable=False, default=0.3)
+    
+    # === Texture/Hydration Baseline ===
+    baseline_texture_score = Column(Float)
+    baseline_hydration_status = Column(String)  # Patient's typical hydration
+    
+    # === Baseline Quality & EMA Parameters ===
+    sample_size = Column(Integer, nullable=False, default=0)
+    confidence = Column(Float, nullable=False, default=0.0)  # 0-1
+    
+    # Metadata
+    source = Column(String, default="auto")  # 'auto' or 'manual' (dermatologist-calibrated)
+    last_calibration_at = Column(DateTime(timezone=True))
+    
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
