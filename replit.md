@@ -67,6 +67,14 @@ The Python backend is required for the Guided Video Examination feature at `/ai-
 -   **ML Inference Infrastructure:** Self-hosted machine learning inference system with a model registry, Redis caching, async thread pool inference, HIPAA-compliant audit logging, batch processing, and ONNX optimization. Includes pre-trained Clinical-BERT and custom LSTM models.
 -   **AI Deterioration Detection System (Production-Ready):** A full-stack SaaS platform featuring:
     -   **Video AI Engine:** Extracts metrics like respiratory rate, skin pallor, sclera yellowness, facial swelling, head tremor, nail bed analysis (anaemia, nicotine stains, burns, abnormalities).
+    -   **Facial Puffiness Score (FPS) System:** Comprehensive facial contour tracking using MediaPipe Face Mesh 468 landmarks:
+        - **5 Regional Scores**: Periorbital (30% weight - critical for thyroid/kidney), Cheeks (30%), Jawline (20%), Forehead (10%), Overall Contour (10%)
+        - **Baseline Comparison**: % expansion from patient's personalized baseline
+        - **Composite FPS**: Weighted average (0-100+ scale) indicating overall facial puffiness
+        - **Asymmetry Detection**: Tracks left/right differences for lymphedema/allergic reactions
+        - **Disease-Specific Integration**: Personalized thresholds for thyroid disorder (periorbital focus), kidney disease (facial + peripheral), heart failure (generalized), allergic reactions (rapid swelling alerts)
+        - **Temporal Pattern Detection**: Morning vs evening puffiness patterns, acute vs chronic changes
+        - **Documentation**: FACIAL_PUFFINESS_SCORE_DOCUMENTATION.md
     -   **Comprehensive Respiratory Metrics System:** 
         - **Respiratory Variability Index (RVI)**: Measures breathing stability (coefficient of variation over 1-5 min)
         - **Baseline Tracking**: Auto-calculated patient baseline RR with exponential moving average updates
