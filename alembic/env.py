@@ -15,7 +15,8 @@ from app.models.ml_models import MLModel, MLPrediction, MLPerformanceLog, MLBatc
 from app.models.video_ai_models import (
     MediaSession, VideoMetrics,
     FacialPuffinessMetric, FacialPuffinessBaseline,
-    RespiratoryMetric, RespiratoryBaseline
+    RespiratoryMetric, RespiratoryBaseline,
+    SkinAnalysisMetric, SkinBaseline
 )
 from app.models.audio_ai_models import AudioMetrics
 from app.models.trend_models import TrendSnapshot, RiskEvent, PatientBaseline
