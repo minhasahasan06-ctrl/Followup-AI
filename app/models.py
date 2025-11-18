@@ -287,3 +287,78 @@ class EdemaBaseline(Base):
     __table_args__ = (
         Index('idx_edema_baseline_unique', 'patient_id', 'location', 'side', unique=True),
     )
+
+
+class FacialPuffinessMetric(Base):
+    """Time-series facial puffiness score (FPS) metrics using MediaPipe Face Mesh"""
+    __tablename__ = "facial_puffiness_metrics"
+    
+    id = Column(String, primary_key=True, server_default=func.gen_random_uuid())
+    patient_id = Column(String, ForeignKey("users.id"), nullable=False)
+    session_id = Column(String, ForeignKey("video_exam_sessions.id", ondelete="CASCADE"))
+    
+    # Timestamp
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Composite Facial Puffiness Score (FPS)
+    facial_puffiness_score = Column(Float)  # Weighted composite score (0-100+)
+    fps_risk_level = Column(String)  # 'low', 'medium', 'high'
+    
+    # Regional FPS scores (% expansion from baseline)
+    fps_periorbital = Column(Float)  # Eye region (30% weight)
+    fps_cheek = Column(Float)  # Cheek region (30% weight)
+    fps_jawline = Column(Float)  # Jawline region (20% weight)
+    fps_forehead = Column(Float)  # Forehead region (10% weight)
+    fps_overall_contour = Column(Float)  # Overall facial contour (10% weight)
+    
+    # Asymmetry detection
+    facial_asymmetry_score = Column(Float)  # % difference left/right eye areas
+    asymmetry_detected = Column(Boolean, default=False)  # Asymmetry >20%
+    
+    # Raw measurements (for baseline calculation & validation)
+    raw_eye_area = Column(Float)  # Current average eye area
+    raw_cheek_width = Column(Float)  # Current cheek width
+    raw_cheek_projection = Column(Float)  # Current cheek projection
+    raw_jawline_width = Column(Float)  # Current jawline width
+    raw_forehead_width = Column(Float)  # Current forehead width
+    raw_face_perimeter = Column(Float)  # Current face perimeter
+    
+    # Detection quality
+    detection_confidence = Column(Float, default=0.0)  # 0-1
+    frames_analyzed = Column(Integer, default=0)  # Number of frames with face detected
+    
+    # Metadata for recomputation & debugging
+    metadata = Column(JSON)  # Stores full landmark tracking, frame-by-frame measurements
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Indices for efficient time-series queries
+    __table_args__ = (
+        Index('idx_fps_patient_time', 'patient_id', 'recorded_at'),
+    )
+
+
+class FacialPuffinessBaseline(Base):
+    """Patient facial baseline measurements for FPS comparison"""
+    __tablename__ = "facial_puffiness_baselines"
+    
+    patient_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    
+    # Baseline facial measurements (from healthy state videos)
+    baseline_eye_area = Column(Float, nullable=False)
+    baseline_cheek_width = Column(Float, nullable=False)
+    baseline_cheek_projection = Column(Float, nullable=False)
+    baseline_jawline_width = Column(Float, nullable=False)
+    baseline_forehead_width = Column(Float, nullable=False)
+    baseline_face_perimeter = Column(Float, nullable=False)
+    
+    # Baseline quality metrics
+    sample_size = Column(Integer, nullable=False, default=0)  # Number of videos used
+    confidence = Column(Float, nullable=False, default=0.0)  # 0-1
+    
+    # Metadata
+    source = Column(String, default="auto")  # 'auto' or 'manual' (clinician override)
+    last_calibration_at = Column(DateTime(timezone=True))  # Last time baseline was recalibrated
+    
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
