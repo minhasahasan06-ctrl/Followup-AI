@@ -12,7 +12,11 @@ from alembic import context
 # Import all models to ensure they're registered with Base.metadata
 from app.database import Base
 from app.models.ml_models import MLModel, MLPrediction, MLPerformanceLog, MLBatchJob
-from app.models.video_ai_models import MediaSession, VideoMetrics
+from app.models.video_ai_models import (
+    MediaSession, VideoMetrics,
+    FacialPuffinessMetric, FacialPuffinessBaseline,
+    RespiratoryMetric, RespiratoryBaseline
+)
 from app.models.audio_ai_models import AudioMetrics
 from app.models.trend_models import TrendSnapshot, RiskEvent, PatientBaseline
 from app.models.alert_models import AlertRule, Alert
