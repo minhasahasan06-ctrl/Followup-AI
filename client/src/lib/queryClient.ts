@@ -17,7 +17,9 @@ function getPythonBackendUrl(url: string): string {
   if (normalizedUrl.startsWith("/api/v1/video-ai") || 
       normalizedUrl.startsWith("/api/v1/audio-ai") || 
       normalizedUrl.startsWith("/api/v1/trends") || 
-      normalizedUrl.startsWith("/api/v1/alerts")) {
+      normalizedUrl.startsWith("/api/v1/alerts") ||
+      normalizedUrl.startsWith("/api/v1/guided-audio-exam") ||
+      normalizedUrl.startsWith("/api/v1/guided-exam")) {
     return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
   }
   return normalizedUrl;

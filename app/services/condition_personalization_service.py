@@ -1221,4 +1221,169 @@ class ConditionPersonalizationService:
                 },
                 'wellness_guidance': 'General pallor screening for wellness monitoring.'
             }
+    
+    def get_audio_examination_config(self, patient_id: str) -> Dict[str, Any]:
+        """
+        Get personalized audio examination configuration
+        Determines which audio stages to prioritize based on patient conditions
+        
+        Returns:
+            - prioritized_stages: List of stages in priority order
+            - stage_durations: Recommended recording duration per stage
+            - skip_optional_stages: Whether non-critical stages can be skipped
+        """
+        conditions = self.get_patient_conditions(patient_id)
+        
+        # Respiratory conditions prioritize breathing + coughing stages
+        respiratory_conditions = ['asthma', 'copd', 'heart_failure', 'pulmonary_embolism',
+                                 'pneumonia', 'bronchiectasis', 'allergic_reactions']
+        
+        # Neurological conditions prioritize speaking + reading stages
+        neuro_conditions = ['parkinsons', 'als', 'ms', 'stroke', 'dementia']
+        
+        has_respiratory = any(c in conditions for c in respiratory_conditions)
+        has_neuro = any(c in conditions for c in neuro_conditions)
+        
+        config = {
+            'conditions': conditions,
+            'has_respiratory_emphasis': has_respiratory,
+            'has_neuro_emphasis': has_neuro
+        }
+        
+        if has_respiratory and has_neuro:
+            # All stages critical
+            config.update({
+                'prioritized_stages': ['breathing', 'coughing', 'speaking', 'reading'],
+                'stage_durations': {
+                    'breathing': 30,  # seconds
+                    'coughing': 15,
+                    'speaking': 30,
+                    'reading': 45
+                },
+                'skip_optional_stages': False,
+                'critical_stages': ['breathing', 'coughing', 'speaking', 'reading'],
+                'wellness_guidance': 'Complete all examination stages for comprehensive respiratory and neurological monitoring.'
+            })
+        elif has_respiratory:
+            # Breathing first, then coughing (most important)
+            config.update({
+                'prioritized_stages': ['breathing', 'coughing', 'speaking', 'reading'],
+                'stage_durations': {
+                    'breathing': 30,
+                    'coughing': 20,  # Longer for respiratory patients
+                    'speaking': 20,
+                    'reading': 30
+                },
+                'skip_optional_stages': True,
+                'critical_stages': ['breathing', 'coughing'],
+                'optional_stages': ['speaking', 'reading'],
+                'wellness_guidance': 'Focus on breathing and coughing stages to monitor respiratory wellness patterns.'
+            })
+        elif has_neuro:
+            # Speaking first, then reading (most important)
+            config.update({
+                'prioritized_stages': ['speaking', 'reading', 'breathing', 'coughing'],
+                'stage_durations': {
+                    'breathing': 20,
+                    'coughing': 15,
+                    'speaking': 40,  # Longer for neuro patients
+                    'reading': 50  # Longest for neurological assessment
+                },
+                'skip_optional_stages': True,
+                'critical_stages': ['speaking', 'reading'],
+                'optional_stages': ['breathing', 'coughing'],
+                'wellness_guidance': 'Focus on speaking and reading stages to monitor speech fluency and cognitive patterns.'
+            })
+        else:
+            # General wellness - all stages equal priority
+            config.update({
+                'prioritized_stages': ['breathing', 'coughing', 'speaking', 'reading'],
+                'stage_durations': {
+                    'breathing': 25,
+                    'coughing': 15,
+                    'speaking': 30,
+                    'reading': 40
+                },
+                'skip_optional_stages': False,
+                'critical_stages': ['breathing', 'speaking'],
+                'optional_stages': ['coughing', 'reading'],
+                'wellness_guidance': 'Complete all stages for comprehensive wellness audio monitoring.'
+            })
+        
+        return config
+    
+    def get_respiratory_audio_config(self, patient_id: str) -> Dict[str, Any]:
+        """
+        Get personalized respiratory audio monitoring thresholds
+        Used for cough detection, wheeze analysis, breath sound classification
+        
+        Returns:
+            - cough_monitoring: Thresholds and focus for cough detection
+            - wheeze_monitoring: Thresholds for wheeze detection
+            - breath_sound_focus: Which breath sounds to emphasize
+        """
+        conditions = self.get_patient_conditions(patient_id)
+        
+        # Initialize default config
+        config = {
+            'conditions': conditions,
+            'cough_monitoring': {
+                'priority': 'medium',
+                'frequency_threshold_per_minute': 2.0,  # Alert if >2 coughs/min
+                'intensity_threshold': 50.0,  # 0-100 scale
+                'track_cough_type': True,  # dry vs wet
+                'wellness_guidance': 'Monitor cough frequency and type for respiratory wellness patterns.'
+            },
+            'wheeze_monitoring': {
+                'priority': 'medium',
+                'detection_threshold': 0.3,  # Probability threshold
+                'frequency_range_hz': [100, 1000],  # Typical wheeze frequencies
+                'track_timing': True,  # Inspiratory vs expiratory
+                'wellness_guidance': 'Track wheeze patterns as indicator of airway changes.'
+            },
+            'breath_sound_classification': {
+                'priority': 'medium',
+                'focus_sounds': ['wheeze', 'crackles', 'stridor'],
+                'breath_rate_range': {'min': 12, 'max': 20},
+                'wellness_guidance': 'Monitor breathing sounds for changes in respiratory wellness.'
+            }
+        }
+        
+        # Condition-specific overrides
+        if 'asthma' in conditions:
+            config['cough_monitoring']['priority'] = 'high'
+            config['wheeze_monitoring']['priority'] = 'critical'
+            config['wheeze_monitoring']['detection_threshold'] = 0.2  # More sensitive
+            config['breath_sound_classification']['focus_sounds'] = ['wheeze', 'prolonged_expiration']
+            config['wellness_guidance'] = 'For asthma monitoring, track wheeze frequency and cough patterns as wellness indicators.'
+        
+        elif 'copd' in conditions:
+            config['cough_monitoring']['priority'] = 'critical'
+            config['cough_monitoring']['track_cough_type'] = True
+            config['cough_monitoring']['frequency_threshold_per_minute'] = 1.5  # More sensitive
+            config['wheeze_monitoring']['priority'] = 'high'
+            config['breath_sound_classification']['focus_sounds'] = ['wheeze', 'prolonged_expiration', 'crackles']
+            config['breath_sound_classification']['breath_rate_range'] = {'min': 12, 'max': 28}
+            config['wellness_guidance'] = 'For COPD monitoring, track cough frequency and type. Productive coughs may indicate mucus changes.'
+        
+        elif 'heart_failure' in conditions:
+            config['cough_monitoring']['priority'] = 'high'
+            config['cough_monitoring']['cough_type_focus'] = 'dry'  # Cardiac cough often dry
+            config['breath_sound_classification']['focus_sounds'] = ['crackles', 'rales']
+            config['breath_sound_classification']['priority'] = 'critical'
+            config['wellness_guidance'] = 'For heart failure monitoring, dry cough and crackles may indicate fluid changes.'
+        
+        elif 'pneumonia' in conditions:
+            config['cough_monitoring']['priority'] = 'critical'
+            config['cough_monitoring']['cough_type_focus'] = 'productive'  # Wet cough common
+            config['breath_sound_classification']['focus_sounds'] = ['crackles', 'bronchial_sounds']
+            config['wellness_guidance'] = 'For pneumonia recovery, track productive cough and crackles as indicators of lung clearance.'
+        
+        elif 'allergic_reactions' in conditions:
+            config['wheeze_monitoring']['priority'] = 'critical'
+            config['wheeze_monitoring']['detection_threshold'] = 0.15  # Very sensitive
+            config['wheeze_monitoring']['rapid_onset_detection'] = True
+            config['wellness_guidance'] = 'For allergy monitoring, sudden wheeze onset may indicate allergic airway response.'
+        
+        return config
 
