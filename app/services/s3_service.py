@@ -12,6 +12,7 @@ from typing import Dict, Optional
 import uuid
 import shutil
 import logging
+import asyncio
 
 from app.models.symptom_journal import BodyArea
 
@@ -68,9 +69,9 @@ class S3Service:
         bucket = os.getenv('AWS_S3_BUCKET_NAME')
         return all([aws_key, aws_secret, bucket])
     
-    def upload_file(self, file_data: bytes, s3_key: str, content_type: str = 'application/octet-stream', metadata: Optional[Dict] = None) -> str:
+    async def upload_file(self, file_data: bytes, s3_key: str, content_type: str = 'application/octet-stream', metadata: Optional[Dict] = None) -> str:
         """
-        Upload file to S3 or local storage
+        Upload file to S3 or local storage (async)
         
         Args:
             file_data: File bytes
@@ -83,7 +84,7 @@ class S3Service:
         """
         if self.use_s3:
             try:
-                # Upload to S3 with server-side encryption
+                # Upload to S3 with server-side encryption (in thread pool to avoid blocking)
                 upload_params = {
                     'Bucket': self.bucket_name,
                     'Key': s3_key,
@@ -100,7 +101,8 @@ class S3Service:
                     upload_params['ServerSideEncryption'] = 'aws:kms'
                     upload_params['SSEKMSKeyId'] = kms_key_id
                 
-                self.s3_client.put_object(**upload_params)
+                # FIX ISSUE B: Offload boto3 I/O to thread pool
+                await asyncio.to_thread(self.s3_client.put_object, **upload_params)
                 s3_uri = f"s3://{self.bucket_name}/{s3_key}"
                 logger.info(f"Uploaded to S3: {s3_uri}")
                 return s3_uri
@@ -108,20 +110,23 @@ class S3Service:
                 logger.error(f"S3 upload failed: {e}")
                 raise
         else:
-            # Local filesystem fallback
+            # FIX ISSUE B: Offload local filesystem I/O to thread pool (non-blocking)
             local_filename = s3_key.replace('/', '_')
             local_path = os.path.join(self.local_storage_dir, local_filename)
             
-            with open(local_path, 'wb') as f:
-                f.write(file_data)
+            def _write_local_file():
+                with open(local_path, 'wb') as f:
+                    f.write(file_data)
+            
+            await asyncio.to_thread(_write_local_file)
             
             file_uri = f"file://{os.path.abspath(local_path)}"
             logger.info(f"Saved to local storage: {file_uri}")
             return file_uri
     
-    def download_file(self, uri: str) -> bytes:
+    async def download_file(self, uri: str) -> bytes:
         """
-        Download file from S3 or local storage
+        Download file from S3 or local storage (async)
         
         Args:
             uri: S3 URI (s3://...) or file URI (file://...)
@@ -136,16 +141,24 @@ class S3Service:
             key = parts[1]
             
             try:
-                response = self.s3_client.get_object(Bucket=bucket, Key=key)
-                return response['Body'].read()
+                # FIX ISSUE B: Offload boto3 I/O to thread pool
+                def _s3_download():
+                    response = self.s3_client.get_object(Bucket=bucket, Key=key)
+                    return response['Body'].read()
+                
+                return await asyncio.to_thread(_s3_download)
             except ClientError as e:
                 logger.error(f"S3 download failed: {e}")
                 raise
         elif uri.startswith('file://'):
-            # Read from local filesystem
+            # FIX ISSUE B: Offload local filesystem I/O to thread pool (non-blocking)
             local_path = uri.replace('file://', '')
-            with open(local_path, 'rb') as f:
-                return f.read()
+            
+            def _read_local_file():
+                with open(local_path, 'rb') as f:
+                    return f.read()
+            
+            return await asyncio.to_thread(_read_local_file)
         else:
             raise ValueError(f"Invalid URI format: {uri}")
     

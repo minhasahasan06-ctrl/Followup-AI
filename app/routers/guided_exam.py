@@ -164,7 +164,8 @@ async def upload_frame_to_s3(
         }
         
         # Upload using S3Service (automatically handles S3 or local fallback)
-        uri = s3_service.upload_file(
+        # FIX ISSUE B: Await async upload to avoid blocking event loop
+        uri = await s3_service.upload_file(
             file_data=frame_data,
             s3_key=s3_key,
             content_type='image/jpeg',
@@ -191,7 +192,8 @@ async def download_frame_from_s3(uri: str) -> bytes:
     """
     try:
         # Use S3Service to download (handles both S3 and local)
-        frame_data = s3_service.download_file(uri)
+        # FIX ISSUE B: Await async download to avoid blocking event loop
+        frame_data = await s3_service.download_file(uri)
         return frame_data
         
     except Exception as e:
