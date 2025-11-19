@@ -27,6 +27,25 @@ interface StageInfo {
   duration: number;
 }
 
+interface AudioAnalysisResults {
+  session_id: string;
+  yamnet_available: boolean;
+  top_audio_event: string | null;
+  cough_probability_ml: number;
+  speech_probability_ml: number;
+  breathing_probability_ml: number;
+  wheeze_probability_ml: number;
+  speech_fluency_score: number | null;
+  voice_weakness_index: number | null;
+  pause_frequency_per_minute: number | null;
+  vocal_amplitude_db: number | null;
+  breath_rate_per_minute: number | null;
+  wheeze_detected: boolean;
+  cough_count: number;
+  analysis_confidence: number;
+  recommendations: string[];
+}
+
 const STAGE_INFO: Record<AudioStage, StageInfo> = {
   breathing: {
     name: "Breathing",
@@ -187,7 +206,7 @@ export default function GuidedAudioExam() {
   });
 
   // Fetch results after completion
-  const { data: analysisResults } = useQuery({
+  const { data: analysisResults, isLoading: resultsLoading } = useQuery<AudioAnalysisResults>({
     queryKey: ["/api/v1/guided-audio-exam/sessions", sessionId, "results"],
     enabled: examComplete && !!sessionId,
     retry: 2
