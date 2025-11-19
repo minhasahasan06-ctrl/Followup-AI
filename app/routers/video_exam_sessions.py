@@ -56,7 +56,11 @@ async def log_camera_access_event(
 
 # AWS S3 configuration
 S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME", "followup-ai-hipaa-storage")
+# Extract region code from AWS_REGION (handles both "us-east-1" and "US East (N. Virginia) us-east-1" formats)
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+if " " in AWS_REGION:
+    # Extract region code from format like "Asia Pacific (Sydney) ap-southeast-2"
+    AWS_REGION = AWS_REGION.split()[-1]
 KMS_KEY_ID = os.getenv("AWS_KMS_KEY_ID")
 
 # Initialize S3 client
