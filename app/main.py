@@ -22,14 +22,15 @@ from app.routers import (
     baseline,
     deviation,
     risk_score,
-    ml_inference,
+    # ml_inference,  # TEMPORARILY DISABLED - blocking import issue
     ai_deterioration_api,
     video_exam_sessions,
     guided_exam
 )
 
 # Import ML model lifecycle management
-from app.services.ml_inference import load_ml_models, unload_ml_models
+# TEMPORARILY DISABLED - blocking import issue
+# from app.services.ml_inference import load_ml_models, unload_ml_models
 
 
 @asynccontextmanager
@@ -81,7 +82,7 @@ app.include_router(medication_side_effects.router)
 app.include_router(baseline.router)
 app.include_router(deviation.router)
 app.include_router(risk_score.router)
-app.include_router(ml_inference.router)
+# app.include_router(ml_inference.router)  # TEMPORARILY DISABLED - blocking import issue
 
 # AI Deterioration Detection System - 52 production endpoints
 app.include_router(ai_deterioration_api.video_router)
@@ -93,9 +94,11 @@ app.include_router(ai_deterioration_api.alert_router)
 app.include_router(video_exam_sessions.router)
 app.include_router(guided_exam.router)
 
-Base.metadata.create_all(bind=engine)
+# TEMPORARILY DISABLED to debug startup hang
+# Base.metadata.create_all(bind=engine)
 
-check_openai_baa_compliance()
+# TEMPORARILY DISABLED to debug startup hang  
+# check_openai_baa_compliance()
 
 
 @app.get("/")

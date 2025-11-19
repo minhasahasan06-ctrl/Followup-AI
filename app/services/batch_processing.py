@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 import logging
 
 from app.models.ml_models import MLBatchJob, MLModel
-from app.services.ml_inference import ml_registry
+# TEMPORARILY DISABLED - blocking import issue
+# from app.services.ml_inference import ml_registry
 
 logger = logging.getLogger(__name__)
 
