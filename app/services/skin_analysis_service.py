@@ -28,6 +28,8 @@ class SkinAnalysisService:
         patient_id: str,
         session_id: str,
         skin_metrics: Dict,
+        frames_analyzed: int = 0,
+        detection_confidence: float = 0.0,
         timestamp: Optional[datetime] = None
     ) -> SkinAnalysisMetric:
         """
@@ -37,6 +39,8 @@ class SkinAnalysisService:
             patient_id: Patient identifier
             session_id: Video examination session ID
             skin_metrics: Dict containing all LAB color metrics, capillary refill, nailbed analysis
+            frames_analyzed: Number of frames analyzed in video
+            detection_confidence: Overall detection confidence score
             timestamp: Recording timestamp (defaults to now)
             
         Returns:
@@ -45,52 +49,57 @@ class SkinAnalysisService:
         if timestamp is None:
             timestamp = datetime.utcnow()
         
-        # Extract LAB color metrics (facial, palmar, nailbed)
+        # Extract LAB color metrics (NEW format from _compute_aggregate_metrics)
+        # _compute_aggregate_metrics produces: lab_facial_perfusion_avg, lab_palmar_perfusion_avg, lab_nailbed_color_index_avg
+        facial_perfusion = skin_metrics.get('lab_facial_perfusion_avg', 0.0)
+        palmar_perfusion = skin_metrics.get('lab_palmar_perfusion_avg', 0.0)
+        nailbed_perfusion = skin_metrics.get('lab_nailbed_color_index_avg', 0.0)
+        
+        # Legacy compatibility (will be removed after migration)
         facial_l = skin_metrics.get('facial_l_lightness', 0.0)
         facial_a = skin_metrics.get('facial_a_red_green', 0.0)
         facial_b = skin_metrics.get('facial_b_yellow_blue', 0.0)
-        facial_perfusion = skin_metrics.get('facial_perfusion_index', 0.0)
-        
         palmar_l = skin_metrics.get('palmar_l_lightness', 0.0)
         palmar_a = skin_metrics.get('palmar_a_red_green', 0.0)
         palmar_b = skin_metrics.get('palmar_b_yellow_blue', 0.0)
-        palmar_perfusion = skin_metrics.get('palmar_perfusion_index', 0.0)
-        
         nailbed_l = skin_metrics.get('nailbed_l_lightness', 0.0)
         nailbed_a = skin_metrics.get('nailbed_a_red_green', 0.0)
         nailbed_b = skin_metrics.get('nailbed_b_yellow_blue', 0.0)
-        nailbed_color_index = skin_metrics.get('nailbed_color_index', 0.0)
         
-        # Clinical color changes
-        pallor_detected = skin_metrics.get('pallor_detected', False)
-        pallor_severity = skin_metrics.get('pallor_severity', 0.0)
-        pallor_region = skin_metrics.get('pallor_region', 'none')
+        # Use nailbed_perfusion as the color index
+        nailbed_color_index = nailbed_perfusion
         
-        cyanosis_detected = skin_metrics.get('cyanosis_detected', False)
-        cyanosis_severity = skin_metrics.get('cyanosis_severity', 0.0)
-        cyanosis_region = skin_metrics.get('cyanosis_region', 'none')
+        # Clinical color changes (NEW format from _compute_aggregate_metrics)
+        # _compute_aggregate_metrics returns lab_* prefixed fields
+        pallor_detected = skin_metrics.get('lab_pallor_detected', False)
+        pallor_severity = skin_metrics.get('lab_pallor_severity', 0.0)
+        pallor_region = skin_metrics.get('lab_pallor_region', 'none')
         
-        jaundice_detected = skin_metrics.get('jaundice_detected', False)
-        jaundice_severity = skin_metrics.get('jaundice_severity', 0.0)
-        jaundice_region = skin_metrics.get('jaundice_region', 'none')
+        cyanosis_detected = skin_metrics.get('lab_cyanosis_detected', False)
+        cyanosis_severity = skin_metrics.get('lab_cyanosis_severity', 0.0)
+        cyanosis_region = skin_metrics.get('lab_cyanosis_region', 'none')
         
-        # Capillary refill
-        capillary_refill_time = skin_metrics.get('capillary_refill_time_sec', None)
-        capillary_refill_method = skin_metrics.get('capillary_refill_method', 'not_measured')
-        capillary_refill_quality = skin_metrics.get('capillary_refill_quality', 0.0)
-        capillary_refill_abnormal = skin_metrics.get('capillary_refill_abnormal', False)
+        jaundice_detected = skin_metrics.get('lab_jaundice_detected', False)
+        jaundice_severity = skin_metrics.get('lab_jaundice_severity', 0.0)
+        jaundice_region = 'facial'  # Jaundice is primarily facial
         
-        # Nailbed analysis
-        nail_clubbing_detected = skin_metrics.get('nail_clubbing_detected', False)
-        nail_clubbing_severity = skin_metrics.get('nail_clubbing_severity', 0.0)
-        nail_pitting_detected = skin_metrics.get('nail_pitting_detected', False)
-        nail_pitting_count = skin_metrics.get('nail_pitting_count', 0)
-        nail_abnormalities = skin_metrics.get('nail_abnormalities', [])
+        # Capillary refill (NEW: from _compute_aggregate_metrics)
+        capillary_refill_time = skin_metrics.get('lab_capillary_refill_time_sec', None)
+        capillary_refill_method = skin_metrics.get('lab_capillary_refill_method', 'not_measured')
+        capillary_refill_quality = skin_metrics.get('lab_capillary_refill_quality', 0.0)
+        capillary_refill_abnormal = skin_metrics.get('lab_capillary_refill_abnormal', False)
         
-        # Texture & temperature
-        skin_texture_score = skin_metrics.get('skin_texture_score', 0.0)
-        hydration_status = skin_metrics.get('hydration_status', 'normal')
-        temperature_proxy = skin_metrics.get('temperature_proxy', 'normal')
+        # Nailbed analysis (NEW format from _compute_aggregate_metrics)
+        nail_clubbing_detected = skin_metrics.get('lab_nail_clubbing_detected', False)
+        nail_clubbing_severity = skin_metrics.get('lab_nail_clubbing_severity', 0.0)
+        nail_pitting_detected = skin_metrics.get('lab_nail_pitting_detected', False)
+        nail_pitting_count = int(skin_metrics.get('lab_nail_pitting_count_avg', 0.0))
+        nail_abnormalities = []  # Placeholder for detailed abnormality list
+        
+        # Texture & temperature (NEW format from _compute_aggregate_metrics)
+        skin_texture_score = skin_metrics.get('lab_skin_texture_score', 0.0)
+        hydration_status = skin_metrics.get('lab_skin_hydration_status', 'unknown')
+        temperature_proxy = skin_metrics.get('lab_skin_temperature_proxy', 'unknown')
         
         # Rash/lesion detection
         rash_detected = skin_metrics.get('rash_detected', False)
@@ -98,12 +107,12 @@ class SkinAnalysisService:
         lesions_bruises_detected = skin_metrics.get('lesions_bruises_detected', False)
         lesion_details = skin_metrics.get('lesion_details', [])
         
-        # Detection quality
-        detection_confidence = skin_metrics.get('detection_confidence', 0.0)
-        frames_analyzed = skin_metrics.get('frames_analyzed', 0)
-        facial_roi_detected = skin_metrics.get('facial_roi_detected', False)
-        palmar_roi_detected = skin_metrics.get('palmar_roi_detected', False)
-        nailbed_roi_detected = skin_metrics.get('nailbed_roi_detected', False)
+        # Detection quality (frames_analyzed and detection_confidence are now parameters)
+        # Use hands_detected as a proxy for ROI detection
+        hands_detected = skin_metrics.get('hands_detected', False)
+        facial_roi_detected = True  # Always True if we got facial metrics
+        palmar_roi_detected = hands_detected
+        nailbed_roi_detected = hands_detected
         
         # Compute Z-scores vs baseline
         baseline = self._get_or_create_baseline(patient_id)

@@ -24,6 +24,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 import os
+import tempfile
 import boto3
 from botocore.exceptions import ClientError
 import secrets
@@ -45,6 +46,7 @@ from app.services.audio_ai_engine import AudioAIEngine
 from app.services.trend_prediction_engine import TrendPredictionEngine
 from app.services.alert_orchestration_engine import AlertOrchestrationEngine
 from app.services.facial_puffiness_service import FacialPuffinessService
+from app.services.skin_analysis_service import SkinAnalysisService
 
 # AWS S3 client for encrypted media storage
 # Extract region code from AWS_REGION (handles both "us-east-1" and "US East (N. Virginia) us-east-1" formats)
@@ -443,13 +445,30 @@ async def analyze_video(
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=session.s3_key)
         video_bytes = response['Body'].read()
         
-        # Retrieve patient FPS baseline for personalized comparison
-        fps_service = FacialPuffinessService(db)
-        patient_baseline = fps_service.get_patient_baseline(session.patient_id)
+        # Save to temporary file for VideoAIEngine (expects file path)
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_video:
+            temp_video.write(video_bytes)
+            temp_video_path = temp_video.name
         
-        # Run Video AI Engine with baseline
-        engine = VideoAIEngine(db)
-        metrics_dict = await engine.analyze_video(video_bytes, patient_baseline)
+        try:
+            # Retrieve patient FPS baseline for personalized comparison
+            fps_service = FacialPuffinessService(db)
+            patient_baseline = fps_service.get_patient_baseline(session.patient_id)
+            
+            # Retrieve patient skin analysis baseline
+            skin_service = SkinAnalysisService(db)
+            skin_baseline = skin_service.get_patient_baseline(session.patient_id)
+            
+            # Merge baselines for comprehensive analysis
+            combined_baseline = {**(patient_baseline or {}), **(skin_baseline or {})}
+            
+            # Run Video AI Engine with combined baseline
+            engine = VideoAIEngine()
+            metrics_dict = await engine.analyze_video(temp_video_path, combined_baseline)
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_video_path):
+                os.unlink(temp_video_path)
         
         # Create VideoMetrics record
         metrics = VideoMetrics(
@@ -469,6 +488,18 @@ async def analyze_video(
                 fps_metrics=metrics_dict,
                 frames_analyzed=metrics_dict.get('frames_analyzed', 0),
                 detection_confidence=metrics_dict.get('analysis_confidence', 0.0),
+                timestamp=datetime.utcnow()
+            )
+        
+        # Persist Skin Analysis metrics (LAB color space) to time-series database
+        if metrics_dict.get('lab_facial_perfusion_avg') is not None:
+            skin_service = SkinAnalysisService(db)
+            skin_service.ingest_skin_metrics(
+                patient_id=session.patient_id,
+                session_id=str(session.id),
+                skin_metrics=metrics_dict,
+                frames_analyzed=metrics_dict.get('frames_analyzed', 0),
+                detection_confidence=metrics_dict.get('lab_skin_analysis_quality', 0.0),
                 timestamp=datetime.utcnow()
             )
         

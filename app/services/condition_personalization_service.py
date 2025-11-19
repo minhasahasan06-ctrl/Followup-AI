@@ -98,6 +98,22 @@ class ConditionPersonalizationService:
                 'pei_thresholds': {'mild': 8.0, 'critical': 20.0},  # More sensitive
                 'pitting_watchpoints': [2, 3, 4],  # Any pitting is significant
                 'wellness_guidance': 'Bilateral leg swelling is an important wellness indicator for heart health. Increasing swelling may suggest fluid retention. Track daily and discuss trends with your care team.'
+            },
+            'skin_analysis': {
+                'priority': 'high',
+                'key_indicators': ['pallor', 'perfusion_index', 'capillary_refill'],
+                'perfusion_thresholds': {
+                    'facial': {'mild': 42.0, 'moderate': 32.0, 'severe': 22.0},  # Reduced in poor cardiac output
+                    'palmar': {'mild': 38.0, 'moderate': 28.0, 'severe': 18.0},
+                    'nailbed': {'mild': 35.0, 'moderate': 25.0, 'severe': 15.0}
+                },
+                'pallor_regions_priority': ['palmar', 'nailbed', 'facial'],
+                'capillary_refill': {
+                    'threshold_sec': 2.0,
+                    'concern_sec': 3.5,  # Prolonged in reduced cardiac output
+                    'monitoring': 'high'
+                },
+                'wellness_guidance': 'Pale skin and prolonged capillary refill may indicate reduced circulation from heart function changes. Cool extremities combined with pallor warrant discussion with your cardiology team.'
             }
         },
         
@@ -264,6 +280,19 @@ class ConditionPersonalizationService:
                 'pei_thresholds': {'mild': 8.0, 'critical': 20.0},
                 'pitting_watchpoints': [2, 3, 4],
                 'wellness_guidance': 'Swelling in face (especially around eyes) and legs is important to track with kidney wellness. Morning facial puffiness and leg swelling by evening are key patterns. Track daily weight and discuss trends with your care team.'
+            },
+            'skin_analysis': {
+                'priority': 'high',
+                'key_indicators': ['pallor', 'hydration', 'texture', 'uremic_frost'],
+                'perfusion_thresholds': {
+                    'facial': {'mild': 40.0, 'moderate': 30.0, 'severe': 20.0},  # Pallor from anemia
+                    'palmar': {'mild': 38.0, 'moderate': 28.0, 'severe': 18.0}
+                },
+                'pallor_regions_priority': ['palmar', 'facial', 'nailbed'],
+                'hydration_status_monitoring': 'critical',  # Dry skin common
+                'texture_monitoring': 'high',  # Rough, dry texture
+                'uremic_frost_detection': True,  # White crystals on skin (advanced)
+                'wellness_guidance': 'Pale, dry skin may relate to kidney function and associated anemia. Very dry, rough skin texture is common. In advanced stages, white powdery deposits (uremic frost) may appear. Track skin changes and discuss with your nephrologist.'
             }
         },
         
@@ -289,6 +318,21 @@ class ConditionPersonalizationService:
                 'pei_thresholds': {'mild': 10.0, 'critical': 25.0},
                 'pitting_watchpoints': [2, 3, 4],
                 'wellness_guidance': 'Leg swelling and abdominal fullness may indicate fluid retention. Monitor for progressive swelling and discuss with your hepatologist.'
+            },
+            'skin_analysis': {
+                'priority': 'critical',  # Jaundice is KEY indicator
+                'key_indicators': ['jaundice', 'scleral_yellowing', 'perfusion_index'],
+                'jaundice_monitoring': {
+                    'priority': 'critical',
+                    'b_channel_threshold': 20.0,  # High b* = yellow
+                    'severity_levels': {'mild': 25.0, 'moderate': 35.0, 'severe': 45.0},
+                    'regions': ['facial', 'sclera']  # Sclera most sensitive
+                },
+                'perfusion_thresholds': {
+                    'facial': {'mild': 40.0, 'moderate': 30.0, 'severe': 20.0},
+                    'palmar': {'mild': 38.0, 'moderate': 28.0, 'severe': 18.0}
+                },
+                'wellness_guidance': 'Yellowish discoloration of skin and especially the whites of eyes (sclera) may indicate changes in liver function. Progressive yellowing warrants discussion with your hepatologist. This is a key wellness indicator for liver health.'
             }
         },
         
@@ -314,6 +358,17 @@ class ConditionPersonalizationService:
                 'pei_thresholds': {'mild': 10.0, 'critical': 25.0},
                 'pitting_watchpoints': [1, 2],  # Usually mild pitting
                 'wellness_guidance': 'Facial puffiness (especially around eyes) may relate to thyroid function. Morning swelling that improves during the day is a common pattern. Track and discuss with your endocrinologist.'
+            },
+            'skin_analysis': {
+                'priority': 'medium',
+                'key_indicators': ['hydration', 'texture', 'temperature_proxy'],
+                'perfusion_thresholds': {
+                    'facial': {'mild': 40.0, 'moderate': 30.0, 'severe': 20.0}
+                },
+                'hydration_status_monitoring': 'high',  # Hypothyroid: dry; Hyperthyroid: moist
+                'texture_monitoring': 'high',  # Rough (hypo) vs smooth (hyper)
+                'temperature_proxy_monitoring': 'high',  # Cool (hypo) vs warm (hyper)
+                'wellness_guidance': 'Skin texture, moisture, and temperature may reflect thyroid function. Hypothyroidism: dry, rough, cool skin. Hyperthyroidism: moist, smooth, warm skin. Track patterns and discuss with your endocrinologist.'
             }
         },
         
@@ -340,6 +395,214 @@ class ConditionPersonalizationService:
                 'pitting_watchpoints': [1, 2],  # Often non-pitting or mild
                 'asymmetry_alert_threshold': 0.20,  # Alert if >20% difference
                 'wellness_guidance': 'Unilateral (one-sided) limb swelling with tight, shiny skin is characteristic. Track circumference changes, skin texture, and any hardening. Early detection of changes helps with management. Discuss with lymphedema specialist.'
+            }
+        },
+        
+        # NEW: Skin-focused conditions
+        'anemia': {
+            'display_name': 'Anemia',
+            'emphasis': {
+                'variability_index': 'low',
+                'accessory_muscles': 'low',
+                'gasping': 'low',
+                'chest_asymmetry': 'low',
+                'synchrony': 'low',
+                'baseline_offset': 1  # May be slightly elevated
+            },
+            'position_preference': 'sitting',
+            'monitoring_focus': 'Monitor for signs of reduced oxygen delivery.',
+            'rvi_thresholds': {'mild': 20.0, 'critical': 40.0},
+            'rr_range': {'min': 12, 'max': 24},
+            'wellness_guidance': 'Track breathing rate and skin color changes.',
+            'edema': {
+                'priority': 'low',
+                'expected_pattern': None,
+                'focus_locations': [],
+                'pei_thresholds': {'mild': 10.0, 'critical': 25.0},
+                'wellness_guidance': 'Swelling not typically associated with anemia.'
+            },
+            'skin_analysis': {
+                'priority': 'critical',  # PRIMARY diagnostic indicator
+                'key_indicators': ['pallor', 'perfusion_index', 'nailbed_color'],
+                'perfusion_thresholds': {
+                    'facial': {'mild': 45.0, 'moderate': 35.0, 'severe': 25.0},  # Low perfusion
+                    'palmar': {'mild': 40.0, 'moderate': 30.0, 'severe': 20.0},  # Gold standard
+                    'nailbed': {'mild': 35.0, 'moderate': 25.0, 'severe': 15.0}
+                },
+                'pallor_regions_priority': ['palmar', 'nailbed', 'facial'],  # Palm most reliable
+                'capillary_refill': {
+                    'threshold_sec': 2.0,  # Normal <2s
+                    'concern_sec': 3.0,  # Prolonged in severe anemia
+                    'monitoring': 'important'
+                },
+                'wellness_guidance': 'Pale skin (especially palms and nail beds) and reduced skin color may indicate low iron levels. Palmar pallor is a key indicator. Track changes and discuss with your healthcare provider, especially if accompanied by fatigue.'
+            }
+        },
+        
+        'sepsis': {
+            'display_name': 'Sepsis Risk',
+            'emphasis': {
+                'variability_index': 'high',
+                'accessory_muscles': 'high',
+                'gasping': 'high',
+                'chest_asymmetry': 'low',
+                'synchrony': 'medium',
+                'baseline_offset': 5  # Significantly elevated
+            },
+            'position_preference': 'sitting',
+            'monitoring_focus': 'Track for rapid deterioration. Urgent medical evaluation needed.',
+            'rvi_thresholds': {'mild': 15.0, 'critical': 25.0},  # Very sensitive
+            'rr_range': {'min': 16, 'max': 35},  # Often >20 bpm
+            'sudden_change_threshold': 5.0,
+            'wellness_guidance': 'Sepsis requires immediate medical attention. This wellness tool is not a substitute for emergency care.',
+            'edema': {
+                'priority': 'medium',
+                'expected_pattern': 'variable',
+                'focus_locations': ['legs', 'ankles'],
+                'pei_thresholds': {'mild': 10.0, 'critical': 25.0},
+                'wellness_guidance': 'Fluid shifts can occur rapidly. Medical monitoring required.'
+            },
+            'skin_analysis': {
+                'priority': 'critical',
+                'key_indicators': ['perfusion_pattern', 'temperature_proxy', 'mottling'],
+                'perfusion_thresholds': {
+                    'facial': {'mild': 40.0, 'moderate': 30.0, 'severe': 20.0},  # Mottled, poor perfusion
+                    'palmar': {'mild': 35.0, 'moderate': 25.0, 'severe': 15.0}
+                },
+                'mottling_detection': True,  # Patchy perfusion pattern
+                'perfusion_variability_alert': 15.0,  # High std dev = mottling
+                'temperature_proxy_monitoring': 'critical',  # Cool extremities
+                'capillary_refill': {
+                    'threshold_sec': 2.0,
+                    'concern_sec': 3.0,
+                    'monitoring': 'critical'  # Prolonged refill = shock
+                },
+                'wellness_guidance': 'Mottled (patchy) skin coloration, cool extremities, and prolonged capillary refill are urgent warning signs. This is a medical emergency - seek immediate care. This wellness tool cannot diagnose sepsis.'
+            }
+        },
+        
+        'raynauds': {
+            'display_name': "Raynaud's Phenomenon",
+            'emphasis': {
+                'variability_index': 'low',
+                'accessory_muscles': 'low',
+                'gasping': 'low',
+                'chest_asymmetry': 'low',
+                'synchrony': 'low',
+                'baseline_offset': 0
+            },
+            'position_preference': 'sitting',
+            'monitoring_focus': 'Breathing monitoring not primary concern.',
+            'rvi_thresholds': {'mild': 20.0, 'critical': 40.0},
+            'rr_range': {'min': 12, 'max': 20},
+            'wellness_guidance': 'Focus on extremity color and temperature monitoring.',
+            'edema': {
+                'priority': 'low',
+                'expected_pattern': None,
+                'focus_locations': [],
+                'pei_thresholds': {'mild': 10.0, 'critical': 25.0},
+                'wellness_guidance': 'Swelling not typically associated with Raynaud\'s.'
+            },
+            'skin_analysis': {
+                'priority': 'critical',  # PRIMARY manifestation
+                'key_indicators': ['cyanosis', 'perfusion_pattern', 'temperature_proxy'],
+                'cyanosis_monitoring': {
+                    'priority': 'critical',
+                    'regions': ['nailbed', 'fingertips', 'facial'],  # Extremities first
+                    'severity_thresholds': {'mild': 0.3, 'moderate': 0.5, 'severe': 0.7}  # Severity score
+                },
+                'perfusion_thresholds': {
+                    'nailbed': {'mild': 40.0, 'moderate': 30.0, 'severe': 20.0},  # Reduced during attack
+                    'facial': {'mild': 45.0, 'moderate': 35.0, 'severe': 25.0}
+                },
+                'temperature_proxy_monitoring': 'critical',  # Cool extremities during attack
+                'triphasic_pattern_detection': True,  # White→Blue→Red phases
+                'wellness_guidance': 'Bluish discoloration (cyanosis) of fingertips and nails, especially in cold environments, is characteristic. Track color changes through warming/cooling cycles. Episodes typically resolve with warmth. Discuss patterns with your rheumatologist.'
+            }
+        },
+        
+        'diabetes': {
+            'display_name': 'Diabetes',
+            'emphasis': {
+                'variability_index': 'low',
+                'accessory_muscles': 'low',
+                'gasping': 'low',
+                'chest_asymmetry': 'low',
+                'synchrony': 'low',
+                'baseline_offset': 0
+            },
+            'position_preference': 'sitting',
+            'monitoring_focus': 'Monitor for overall wellness stability.',
+            'rvi_thresholds': {'mild': 20.0, 'critical': 40.0},
+            'rr_range': {'min': 12, 'max': 22},
+            'wellness_guidance': 'Regular monitoring helps track overall health status.',
+            'edema': {
+                'priority': 'medium',
+                'expected_pattern': 'bilateral',  # Legs if neuropathy/kidney involvement
+                'focus_locations': ['legs', 'ankles', 'feet'],
+                'pei_thresholds': {'mild': 10.0, 'critical': 25.0},
+                'wellness_guidance': 'Leg swelling may indicate kidney or circulation changes. Track and discuss with your diabetes care team.'
+            },
+            'skin_analysis': {
+                'priority': 'high',
+                'key_indicators': ['capillary_refill', 'perfusion_index', 'ulcer_detection', 'hydration'],
+                'perfusion_thresholds': {
+                    'facial': {'mild': 40.0, 'moderate': 30.0, 'severe': 20.0},
+                    'palmar': {'mild': 38.0, 'moderate': 28.0, 'severe': 18.0},
+                    'nailbed': {'mild': 35.0, 'moderate': 25.0, 'severe': 15.0}  # Reduced in PVD
+                },
+                'capillary_refill': {
+                    'threshold_sec': 2.5,  # Slightly prolonged acceptable
+                    'concern_sec': 4.0,  # Significant peripheral vascular disease
+                    'monitoring': 'critical'  # Key indicator of microvascular health
+                },
+                'ulcer_monitoring': True,  # Skin breakdown detection
+                'hydration_status_monitoring': 'high',  # Dry skin common
+                'texture_monitoring': 'high',  # Rough, dry texture
+                'wellness_guidance': 'Prolonged capillary refill (>3 seconds) and reduced foot perfusion may indicate circulation changes. Dry, rough skin and any breaks in skin integrity (ulcers) require prompt attention. Perform regular foot checks and discuss changes with your diabetes care team.'
+            }
+        },
+        
+        'peripheral_vascular_disease': {
+            'display_name': 'Peripheral Vascular Disease',
+            'emphasis': {
+                'variability_index': 'low',
+                'accessory_muscles': 'low',
+                'gasping': 'low',
+                'chest_asymmetry': 'low',
+                'synchrony': 'low',
+                'baseline_offset': 0
+            },
+            'position_preference': 'sitting',
+            'monitoring_focus': 'Breathing monitoring not primary concern.',
+            'rvi_thresholds': {'mild': 20.0, 'critical': 40.0},
+            'rr_range': {'min': 12, 'max': 20},
+            'wellness_guidance': 'Focus on extremity perfusion monitoring.',
+            'edema': {
+                'priority': 'medium',
+                'expected_pattern': 'bilateral',
+                'focus_locations': ['legs', 'ankles', 'feet'],
+                'pei_thresholds': {'mild': 10.0, 'critical': 25.0},
+                'wellness_guidance': 'Swelling combined with poor circulation requires medical evaluation.'
+            },
+            'skin_analysis': {
+                'priority': 'critical',  # PRIMARY diagnostic indicator
+                'key_indicators': ['capillary_refill', 'perfusion_index', 'pallor', 'ulcer_detection'],
+                'perfusion_thresholds': {
+                    'facial': {'mild': 45.0, 'moderate': 35.0, 'severe': 25.0},  # Usually normal
+                    'palmar': {'mild': 35.0, 'moderate': 25.0, 'severe': 15.0},  # Reduced
+                    'nailbed': {'mild': 30.0, 'moderate': 20.0, 'severe': 10.0}  # VERY reduced
+                },
+                'capillary_refill': {
+                    'threshold_sec': 3.0,  # Often prolonged
+                    'concern_sec': 5.0,  # Severe disease
+                    'monitoring': 'critical'  # Key diagnostic finding
+                },
+                'pallor_regions_priority': ['nailbed', 'palmar', 'facial'],  # Extremities most affected
+                'temperature_proxy_monitoring': 'critical',  # Cool extremities
+                'ulcer_monitoring': True,  # Non-healing wounds
+                'texture_monitoring': 'high',  # Shiny, hairless skin
+                'wellness_guidance': 'Prolonged capillary refill (>3 seconds), pale or bluish extremities, and cool skin temperature indicate reduced circulation. Any skin breaks or non-healing wounds require immediate medical attention. Regular monitoring helps detect changes early. Discuss with your vascular specialist.'
             }
         }
     }
