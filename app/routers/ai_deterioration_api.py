@@ -20,7 +20,7 @@ Wellness Positioning:
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, Request
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Annotated
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 import os
@@ -40,11 +40,13 @@ from app.models.trend_models import TrendSnapshot, RiskEvent, PatientBaseline
 from app.models.alert_models import AlertRule, Alert
 from app.models.security_models import AuditLog, ConsentRecord
 
-# Import AI engines
-from app.services.video_ai_engine import VideoAIEngine
-from app.services.audio_ai_engine import AudioAIEngine
-from app.services.trend_prediction_engine import TrendPredictionEngine
-from app.services.alert_orchestration_engine import AlertOrchestrationEngine
+# Import AI engine dependencies
+from app.services.ai_engine_manager import (
+    get_video_ai_engine,
+    get_audio_ai_engine,
+    get_trend_prediction_engine,
+    get_alert_orchestration_engine
+)
 from app.services.facial_puffiness_service import FacialPuffinessService
 from app.services.skin_analysis_service import SkinAnalysisService
 
@@ -419,7 +421,8 @@ async def analyze_video(
     session_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user),
+    video_engine = Depends(get_video_ai_engine)
 ):
     """
     Trigger AI analysis on uploaded video
@@ -463,9 +466,8 @@ async def analyze_video(
             # Merge baselines for comprehensive analysis
             combined_baseline = {**(patient_baseline or {}), **(skin_baseline or {})}
             
-            # Run Video AI Engine with combined baseline
-            engine = VideoAIEngine()
-            metrics_dict = await engine.analyze_video(temp_video_path, combined_baseline)
+            # Run Video AI Engine with combined baseline (using injected singleton)
+            metrics_dict = await video_engine.analyze_video(temp_video_path, combined_baseline)
         finally:
             # Clean up temporary file
             if os.path.exists(temp_video_path):
@@ -647,7 +649,8 @@ async def analyze_audio(
     session_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user),
+    audio_engine = Depends(get_audio_ai_engine)
 ):
     """
     Trigger AI analysis on uploaded audio
@@ -674,9 +677,8 @@ async def analyze_audio(
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=session.s3_key)
         audio_bytes = response['Body'].read()
         
-        # Run Audio AI Engine
-        engine = AudioAIEngine(db)
-        metrics_dict = await engine.analyze_audio(audio_bytes, patient_id_str)
+        # Run Audio AI Engine (using injected singleton)
+        metrics_dict = await audio_engine.analyze_audio(audio_bytes, patient_id_str)
         
         # Create AudioMetrics record
         metrics = AudioMetrics(
@@ -701,7 +703,7 @@ async def analyze_audio(
         db.refresh(metrics)
         
         # Generate wellness recommendations
-        recommendations = engine.generate_recommendations(metrics_dict)
+        recommendations = audio_engine.generate_recommendations(metrics_dict)
         
         quality_score = float(session.quality_score) if session.quality_score is not None else 0.0
         
@@ -726,7 +728,8 @@ async def assess_risk(
     patient_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user),
+    trend_engine = Depends(get_trend_prediction_engine)
 ):
     """
     Run comprehensive risk assessment using Trend Prediction Engine
@@ -748,9 +751,8 @@ async def assess_risk(
         # Audit log
         await audit_log_request(request, db, user, "view", "risk_assessment", patient_id, phi_accessed=True)
         
-        # Run Trend Prediction Engine
-        engine = TrendPredictionEngine(db)
-        assessment = await engine.assess_risk(patient_id)
+        # Run Trend Prediction Engine (using injected instance)
+        assessment = await trend_engine.assess_risk(patient_id)
         
         # Create TrendSnapshot
         snapshot = TrendSnapshot(
@@ -769,7 +771,7 @@ async def assess_risk(
         db.refresh(snapshot)
         
         # Check if risk level changed and trigger alerts
-        await engine.check_risk_transition(patient_id, str(snapshot.risk_level), assessment["risk_level"])
+        await trend_engine.check_risk_transition(patient_id, str(snapshot.risk_level), assessment["risk_level"])
         
         return RiskAssessmentResponse(
             patient_id=patient_id,
@@ -852,15 +854,14 @@ async def get_pending_alerts(
     request: Request,
     severity_filter: Optional[str] = None,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user),
+    alert_engine = Depends(get_alert_orchestration_engine)
 ):
     """Get pending alerts for current doctor"""
     await audit_log_request(request, db, user, "view", "alerts", None, phi_accessed=True)
     
-    engine = AlertOrchestrationEngine(db)
-    
     severity_list = severity_filter.split(",") if severity_filter else None
-    alerts = await engine.get_pending_alerts(user["user_id"], severity_list)
+    alerts = await alert_engine.get_pending_alerts(user["user_id"], severity_list)
     
     return {"alerts": [
         {
@@ -878,13 +879,13 @@ async def acknowledge_alert(
     alert_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user),
+    alert_engine = Depends(get_alert_orchestration_engine)
 ):
     """Acknowledge alert"""
     await audit_log_request(request, db, user, "update", "alert", None, phi_accessed=True)
     
-    engine = AlertOrchestrationEngine(db)
-    success = await engine.acknowledge_alert(alert_id, user["user_id"], user["role"])
+    success = await alert_engine.acknowledge_alert(alert_id, user["user_id"], user["role"])
     
     if not success:
         raise HTTPException(status_code=500, detail="Failed to acknowledge alert")

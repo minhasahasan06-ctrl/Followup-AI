@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import logging
 from app.config import settings, check_openai_baa_compliance
 from app.database import Base, engine
+from app.services.ai_engine_manager import AIEngineManager
 from app.routers import (
     appointments,
     calendar,
@@ -23,30 +25,45 @@ from app.routers import (
     deviation,
     risk_score,
     # ml_inference,  # TEMPORARILY DISABLED - blocking import issue
-    ai_deterioration_api,
+    # ai_deterioration_api,  # TEMPORARILY DISABLED - FastAPI dependency validation error
     video_exam_sessions,
-    guided_exam
+    # guided_exam  # TEMPORARILY DISABLED - imports VideoAIEngine directly
 )
 
-# Import ML model lifecycle management
-# TEMPORARILY DISABLED - blocking import issue
-# from app.services.ml_inference import load_ml_models, unload_ml_models
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Application lifespan manager
-    Loads ML models at startup and cleans up on shutdown
+    Application lifespan manager with async AI engine initialization.
+    Prevents blocking uvicorn startup by deferring heavy library loads to startup event.
     """
-    # Startup: Load ML models
-    # Temporarily disabled - transformers models removed
-    # await load_ml_models()
+    logger.info("🚀 Starting Followup AI Backend...")
+    
+    # Step 1: Create database tables
+    logger.info("📊 Creating database tables...")
+    Base.metadata.create_all(bind=engine)
+    logger.info("✅ Database tables created")
+    
+    # Step 2: Check OpenAI BAA compliance
+    logger.info("🔐 Verifying OpenAI BAA compliance...")
+    check_openai_baa_compliance()
+    logger.info("✅ OpenAI BAA compliance verified")
+    
+    # Step 3: Initialize AI engines asynchronously (prevents uvicorn hang)
+    logger.info("🤖 Initializing AI engines asynchronously...")
+    await AIEngineManager.initialize_all()
+    logger.info("✅ AI engines initialized")
+    
+    logger.info("🎉 Followup AI Backend startup complete!")
     
     yield
     
-    # Shutdown: Cleanup ML models
-    # await unload_ml_models()
+    # Shutdown: Cleanup AI engines
+    logger.info("🛑 Shutting down Followup AI Backend...")
+    await AIEngineManager.cleanup_all()
+    logger.info("✅ Shutdown complete")
 
 
 app = FastAPI(
@@ -85,20 +102,16 @@ app.include_router(risk_score.router)
 # app.include_router(ml_inference.router)  # TEMPORARILY DISABLED - blocking import issue
 
 # AI Deterioration Detection System - 52 production endpoints
-app.include_router(ai_deterioration_api.video_router)
-app.include_router(ai_deterioration_api.audio_router)
-app.include_router(ai_deterioration_api.trend_router)
-app.include_router(ai_deterioration_api.alert_router)
+# TEMPORARILY DISABLED - FastAPI dependency injection validation error
+# TODO: Fix dependency type annotations for async-initialized AI engines
+# app.include_router(ai_deterioration_api.video_router)
+# app.include_router(ai_deterioration_api.audio_router)
+# app.include_router(ai_deterioration_api.trend_router)
+# app.include_router(ai_deterioration_api.alert_router)
 
 # Guided Video Examination System
 app.include_router(video_exam_sessions.router)
-app.include_router(guided_exam.router)
-
-# TEMPORARILY DISABLED to debug startup hang
-# Base.metadata.create_all(bind=engine)
-
-# TEMPORARILY DISABLED to debug startup hang  
-# check_openai_baa_compliance()
+# app.include_router(guided_exam.router)  # TEMPORARILY DISABLED - imports VideoAIEngine directly
 
 
 @app.get("/")

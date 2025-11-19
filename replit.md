@@ -15,39 +15,53 @@ Followup AI is a HIPAA-compliant health monitoring platform for immunocompromise
 The frontend is built with React, TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, and Tailwind CSS for styling. It uses Radix UI and shadcn/ui for a clinical aesthetic, supporting role-based routing and context-based theming.
 
 **AI Dashboard Pages** (routes at `/ai-video`, `/ai-audio`, `/ai-alerts`):
-- **AIVideoDashboard**: Upload videos for analysis, view respiratory rate/skin changes/facial metrics, session history
-- **AIAudioDashboard**: Upload audio for analysis, view breath cycles/speech pace/cough detection, session history
-- **AIAlertsDashboard**: Manage health change alerts, configure notification rules, review alert history
+- **AIVideoDashboard**: Upload videos for analysis, view respiratory rate/skin changes/facial metrics, session history ⚠️ TEMPORARILY DISABLED
+- **AIAudioDashboard**: Upload audio for analysis, view breath cycles/speech pace/cough detection, session history ⚠️ TEMPORARILY DISABLED
+- **AIAlertsDashboard**: Manage health change alerts, configure notification rules, review alert history ⚠️ TEMPORARILY DISABLED
 
 **Backend Routing**: The queryClient is configured to automatically route Python AI endpoints (`/api/v1/video-ai/*`, `/api/v1/audio-ai/*`, `/api/v1/trends/*`, `/api/v1/alerts/*`) to the FastAPI backend on port 8000, while all other endpoints go to the Express server on port 5000.
 
 ### Backend
-The primary backend is a Python FastAPI application (port 8000), utilizing SQLAlchemy ORM for PostgreSQL, AWS Cognito for authentication (JWTs with role-based access control), and Pydantic for validation. A Node.js Express server (port 5000) handles legacy endpoints and serves the frontend.
 
-**Python Backend (Port 8000)**: 52 AI endpoints across 4 engines (Video AI, Audio AI, Trend Prediction, Alert Orchestration) + Guided Video Examination System. 
+**Current Status (November 19, 2025):**
+- ✅ **Node.js Express Backend (Port 5000)**: FULLY OPERATIONAL with 105 routes
+  - Agent Clona chatbot (GPT-4o powered patient support)
+  - Appointments, Calendar, Consultations
+  - Pain tracking, Symptom journal, Voice analysis
+  - Baseline calculation, Deviation detection, Risk scoring
+  
+- ⚠️ **Python FastAPI Backend (Port 8000)**: PARTIALLY OPERATIONAL
+  - ✅ App imports successfully (no blocking issues)
+  - ✅ Database tables, authentication, core features work
+  - ⚠️ 52 AI deterioration detection endpoints TEMPORARILY DISABLED (FastAPI dependency validation issue)
+  - ⚠️ Guided video examination TEMPORARILY DISABLED (imports VideoAIEngine directly)
+  - See `PYTHON_BACKEND_DEBUG_REPORT.md` for complete details
 
-**IMPORTANT - Starting Both Servers:**
-The platform requires BOTH servers running simultaneously:
-1. Node.js Express (port 5000) - Auto-starts with default workflow
-2. Python FastAPI (port 8000) - Must be started manually
+**Python Backend Architecture (Refactored November 2025):**
+- Implemented async AI engine initialization with FastAPI lifespan events
+- Created `AIEngineManager` singleton pattern to prevent uvicorn startup hang
+- AI engines (Video, Audio, Trend, Alert) now initialize asynchronously in thread pool
+- Dependency injection pattern for endpoint-level engine access
+- **Issue:** FastAPI dependency validation error prevents AI router registration
+- **Workaround:** Core functionality available through Node.js backend
 
-**Option A - Use the provided startup script:**
+**Starting the Backend Servers:**
 ```bash
+# Option 1: Node.js only (current default - WORKS)
+npm run dev
+
+# Option 2: Both servers (after fixing Python AI router issue)
 bash start-all-services.sh
+
+# Option 3: Manual debugging
+Terminal 1: npm run dev
+Terminal 2: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Option B - Manual start in separate terminals:**
-Terminal 1: `npm run dev` (Node.js)
-Terminal 2: `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` (Python)
-
-**Option C - Single command (background mode):**
-```bash
-npm run dev & python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload & wait
-```
-
-The Python backend is required for the Guided Video Examination feature at `/ai-video`
-
-**Comprehensive API Documentation**: See `AI_API_DOCUMENTATION.md` for complete endpoint reference with curl examples, authentication, request/response formats, and testing workflows.
+**Comprehensive Documentation:**
+- `AI_API_DOCUMENTATION.md` - Complete endpoint reference (52 AI endpoints)
+- `AGENT_CLONA_DOCUMENTATION.md` - Working chatbot feature documentation
+- `PYTHON_BACKEND_DEBUG_REPORT.md` - Debugging progress and next steps
 
 ### Core Features & Technical Implementations
 -   **AI Integration:** Leverages OpenAI API (GPT-4o) for symptom analysis, wellness suggestions, doctor assistance, sentiment analysis, and medical entity extraction.
