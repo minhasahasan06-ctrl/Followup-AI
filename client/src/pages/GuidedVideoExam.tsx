@@ -6,6 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useAuth } from '@/contexts/AuthContext';
 
 type ExamStage = 'eyes' | 'palm' | 'tongue' | 'lips';
 type WorkflowState = 'idle' | 'prep' | 'capture' | 'processing' | 'completed' | 'error';
@@ -79,6 +80,7 @@ const EXAM_STAGES: StageConfig[] = [
 ];
 
 export default function GuidedVideoExam() {
+  const { user } = useAuth();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [workflowState, setWorkflowState] = useState<WorkflowState>('idle');
@@ -88,6 +90,9 @@ export default function GuidedVideoExam() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
+  
+  // Get patient ID from auth context
+  const patientId = user?.id || 'unknown';
 
   const currentStage = EXAM_STAGES[currentStageIndex];
   const progress = ((currentStageIndex) / EXAM_STAGES.length) * 100;
@@ -98,7 +103,7 @@ export default function GuidedVideoExam() {
       const response = await apiRequest<{ session_id: string }>('/api/v1/guided-exam/sessions', {
         method: 'POST',
         body: JSON.stringify({
-          patient_id: 'current_user', // Will be replaced by backend with actual user ID
+          patient_id: patientId,
           device_info: {
             userAgent: navigator.userAgent,
             screenResolution: `${window.screen.width}x${window.screen.height}`
@@ -185,9 +190,15 @@ export default function GuidedVideoExam() {
   });
 
   // Get results query
-  const { data: results } = useQuery({
+  const { data: results, isLoading: resultsLoading } = useQuery({
     queryKey: [`/api/v1/guided-exam/sessions/${sessionId}/results`],
     enabled: workflowState === 'completed' && !!sessionId
+  });
+  
+  // Get personalized configs (for display purposes)
+  const { data: personalizedConfig } = useQuery({
+    queryKey: [`/api/v1/guided-exam/personalized-config`, patientId],
+    enabled: !!patientId && workflowState === 'idle'
   });
 
   // Prep countdown timer
@@ -510,52 +521,121 @@ export default function GuidedVideoExam() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {results && (
-              <div className="space-y-3">
-                <h3 className="font-semibold">Analysis Results:</h3>
-                
-                {/* Scleral Analysis */}
-                {results.scleral_chromaticity_index !== null && (
-                  <div className="p-3 bg-muted/30 rounded-lg">
-                    <p className="text-sm font-medium">Scleral Chromaticity (Jaundice Detection)</p>
-                    <p className="text-2xl font-bold text-primary">{results.scleral_chromaticity_index.toFixed(1)}</p>
-                    <p className="text-xs text-muted-foreground">Normal range: 0-20</p>
-                  </div>
-                )}
-
-                {/* Conjunctival Pallor */}
-                {results.conjunctival_pallor_index !== null && (
-                  <div className="p-3 bg-muted/30 rounded-lg">
-                    <p className="text-sm font-medium">Conjunctival Pallor (Anemia Detection)</p>
-                    <p className="text-2xl font-bold text-primary">{results.conjunctival_pallor_index.toFixed(1)}</p>
-                    <p className="text-xs text-muted-foreground">Lower values may indicate anemia</p>
-                  </div>
-                )}
-
-                {/* Tongue Analysis */}
-                {results.tongue_color_index !== null && (
-                  <div className="p-3 bg-muted/30 rounded-lg">
-                    <p className="text-sm font-medium">Tongue Color Index</p>
-                    <p className="text-2xl font-bold text-primary">{results.tongue_color_index.toFixed(1)}</p>
-                    {results.tongue_coating_detected && (
-                      <p className="text-xs text-amber-600 mt-1">
-                        Coating detected: {results.tongue_coating_color}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Lip Hydration */}
-                {results.lip_hydration_score !== null && (
-                  <div className="p-3 bg-muted/30 rounded-lg">
-                    <p className="text-sm font-medium">Lip Hydration Score</p>
-                    <p className="text-2xl font-bold text-primary">{results.lip_hydration_score.toFixed(1)}</p>
-                    {results.lip_cyanosis_detected && (
-                      <p className="text-xs text-red-600 mt-1">Cyanosis detected</p>
-                    )}
-                  </div>
-                )}
+            {resultsLoading && (
+              <div className="text-center py-8">
+                <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground mt-2">Loading results...</p>
               </div>
+            )}
+            
+            {results && !resultsLoading && (
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Clinical Metrics Analysis:</h3>
+                
+                <div className="grid md:grid-cols-2 gap-3">
+                  {/* Scleral Analysis */}
+                  {typeof results.scleral_chromaticity_index === 'number' && (
+                    <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Eye className="h-4 w-4 text-primary" />
+                        <p className="text-sm font-medium">Scleral Chromaticity</p>
+                      </div>
+                      <p className="text-3xl font-bold text-primary">{results.scleral_chromaticity_index.toFixed(1)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Jaundice Detection • Normal: 0-20
+                      </p>
+                      {results.sclera_b_channel && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          b* channel: {results.sclera_b_channel.toFixed(1)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Conjunctival Pallor */}
+                  {typeof results.conjunctival_pallor_index === 'number' && (
+                    <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Hand className="h-4 w-4 text-primary" />
+                        <p className="text-sm font-medium">Conjunctival Pallor Index</p>
+                      </div>
+                      <p className="text-3xl font-bold text-primary">{results.conjunctival_pallor_index.toFixed(1)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Anemia Detection • Normal: 45-100
+                      </p>
+                      {results.palmar_redness_a && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          a* redness: {results.palmar_redness_a.toFixed(1)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tongue Analysis */}
+                  {typeof results.tongue_color_index === 'number' && (
+                    <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Smile className="h-4 w-4 text-primary" />
+                        <p className="text-sm font-medium">Tongue Color Index</p>
+                      </div>
+                      <p className="text-3xl font-bold text-primary">{results.tongue_color_index.toFixed(1)}</p>
+                      {results.tongue_coating_detected && (
+                        <p className="text-xs text-amber-600 font-medium mt-1">
+                          ⚠️ Coating: {results.tongue_coating_color || 'detected'}
+                        </p>
+                      )}
+                      {results.tongue_coating_thickness !== null && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Thickness: {results.tongue_coating_thickness.toFixed(0)}%
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Lip Hydration */}
+                  {typeof results.lip_hydration_score === 'number' && (
+                    <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Smile className="h-4 w-4 text-primary" />
+                        <p className="text-sm font-medium">Lip Hydration Score</p>
+                      </div>
+                      <p className="text-3xl font-bold text-primary">{results.lip_hydration_score.toFixed(1)}</p>
+                      {results.lip_cyanosis_detected && (
+                        <p className="text-xs text-red-600 font-medium mt-1">⚠️ Cyanosis detected</p>
+                      )}
+                      {results.lip_dryness_score !== null && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Dryness: {results.lip_dryness_score.toFixed(0)}%
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Additional LAB Color Metrics */}
+                <details className="mt-4">
+                  <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
+                    View Detailed LAB Color Analysis (31 metrics)
+                  </summary>
+                  <div className="mt-3 p-4 bg-muted/20 rounded-lg space-y-2 text-sm">
+                    {results.sclera_l_channel && <p>Sclera L*: {results.sclera_l_channel.toFixed(1)}</p>}
+                    {results.sclera_a_channel && <p>Sclera a*: {results.sclera_a_channel.toFixed(1)}</p>}
+                    {results.palmar_l_channel && <p>Palm L*: {results.palmar_l_channel.toFixed(1)}</p>}
+                    {results.palmar_perfusion_index && <p>Palmar Perfusion: {results.palmar_perfusion_index.toFixed(1)}</p>}
+                    {results.tongue_l_channel && <p>Tongue L*: {results.tongue_l_channel.toFixed(1)}</p>}
+                    {results.lip_l_channel && <p>Lip L*: {results.lip_l_channel.toFixed(1)}</p>}
+                    <p className="text-xs text-muted-foreground italic mt-2">
+                      LAB color space provides perceptually-uniform clinical measurements
+                    </p>
+                  </div>
+                </details>
+              </div>
+            )}
+            
+            {!results && !resultsLoading && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No results available yet. Please try again.
+              </p>
             )}
 
             <div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">

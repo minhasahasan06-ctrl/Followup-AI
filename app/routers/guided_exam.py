@@ -23,11 +23,10 @@ from datetime import datetime
 import os
 import base64
 import tempfile
-import boto3
-from botocore.exceptions import ClientError
 import secrets
 import cv2
 import numpy as np
+import logging
 
 # Import database and models
 from app.database import get_db
@@ -41,19 +40,10 @@ from app.dependencies import get_current_user
 # Import AI engine
 from app.services.video_ai_engine import VideoAIEngine
 
-# AWS S3 setup
-aws_region = os.getenv("AWS_REGION", "us-east-1")
-if " " in aws_region:
-    aws_region = aws_region.split()[-1]
+# Import S3 service with local fallback support
+from app.services.s3_service import s3_service
 
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    region_name=aws_region
-)
-S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME", "followupai-media")
-KMS_KEY_ID = os.getenv("AWS_KMS_KEY_ID")
+logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(prefix="/api/v1/guided-exam", tags=["Guided Video Exam"])
@@ -157,60 +147,58 @@ async def upload_frame_to_s3(
     frame_data: bytes
 ) -> str:
     """
-    Upload frame to S3 with encryption
-    Returns S3 URI
+    Upload frame to S3 or local storage with fallback
+    Returns URI (s3://... or file://...)
     """
     try:
         # Generate S3 key
         timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
         s3_key = f"guided-exam/{patient_id}/{session_id}/{stage}/{timestamp}.jpg"
         
-        # Upload with SSE-KMS encryption
-        upload_params = {
-            'Bucket': S3_BUCKET,
-            'Key': s3_key,
-            'Body': frame_data,
-            'ContentType': 'image/jpeg',
-            'ServerSideEncryption': 'AES256',
-            'Metadata': {
-                'patient-id': patient_id,
-                'session-id': session_id,
-                'exam-stage': stage,
-                'upload-timestamp': timestamp
-            }
+        # Prepare metadata
+        metadata = {
+            'patient-id': patient_id,
+            'session-id': session_id,
+            'exam-stage': stage,
+            'upload-timestamp': timestamp
         }
         
-        if KMS_KEY_ID:
-            upload_params['ServerSideEncryption'] = 'aws:kms'
-            upload_params['SSEKMSKeyId'] = KMS_KEY_ID
+        # Upload using S3Service (automatically handles S3 or local fallback)
+        uri = s3_service.upload_file(
+            file_data=frame_data,
+            s3_key=s3_key,
+            content_type='image/jpeg',
+            metadata=metadata
+        )
         
-        s3_client.put_object(**upload_params)
+        if uri.startswith('file://'):
+            logger.warning(f"Using local storage for frame: {stage} (AWS credentials not available)")
         
-        s3_uri = f"s3://{S3_BUCKET}/{s3_key}"
-        return s3_uri
+        return uri
         
-    except ClientError as e:
+    except Exception as e:
+        logger.error(f"Frame upload failed: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"S3 upload failed: {str(e)}"
+            detail=f"Frame upload failed: {str(e)}"
         )
 
 
-async def download_frame_from_s3(s3_uri: str) -> bytes:
-    """Download frame from S3"""
+async def download_frame_from_s3(uri: str) -> bytes:
+    """
+    Download frame from S3 or local storage
+    Supports both s3:// and file:// URIs
+    """
     try:
-        # Parse S3 URI: s3://bucket/key
-        parts = s3_uri.replace("s3://", "").split("/", 1)
-        bucket = parts[0]
-        key = parts[1]
+        # Use S3Service to download (handles both S3 and local)
+        frame_data = s3_service.download_file(uri)
+        return frame_data
         
-        response = s3_client.get_object(Bucket=bucket, Key=key)
-        return response['Body'].read()
-        
-    except ClientError as e:
+    except Exception as e:
+        logger.error(f"Frame download failed: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"S3 download failed: {str(e)}"
+            detail=f"Frame download failed: {str(e)}"
         )
 
 

@@ -611,13 +611,38 @@ class ConditionPersonalizationService:
     
     def get_patient_conditions(self, patient_id: str) -> List[str]:
         """
-        Get active respiratory conditions for patient
-        NOTE: Simplified implementation - returns empty list for now
-        TODO: Implement proper database query when RespiratoryConditionProfile model exists
+        Get active conditions for patient
+        Uses database query if available, otherwise returns stub data
         """
-        # Placeholder: In production, this would query the database
-        # For testing purposes, return empty list
-        return []
+        # Try database query first
+        try:
+            from app.models import RespiratoryConditionProfile
+            profiles = self.db.query(RespiratoryConditionProfile).filter(
+                RespiratoryConditionProfile.patient_id == patient_id,
+                RespiratoryConditionProfile.active == True
+            ).all()
+            if profiles:
+                return [p.condition for p in profiles]
+        except Exception as e:
+            logger.warning(f"Could not query RespiratoryConditionProfile: {e}")
+        
+        # Fallback: Check patient table for conditions
+        try:
+            from app.models import Patient
+            patient = self.db.query(Patient).filter(Patient.id == patient_id).first()
+            if patient and hasattr(patient, 'conditions'):
+                # Return conditions if patient has them
+                if isinstance(patient.conditions, list):
+                    return patient.conditions
+                elif isinstance(patient.conditions, str):
+                    return [c.strip() for c in patient.conditions.split(',')]
+        except Exception as e:
+            logger.warning(f"Could not query Patient model: {e}")
+        
+        # Final fallback: Return demo conditions for testing
+        # In production, this would be empty
+        logger.info(f"Using stub conditions for patient {patient_id}")
+        return []  # Empty for general population (will use default thresholds)
     
     def get_personalized_config(self, patient_id: str) -> Dict[str, Any]:
         """
