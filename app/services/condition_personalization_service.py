@@ -613,35 +613,60 @@ class ConditionPersonalizationService:
         """
         Get active conditions for patient
         Uses database query if available, otherwise returns stub data
+        
+        FIX ISSUE C: Explicit logging when personalization cannot be determined
         """
         # Try database query first
         try:
-            from app.models import RespiratoryConditionProfile
+            from app.models import RespiratoryConditionProfile  # type: ignore
             profiles = self.db.query(RespiratoryConditionProfile).filter(
                 RespiratoryConditionProfile.patient_id == patient_id,
                 RespiratoryConditionProfile.active == True
             ).all()
             if profiles:
-                return [p.condition for p in profiles]
+                conditions = [p.condition for p in profiles]
+                logger.info(
+                    f"✓ PERSONALIZATION: Patient {patient_id} conditions loaded from "
+                    f"RespiratoryConditionProfile: {conditions}"
+                )
+                return conditions
         except Exception as e:
-            logger.warning(f"Could not query RespiratoryConditionProfile: {e}")
+            logger.warning(
+                f"⚠ PERSONALIZATION: RespiratoryConditionProfile query failed for "
+                f"patient {patient_id}: {e}"
+            )
         
         # Fallback: Check patient table for conditions
         try:
-            from app.models import Patient
+            from app.models import Patient  # type: ignore
             patient = self.db.query(Patient).filter(Patient.id == patient_id).first()
             if patient and hasattr(patient, 'conditions'):
                 # Return conditions if patient has them
                 if isinstance(patient.conditions, list):
+                    logger.info(
+                        f"✓ PERSONALIZATION: Patient {patient_id} conditions loaded from "
+                        f"Patient model (list): {patient.conditions}"
+                    )
                     return patient.conditions
                 elif isinstance(patient.conditions, str):
-                    return [c.strip() for c in patient.conditions.split(',')]
+                    conditions = [c.strip() for c in patient.conditions.split(',')]
+                    logger.info(
+                        f"✓ PERSONALIZATION: Patient {patient_id} conditions loaded from "
+                        f"Patient model (string): {conditions}"
+                    )
+                    return conditions
         except Exception as e:
-            logger.warning(f"Could not query Patient model: {e}")
+            logger.warning(
+                f"⚠ PERSONALIZATION: Patient model query failed for patient {patient_id}: {e}"
+            )
         
-        # Final fallback: Return demo conditions for testing
-        # In production, this would be empty
-        logger.info(f"Using stub conditions for patient {patient_id}")
+        # FIX ISSUE C: Explicit alert when personalization cannot be determined
+        logger.error(
+            f"❌ PERSONALIZATION ALERT: Cannot determine conditions for patient {patient_id}. "
+            f"Using default thresholds (general population). This may reduce clinical accuracy "
+            f"for disease-specific monitoring. Action required: Ensure patient has conditions "
+            f"recorded in RespiratoryConditionProfile or Patient.conditions field."
+        )
         return []  # Empty for general population (will use default thresholds)
     
     def get_personalized_config(self, patient_id: str) -> Dict[str, Any]:

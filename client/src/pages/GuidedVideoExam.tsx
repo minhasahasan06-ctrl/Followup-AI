@@ -177,6 +177,10 @@ export default function GuidedVideoExam() {
         title: 'Analysis Complete',
         description: 'Your examination has been analyzed successfully.'
       });
+      // FIX ISSUE A: Explicitly invalidate results query to trigger auto-refresh
+      queryClient.invalidateQueries({ 
+        queryKey: [`/api/v1/guided-exam/sessions/${sessionId}/results`] 
+      });
       queryClient.invalidateQueries({ queryKey: ['/api/v1/guided-exam/sessions'] });
     },
     onError: (error: Error) => {
