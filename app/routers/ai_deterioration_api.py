@@ -328,10 +328,10 @@ async def audit_log_request(
 @video_router.post("/upload", response_model=MediaUploadResponse)
 async def upload_video(
     patient_id: str,
-    file: UploadFile = File(...),
+    file: UploadFile,
+    request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Upload video for AI analysis with S3 SSE-KMS encryption
@@ -417,9 +417,9 @@ async def upload_video(
 @video_router.post("/analyze/{session_id}", response_model=VideoAnalysisResponse)
 async def analyze_video(
     session_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Trigger AI analysis on uploaded video
@@ -439,7 +439,8 @@ async def analyze_video(
             raise HTTPException(status_code=404, detail="Session not found")
         
         # Audit log
-        await audit_log_request(request, db, user, "view", "video_analysis", session.patient_id, phi_accessed=True)
+        patient_id_str = str(session.patient_id)
+        await audit_log_request(request, db, user, "view", "video_analysis", patient_id_str, phi_accessed=True)
         
         # Download video from S3
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=session.s3_key)
@@ -453,11 +454,11 @@ async def analyze_video(
         try:
             # Retrieve patient FPS baseline for personalized comparison
             fps_service = FacialPuffinessService(db)
-            patient_baseline = fps_service.get_patient_baseline(session.patient_id)
+            patient_baseline = fps_service.get_patient_baseline(str(session.patient_id))
             
             # Retrieve patient skin analysis baseline
             skin_service = SkinAnalysisService(db)
-            skin_baseline = skin_service.get_patient_baseline(session.patient_id)
+            skin_baseline = skin_service.get_patient_baseline(str(session.patient_id))
             
             # Merge baselines for comprehensive analysis
             combined_baseline = {**(patient_baseline or {}), **(skin_baseline or {})}
@@ -472,8 +473,8 @@ async def analyze_video(
         
         # Create VideoMetrics record
         metrics = VideoMetrics(
-            session_id=session.id,
-            patient_id=session.patient_id,
+            session_id=int(session.id),
+            patient_id=str(session.patient_id),
             **metrics_dict
         )
         
@@ -483,7 +484,7 @@ async def analyze_video(
         if metrics_dict.get('facial_puffiness_score') is not None:
             fps_service = FacialPuffinessService(db)
             fps_service.ingest_fps_metrics(
-                patient_id=session.patient_id,
+                patient_id=str(session.patient_id),
                 session_id=str(session.id),
                 fps_metrics=metrics_dict,
                 frames_analyzed=metrics_dict.get('frames_analyzed', 0),
@@ -495,7 +496,7 @@ async def analyze_video(
         if metrics_dict.get('lab_facial_perfusion_avg') is not None:
             skin_service = SkinAnalysisService(db)
             skin_service.ingest_skin_metrics(
-                patient_id=session.patient_id,
+                patient_id=str(session.patient_id),
                 session_id=str(session.id),
                 skin_metrics=metrics_dict,
                 frames_analyzed=metrics_dict.get('frames_analyzed', 0),
@@ -503,21 +504,27 @@ async def analyze_video(
                 timestamp=datetime.utcnow()
             )
         
-        # Update session status
-        session.processing_status = "completed"
-        session.processed_at = datetime.utcnow()
-        session.quality_score = metrics_dict.get("frame_quality", 0.0)
-        
+        # Update session status using query.update()
+        db.query(MediaSession).filter(
+            MediaSession.id == session_id
+        ).update({
+            "processing_status": "completed",
+            "processed_at": datetime.utcnow(),
+            "quality_score": metrics_dict.get("frame_quality", 0.0)
+        })
         db.commit()
+        db.refresh(session)
         db.refresh(metrics)
         
         # Generate wellness recommendations (NOT medical advice)
         recommendations = engine.generate_recommendations(metrics_dict)
         
+        quality_score = float(session.quality_score) if session.quality_score is not None else 0.0
+        
         return VideoAnalysisResponse(
-            session_id=session.id,
+            session_id=int(session.id),
             metrics=metrics_dict,
-            quality_score=session.quality_score,
+            quality_score=quality_score,
             confidence=metrics_dict.get("analysis_confidence", 0.0),
             analysis_timestamp=metrics.analysis_timestamp,
             recommendations=recommendations
@@ -530,10 +537,10 @@ async def analyze_video(
 @video_router.get("/sessions/{patient_id}")
 async def get_video_sessions(
     patient_id: str,
+    request: Request,
     limit: int = 10,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Get recent video sessions for a patient"""
     await audit_log_request(request, db, user, "view", "video_sessions", patient_id, phi_accessed=True)
@@ -558,10 +565,10 @@ async def get_video_sessions(
 @audio_router.post("/upload", response_model=MediaUploadResponse)
 async def upload_audio(
     patient_id: str,
-    file: UploadFile = File(...),
+    file: UploadFile,
+    request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Upload audio for AI analysis with S3 SSE-KMS encryption
@@ -638,9 +645,9 @@ async def upload_audio(
 @audio_router.post("/analyze/{session_id}", response_model=AudioAnalysisResponse)
 async def analyze_audio(
     session_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Trigger AI analysis on uploaded audio
@@ -660,7 +667,8 @@ async def analyze_audio(
             raise HTTPException(status_code=404, detail="Session not found")
         
         # Audit log
-        await audit_log_request(request, db, user, "view", "audio_analysis", session.patient_id, phi_accessed=True)
+        patient_id_str = str(session.patient_id)
+        await audit_log_request(request, db, user, "view", "audio_analysis", patient_id_str, phi_accessed=True)
         
         # Download audio from S3
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=session.s3_key)
@@ -668,32 +676,39 @@ async def analyze_audio(
         
         # Run Audio AI Engine
         engine = AudioAIEngine(db)
-        metrics_dict = await engine.analyze_audio(audio_bytes, session.patient_id)
+        metrics_dict = await engine.analyze_audio(audio_bytes, patient_id_str)
         
         # Create AudioMetrics record
         metrics = AudioMetrics(
-            session_id=session.id,
-            patient_id=session.patient_id,
+            session_id=int(session.id),
+            patient_id=patient_id_str,
             **metrics_dict
         )
         
         db.add(metrics)
         
-        # Update session status
-        session.processing_status = "completed"
-        session.processed_at = datetime.utcnow()
-        session.quality_score = metrics_dict.get("audio_quality", 0.0)
+        # Update session status using query.update()
+        db.query(MediaSession).filter(
+            MediaSession.id == session_id
+        ).update({
+            "processing_status": "completed",
+            "processed_at": datetime.utcnow(),
+            "quality_score": metrics_dict.get("audio_quality", 0.0)
+        })
         
         db.commit()
+        db.refresh(session)
         db.refresh(metrics)
         
         # Generate wellness recommendations
         recommendations = engine.generate_recommendations(metrics_dict)
         
+        quality_score = float(session.quality_score) if session.quality_score is not None else 0.0
+        
         return AudioAnalysisResponse(
-            session_id=session.id,
+            session_id=int(session.id),
             metrics=metrics_dict,
-            quality_score=session.quality_score,
+            quality_score=quality_score,
             confidence=metrics_dict.get("analysis_confidence", 0.0),
             analysis_timestamp=metrics.analysis_timestamp,
             recommendations=recommendations
@@ -709,9 +724,9 @@ async def analyze_audio(
 @trend_router.post("/risk-assessment/{patient_id}", response_model=RiskAssessmentResponse)
 async def assess_risk(
     patient_id: str,
+    request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Run comprehensive risk assessment using Trend Prediction Engine
@@ -754,7 +769,7 @@ async def assess_risk(
         db.refresh(snapshot)
         
         # Check if risk level changed and trigger alerts
-        await engine.check_risk_transition(patient_id, assessment["risk_level"])
+        await engine.check_risk_transition(patient_id, str(snapshot.risk_level), assessment["risk_level"])
         
         return RiskAssessmentResponse(
             patient_id=patient_id,
@@ -774,10 +789,10 @@ async def assess_risk(
 @trend_router.get("/history/{patient_id}")
 async def get_trend_history(
     patient_id: str,
+    request: Request,
     days: int = 30,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Get historical trend snapshots for patient"""
     await audit_log_request(request, db, user, "view", "trend_history", patient_id, phi_accessed=True)
@@ -804,14 +819,14 @@ async def get_trend_history(
 @alert_router.post("/rules", status_code=201)
 async def create_alert_rule(
     rule: AlertRuleCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Create new alert rule for doctor"""
     try:
         # Audit log
-        await audit_log_request(request, db, user, "create", "alert_rule", phi_accessed=False)
+        await audit_log_request(request, db, user, "create", "alert_rule", None, phi_accessed=False)
         
         new_rule = AlertRule(
             doctor_id=user["user_id"],
@@ -834,13 +849,13 @@ async def create_alert_rule(
 
 @alert_router.get("/pending")
 async def get_pending_alerts(
+    request: Request,
     severity_filter: Optional[str] = None,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Get pending alerts for current doctor"""
-    await audit_log_request(request, db, user, "view", "alerts", phi_accessed=True)
+    await audit_log_request(request, db, user, "view", "alerts", None, phi_accessed=True)
     
     engine = AlertOrchestrationEngine(db)
     
@@ -861,12 +876,12 @@ async def get_pending_alerts(
 @alert_router.post("/acknowledge/{alert_id}")
 async def acknowledge_alert(
     alert_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    request: Request = None
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Acknowledge alert"""
-    await audit_log_request(request, db, user, "update", "alert", phi_accessed=True)
+    await audit_log_request(request, db, user, "update", "alert", None, phi_accessed=True)
     
     engine = AlertOrchestrationEngine(db)
     success = await engine.acknowledge_alert(alert_id, user["user_id"], user["role"])
