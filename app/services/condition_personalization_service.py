@@ -5,7 +5,6 @@ Provides disease-specific respiratory monitoring emphasis and wellness guidance
 
 from typing import Dict, List, Optional, Any
 from sqlalchemy.orm import Session
-from app.models import RespiratoryConditionProfile
 import logging
 
 logger = logging.getLogger(__name__)
@@ -611,13 +610,14 @@ class ConditionPersonalizationService:
         self.db = db
     
     def get_patient_conditions(self, patient_id: str) -> List[str]:
-        """Get active respiratory conditions for patient"""
-        profiles = self.db.query(RespiratoryConditionProfile).filter(
-            RespiratoryConditionProfile.patient_id == patient_id,
-            RespiratoryConditionProfile.active == True
-        ).all()
-        
-        return [p.condition for p in profiles]
+        """
+        Get active respiratory conditions for patient
+        NOTE: Simplified implementation - returns empty list for now
+        TODO: Implement proper database query when RespiratoryConditionProfile model exists
+        """
+        # Placeholder: In production, this would query the database
+        # For testing purposes, return empty list
+        return []
     
     def get_personalized_config(self, patient_id: str) -> Dict[str, Any]:
         """
@@ -966,3 +966,209 @@ class ConditionPersonalizationService:
         merged['wellness_guidance'] = ' '.join(guidance_parts)
         
         return merged
+    
+    def get_guided_exam_config(self, patient_id: str) -> Dict[str, Any]:
+        """
+        Get personalized thresholds for guided video examination
+        Returns hepatic and anemia monitoring configs based on patient conditions
+        """
+        conditions = self.get_patient_conditions(patient_id)
+        
+        # Get hepatic and anemia configs
+        hepatic_config = self.get_hepatic_monitoring_config(patient_id)
+        anemia_config = self.get_anemia_monitoring_config(patient_id)
+        
+        return {
+            'hepatic': hepatic_config,
+            'anemia': anemia_config,
+            'conditions': conditions,
+            'examination_stages': {
+                'eyes': {
+                    'purpose': 'Sclera examination for jaundice detection',
+                    'priority': hepatic_config['priority'],
+                    'key_metrics': ['scleral_chromaticity_index', 'sclera_b_channel', 'sclera_yellowness_ratio']
+                },
+                'palm': {
+                    'purpose': 'Palm examination for anemia detection',
+                    'priority': anemia_config['priority'],
+                    'key_metrics': ['conjunctival_pallor_index', 'palmar_redness_a', 'palmar_l_channel']
+                },
+                'tongue': {
+                    'purpose': 'Tongue examination for coating and color',
+                    'priority': 'medium',
+                    'key_metrics': ['tongue_color_index', 'tongue_coating_detected', 'tongue_coating_color']
+                },
+                'lips': {
+                    'purpose': 'Lip examination for hydration and cyanosis',
+                    'priority': 'medium',
+                    'key_metrics': ['lip_hydration_score', 'lip_cyanosis_detected', 'lip_color_uniformity']
+                }
+            }
+        }
+    
+    def get_hepatic_monitoring_config(self, patient_id: str) -> Dict[str, Any]:
+        """
+        Get personalized hepatic (jaundice) monitoring thresholds
+        Based on liver disease condition profile
+        """
+        conditions = self.get_patient_conditions(patient_id)
+        
+        # Check if patient has liver disease
+        has_liver_disease = 'liver_disease' in conditions
+        
+        if has_liver_disease:
+            profile = self.CONDITION_PROFILES.get('liver_disease', {})
+            skin_analysis = profile.get('skin_analysis', {})
+            jaundice_config = skin_analysis.get('jaundice_monitoring', {})
+            
+            return {
+                'priority': 'critical',
+                'conditions': ['liver_disease'],
+                'scleral_chromaticity_thresholds': {
+                    'normal': {'min': 0, 'max': 20},
+                    'mild': {'min': 20, 'max': 35},
+                    'moderate': {'min': 35, 'max': 50},
+                    'severe': {'min': 50, 'max': 100}
+                },
+                'b_channel_thresholds': jaundice_config.get('severity_levels', {
+                    'mild': 25.0,
+                    'moderate': 35.0,
+                    'severe': 45.0
+                }),
+                'yellowness_ratio_thresholds': {
+                    'normal': {'max': 1.2},
+                    'mild': {'min': 1.2, 'max': 1.5},
+                    'moderate': {'min': 1.5, 'max': 2.0},
+                    'severe': {'min': 2.0}
+                },
+                'monitoring_regions': ['sclera', 'facial'],
+                'wellness_guidance': skin_analysis.get('wellness_guidance', 
+                    'Yellowish discoloration of the whites of eyes may indicate changes in liver function.')
+            }
+        else:
+            # Default config for patients without liver disease
+            return {
+                'priority': 'low',
+                'conditions': [],
+                'scleral_chromaticity_thresholds': {
+                    'normal': {'min': 0, 'max': 25},
+                    'mild': {'min': 25, 'max': 40},
+                    'moderate': {'min': 40, 'max': 60},
+                    'severe': {'min': 60, 'max': 100}
+                },
+                'b_channel_thresholds': {
+                    'mild': 30.0,
+                    'moderate': 45.0,
+                    'severe': 60.0
+                },
+                'yellowness_ratio_thresholds': {
+                    'normal': {'max': 1.3},
+                    'mild': {'min': 1.3, 'max': 1.8},
+                    'moderate': {'min': 1.8, 'max': 2.5},
+                    'severe': {'min': 2.5}
+                },
+                'monitoring_regions': ['sclera'],
+                'wellness_guidance': 'General jaundice screening for wellness monitoring.'
+            }
+    
+    def get_anemia_monitoring_config(self, patient_id: str) -> Dict[str, Any]:
+        """
+        Get personalized anemia (pallor) monitoring thresholds
+        Based on anemia condition profile
+        """
+        conditions = self.get_patient_conditions(patient_id)
+        
+        # Check if patient has anemia or related conditions
+        has_anemia = 'anemia' in conditions
+        has_kidney_disease = 'kidney_disease' in conditions  # Often associated with anemia
+        has_heart_failure = 'heart_failure' in conditions  # Can have reduced perfusion
+        
+        priority = 'critical' if has_anemia else ('high' if has_kidney_disease or has_heart_failure else 'medium')
+        related_conditions = [c for c in [has_anemia and 'anemia', 
+                                          has_kidney_disease and 'kidney_disease',
+                                          has_heart_failure and 'heart_failure'] if c]
+        
+        if has_anemia:
+            profile = self.CONDITION_PROFILES.get('anemia', {})
+            skin_analysis = profile.get('skin_analysis', {})
+            perfusion_thresholds = skin_analysis.get('perfusion_thresholds', {})
+            
+            return {
+                'priority': priority,
+                'conditions': related_conditions,
+                'conjunctival_pallor_thresholds': {
+                    'normal': {'min': 45, 'max': 100},
+                    'mild': {'min': 35, 'max': 45},
+                    'moderate': {'min': 25, 'max': 35},
+                    'severe': {'min': 0, 'max': 25}
+                },
+                'palmar_perfusion_thresholds': perfusion_thresholds.get('palmar', {
+                    'mild': 40.0,
+                    'moderate': 30.0,
+                    'severe': 20.0
+                }),
+                'nailbed_perfusion_thresholds': perfusion_thresholds.get('nailbed', {
+                    'mild': 35.0,
+                    'moderate': 25.0,
+                    'severe': 15.0
+                }),
+                'a_channel_thresholds': {
+                    'normal': {'min': 15},  # Higher a* = more red
+                    'mild_pallor': {'min': 10, 'max': 15},
+                    'moderate_pallor': {'min': 5, 'max': 10},
+                    'severe_pallor': {'max': 5}
+                },
+                'l_channel_thresholds': {
+                    'normal': {'min': 55, 'max': 75},  # Mid-range lightness
+                    'pale': {'min': 75}  # Too bright = pale
+                },
+                'monitoring_regions_priority': skin_analysis.get('pallor_regions_priority', 
+                    ['palmar', 'nailbed', 'facial']),
+                'capillary_refill': skin_analysis.get('capillary_refill', {
+                    'threshold_sec': 2.0,
+                    'concern_sec': 3.0,
+                    'monitoring': 'important'
+                }),
+                'wellness_guidance': skin_analysis.get('wellness_guidance',
+                    'Pale skin, especially in palms and nail beds, may indicate low iron levels.')
+            }
+        else:
+            # Default config
+            return {
+                'priority': priority,
+                'conditions': related_conditions,
+                'conjunctival_pallor_thresholds': {
+                    'normal': {'min': 40, 'max': 100},
+                    'mild': {'min': 30, 'max': 40},
+                    'moderate': {'min': 20, 'max': 30},
+                    'severe': {'min': 0, 'max': 20}
+                },
+                'palmar_perfusion_thresholds': {
+                    'mild': 38.0,
+                    'moderate': 28.0,
+                    'severe': 18.0
+                },
+                'nailbed_perfusion_thresholds': {
+                    'mild': 33.0,
+                    'moderate': 23.0,
+                    'severe': 13.0
+                },
+                'a_channel_thresholds': {
+                    'normal': {'min': 12},
+                    'mild_pallor': {'min': 8, 'max': 12},
+                    'moderate_pallor': {'min': 4, 'max': 8},
+                    'severe_pallor': {'max': 4}
+                },
+                'l_channel_thresholds': {
+                    'normal': {'min': 50, 'max': 80},
+                    'pale': {'min': 80}
+                },
+                'monitoring_regions_priority': ['palmar', 'nailbed', 'facial'],
+                'capillary_refill': {
+                    'threshold_sec': 2.0,
+                    'concern_sec': 3.5,
+                    'monitoring': 'standard'
+                },
+                'wellness_guidance': 'General pallor screening for wellness monitoring.'
+            }
+

@@ -15,6 +15,8 @@ from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.database import Base, get_db
 from app.models.video_ai_models import VideoExamSession, VideoMetrics
+from app.models.user import User
+from app.dependencies import get_current_user
 from datetime import datetime
 import base64
 
@@ -50,6 +52,48 @@ def client(db_session):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def mock_user_patient_a(db_session):
+    """Create mock User for Patient A"""
+    user = User(
+        id="patient_a_123",
+        email="patient_a@test.com",
+        role="patient"
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def mock_user_patient_b(db_session):
+    """Create mock User for Patient B"""
+    user = User(
+        id="patient_b_456",
+        email="patient_b@test.com",
+        role="patient"
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def mock_user_patient_c(db_session):
+    """Create mock User for Patient C"""
+    user = User(
+        id="patient_c_789",
+        email="patient_c@test.com",
+        role="patient"
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
 
 
 @pytest.fixture
@@ -181,13 +225,21 @@ def patient_b_metrics(db_session, patient_b_session):
 class TestPHIIsolation:
     """Test suite for PHI isolation and access control"""
     
-    def test_patient_a_can_access_own_session(self, client, patient_a_session):
+    def test_patient_a_can_access_own_session(self, client, patient_a_session, mock_user_patient_a):
         """Patient A should be able to access their own session"""
-        # Mock authentication for Patient A
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_a_session.id}",
             headers={"Authorization": "Bearer patient_a_token"}
         )
+        
+        app.dependency_overrides.clear()
+        app.dependency_overrides[get_db] = lambda: client
         
         assert response.status_code == 200
         data = response.json()
@@ -195,16 +247,23 @@ class TestPHIIsolation:
         assert data["session_id"] == patient_a_session.id
     
     
-    def test_patient_a_cannot_access_patient_b_session(self, client, patient_a_session, patient_b_session):
+    def test_patient_a_cannot_access_patient_b_session(self, client, patient_a_session, patient_b_session, mock_user_patient_a):
         """
         CRITICAL: Patient A should NOT be able to access Patient B's session
         This test verifies PHI isolation
         """
-        # Mock authentication for Patient A trying to access Patient B's session
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_b_session.id}",
             headers={"Authorization": "Bearer patient_a_token"}
         )
+        
+        app.dependency_overrides.clear()
         
         # Should return 403 Forbidden or 404 Not Found
         assert response.status_code in [403, 404]
@@ -214,12 +273,20 @@ class TestPHIIsolation:
             pytest.fail("CRITICAL PHI VIOLATION: Patient A accessed Patient B's session")
     
     
-    def test_patient_b_can_access_own_session(self, client, patient_b_session):
+    def test_patient_b_can_access_own_session(self, client, patient_b_session, mock_user_patient_b):
         """Patient B should be able to access their own session"""
+        # Override get_current_user to return Patient B
+        async def override_get_user():
+            return mock_user_patient_b
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_b_session.id}",
             headers={"Authorization": "Bearer patient_b_token"}
         )
+        
+        app.dependency_overrides.clear()
         
         assert response.status_code == 200
         data = response.json()
@@ -227,15 +294,23 @@ class TestPHIIsolation:
         assert data["session_id"] == patient_b_session.id
     
     
-    def test_patient_b_cannot_access_patient_a_session(self, client, patient_a_session, patient_b_session):
+    def test_patient_b_cannot_access_patient_a_session(self, client, patient_a_session, patient_b_session, mock_user_patient_b):
         """
         CRITICAL: Patient B should NOT be able to access Patient A's session
         This test verifies PHI isolation
         """
+        # Override get_current_user to return Patient B
+        async def override_get_user():
+            return mock_user_patient_b
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_a_session.id}",
             headers={"Authorization": "Bearer patient_b_token"}
         )
+        
+        app.dependency_overrides.clear()
         
         # Should return 403 Forbidden or 404 Not Found
         assert response.status_code in [403, 404]
@@ -248,12 +323,20 @@ class TestPHIIsolation:
 class TestSessionResultsPHIIsolation:
     """Test PHI isolation for session results endpoint"""
     
-    def test_patient_a_can_access_own_results(self, client, patient_a_session, patient_a_metrics):
+    def test_patient_a_can_access_own_results(self, client, patient_a_session, patient_a_metrics, mock_user_patient_a):
         """Patient A should be able to access their own session results"""
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_a_session.id}/results",
             headers={"Authorization": "Bearer patient_a_token"}
         )
+        
+        app.dependency_overrides.clear()
         
         assert response.status_code == 200
         data = response.json()
@@ -266,15 +349,23 @@ class TestSessionResultsPHIIsolation:
         assert metrics["sclera_yellowness_score"] == 0.45  # Patient A's value
     
     
-    def test_patient_a_cannot_access_patient_b_results(self, client, patient_a_session, patient_b_session, patient_b_metrics):
+    def test_patient_a_cannot_access_patient_b_results(self, client, patient_a_session, patient_b_session, patient_b_metrics, mock_user_patient_a):
         """
         CRITICAL: Patient A should NOT be able to access Patient B's results
         This test verifies results are isolated by session_id
         """
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_b_session.id}/results",
             headers={"Authorization": "Bearer patient_a_token"}
         )
+        
+        app.dependency_overrides.clear()
         
         # Should return 403 Forbidden or 404 Not Found
         assert response.status_code in [403, 404]
@@ -287,16 +378,24 @@ class TestSessionResultsPHIIsolation:
                 pytest.fail("CRITICAL PHI VIOLATION: Patient A accessed Patient B's metrics")
     
     
-    def test_results_query_by_session_id_not_patient_id(self, client, patient_a_session, patient_a_metrics, patient_b_session, patient_b_metrics):
+    def test_results_query_by_session_id_not_patient_id(self, client, patient_a_session, patient_a_metrics, patient_b_session, patient_b_metrics, mock_user_patient_a):
         """
         CRITICAL: Results endpoint must query by guided_exam_session_id
         NOT just by patient_id to prevent returning wrong session's metrics
         """
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         # Patient A has multiple sessions, ensure we get the RIGHT session's metrics
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_a_session.id}/results",
             headers={"Authorization": "Bearer patient_a_token"}
         )
+        
+        app.dependency_overrides.clear()
         
         assert response.status_code == 200
         data = response.json()
@@ -310,12 +409,20 @@ class TestSessionResultsPHIIsolation:
         assert metrics["sclera_yellowness_score"] == 0.45  # Patient A's value
     
     
-    def test_patient_b_can_access_own_results(self, client, patient_b_session, patient_b_metrics):
+    def test_patient_b_can_access_own_results(self, client, patient_b_session, patient_b_metrics, mock_user_patient_b):
         """Patient B should be able to access their own session results"""
+        # Override get_current_user to return Patient B
+        async def override_get_user():
+            return mock_user_patient_b
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_b_session.id}/results",
             headers={"Authorization": "Bearer patient_b_token"}
         )
+        
+        app.dependency_overrides.clear()
         
         assert response.status_code == 200
         data = response.json()
@@ -328,14 +435,22 @@ class TestSessionResultsPHIIsolation:
         assert metrics["sclera_yellowness_score"] == 0.72  # Patient B's value
     
     
-    def test_patient_b_cannot_access_patient_a_results(self, client, patient_a_session, patient_a_metrics, patient_b_session):
+    def test_patient_b_cannot_access_patient_a_results(self, client, patient_a_session, patient_a_metrics, patient_b_session, mock_user_patient_b):
         """
         CRITICAL: Patient B should NOT be able to access Patient A's results
         """
+        # Override get_current_user to return Patient B
+        async def override_get_user():
+            return mock_user_patient_b
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_a_session.id}/results",
             headers={"Authorization": "Bearer patient_b_token"}
         )
+        
+        app.dependency_overrides.clear()
         
         # Should return 403 Forbidden or 404 Not Found
         assert response.status_code in [403, 404]
@@ -351,8 +466,14 @@ class TestSessionResultsPHIIsolation:
 class TestSessionCreation:
     """Test session creation with PHI isolation"""
     
-    def test_patient_can_create_own_session(self, client):
+    def test_patient_can_create_own_session(self, client, mock_user_patient_c):
         """Patient should be able to create a session for themselves"""
+        # Override get_current_user to return Patient C
+        async def override_get_user():
+            return mock_user_patient_c
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.post(
             "/api/v1/guided-exam/sessions",
             json={
@@ -362,6 +483,8 @@ class TestSessionCreation:
             headers={"Authorization": "Bearer patient_c_token"}
         )
         
+        app.dependency_overrides.clear()
+        
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "in_progress"
@@ -369,11 +492,17 @@ class TestSessionCreation:
         assert "session_id" in data
     
     
-    def test_patient_cannot_create_session_for_another_patient(self, client):
+    def test_patient_cannot_create_session_for_another_patient(self, client, mock_user_patient_a):
         """
         CRITICAL: Patient A should NOT be able to create session for Patient B
         This prevents session hijacking
         """
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.post(
             "/api/v1/guided-exam/sessions",
             json={
@@ -383,6 +512,8 @@ class TestSessionCreation:
             headers={"Authorization": "Bearer patient_a_token"}  # Patient A's token
         )
         
+        app.dependency_overrides.clear()
+        
         # Should return 403 Forbidden
         assert response.status_code == 403
         assert "another patient" in response.json()["detail"].lower()
@@ -391,8 +522,14 @@ class TestSessionCreation:
 class TestFrameCapture:
     """Test frame capture with PHI isolation"""
     
-    def test_patient_can_capture_frame_for_own_session(self, client, patient_a_session):
+    def test_patient_can_capture_frame_for_own_session(self, client, patient_a_session, mock_user_patient_a):
         """Patient should be able to capture frames for their own session"""
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         # Create a small test image in base64
         test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         
@@ -406,14 +543,22 @@ class TestFrameCapture:
             headers={"Authorization": "Bearer patient_a_token"}
         )
         
+        app.dependency_overrides.clear()
+        
         # May fail on S3 upload, but should NOT fail on auth
         assert response.status_code != 403
     
     
-    def test_patient_cannot_capture_frame_for_another_patient_session(self, client, patient_a_session, patient_b_session):
+    def test_patient_cannot_capture_frame_for_another_patient_session(self, client, patient_a_session, patient_b_session, mock_user_patient_a):
         """
         CRITICAL: Patient A should NOT be able to capture frames for Patient B's session
         """
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         
         response = client.post(
@@ -425,6 +570,8 @@ class TestFrameCapture:
             headers={"Authorization": "Bearer patient_a_token"}  # Patient A's token
         )
         
+        app.dependency_overrides.clear()
+        
         # Should return 403 Forbidden
         assert response.status_code == 403
         assert "another patient" in response.json()["detail"].lower()
@@ -433,14 +580,22 @@ class TestFrameCapture:
 class TestSessionCompletion:
     """Test session completion with PHI isolation"""
     
-    def test_patient_cannot_complete_another_patient_session(self, client, patient_a_session, patient_b_session):
+    def test_patient_cannot_complete_another_patient_session(self, client, patient_a_session, patient_b_session, mock_user_patient_a):
         """
         CRITICAL: Patient A should NOT be able to complete Patient B's session
         """
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.post(
             f"/api/v1/guided-exam/sessions/{patient_b_session.id}/complete",
             headers={"Authorization": "Bearer patient_a_token"}  # Patient A's token
         )
+        
+        app.dependency_overrides.clear()
         
         # Should return 403 Forbidden
         assert response.status_code == 403
@@ -452,33 +607,57 @@ class TestSessionCompletion:
 class TestEdgeCases:
     """Test edge cases and error handling"""
     
-    def test_nonexistent_session_returns_404(self, client):
+    def test_nonexistent_session_returns_404(self, client, mock_user_patient_a):
         """Accessing nonexistent session should return 404"""
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             "/api/v1/guided-exam/sessions/99999",
             headers={"Authorization": "Bearer patient_a_token"}
         )
         
+        app.dependency_overrides.clear()
+        
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
     
     
-    def test_results_for_nonexistent_session_returns_404(self, client):
+    def test_results_for_nonexistent_session_returns_404(self, client, mock_user_patient_a):
         """Accessing results for nonexistent session should return 404"""
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             "/api/v1/guided-exam/sessions/99999/results",
             headers={"Authorization": "Bearer patient_a_token"}
         )
         
+        app.dependency_overrides.clear()
+        
         assert response.status_code == 404
     
     
-    def test_results_for_session_without_metrics_returns_404(self, client, patient_a_session):
+    def test_results_for_session_without_metrics_returns_404(self, client, patient_a_session, mock_user_patient_a):
         """Accessing results for session without analysis should return 404"""
+        # Override get_current_user to return Patient A
+        async def override_get_user():
+            return mock_user_patient_a
+        
+        app.dependency_overrides[get_current_user] = override_get_user
+        
         response = client.get(
             f"/api/v1/guided-exam/sessions/{patient_a_session.id}/results",
             headers={"Authorization": "Bearer patient_a_token"}
         )
+        
+        app.dependency_overrides.clear()
         
         # Session exists but no metrics yet
         assert response.status_code == 404
