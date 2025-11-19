@@ -65,6 +65,19 @@ The Python backend is required for the Guided Video Examination feature at `/ai-
 -   **Medication Side-Effect Predictor:** AI-powered system correlating patient symptoms with medication timelines.
 -   **Deterioration Prediction System:** Comprehensive health change detection with baseline calculation, deviation detection (z-score analysis), and risk scoring (0-15 scale).
 -   **ML Inference Infrastructure:** Self-hosted machine learning inference system with a model registry, Redis caching, async thread pool inference, HIPAA-compliant audit logging, batch processing, and ONNX optimization. Includes pre-trained Clinical-BERT and custom LSTM models.
+-   **Guided Video Examination System (Production-Ready):** A HIPAA-compliant 4-stage self-examination workflow with clinical-grade hepatic and anemia color analysis:
+    -   **4-Stage Workflow**: Eyes (sclera jaundice detection), Palm (conjunctival pallor for anemia), Tongue (coating/color), Lips (cyanosis/hydration)
+    -   **30-Second Prep Screens**: Detailed instructions with countdown timers for each examination stage
+    -   **Clinical-Grade LAB Color Analysis**: 31 new database fields capturing hepatic and anemia color metrics using perceptually-uniform LAB color space
+    -   **Disease-Specific Personalization**: Extended ConditionPersonalizationService with 3 new methods:
+        - `get_guided_exam_config()`: Returns comprehensive examination configuration based on patient conditions
+        - `get_hepatic_monitoring_config()`: Personalized jaundice thresholds for liver disease patients (critical priority with sensitive b* channel thresholds: mild 25.0, moderate 35.0, severe 45.0)
+        - `get_anemia_monitoring_config()`: Personalized pallor thresholds for anemia patients (critical priority with palmar perfusion thresholds: mild 40.0, moderate 30.0, severe 20.0)
+    -   **5 RESTful API Endpoints**: POST /sessions (create), POST /capture (frame upload), POST /complete (trigger ML analysis), GET /sessions/{id} (details), GET /results (31 clinical metrics)
+    -   **S3 Encrypted Storage**: All captured frames stored with server-side AES-256 encryption
+    -   **React Frontend**: Complete UI at `/guided-exam` route with camera capture, stage progression, countdown timers, and results display
+    -   **Database Models**: VideoExamSession (stage tracking, quality scores, S3 URIs) + 31 new VideoMetrics fields for hepatic/anemia analysis
+    -   **Documentation**: GUIDED_VIDEO_EXAMINATION_DOCUMENTATION.md
 -   **AI Deterioration Detection System (Production-Ready):** A full-stack SaaS platform featuring:
     -   **Video AI Engine:** Extracts metrics like respiratory rate, skin pallor, sclera yellowness, facial swelling, head tremor, nail bed analysis (anaemia, nicotine stains, burns, abnormalities).
     -   **Facial Puffiness Score (FPS) System:** Comprehensive facial contour tracking using MediaPipe Face Mesh 468 landmarks:

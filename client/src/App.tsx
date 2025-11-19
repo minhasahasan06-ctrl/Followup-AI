@@ -72,6 +72,7 @@ import DeteriorationDashboard from "@/pages/DeteriorationDashboard";
 import AIVideoDashboard from "@/pages/AIVideoDashboard";
 import AIAudioDashboard from "@/pages/AIAudioDashboard";
 import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
+import GuidedVideoExam from "@/pages/GuidedVideoExam";
 
 function PatientRouter() {
   return (
@@ -86,6 +87,7 @@ function PatientRouter() {
       <Route path="/ai-video" component={AIVideoDashboard} />
       <Route path="/ai-audio" component={AIAudioDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
+      <Route path="/guided-exam" component={GuidedVideoExam} />
       <Route path="/habits" component={Habits} />
       <Route path="/previous-sessions" component={PreviousSessions} />
       <Route path="/doctor-search" component={DoctorSearch} />

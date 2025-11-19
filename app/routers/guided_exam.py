@@ -33,6 +33,10 @@ import numpy as np
 from app.database import get_db
 from app.models.video_ai_models import VideoExamSession, VideoMetrics, MediaSession
 from app.models.security_models import AuditLog
+from app.models.user import User
+
+# Import dependencies
+from app.dependencies import get_current_user
 
 # Import AI engine
 from app.services.video_ai_engine import VideoAIEngine
@@ -57,27 +61,10 @@ router = APIRouter(prefix="/api/v1/guided-exam", tags=["Guided Video Exam"])
 
 # ==================== Dependencies ====================
 
-async def get_current_user(request: Request, db: Session = Depends(get_db)) -> Dict[str, Any]:
-    """
-    Simplified user authentication for guided exam endpoints
-    Extracts user_id from request headers or returns mock user for testing
-    """
-    # For development/testing - use mock user
-    auth_header = request.headers.get("authorization", "")
-    
-    # In production, this would validate JWT token
-    # For now, return mock patient user
-    return {
-        "user_id": "test_patient_123",
-        "email": "patient@test.com",
-        "role": "patient"
-    }
-
-
 async def audit_log_request(
     request: Request,
     db: Session,
-    user: Dict[str, Any],
+    user: User,
     action_type: str,
     resource_type: str,
     patient_id: Optional[str] = None,
@@ -88,8 +75,8 @@ async def audit_log_request(
     """
     try:
         audit = AuditLog(
-            user_id=user["user_id"],
-            user_role=user["role"],
+            user_id=str(user.id),
+            user_role=str(user.role) if user.role else "unknown",
             action_type=action_type,
             resource_type=resource_type,
             patient_id_accessed=patient_id,
@@ -269,7 +256,7 @@ async def create_exam_session(
     request_body: SessionCreateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: User = Depends(get_current_user)
 ):
     """
     Create new guided video examination session
@@ -287,7 +274,9 @@ async def create_exam_session(
         )
         
         # Verify patient access
-        if user["role"] == "patient" and user["user_id"] != request_body.patient_id:
+        user_role = str(user.role) if user.role else ""
+        user_id = str(user.id)
+        if user_role == "patient" and user_id != request_body.patient_id:
             raise HTTPException(
                 status_code=403,
                 detail="Cannot create exam session for another patient"
@@ -328,7 +317,7 @@ async def get_exam_session(
     session_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: User = Depends(get_current_user)
 ):
     """
     Get guided exam session details
@@ -349,7 +338,9 @@ async def get_exam_session(
         
         # Verify patient access
         patient_id_str = str(session.patient_id)
-        if user["role"] == "patient" and user["user_id"] != patient_id_str:
+        user_role = str(user.role) if user.role else ""
+        user_id = str(user.id)
+        if user_role == "patient" and user_id != patient_id_str:
             raise HTTPException(
                 status_code=403,
                 detail="Cannot access another patient's exam session"
@@ -400,7 +391,7 @@ async def capture_exam_frame(
     request_body: FrameCaptureRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: User = Depends(get_current_user)
 ):
     """
     Capture and upload frame for specific examination stage
@@ -425,7 +416,9 @@ async def capture_exam_frame(
         
         # Verify patient access
         patient_id_str = str(session.patient_id)
-        if user["role"] == "patient" and user["user_id"] != patient_id_str:
+        user_role = str(user.role) if user.role else ""
+        user_id = str(user.id)
+        if user_role == "patient" and user_id != patient_id_str:
             raise HTTPException(
                 status_code=403,
                 detail="Cannot capture frame for another patient's session"
@@ -515,7 +508,7 @@ async def complete_exam_session(
     session_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: User = Depends(get_current_user)
 ):
     """
     Complete guided exam and trigger ML analysis
@@ -542,7 +535,9 @@ async def complete_exam_session(
         
         # Verify patient access
         patient_id_str = str(session.patient_id)
-        if user["role"] == "patient" and user["user_id"] != patient_id_str:
+        user_role = str(user.role) if user.role else ""
+        user_id = str(user.id)
+        if user_role == "patient" and user_id != patient_id_str:
             raise HTTPException(
                 status_code=403,
                 detail="Cannot complete another patient's exam session"
@@ -820,7 +815,7 @@ async def get_exam_results(
     session_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: User = Depends(get_current_user)
 ):
     """
     Get analyzed results for completed guided exam
@@ -844,7 +839,9 @@ async def get_exam_results(
         
         # Verify patient access
         patient_id_str = str(session.patient_id)
-        if user["role"] == "patient" and user["user_id"] != patient_id_str:
+        user_role = str(user.role) if user.role else ""
+        user_id = str(user.id)
+        if user_role == "patient" and user_id != patient_id_str:
             raise HTTPException(
                 status_code=403,
                 detail="Cannot access another patient's exam results"
