@@ -505,9 +505,9 @@ async def analyze_video(
         # Persist Edema Segmentation metrics (DeepLab V3+) if model available
         if metrics_dict.get('edema_model_available', False):
             # Extract edema metrics from VideoAIEngine output
+            regional_analysis = metrics_dict.get('edema_regional_analysis', {})
             swelling_detected = metrics_dict.get('edema_swelling_detected', False)
             expansion_avg = metrics_dict.get('edema_expansion_avg')
-            expansion_max = metrics_dict.get('edema_expansion_max')
             frames_analyzed = metrics_dict.get('edema_frames_analyzed', 0)
             
             # Determine severity based on expansion percentage
@@ -522,6 +522,33 @@ async def analyze_video(
                 else:
                     severity = 'trace'
             
+            # Extract regional metrics from analysis
+            face_data = regional_analysis.get('face_upper_body', {})
+            torso_data = regional_analysis.get('torso_hands', {})
+            legs_data = regional_analysis.get('legs_feet', {})
+            left_limb_data = regional_analysis.get('left_lower_limb', {})
+            right_limb_data = regional_analysis.get('right_lower_limb', {})
+            lower_leg_left_data = regional_analysis.get('lower_leg_left', {})
+            lower_leg_right_data = regional_analysis.get('lower_leg_right', {})
+            periorbital_data = regional_analysis.get('periorbital', {})
+            
+            # Calculate asymmetry if both sides available
+            asymmetry_detected = False
+            asymmetry_diff = None
+            if (left_limb_data.get('expansion_percent') is not None and 
+                right_limb_data.get('expansion_percent') is not None):
+                left_exp = left_limb_data['expansion_percent']
+                right_exp = right_limb_data['expansion_percent']
+                asymmetry_diff = abs(left_exp - right_exp)
+                asymmetry_detected = asymmetry_diff > 3.0
+            
+            # Count swelling regions
+            swelling_regions_count = sum([
+                face_data.get('swelling_detected', False),
+                torso_data.get('swelling_detected', False),
+                legs_data.get('swelling_detected', False)
+            ])
+            
             edema_record = EdemaSegmentationMetrics(
                 patient_id=str(session.patient_id),
                 session_id=int(session.id),
@@ -531,18 +558,52 @@ async def analyze_video(
                 model_version='mobilenet_v2_cityscapes',
                 is_finetuned=False,
                 # Overall detection
-                person_detected=True,  # If we got edema metrics, person was detected
+                person_detected=True,
                 swelling_detected=swelling_detected,
                 swelling_severity=severity,
                 overall_expansion_percent=expansion_avg,
-                swelling_regions_count=1 if swelling_detected else 0,
+                swelling_regions_count=swelling_regions_count,
+                total_body_area_px=metrics_dict.get('edema_total_body_area_px'),
+                # Regional analysis - Face/Upper Body
+                face_upper_body_area_px=face_data.get('current_area_px'),
+                face_upper_body_baseline_area_px=face_data.get('baseline_area_px'),
+                face_upper_body_expansion_percent=face_data.get('expansion_percent'),
+                face_upper_body_swelling_detected=face_data.get('swelling_detected', False),
+                # Regional analysis - Torso/Hands
+                torso_hands_area_px=torso_data.get('current_area_px'),
+                torso_hands_baseline_area_px=torso_data.get('baseline_area_px'),
+                torso_hands_expansion_percent=torso_data.get('expansion_percent'),
+                torso_hands_swelling_detected=torso_data.get('swelling_detected', False),
+                # Regional analysis - Legs/Feet
+                legs_feet_area_px=legs_data.get('current_area_px'),
+                legs_feet_baseline_area_px=legs_data.get('baseline_area_px'),
+                legs_feet_expansion_percent=legs_data.get('expansion_percent'),
+                legs_feet_swelling_detected=legs_data.get('swelling_detected', False),
+                # Asymmetry detection
+                left_lower_limb_area_px=left_limb_data.get('current_area_px'),
+                right_lower_limb_area_px=right_limb_data.get('current_area_px'),
+                left_lower_limb_baseline_area_px=left_limb_data.get('baseline_area_px'),
+                right_lower_limb_baseline_area_px=right_limb_data.get('baseline_area_px'),
+                left_expansion_percent=left_limb_data.get('expansion_percent'),
+                right_expansion_percent=right_limb_data.get('expansion_percent'),
+                asymmetry_detected=asymmetry_detected,
+                asymmetry_difference_percent=asymmetry_diff,
+                # Fine-grained regions
+                lower_leg_left_area_px=lower_leg_left_data.get('current_area_px'),
+                lower_leg_right_area_px=lower_leg_right_data.get('current_area_px'),
+                periorbital_area_px=periorbital_data.get('current_area_px'),
                 # Quality metrics
-                segmentation_confidence=0.0,  # TODO: Add confidence from edema service
-                processing_time_ms=int((metrics_dict.get('processing_time_seconds', 0) or 0) * 1000),  # Required field
+                segmentation_confidence=metrics_dict.get('edema_person_confidence', 0.0),
+                processing_time_ms=metrics_dict.get('edema_inference_time_ms') or int((metrics_dict.get('processing_time_seconds', 0) or 0) * 1000),
                 # Baseline
-                has_baseline=False,
-                baseline_comparison_available=False
-                # All regional fields (face, torso, legs, asymmetry) default to NULL - to be implemented in full segmentation
+                has_baseline=metrics_dict.get('edema_has_baseline', False),
+                baseline_segmentation_id=metrics_dict.get('edema_baseline_id'),
+                # Raw data
+                classes_detected=metrics_dict.get('edema_classes_detected'),
+                regional_analysis_json=regional_analysis,
+                # Disease personalization
+                patient_conditions=metrics_dict.get('patient_conditions'),
+                priority_regions=metrics_dict.get('edema_priority_regions')
             )
             db.add(edema_record)
         
