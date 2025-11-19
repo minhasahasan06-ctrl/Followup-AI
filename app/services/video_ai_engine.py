@@ -171,6 +171,48 @@ class VideoAIEngine:
         nail_clubbing_detections = []
         nail_pitting_detections = []
         
+        # HEPATIC/ANEMIA COLOR METRICS STORAGE
+        # Scleral metrics (ALL fields)
+        scleral_chromaticity_values = []
+        scleral_skin_deltas = []
+        scleral_l_values = []
+        scleral_a_values = []
+        scleral_b_values = []
+        scleral_roi_detections = []
+        
+        # Conjunctival metrics (ALL fields)
+        conjunctival_pallor_values = []
+        conjunctival_red_saturation_values = []
+        conjunctival_l_values = []
+        conjunctival_a_values = []
+        conjunctival_b_values = []
+        conjunctival_roi_detections = []
+        
+        # Palmar LAB metrics (ALL fields - distinct from palmar_perfusion_indices)
+        palmar_lab_l_values = []
+        palmar_lab_a_values = []
+        palmar_lab_b_values = []
+        palmar_pallor_lab_index_values = []
+        palmar_roi_detections_lab = []
+        
+        # Tongue metrics (ALL fields)
+        tongue_color_values = []
+        tongue_l_values = []
+        tongue_a_values = []
+        tongue_b_values = []
+        tongue_coating_detections = []
+        tongue_coating_colors = []
+        tongue_roi_detections = []
+        
+        # Lip metrics (ALL fields)
+        lip_hydration_values = []
+        lip_l_values = []
+        lip_a_values = []
+        lip_b_values = []
+        lip_dryness_values = []
+        lip_cyanosis_detections = []
+        lip_roi_detections = []
+        
         frames_analyzed = 0
         frames_with_face = 0
         frames_with_hands = 0
@@ -265,6 +307,74 @@ class VideoAIEngine:
             if frame_metrics.get('nail_pitting_detected'):
                 nail_pitting_detections.append(frame_metrics)
             
+            # COLLECT HEPATIC/ANEMIA COLOR METRICS (ALL FIELDS)
+            # Scleral metrics
+            if frame_metrics.get('scleral_chromaticity_index') is not None:
+                scleral_chromaticity_values.append(frame_metrics['scleral_chromaticity_index'])
+            if frame_metrics.get('scleral_skin_delta') is not None:
+                scleral_skin_deltas.append(frame_metrics['scleral_skin_delta'])
+            if frame_metrics.get('scleral_l_lightness') is not None:
+                scleral_l_values.append(frame_metrics['scleral_l_lightness'])
+            if frame_metrics.get('scleral_a_red_green') is not None:
+                scleral_a_values.append(frame_metrics['scleral_a_red_green'])
+            if frame_metrics.get('scleral_b_yellow_blue') is not None:
+                scleral_b_values.append(frame_metrics['scleral_b_yellow_blue'])
+            scleral_roi_detections.append(frame_metrics.get('scleral_roi_detected', False))
+            
+            # Conjunctival metrics
+            if frame_metrics.get('conjunctival_pallor_index') is not None:
+                conjunctival_pallor_values.append(frame_metrics['conjunctival_pallor_index'])
+            if frame_metrics.get('conjunctival_red_saturation') is not None:
+                conjunctival_red_saturation_values.append(frame_metrics['conjunctival_red_saturation'])
+            if frame_metrics.get('conjunctival_l_lightness') is not None:
+                conjunctival_l_values.append(frame_metrics['conjunctival_l_lightness'])
+            if frame_metrics.get('conjunctival_a_red_green') is not None:
+                conjunctival_a_values.append(frame_metrics['conjunctival_a_red_green'])
+            if frame_metrics.get('conjunctival_b_yellow_blue') is not None:
+                conjunctival_b_values.append(frame_metrics['conjunctival_b_yellow_blue'])
+            conjunctival_roi_detections.append(frame_metrics.get('conjunctival_roi_detected', False))
+            
+            # Palmar LAB metrics
+            if frame_metrics.get('palmar_l_lightness') is not None:
+                palmar_lab_l_values.append(frame_metrics['palmar_l_lightness'])
+            if frame_metrics.get('palmar_a_red_green') is not None:
+                palmar_lab_a_values.append(frame_metrics['palmar_a_red_green'])
+            if frame_metrics.get('palmar_b_yellow_blue') is not None:
+                palmar_lab_b_values.append(frame_metrics['palmar_b_yellow_blue'])
+            if frame_metrics.get('palmar_pallor_lab_index') is not None:
+                palmar_pallor_lab_index_values.append(frame_metrics['palmar_pallor_lab_index'])
+            palmar_roi_detections_lab.append(frame_metrics.get('palmar_roi_detected', False))
+            
+            # Tongue metrics
+            if frame_metrics.get('tongue_color_index') is not None:
+                tongue_color_values.append(frame_metrics['tongue_color_index'])
+            if frame_metrics.get('tongue_color_l') is not None:
+                tongue_l_values.append(frame_metrics['tongue_color_l'])
+            if frame_metrics.get('tongue_color_a') is not None:
+                tongue_a_values.append(frame_metrics['tongue_color_a'])
+            if frame_metrics.get('tongue_color_b') is not None:
+                tongue_b_values.append(frame_metrics['tongue_color_b'])
+            if frame_metrics.get('tongue_coating_detected') is not None:
+                tongue_coating_detections.append(frame_metrics['tongue_coating_detected'])
+            if frame_metrics.get('tongue_coating_color') is not None:
+                tongue_coating_colors.append(frame_metrics['tongue_coating_color'])
+            tongue_roi_detections.append(frame_metrics.get('tongue_roi_detected', False))
+            
+            # Lip metrics
+            if frame_metrics.get('lip_hydration_score') is not None:
+                lip_hydration_values.append(frame_metrics['lip_hydration_score'])
+            if frame_metrics.get('lip_color_l') is not None:
+                lip_l_values.append(frame_metrics['lip_color_l'])
+            if frame_metrics.get('lip_color_a') is not None:
+                lip_a_values.append(frame_metrics['lip_color_a'])
+            if frame_metrics.get('lip_color_b') is not None:
+                lip_b_values.append(frame_metrics['lip_color_b'])
+            if frame_metrics.get('lip_dryness_score') is not None:
+                lip_dryness_values.append(frame_metrics['lip_dryness_score'])
+            if frame_metrics.get('lip_cyanosis_detected') is not None:
+                lip_cyanosis_detections.append(frame_metrics['lip_cyanosis_detected'])
+            lip_roi_detections.append(frame_metrics.get('lip_roi_detected', False))
+            
             # Store full skin analysis for capillary refill tracking
             if frame_metrics.get('detection_confidence', 0) > 0.3:
                 skin_analysis_frames.append(frame_metrics)
@@ -302,6 +412,38 @@ class VideoAIEngine:
             nail_clubbing_detections=nail_clubbing_detections,
             nail_pitting_detections=nail_pitting_detections,
             skin_analysis_frames=skin_analysis_frames,
+            # HEPATIC/ANEMIA COLOR METRICS PARAMETERS (ALL FIELDS)
+            scleral_chromaticity_values=scleral_chromaticity_values,
+            scleral_skin_deltas=scleral_skin_deltas,
+            scleral_l_values=scleral_l_values,
+            scleral_a_values=scleral_a_values,
+            scleral_b_values=scleral_b_values,
+            scleral_roi_detections=scleral_roi_detections,
+            conjunctival_pallor_values=conjunctival_pallor_values,
+            conjunctival_red_saturation_values=conjunctival_red_saturation_values,
+            conjunctival_l_values=conjunctival_l_values,
+            conjunctival_a_values=conjunctival_a_values,
+            conjunctival_b_values=conjunctival_b_values,
+            conjunctival_roi_detections=conjunctival_roi_detections,
+            palmar_lab_l_values=palmar_lab_l_values,
+            palmar_lab_a_values=palmar_lab_a_values,
+            palmar_lab_b_values=palmar_lab_b_values,
+            palmar_pallor_lab_index_values=palmar_pallor_lab_index_values,
+            palmar_roi_detections_lab=palmar_roi_detections_lab,
+            tongue_color_values=tongue_color_values,
+            tongue_l_values=tongue_l_values,
+            tongue_a_values=tongue_a_values,
+            tongue_b_values=tongue_b_values,
+            tongue_coating_detections=tongue_coating_detections,
+            tongue_coating_colors=tongue_coating_colors,
+            tongue_roi_detections=tongue_roi_detections,
+            lip_hydration_values=lip_hydration_values,
+            lip_l_values=lip_l_values,
+            lip_a_values=lip_a_values,
+            lip_b_values=lip_b_values,
+            lip_dryness_values=lip_dryness_values,
+            lip_cyanosis_detections=lip_cyanosis_detections,
+            lip_roi_detections=lip_roi_detections,
             fps=fps,
             duration=duration,
             frames_analyzed=frames_analyzed,
@@ -386,12 +528,43 @@ class VideoAIEngine:
                     baseline=None  # Will be passed from patient baseline
                 )
                 metrics.update(skin_analysis)
+                
+                # 7. HEPATIC/ANEMIA COLOR METRICS
+                # Get facial skin LAB for scleral-skin delta calculation
+                facial_skin_lab = skin_analysis.get('facial_skin_lab_pixels')
+                
+                # Scleral chromaticity (jaundice detection)
+                scleral_metrics = self._detect_scleral_chromaticity_lab(
+                    rgb_frame,
+                    landmarks_array,
+                    facial_skin_lab=facial_skin_lab
+                )
+                metrics.update(scleral_metrics)
+                
+                # Conjunctival pallor (anemia detection from inner eyelid)
+                conjunctival_metrics = self._detect_conjunctival_pallor(
+                    rgb_frame,
+                    landmarks_array
+                )
+                metrics.update(conjunctival_metrics)
+                
+                # Lip color and hydration
+                lip_metrics = self._detect_lip_hydration(
+                    rgb_frame,
+                    landmarks_array
+                )
+                metrics.update(lip_metrics)
         
-        # 7. Lighting correction & quality
+        # 8. Tongue color analysis (may not always be visible)
+        # This doesn't require face landmarks - uses color segmentation
+        tongue_metrics = self._detect_tongue_color(rgb_frame)
+        metrics.update(tongue_metrics)
+        
+        # 9. Lighting correction & quality
         lighting_metrics = self._analyze_lighting(bgr_frame)
         metrics.update(lighting_metrics)
         
-        # 8. Frame quality scoring
+        # 10. Frame quality scoring
         metrics['frame_quality'] = self._compute_frame_quality(bgr_frame)
         
         return metrics
@@ -919,6 +1092,427 @@ class VideoAIEngine:
         
         return {'sclera_rgb': [0, 0, 0]}
     
+    def _detect_scleral_chromaticity_lab(
+        self,
+        frame: np.ndarray,
+        landmarks: np.ndarray,
+        facial_skin_lab: Optional[np.ndarray] = None
+    ) -> Dict[str, Any]:
+        """
+        Comprehensive scleral chromaticity analysis using LAB color space
+        for jaundice detection (hepatic monitoring)
+        
+        Metrics:
+        - Scleral LAB values (L*, a*, b*)
+        - Chromaticity index (jaundice proxy based on b* yellowness)
+        - Scleral-skin delta (difference between sclera and skin color)
+        
+        Args:
+            frame: RGB frame
+            landmarks: MediaPipe Face Mesh landmarks (468 points)
+            facial_skin_lab: Optional facial skin LAB values for delta calculation
+            
+        Returns:
+            Dict with scleral metrics
+        """
+        metrics = {
+            'scleral_chromaticity_index': None,
+            'scleral_skin_delta': None,
+            'scleral_l_lightness': None,
+            'scleral_a_red_green': None,
+            'scleral_b_yellow_blue': None,
+            'scleral_roi_detected': False
+        }
+        
+        try:
+            # MediaPipe landmark indices for sclera regions
+            # Left eye sclera (temporal side - more visible)
+            left_sclera_indices = [33, 246, 161, 160, 159, 158, 157, 173]
+            # Right eye sclera (temporal side)
+            right_sclera_indices = [263, 466, 388, 387, 386, 385, 384, 398]
+            
+            sclera_lab_values = []
+            
+            for indices in [left_sclera_indices, right_sclera_indices]:
+                try:
+                    # Extract sclera ROI
+                    points = landmarks[indices]
+                    x_min, y_min = points.min(axis=0).astype(int)
+                    x_max, y_max = points.max(axis=0).astype(int)
+                    
+                    # Ensure valid ROI
+                    x_min = max(0, x_min)
+                    y_min = max(0, y_min)
+                    x_max = min(frame.shape[1], x_max)
+                    y_max = min(frame.shape[0], y_max)
+                    
+                    if x_max > x_min and y_max > y_min:
+                        sclera_roi = frame[y_min:y_max, x_min:x_max]
+                        
+                        # Convert to LAB color space
+                        sclera_lab = self._rgb_to_lab(sclera_roi)
+                        
+                        # Filter for white/bright pixels (sclera should be bright)
+                        L_values = sclera_lab[:, :, 0]
+                        mask = L_values > 70.0  # Brightness threshold for sclera
+                        
+                        if np.any(mask):
+                            valid_sclera = sclera_lab[mask]
+                            sclera_lab_values.append(valid_sclera)
+                
+                except Exception as e:
+                    logger.debug(f"Sclera ROI extraction error: {e}")
+                    continue
+            
+            if sclera_lab_values:
+                # Concatenate all valid sclera pixels
+                all_sclera = np.vstack(sclera_lab_values)
+                
+                # Calculate mean LAB values
+                sclera_L = float(np.mean(all_sclera[:, 0]))
+                sclera_a = float(np.mean(all_sclera[:, 1]))
+                sclera_b = float(np.mean(all_sclera[:, 2]))
+                
+                metrics['scleral_l_lightness'] = sclera_L
+                metrics['scleral_a_red_green'] = sclera_a
+                metrics['scleral_b_yellow_blue'] = sclera_b
+                metrics['scleral_roi_detected'] = True
+                
+                # Chromaticity Index (jaundice proxy)
+                # Normal sclera: b* ≈ 5-10, Jaundiced sclera: b* > 15
+                # Formula: (b* - 5) * 5.0 clipped to 0-100
+                chromaticity_index = (sclera_b - 5.0) * 5.0
+                metrics['scleral_chromaticity_index'] = float(np.clip(chromaticity_index, 0, 100))
+                
+                # Scleral-Skin Delta (if facial skin LAB provided)
+                if facial_skin_lab is not None and len(facial_skin_lab) > 0:
+                    skin_L = np.mean(facial_skin_lab[:, 0])
+                    skin_a = np.mean(facial_skin_lab[:, 1])
+                    skin_b = np.mean(facial_skin_lab[:, 2])
+                    
+                    # Euclidean distance in LAB space
+                    delta_E = np.sqrt(
+                        (sclera_L - skin_L)**2 +
+                        (sclera_a - skin_a)**2 +
+                        (sclera_b - skin_b)**2
+                    )
+                    metrics['scleral_skin_delta'] = float(delta_E)
+            
+        except Exception as e:
+            logger.warning(f"Scleral chromaticity analysis error: {e}")
+        
+        return metrics
+    
+    def _detect_conjunctival_pallor(
+        self,
+        frame: np.ndarray,
+        landmarks: np.ndarray
+    ) -> Dict[str, Any]:
+        """
+        Detect conjunctival pallor from inner lower eyelid
+        for anemia detection
+        
+        Metrics:
+        - Conjunctival pallor index (red-channel saturation drop)
+        - LAB color values for clinical assessment
+        
+        Args:
+            frame: RGB frame
+            landmarks: MediaPipe Face Mesh landmarks
+            
+        Returns:
+            Dict with conjunctival pallor metrics
+        """
+        metrics = {
+            'conjunctival_pallor_index': None,
+            'conjunctival_red_saturation': None,
+            'conjunctival_l_lightness': None,
+            'conjunctival_a_red_green': None,
+            'conjunctival_b_yellow_blue': None,
+            'conjunctival_roi_detected': False
+        }
+        
+        try:
+            # MediaPipe landmark indices for lower eyelid (conjunctiva)
+            # Left lower eyelid inner portion
+            left_conjunctiva_indices = [145, 153, 154, 155, 133]
+            # Right lower eyelid inner portion
+            right_conjunctiva_indices = [374, 380, 381, 382, 362]
+            
+            conjunctiva_rgb_values = []
+            conjunctiva_lab_values = []
+            
+            for indices in [left_conjunctiva_indices, right_conjunctiva_indices]:
+                try:
+                    # Extract conjunctiva ROI
+                    points = landmarks[indices]
+                    x_min, y_min = points.min(axis=0).astype(int)
+                    x_max, y_max = points.max(axis=0).astype(int)
+                    
+                    # Ensure valid ROI
+                    x_min = max(0, x_min)
+                    y_min = max(0, y_min)
+                    x_max = min(frame.shape[1], x_max)
+                    y_max = min(frame.shape[0], y_max)
+                    
+                    if x_max > x_min and y_max > y_min:
+                        conjunctiva_roi = frame[y_min:y_max, x_min:x_max]
+                        
+                        # Extract RGB values (flatten to 1D array of pixels)
+                        rgb_pixels = conjunctiva_roi.reshape(-1, 3)
+                        conjunctiva_rgb_values.append(rgb_pixels)
+                        
+                        # Convert to LAB
+                        conjunctiva_lab = self._rgb_to_lab(conjunctiva_roi)
+                        lab_pixels = conjunctiva_lab.reshape(-1, 3)
+                        conjunctiva_lab_values.append(lab_pixels)
+                
+                except Exception as e:
+                    logger.debug(f"Conjunctiva ROI extraction error: {e}")
+                    continue
+            
+            if conjunctiva_rgb_values and conjunctiva_lab_values:
+                # Concatenate all valid pixels
+                all_rgb = np.vstack(conjunctiva_rgb_values)
+                all_lab = np.vstack(conjunctiva_lab_values)
+                
+                # Calculate mean RGB values
+                mean_r = float(np.mean(all_rgb[:, 0]))
+                mean_g = float(np.mean(all_rgb[:, 1]))
+                mean_b = float(np.mean(all_rgb[:, 2]))
+                
+                # Calculate mean LAB values
+                conj_L = float(np.mean(all_lab[:, 0]))
+                conj_a = float(np.mean(all_lab[:, 1]))
+                conj_b = float(np.mean(all_lab[:, 2]))
+                
+                metrics['conjunctival_l_lightness'] = conj_L
+                metrics['conjunctival_a_red_green'] = conj_a
+                metrics['conjunctival_b_yellow_blue'] = conj_b
+                metrics['conjunctival_roi_detected'] = True
+                
+                # Red saturation (key for anemia detection)
+                # Normal conjunctiva: rich red/pink, Anemic: pale pink/white
+                red_saturation = (mean_r - (mean_g + mean_b) / 2.0) / 255.0 * 100.0
+                metrics['conjunctival_red_saturation'] = float(red_saturation)
+                
+                # Pallor Index (inverse of red saturation + LAB a* component)
+                # Higher = more pallor = more likely anemia
+                # a* component: positive a* = redness, low a* = pallor
+                pallor_index = (50.0 - red_saturation) + (10.0 - conj_a) * 2.0
+                metrics['conjunctival_pallor_index'] = float(np.clip(pallor_index, 0, 100))
+            
+        except Exception as e:
+            logger.warning(f"Conjunctival pallor analysis error: {e}")
+        
+        return metrics
+    
+    def _detect_tongue_color(
+        self,
+        frame: np.ndarray
+    ) -> Dict[str, Any]:
+        """
+        Detect tongue color using LAB color space
+        for hepatic/anemia monitoring
+        
+        Note: This requires user to show tongue to camera
+        Uses color-based segmentation to isolate tongue region
+        
+        Metrics:
+        - Tongue LAB values (L*, a*, b*)
+        - Tongue color index (composite metric)
+        - Coating detection (white/yellow coating indicates pathology)
+        
+        Args:
+            frame: RGB frame with tongue visible
+            
+        Returns:
+            Dict with tongue color metrics
+        """
+        metrics = {
+            'tongue_color_index': None,
+            'tongue_color_l': None,
+            'tongue_color_a': None,
+            'tongue_color_b': None,
+            'tongue_coating_detected': False,
+            'tongue_coating_color': 'none',
+            'tongue_roi_detected': False
+        }
+        
+        try:
+            # Convert to HSV for tongue segmentation
+            hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+            
+            # Tongue color range in HSV (pink/red hues)
+            # Normal tongue: pinkish-red hue
+            lower_tongue = np.array([0, 30, 60])
+            upper_tongue = np.array([20, 255, 255])
+            
+            # Create mask for tongue region
+            mask = cv2.inRange(hsv, lower_tongue, upper_tongue)
+            
+            # Morphological operations to clean up mask
+            kernel = np.ones((5, 5), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            
+            # Find largest contour (likely the tongue)
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if contours:
+                # Get largest contour
+                largest_contour = max(contours, key=cv2.contourArea)
+                area = cv2.contourArea(largest_contour)
+                
+                # Minimum area threshold (tongue should be reasonably large in frame)
+                if area > 1000:
+                    # Create mask from largest contour
+                    tongue_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+                    cv2.drawContours(tongue_mask, [largest_contour], -1, 255, -1)
+                    
+                    # Extract tongue pixels
+                    tongue_pixels = frame[tongue_mask == 255]
+                    
+                    if len(tongue_pixels) > 0:
+                        # Convert to LAB
+                        tongue_lab = self._rgb_to_lab(tongue_pixels.reshape(1, -1, 3))
+                        tongue_lab = tongue_lab.reshape(-1, 3)
+                        
+                        # Calculate mean LAB values
+                        tongue_L = float(np.mean(tongue_lab[:, 0]))
+                        tongue_a = float(np.mean(tongue_lab[:, 1]))
+                        tongue_b = float(np.mean(tongue_lab[:, 2]))
+                        
+                        metrics['tongue_color_l'] = tongue_L
+                        metrics['tongue_color_a'] = tongue_a
+                        metrics['tongue_color_b'] = tongue_b
+                        metrics['tongue_roi_detected'] = True
+                        
+                        # Tongue Color Index (composite metric)
+                        # Normal tongue: high a* (redness), moderate L*, low b*
+                        # Pale tongue: low a*, high L*
+                        # Coated tongue: high L*, low a*
+                        color_index = (tongue_a * 2.0 + (100.0 - tongue_L) + abs(tongue_b)) / 3.0
+                        metrics['tongue_color_index'] = float(np.clip(color_index, 0, 100))
+                        
+                        # Coating detection (white/yellow coating)
+                        # White coating: high L*, low a*, low b*
+                        # Yellow coating: high L*, low a*, high b*
+                        if tongue_L > 65.0 and tongue_a < 15.0:
+                            metrics['tongue_coating_detected'] = True
+                            if tongue_b > 10.0:
+                                metrics['tongue_coating_color'] = 'yellow'
+                            else:
+                                metrics['tongue_coating_color'] = 'white'
+            
+        except Exception as e:
+            logger.warning(f"Tongue color analysis error: {e}")
+        
+        return metrics
+    
+    def _detect_lip_hydration(
+        self,
+        frame: np.ndarray,
+        landmarks: np.ndarray
+    ) -> Dict[str, Any]:
+        """
+        Detect lip color and hydration status
+        for anemia/dehydration monitoring
+        
+        Metrics:
+        - Lip LAB values (L*, a*, b*)
+        - Hydration score (texture-based dryness assessment)
+        - Cyanosis detection (blue discoloration)
+        
+        Args:
+            frame: RGB frame
+            landmarks: MediaPipe Face Mesh landmarks
+            
+        Returns:
+            Dict with lip color and hydration metrics
+        """
+        metrics = {
+            'lip_hydration_score': None,
+            'lip_color_l': None,
+            'lip_color_a': None,
+            'lip_color_b': None,
+            'lip_dryness_score': None,
+            'lip_cyanosis_detected': False,
+            'lip_roi_detected': False
+        }
+        
+        try:
+            # MediaPipe landmark indices for lips
+            # Upper lip outer boundary
+            upper_lip_indices = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291]
+            # Lower lip outer boundary
+            lower_lip_indices = [146, 91, 181, 84, 17, 314, 405, 321, 375, 291]
+            
+            # Combine all lip landmarks
+            all_lip_indices = upper_lip_indices + lower_lip_indices
+            
+            # Extract lip ROI
+            points = landmarks[all_lip_indices]
+            x_min, y_min = points.min(axis=0).astype(int)
+            x_max, y_max = points.max(axis=0).astype(int)
+            
+            # Ensure valid ROI
+            x_min = max(0, x_min)
+            y_min = max(0, y_min)
+            x_max = min(frame.shape[1], x_max)
+            y_max = min(frame.shape[0], y_max)
+            
+            if x_max > x_min and y_max > y_min:
+                lip_roi = frame[y_min:y_max, x_min:x_max]
+                
+                # Convert to LAB
+                lip_lab = self._rgb_to_lab(lip_roi)
+                
+                # Filter for lip-colored pixels (reddish/pinkish)
+                # Use a* channel (red-green axis)
+                a_channel = lip_lab[:, :, 1]
+                mask = a_channel > 5.0  # Positive a* = redness
+                
+                if np.any(mask):
+                    valid_lip = lip_lab[mask]
+                    
+                    # Calculate mean LAB values
+                    lip_L = float(np.mean(valid_lip[:, 0]))
+                    lip_a = float(np.mean(valid_lip[:, 1]))
+                    lip_b = float(np.mean(valid_lip[:, 2]))
+                    
+                    metrics['lip_color_l'] = lip_L
+                    metrics['lip_color_a'] = lip_a
+                    metrics['lip_color_b'] = lip_b
+                    metrics['lip_roi_detected'] = True
+                    
+                    # Texture analysis for hydration/dryness
+                    gray_lip = cv2.cvtColor(lip_roi, cv2.COLOR_RGB2GRAY)
+                    
+                    # Compute texture variance (high variance = rough/dry texture)
+                    _, texture_std = cv2.meanStdDev(gray_lip)
+                    texture_variance = float(texture_std[0][0])
+                    
+                    # Dryness score (higher = more dry)
+                    # Normal lip variance: ~10-20, Dry lips: >30
+                    dryness_score = (texture_variance - 10.0) * 3.0
+                    metrics['lip_dryness_score'] = float(np.clip(dryness_score, 0, 100))
+                    
+                    # Hydration score (inverse of dryness)
+                    hydration_score = 100.0 - metrics['lip_dryness_score']
+                    metrics['lip_hydration_score'] = float(hydration_score)
+                    
+                    # Cyanosis detection (blue discoloration)
+                    # Cyanotic lips: high b* (blue-yellow axis shifted to negative)
+                    # and low L* (darker), low a* (less red)
+                    if lip_b < -5.0 and lip_L < 50.0 and lip_a < 10.0:
+                        metrics['lip_cyanosis_detected'] = True
+            
+        except Exception as e:
+            logger.warning(f"Lip hydration analysis error: {e}")
+        
+        return metrics
+    
     def _detect_facial_swelling(
         self,
         landmarks: np.ndarray
@@ -1149,6 +1743,38 @@ class VideoAIEngine:
         nail_clubbing_detections: List[Dict],
         nail_pitting_detections: List[Dict],
         skin_analysis_frames: List[Dict],
+        # HEPATIC/ANEMIA COLOR METRICS PARAMETERS (ALL FIELDS)
+        scleral_chromaticity_values: List[float],
+        scleral_skin_deltas: List[float],
+        scleral_l_values: List[float],
+        scleral_a_values: List[float],
+        scleral_b_values: List[float],
+        scleral_roi_detections: List[bool],
+        conjunctival_pallor_values: List[float],
+        conjunctival_red_saturation_values: List[float],
+        conjunctival_l_values: List[float],
+        conjunctival_a_values: List[float],
+        conjunctival_b_values: List[float],
+        conjunctival_roi_detections: List[bool],
+        palmar_lab_l_values: List[float],
+        palmar_lab_a_values: List[float],
+        palmar_lab_b_values: List[float],
+        palmar_pallor_lab_index_values: List[float],
+        palmar_roi_detections_lab: List[bool],
+        tongue_color_values: List[float],
+        tongue_l_values: List[float],
+        tongue_a_values: List[float],
+        tongue_b_values: List[float],
+        tongue_coating_detections: List[bool],
+        tongue_coating_colors: List[str],
+        tongue_roi_detections: List[bool],
+        lip_hydration_values: List[float],
+        lip_l_values: List[float],
+        lip_a_values: List[float],
+        lip_b_values: List[float],
+        lip_dryness_values: List[float],
+        lip_cyanosis_detections: List[bool],
+        lip_roi_detections: List[bool],
         fps: float,
         duration: float,
         frames_analyzed: int,
@@ -1641,6 +2267,127 @@ class VideoAIEngine:
         # Overall Skin Analysis Quality
         metrics['lab_skin_analysis_frames'] = len(skin_analysis_frames)
         metrics['lab_skin_analysis_quality'] = float(len(skin_analysis_frames) / frames_with_face) if frames_with_face > 0 else 0.0
+        
+        # ==================== HEPATIC/ANEMIA COLOR METRICS (ALL FIELDS) ====================
+        
+        # SCLERAL METRICS (Jaundice Detection)
+        if len(scleral_chromaticity_values) > 0:
+            metrics['scleral_chromaticity_index'] = float(np.mean(scleral_chromaticity_values))
+        else:
+            metrics['scleral_chromaticity_index'] = None
+        
+        if len(scleral_skin_deltas) > 0:
+            metrics['scleral_skin_delta'] = float(np.mean(scleral_skin_deltas))
+        else:
+            metrics['scleral_skin_delta'] = None
+        
+        if len(scleral_l_values) > 0:
+            metrics['scleral_l_lightness'] = float(np.mean(scleral_l_values))
+            metrics['scleral_a_red_green'] = float(np.mean(scleral_a_values))
+            metrics['scleral_b_yellow_blue'] = float(np.mean(scleral_b_values))
+        else:
+            metrics['scleral_l_lightness'] = None
+            metrics['scleral_a_red_green'] = None
+            metrics['scleral_b_yellow_blue'] = None
+        
+        # ROI detection success rate (fixed to track total frames)
+        metrics['scleral_roi_detected'] = sum(scleral_roi_detections) / len(scleral_roi_detections) > 0.1 if scleral_roi_detections else False
+        
+        # CONJUNCTIVAL METRICS (Anemia Detection from Inner Eyelid)
+        if len(conjunctival_pallor_values) > 0:
+            metrics['conjunctival_pallor_index'] = float(np.mean(conjunctival_pallor_values))
+        else:
+            metrics['conjunctival_pallor_index'] = None
+        
+        if len(conjunctival_red_saturation_values) > 0:
+            metrics['conjunctival_red_saturation'] = float(np.mean(conjunctival_red_saturation_values))
+        else:
+            metrics['conjunctival_red_saturation'] = None
+        
+        if len(conjunctival_l_values) > 0:
+            metrics['conjunctival_l_lightness'] = float(np.mean(conjunctival_l_values))
+            metrics['conjunctival_a_red_green'] = float(np.mean(conjunctival_a_values))
+            metrics['conjunctival_b_yellow_blue'] = float(np.mean(conjunctival_b_values))
+        else:
+            metrics['conjunctival_l_lightness'] = None
+            metrics['conjunctival_a_red_green'] = None
+            metrics['conjunctival_b_yellow_blue'] = None
+        
+        metrics['conjunctival_roi_detected'] = sum(conjunctival_roi_detections) / len(conjunctival_roi_detections) > 0.1 if conjunctival_roi_detections else False
+        
+        # PALMAR LAB METRICS (LAB-based Pallor Index)
+        if len(palmar_pallor_lab_index_values) > 0:
+            metrics['palmar_pallor_lab_index'] = float(np.mean(palmar_pallor_lab_index_values))
+        else:
+            metrics['palmar_pallor_lab_index'] = None
+        
+        if len(palmar_lab_l_values) > 0:
+            metrics['palmar_l_lightness'] = float(np.mean(palmar_lab_l_values))
+            metrics['palmar_a_red_green'] = float(np.mean(palmar_lab_a_values))
+            metrics['palmar_b_yellow_blue'] = float(np.mean(palmar_lab_b_values))
+        else:
+            metrics['palmar_l_lightness'] = None
+            metrics['palmar_a_red_green'] = None
+            metrics['palmar_b_yellow_blue'] = None
+        
+        metrics['palmar_roi_detected'] = sum(palmar_roi_detections_lab) / len(palmar_roi_detections_lab) > 0.1 if palmar_roi_detections_lab else False
+        
+        # TONGUE METRICS (LAB Color Space)
+        if len(tongue_color_values) > 0:
+            metrics['tongue_color_index'] = float(np.mean(tongue_color_values))
+        else:
+            metrics['tongue_color_index'] = None
+        
+        if len(tongue_l_values) > 0:
+            metrics['tongue_color_l'] = float(np.mean(tongue_l_values))
+            metrics['tongue_color_a'] = float(np.mean(tongue_a_values))
+            metrics['tongue_color_b'] = float(np.mean(tongue_b_values))
+        else:
+            metrics['tongue_color_l'] = None
+            metrics['tongue_color_a'] = None
+            metrics['tongue_color_b'] = None
+        
+        if len(tongue_coating_detections) > 0:
+            coating_percentage = sum(tongue_coating_detections) / len(tongue_coating_detections) * 100
+            metrics['tongue_coating_detected'] = coating_percentage > 10  # >10% of frames
+            # Most common coating color
+            if tongue_coating_colors:
+                metrics['tongue_coating_color'] = max(set(tongue_coating_colors), key=tongue_coating_colors.count)
+            else:
+                metrics['tongue_coating_color'] = 'none'
+        else:
+            metrics['tongue_coating_detected'] = False
+            metrics['tongue_coating_color'] = 'none'
+        
+        metrics['tongue_roi_detected'] = sum(tongue_roi_detections) / len(tongue_roi_detections) > 0.1 if tongue_roi_detections else False
+        
+        # LIP METRICS (Color and Hydration)
+        if len(lip_hydration_values) > 0:
+            metrics['lip_hydration_score'] = float(np.mean(lip_hydration_values))
+        else:
+            metrics['lip_hydration_score'] = None
+        
+        if len(lip_l_values) > 0:
+            metrics['lip_color_l'] = float(np.mean(lip_l_values))
+            metrics['lip_color_a'] = float(np.mean(lip_a_values))
+            metrics['lip_color_b'] = float(np.mean(lip_b_values))
+        else:
+            metrics['lip_color_l'] = None
+            metrics['lip_color_a'] = None
+            metrics['lip_color_b'] = None
+        
+        if len(lip_dryness_values) > 0:
+            metrics['lip_dryness_score'] = float(np.mean(lip_dryness_values))
+        else:
+            metrics['lip_dryness_score'] = None
+        
+        if len(lip_cyanosis_detections) > 0:
+            cyanosis_percentage = sum(lip_cyanosis_detections) / len(lip_cyanosis_detections) * 100
+            metrics['lip_cyanosis_detected'] = cyanosis_percentage > 5  # >5% of frames
+        else:
+            metrics['lip_cyanosis_detected'] = False
+        
+        metrics['lip_roi_detected'] = sum(lip_roi_detections) / len(lip_roi_detections) > 0.1 if lip_roi_detections else False
         
         return metrics
     

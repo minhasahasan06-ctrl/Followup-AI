@@ -126,6 +126,53 @@ class VideoMetrics(Base):
     processing_time_seconds = Column(Float)
     model_version = Column(String)
     
+    # Hepatic/Anemia Color Metrics - Scleral Analysis (Jaundice Detection)
+    scleral_chromaticity_index = Column(Float)  # Jaundice proxy from eye region LAB
+    scleral_skin_delta = Column(Float)  # Color difference between sclera and skin
+    scleral_l_lightness = Column(Float)  # Sclera L* value
+    scleral_a_red_green = Column(Float)  # Sclera a* value
+    scleral_b_yellow_blue = Column(Float)  # Sclera b* value (key for jaundice)
+    
+    # Conjunctival Analysis (Anemia Detection from Inner Eyelid)
+    conjunctival_pallor_index = Column(Float)  # Inner lower eyelid red-channel saturation
+    conjunctival_red_saturation = Column(Float)  # Red channel saturation drop
+    conjunctival_l_lightness = Column(Float)  # Conjunctiva L* value
+    conjunctival_a_red_green = Column(Float)  # Conjunctiva a* value
+    conjunctival_b_yellow_blue = Column(Float)  # Conjunctiva b* value
+    
+    # Palmar Analysis (LAB-based Pallor Index)
+    palmar_pallor_lab_index = Column(Float)  # Palm LAB-based pallor (distinct from skin_pallor_score)
+    palmar_l_lightness = Column(Float)  # Palm L* value
+    palmar_a_red_green = Column(Float)  # Palm a* value
+    palmar_b_yellow_blue = Column(Float)  # Palm b* value
+    
+    # Tongue Color Analysis (LAB Color Space)
+    tongue_color_index = Column(Float)  # Composite tongue color metric
+    tongue_color_l = Column(Float)  # Tongue L* value
+    tongue_color_a = Column(Float)  # Tongue a* value
+    tongue_color_b = Column(Float)  # Tongue b* value
+    tongue_coating_detected = Column(Boolean)  # White/yellow coating
+    tongue_coating_color = Column(String)  # "white", "yellow", "none"
+    
+    # Lip Color and Hydration Analysis
+    lip_hydration_score = Column(Float)  # Lip dryness + color texture model
+    lip_color_l = Column(Float)  # Lip L* value
+    lip_color_a = Column(Float)  # Lip a* value
+    lip_color_b = Column(Float)  # Lip b* value
+    lip_dryness_score = Column(Float)  # Texture-based dryness (0-100)
+    lip_cyanosis_detected = Column(Boolean)  # Blue discoloration
+    
+    # ROI Detection Quality Indicators
+    scleral_roi_detected = Column(Boolean)  # Eye region successfully detected
+    conjunctival_roi_detected = Column(Boolean)  # Inner eyelid successfully detected
+    tongue_roi_detected = Column(Boolean)  # Tongue successfully detected
+    lip_roi_detected = Column(Boolean)  # Lips successfully detected
+    palmar_roi_detected = Column(Boolean)  # Palm successfully detected
+    
+    # Guided Exam Session Metadata
+    guided_exam_session_id = Column(String)  # Links to guided exam session
+    exam_stage = Column(String)  # "eyes", "palm", "tongue", "lips"
+    
     # Full metrics JSON (for extensibility)
     raw_metrics = Column(JSON)  # Store all raw data
     
