@@ -40,13 +40,8 @@ from app.models.trend_models import TrendSnapshot, RiskEvent, PatientBaseline
 from app.models.alert_models import AlertRule, Alert
 from app.models.security_models import AuditLog, ConsentRecord
 
-# Import AI engine dependencies
-from app.services.ai_engine_manager import (
-    get_video_ai_engine,
-    get_audio_ai_engine,
-    get_trend_prediction_engine,
-    get_alert_orchestration_engine
-)
+# Import services
+# Note: AIEngineManager is imported directly in endpoints to avoid blocking module-level imports
 from app.services.facial_puffiness_service import FacialPuffinessService
 from app.services.skin_analysis_service import SkinAnalysisService
 

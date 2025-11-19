@@ -25,9 +25,9 @@ from app.routers import (
     deviation,
     risk_score,
     # ml_inference,  # TEMPORARILY DISABLED - blocking import issue
-    # ai_deterioration_api,  # TEMPORARILY DISABLED - FastAPI dependency validation error
+    ai_deterioration_api,  # ✅ RE-ENABLED - Fixed dependency injection
     video_exam_sessions,
-    # guided_exam  # TEMPORARILY DISABLED - imports VideoAIEngine directly
+    guided_exam  # ✅ RE-ENABLED - Now uses AIEngineManager
 )
 
 logger = logging.getLogger(__name__)
@@ -102,16 +102,15 @@ app.include_router(risk_score.router)
 # app.include_router(ml_inference.router)  # TEMPORARILY DISABLED - blocking import issue
 
 # AI Deterioration Detection System - 52 production endpoints
-# TEMPORARILY DISABLED - FastAPI dependency injection validation error
-# TODO: Fix dependency type annotations for async-initialized AI engines
-# app.include_router(ai_deterioration_api.video_router)
-# app.include_router(ai_deterioration_api.audio_router)
-# app.include_router(ai_deterioration_api.trend_router)
-# app.include_router(ai_deterioration_api.alert_router)
+# ✅ RE-ENABLED November 19, 2025 - Fixed dependency injection using AIEngineManager pattern
+app.include_router(ai_deterioration_api.video_router)
+app.include_router(ai_deterioration_api.audio_router)
+app.include_router(ai_deterioration_api.trend_router)
+app.include_router(ai_deterioration_api.alert_router)
 
 # Guided Video Examination System
 app.include_router(video_exam_sessions.router)
-# app.include_router(guided_exam.router)  # TEMPORARILY DISABLED - imports VideoAIEngine directly
+app.include_router(guided_exam.router)  # ✅ RE-ENABLED - Now uses AIEngineManager
 
 
 @app.get("/")
