@@ -103,3 +103,79 @@ class AudioMetrics(Base):
         Index('idx_audio_patient_date', 'patient_id', 'analyzed_at'),
         Index('idx_audio_session', 'session_id'),
     )
+
+
+class AudioExamSession(Base):
+    """
+    Track guided audio examination sessions with staged audio recording
+    
+    Examination Stages:
+    1. Breathing - Deep breathing for breath sound analysis
+    2. Coughing - Voluntary cough for cough detection (respiratory monitoring)
+    3. Speaking - Free speech for fluency/voice weakness assessment
+    4. Reading - Read standard passage for consistent speech analysis
+    """
+    __tablename__ = "audio_exam_sessions"
+    
+    id = Column(String, primary_key=True, server_default=func.gen_random_uuid())
+    patient_id = Column(String, nullable=False, index=True)
+    
+    # Session lifecycle
+    status = Column(String, nullable=False, server_default='in_progress')  # in_progress, completed, failed
+    current_stage = Column(String, nullable=True)  # breathing, coughing, speaking, reading
+    
+    # Audio segment storage per stage (S3 URIs)
+    breathing_audio_s3_uri = Column(String, nullable=True)
+    coughing_audio_s3_uri = Column(String, nullable=True)
+    speaking_audio_s3_uri = Column(String, nullable=True)
+    reading_audio_s3_uri = Column(String, nullable=True)
+    
+    # Stage completion tracking
+    breathing_stage_completed = Column(Boolean, default=False)
+    coughing_stage_completed = Column(Boolean, default=False)
+    speaking_stage_completed = Column(Boolean, default=False)
+    reading_stage_completed = Column(Boolean, default=False)
+    
+    # Quality scores per stage (0-100)
+    breathing_quality_score = Column(Float, nullable=True)
+    coughing_quality_score = Column(Float, nullable=True)
+    speaking_quality_score = Column(Float, nullable=True)
+    reading_quality_score = Column(Float, nullable=True)
+    
+    # Stage duration tracking (seconds)
+    breathing_duration_seconds = Column(Float, nullable=True)
+    coughing_duration_seconds = Column(Float, nullable=True)
+    speaking_duration_seconds = Column(Float, nullable=True)
+    reading_duration_seconds = Column(Float, nullable=True)
+    
+    # Overall session quality
+    overall_quality_score = Column(Float, nullable=True)
+    
+    # ML analysis reference (links to AudioMetrics after completion)
+    audio_metrics_id = Column(Integer, nullable=True)
+    
+    # Exam metadata
+    prep_time_seconds = Column(Integer, default=30)  # 30-second prep screens
+    total_duration_seconds = Column(Float, nullable=True)
+    device_info = Column(JSON, nullable=True)  # Browser/device metadata
+    
+    # Disease-specific configuration
+    # Stores which tests are prioritized based on patient conditions
+    # E.g., respiratory patients: breathing + coughing emphasized
+    personalization_config = Column(JSON, nullable=True)
+    
+    # Reading passage used (for consistency across sessions)
+    reading_passage_id = Column(String, nullable=True)  # e.g., "rainbow_passage", "grandfather_passage"
+    
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    __table_args__ = (
+        Index('idx_audio_exam_patient_id', 'patient_id'),
+        Index('idx_audio_exam_status', 'status'),
+        Index('idx_audio_exam_created_at', 'created_at'),
+    )

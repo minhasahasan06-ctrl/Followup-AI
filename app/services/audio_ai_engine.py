@@ -16,9 +16,11 @@ logger = logging.getLogger(__name__)
 _LIBROSA_CHECKED = False
 _SCIPY_CHECKED = False
 _NOISEREDUCE_CHECKED = False
+_YAMNET_CHECKED = False
 LIBROSA_AVAILABLE = False
 SCIPY_AVAILABLE = False
 NOISEREDUCE_AVAILABLE = False
+YAMNET_AVAILABLE = False
 
 # Global references (populated on first use)
 librosa = None
@@ -27,6 +29,8 @@ signal = None
 stats = None
 fft = None
 nr = None
+yamnet_model = None
+yamnet_class_names = None
 
 
 class AudioAIEngine:
@@ -36,9 +40,9 @@ class AudioAIEngine:
     """
     
     def __init__(self):
-        global librosa, sf, signal, stats, fft, nr
-        global LIBROSA_AVAILABLE, SCIPY_AVAILABLE, NOISEREDUCE_AVAILABLE
-        global _LIBROSA_CHECKED, _SCIPY_CHECKED, _NOISEREDUCE_CHECKED
+        global librosa, sf, signal, stats, fft, nr, yamnet_model, yamnet_class_names
+        global LIBROSA_AVAILABLE, SCIPY_AVAILABLE, NOISEREDUCE_AVAILABLE, YAMNET_AVAILABLE
+        global _LIBROSA_CHECKED, _SCIPY_CHECKED, _NOISEREDUCE_CHECKED, _YAMNET_CHECKED
         
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.sample_rate = 16000  # Standard for speech processing
@@ -80,6 +84,32 @@ class AudioAIEngine:
                 logger.warning("Noisereduce not available - noise reduction disabled")
                 NOISEREDUCE_AVAILABLE = False
             _NOISEREDUCE_CHECKED = True
+        
+        # Lazy load YAMNet (Google's audio event classifier)
+        if not _YAMNET_CHECKED:
+            try:
+                import tensorflow_hub as hub
+                import tensorflow as tf
+                # Load YAMNet model from TensorFlow Hub
+                logger.info("Loading YAMNet model from TensorFlow Hub...")
+                yamnet_model = hub.load('https://tfhub.dev/google/yamnet/1')
+                
+                # Load class names (521 audio events from AudioSet)
+                yamnet_class_map_path = hub.resolve('https://tfhub.dev/google/yamnet/1') + '/yamnet_class_map.csv'
+                import csv
+                try:
+                    with open(yamnet_class_map_path, 'r') as f:
+                        yamnet_class_names = [name for _, name in csv.reader(f)]
+                except:
+                    # Fallback: Define key classes manually
+                    yamnet_class_names = ['Speech', 'Cough', 'Breathing', 'Wheeze', 'Snoring']
+                
+                YAMNET_AVAILABLE = True
+                logger.info(f"✅ YAMNet loaded with {len(yamnet_class_names)} audio event classes")
+            except Exception as e:
+                logger.warning(f"YAMNet not available - ML audio classification disabled: {e}")
+                YAMNET_AVAILABLE = False
+            _YAMNET_CHECKED = True
     
     async def analyze_audio(
         self,
@@ -163,6 +193,20 @@ class AudioAIEngine:
         # ==================== Wheeze Detection ====================
         wheeze_metrics = self._detect_wheeze(denoised_audio, sr)
         metrics.update(wheeze_metrics)
+        
+        # ==================== YAMNet ML Classification ====================
+        if YAMNET_AVAILABLE:
+            yamnet_metrics = self._classify_audio_events(denoised_audio, sr)
+            metrics.update(yamnet_metrics)
+        
+        # ==================== Neurological / Cognitive Metrics ====================
+        # Speech Fluency Score (pauses, hesitations, word flow)
+        fluency_metrics = self._compute_speech_fluency(denoised_audio, sr, duration)
+        metrics.update(fluency_metrics)
+        
+        # Voice Weakness Index (amplitude, frequency flattening)
+        weakness_metrics = self._compute_voice_weakness(denoised_audio, sr)
+        metrics.update(weakness_metrics)
         
         # ==================== Audio Quality ====================
         quality_metrics = self._assess_audio_quality(audio, denoised_audio, sr)
@@ -751,6 +795,289 @@ class AudioAIEngine:
             'wheeze_type': "none",
             'stridor_detected': False
         }
+    
+    def _classify_audio_events(
+        self,
+        audio: np.ndarray,
+        sr: int
+    ) -> Dict[str, Any]:
+        """
+        Use YAMNet ML model to classify audio events
+        Detects: Speech, Cough, Breathing, Wheeze, and 517+ other audio events
+        
+        Returns:
+            Dict with top audio event classifications and confidence scores
+        """
+        global yamnet_model, yamnet_class_names
+        
+        if not YAMNET_AVAILABLE or yamnet_model is None:
+            return {
+                'yamnet_available': False,
+                'top_audio_event': None,
+                'top_event_confidence': 0.0,
+                'cough_probability_ml': 0.0,
+                'speech_probability_ml': 0.0,
+                'breathing_probability_ml': 0.0,
+                'wheeze_probability_ml': 0.0
+            }
+        
+        try:
+            import tensorflow as tf
+            
+            # Resample to 16kHz (YAMNet requirement)
+            if sr != 16000:
+                import librosa as lr
+                audio_resampled = lr.resample(audio, orig_sr=sr, target_sr=16000)
+            else:
+                audio_resampled = audio
+            
+            # Convert to float32 tensor
+            waveform = tf.convert_to_tensor(audio_resampled, dtype=tf.float32)
+            
+            # Run YAMNet inference
+            scores, embeddings, spectrogram = yamnet_model(waveform)
+            
+            # Get mean scores across all frames
+            mean_scores = tf.reduce_mean(scores, axis=0).numpy()
+            
+            # Get top event
+            top_idx = np.argmax(mean_scores)
+            top_event = yamnet_class_names[top_idx] if top_idx < len(yamnet_class_names) else "Unknown"
+            top_confidence = float(mean_scores[top_idx])
+            
+            # Extract specific event probabilities
+            cough_indices = [i for i, name in enumerate(yamnet_class_names) if 'cough' in name.lower()]
+            speech_indices = [i for i, name in enumerate(yamnet_class_names) if 'speech' in name.lower() or 'voice' in name.lower()]
+            breathing_indices = [i for i, name in enumerate(yamnet_class_names) if 'breath' in name.lower() or 'respiratory' in name.lower()]
+            wheeze_indices = [i for i, name in enumerate(yamnet_class_names) if 'wheeze' in name.lower() or 'wheezing' in name.lower()]
+            
+            cough_prob = float(np.max([mean_scores[i] for i in cough_indices])) if cough_indices else 0.0
+            speech_prob = float(np.max([mean_scores[i] for i in speech_indices])) if speech_indices else 0.0
+            breathing_prob = float(np.max([mean_scores[i] for i in breathing_indices])) if breathing_indices else 0.0
+            wheeze_prob = float(np.max([mean_scores[i] for i in wheeze_indices])) if wheeze_indices else 0.0
+            
+            return {
+                'yamnet_available': True,
+                'top_audio_event': top_event,
+                'top_event_confidence': top_confidence,
+                'cough_probability_ml': cough_prob,
+                'speech_probability_ml': speech_prob,
+                'breathing_probability_ml': breathing_prob,
+                'wheeze_probability_ml': wheeze_prob
+            }
+            
+        except Exception as e:
+            logger.warning(f"YAMNet classification failed: {e}")
+            return {
+                'yamnet_available': False,
+                'top_audio_event': None,
+                'top_event_confidence': 0.0,
+                'cough_probability_ml': 0.0,
+                'speech_probability_ml': 0.0,
+                'breathing_probability_ml': 0.0,
+                'wheeze_probability_ml': 0.0
+            }
+    
+    def _compute_speech_fluency(
+        self,
+        audio: np.ndarray,
+        sr: int,
+        duration: float
+    ) -> Dict[str, Any]:
+        """
+        Compute Speech Fluency Score for neurological assessment
+        
+        Metrics:
+        - Pause frequency and duration (hesitations)
+        - Word segmentation quality
+        - Speech continuity
+        - Fluency score (0-100, higher = more fluent)
+        
+        Clinical relevance: Reduced fluency may indicate cognitive changes,
+        neurological conditions, or medication side effects
+        """
+        if not LIBROSA_AVAILABLE or not SCIPY_AVAILABLE:
+            return {
+                'speech_fluency_score': None,
+                'pause_frequency_per_minute': None,
+                'avg_pause_duration_seconds': None,
+                'longest_pause_seconds': None,
+                'speech_continuity_percent': None
+            }
+        
+        try:
+            # Detect speech/silence regions using energy thresholding
+            frame_length = 2048
+            hop_length = 512
+            
+            # Compute RMS energy
+            rms = librosa.feature.rms(y=audio, frame_length=frame_length, hop_length=hop_length)[0]
+            
+            # Threshold for speech detection (adaptive based on mean energy)
+            threshold = np.mean(rms) * 0.3
+            
+            # Speech regions (1 = speech, 0 = silence/pause)
+            speech_frames = (rms > threshold).astype(int)
+            
+            # Find pause transitions
+            diff = np.diff(speech_frames)
+            pause_starts = np.where(diff == -1)[0]  # Speech to silence
+            pause_ends = np.where(diff == 1)[0]     # Silence to speech
+            
+            # Compute pause durations
+            pause_durations = []
+            if len(pause_starts) > 0 and len(pause_ends) > 0:
+                for start_idx in pause_starts:
+                    # Find next pause end
+                    next_ends = pause_ends[pause_ends > start_idx]
+                    if len(next_ends) > 0:
+                        end_idx = next_ends[0]
+                        pause_duration_frames = end_idx - start_idx
+                        pause_duration_sec = (pause_duration_frames * hop_length) / sr
+                        
+                        # Only count pauses > 0.2s (ignore micro-pauses)
+                        if pause_duration_sec > 0.2:
+                            pause_durations.append(pause_duration_sec)
+            
+            # Calculate fluency metrics
+            pause_count = len(pause_durations)
+            pause_frequency = (pause_count / duration * 60) if duration > 0 else 0
+            avg_pause_duration = float(np.mean(pause_durations)) if pause_durations else 0.0
+            longest_pause = float(np.max(pause_durations)) if pause_durations else 0.0
+            
+            # Speech continuity (% of time spent speaking)
+            total_speech_frames = np.sum(speech_frames)
+            total_frames = len(speech_frames)
+            speech_continuity = (total_speech_frames / total_frames * 100) if total_frames > 0 else 0.0
+            
+            # Fluency score (0-100)
+            # Higher score = more fluent (fewer pauses, shorter pauses, higher continuity)
+            fluency_score = 100.0
+            if pause_frequency > 0:
+                fluency_score -= min(30, pause_frequency * 2)  # Penalize frequent pauses
+            if avg_pause_duration > 1.0:
+                fluency_score -= min(30, (avg_pause_duration - 1.0) * 20)  # Penalize long pauses
+            if speech_continuity < 50:
+                fluency_score -= min(40, (50 - speech_continuity))  # Penalize low continuity
+            
+            fluency_score = max(0, fluency_score)
+            
+            return {
+                'speech_fluency_score': float(fluency_score),
+                'pause_frequency_per_minute': float(pause_frequency),
+                'avg_pause_duration_seconds': avg_pause_duration,
+                'longest_pause_seconds': longest_pause,
+                'speech_continuity_percent': float(speech_continuity)
+            }
+            
+        except Exception as e:
+            logger.warning(f"Speech fluency computation failed: {e}")
+            return {
+                'speech_fluency_score': None,
+                'pause_frequency_per_minute': None,
+                'avg_pause_duration_seconds': None,
+                'longest_pause_seconds': None,
+                'speech_continuity_percent': None
+            }
+    
+    def _compute_voice_weakness(
+        self,
+        audio: np.ndarray,
+        sr: int
+    ) -> Dict[str, Any]:
+        """
+        Compute Voice Weakness Index for neurological assessment
+        
+        Metrics:
+        - Reduced amplitude (vocal volume)
+        - Frequency flattening (monotone voice)
+        - Spectral energy reduction
+        - Voice weakness index (0-100, higher = more weakness)
+        
+        Clinical relevance: Voice weakness may indicate:
+        - Neurological conditions (Parkinson's, ALS, MS)
+        - Medication side effects
+        - Vocal cord dysfunction
+        - Fatigue or illness
+        """
+        if not LIBROSA_AVAILABLE or not SCIPY_AVAILABLE:
+            return {
+                'voice_weakness_index': None,
+                'vocal_amplitude_db': None,
+                'pitch_variability_hz': None,
+                'spectral_energy_reduction': None
+            }
+        
+        try:
+            # 1. Vocal Amplitude (RMS energy in dB)
+            rms = np.sqrt(np.mean(audio**2))
+            vocal_amplitude_db = 20 * np.log10(rms + 1e-10)
+            
+            # 2. Pitch Variability (fundamental frequency variation)
+            # Extract pitch using autocorrelation
+            f0 = librosa.yin(audio, fmin=80, fmax=400, sr=sr)
+            
+            # Remove unvoiced frames (f0 = 0)
+            voiced_f0 = f0[f0 > 0]
+            
+            if len(voiced_f0) > 10:
+                pitch_variability = float(np.std(voiced_f0))
+                mean_pitch = float(np.mean(voiced_f0))
+            else:
+                pitch_variability = 0.0
+                mean_pitch = 0.0
+            
+            # 3. Spectral Energy Reduction
+            # Compare energy in different frequency bands
+            spectral_centroid = librosa.feature.spectral_centroid(y=audio, sr=sr)[0]
+            spectral_rolloff = librosa.feature.spectral_rolloff(y=audio, sr=sr)[0]
+            
+            # Lower spectral centroid/rolloff = less high-frequency energy (weakness indicator)
+            avg_centroid = float(np.mean(spectral_centroid))
+            avg_rolloff = float(np.mean(spectral_rolloff))
+            
+            # Normalize to 0-100 scale
+            # Healthy voice: centroid ~2000-3000 Hz, rolloff ~4000-6000 Hz
+            centroid_norm = min(100, (3000 - avg_centroid) / 30) if avg_centroid < 3000 else 0
+            rolloff_norm = min(100, (5000 - avg_rolloff) / 50) if avg_rolloff < 5000 else 0
+            
+            spectral_energy_reduction = float((centroid_norm + rolloff_norm) / 2)
+            
+            # 4. Voice Weakness Index (0-100)
+            # Higher = more weakness detected
+            weakness_index = 0.0
+            
+            # Penalize low amplitude
+            if vocal_amplitude_db < -30:
+                weakness_index += min(40, (-30 - vocal_amplitude_db) * 2)
+            
+            # Penalize low pitch variability (monotone)
+            if pitch_variability < 20:
+                weakness_index += min(30, (20 - pitch_variability) * 1.5)
+            
+            # Add spectral energy reduction
+            weakness_index += spectral_energy_reduction * 0.3
+            
+            weakness_index = min(100, weakness_index)
+            
+            return {
+                'voice_weakness_index': float(weakness_index),
+                'vocal_amplitude_db': float(vocal_amplitude_db),
+                'pitch_variability_hz': pitch_variability,
+                'spectral_energy_reduction': spectral_energy_reduction,
+                'mean_pitch_hz': mean_pitch,
+                'spectral_centroid_hz': avg_centroid,
+                'spectral_rolloff_hz': avg_rolloff
+            }
+            
+        except Exception as e:
+            logger.warning(f"Voice weakness computation failed: {e}")
+            return {
+                'voice_weakness_index': None,
+                'vocal_amplitude_db': None,
+                'pitch_variability_hz': None,
+                'spectral_energy_reduction': None
+            }
     
     def generate_recommendations(self, metrics: Dict[str, Any]) -> List[str]:
         """
