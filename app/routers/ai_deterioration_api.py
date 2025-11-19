@@ -34,7 +34,7 @@ from functools import lru_cache
 
 # Import database and models
 from app.database import get_db
-from app.models.video_ai_models import MediaSession, VideoMetrics
+from app.models.video_ai_models import MediaSession, VideoMetrics, EdemaSegmentationMetrics
 from app.models.audio_ai_models import AudioMetrics
 from app.models.trend_models import TrendSnapshot, RiskEvent, PatientBaseline
 from app.models.alert_models import AlertRule, Alert
@@ -501,6 +501,50 @@ async def analyze_video(
                 detection_confidence=metrics_dict.get('lab_skin_analysis_quality', 0.0),
                 timestamp=datetime.utcnow()
             )
+        
+        # Persist Edema Segmentation metrics (DeepLab V3+) if model available
+        if metrics_dict.get('edema_model_available', False):
+            # Extract edema metrics from VideoAIEngine output
+            swelling_detected = metrics_dict.get('edema_swelling_detected', False)
+            expansion_avg = metrics_dict.get('edema_expansion_avg')
+            expansion_max = metrics_dict.get('edema_expansion_max')
+            frames_analyzed = metrics_dict.get('edema_frames_analyzed', 0)
+            
+            # Determine severity based on expansion percentage
+            severity = 'none'
+            if swelling_detected and expansion_avg:
+                if expansion_avg > 20:
+                    severity = 'severe'
+                elif expansion_avg > 10:
+                    severity = 'moderate'
+                elif expansion_avg > 5:
+                    severity = 'mild'
+                else:
+                    severity = 'trace'
+            
+            edema_record = EdemaSegmentationMetrics(
+                patient_id=str(session.patient_id),
+                session_id=int(session.id),
+                analyzed_at=datetime.utcnow(),
+                # Model info
+                model_type='deeplab_v3_plus',
+                model_version='mobilenet_v2_cityscapes',
+                is_finetuned=False,
+                # Overall detection
+                person_detected=True,  # If we got edema metrics, person was detected
+                swelling_detected=swelling_detected,
+                swelling_severity=severity,
+                overall_expansion_percent=expansion_avg,
+                swelling_regions_count=1 if swelling_detected else 0,
+                # Quality metrics
+                segmentation_confidence=0.0,  # TODO: Add confidence from edema service
+                processing_time_ms=int((metrics_dict.get('processing_time_seconds', 0) or 0) * 1000),  # Required field
+                # Baseline
+                has_baseline=False,
+                baseline_comparison_available=False
+                # All regional fields (face, torso, legs, asymmetry) default to NULL - to be implemented in full segmentation
+            )
+            db.add(edema_record)
         
         # Update session status using query.update()
         db.query(MediaSession).filter(
