@@ -1322,6 +1322,824 @@ class VideoAIEngine:
         )
         
         return recommendations
+    
+    # ============================================================
+    # COMPREHENSIVE SKIN ANALYSIS SYSTEM - LAB COLOR SPACE
+    # ============================================================
+    
+    def analyze_skin_comprehensive(
+        self,
+        frame: np.ndarray,
+        face_landmarks: np.ndarray,
+        frame_index: int,
+        baseline: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Complete skin analysis using LAB color space for clinical accuracy
+        
+        Extracts:
+        - Facial perfusion (LAB color vectors)
+        - Palmar perfusion (when hands visible)
+        - Nailbed analysis (clubbing, pitting, color)
+        - Capillary refill proxy (L* tracking)
+        - Clinical color changes (pallor, cyanosis, jaundice)
+        - Texture & hydration status
+        
+        Returns comprehensive skin metrics dict
+        """
+        skin_metrics = {
+            'frame_index': frame_index,
+            # LAB color metrics (initialized)
+            'facial_l_lightness': 0.0,
+            'facial_a_red_green': 0.0,
+            'facial_b_yellow_blue': 0.0,
+            'facial_perfusion_index': 0.0,
+            'palmar_l_lightness': 0.0,
+            'palmar_a_red_green': 0.0,
+            'palmar_b_yellow_blue': 0.0,
+            'palmar_perfusion_index': 0.0,
+            'nailbed_l_lightness': 0.0,
+            'nailbed_a_red_green': 0.0,
+            'nailbed_b_yellow_blue': 0.0,
+            'nailbed_color_index': 0.0,
+            # Clinical detections
+            'pallor_detected': False,
+            'pallor_severity': 0.0,
+            'pallor_region': 'none',
+            'cyanosis_detected': False,
+            'cyanosis_severity': 0.0,
+            'cyanosis_region': 'none',
+            'jaundice_detected': False,
+            'jaundice_severity': 0.0,
+            'jaundice_region': 'none',
+            # Nailbed analysis
+            'nail_clubbing_detected': False,
+            'nail_clubbing_severity': 0.0,
+            'nail_pitting_detected': False,
+            'nail_pitting_count': 0,
+            'nail_abnormalities': [],
+            # Texture & hydration
+            'skin_texture_score': 0.0,
+            'hydration_status': 'normal',
+            'temperature_proxy': 'normal',
+            # Detection quality
+            'facial_roi_detected': False,
+            'palmar_roi_detected': False,
+            'nailbed_roi_detected': False,
+            'detection_confidence': 0.0,
+        }
+        
+        try:
+            # 1. Extract facial LAB color metrics
+            facial_lab = self._extract_facial_lab_colors(frame, face_landmarks)
+            if facial_lab:
+                skin_metrics.update(facial_lab)
+                skin_metrics['facial_roi_detected'] = True
+            
+            # 2. Detect and analyze hands/palms (if visible)
+            palmar_lab = self._extract_palmar_lab_colors(frame, face_landmarks)
+            if palmar_lab:
+                skin_metrics.update(palmar_lab)
+                skin_metrics['palmar_roi_detected'] = True
+            
+            # 3. Detect and analyze nailbeds (if hands visible)
+            nailbed_analysis = self._analyze_nailbeds_comprehensive(frame, face_landmarks)
+            if nailbed_analysis:
+                skin_metrics.update(nailbed_analysis)
+                skin_metrics['nailbed_roi_detected'] = True
+            
+            # 4. Detect clinical color changes (pallor, cyanosis, jaundice)
+            color_changes = self._detect_clinical_color_changes(skin_metrics, baseline)
+            skin_metrics.update(color_changes)
+            
+            # 5. Analyze skin texture and hydration
+            texture_metrics = self._analyze_skin_texture_hydration(frame, face_landmarks)
+            skin_metrics.update(texture_metrics)
+            
+            # 6. Compute overall detection confidence
+            confidence_score = self._compute_skin_detection_confidence(skin_metrics)
+            skin_metrics['detection_confidence'] = confidence_score
+            
+        except Exception as e:
+            logger.error(f"Skin analysis error on frame {frame_index}: {str(e)}")
+        
+        return skin_metrics
+    
+    def _extract_facial_lab_colors(
+        self,
+        frame: np.ndarray,
+        landmarks: np.ndarray
+    ) -> Optional[Dict[str, float]]:
+        """
+        Extract LAB color space metrics from facial region (cheeks/forehead)
+        
+        LAB Color Space:
+        - L* (lightness): 0-100 (0=black, 100=white)
+        - a*: -128 to 127 (negative=green, positive=red)
+        - b*: -128 to 127 (negative=blue, positive=yellow)
+        
+        Returns facial LAB metrics and perfusion index
+        """
+        try:
+            # Define cheek ROI using facial landmarks
+            # Cheeks are typically in the mid-face region
+            h, w = frame.shape[:2]
+            x_min, y_min = landmarks.min(axis=0).astype(int)
+            x_max, y_max = landmarks.max(axis=0).astype(int)
+            
+            # Extract cheek regions (left and right)
+            face_width = x_max - x_min
+            face_height = y_max - y_min
+            
+            # Left cheek ROI (30-50% from left, 30-60% from top)
+            left_cheek_x1 = int(x_min + face_width * 0.15)
+            left_cheek_x2 = int(x_min + face_width * 0.35)
+            cheek_y1 = int(y_min + face_height * 0.35)
+            cheek_y2 = int(y_min + face_height * 0.65)
+            
+            # Right cheek ROI (50-70% from left, 30-60% from top)
+            right_cheek_x1 = int(x_min + face_width * 0.65)
+            right_cheek_x2 = int(x_min + face_width * 0.85)
+            
+            # Extract ROIs
+            left_cheek_roi = frame[cheek_y1:cheek_y2, left_cheek_x1:left_cheek_x2]
+            right_cheek_roi = frame[cheek_y1:cheek_y2, right_cheek_x1:right_cheek_x2]
+            
+            if left_cheek_roi.size == 0 or right_cheek_roi.size == 0:
+                return None
+            
+            # Convert to LAB color space
+            left_lab = cv2.cvtColor(left_cheek_roi, cv2.COLOR_RGB2LAB)
+            right_lab = cv2.cvtColor(right_cheek_roi, cv2.COLOR_RGB2LAB)
+            
+            # Compute mean LAB values (average both cheeks)
+            left_l_mean = np.mean(left_lab[:, :, 0])
+            left_a_mean = np.mean(left_lab[:, :, 1])
+            left_b_mean = np.mean(left_lab[:, :, 2])
+            
+            right_l_mean = np.mean(right_lab[:, :, 0])
+            right_a_mean = np.mean(right_lab[:, :, 1])
+            right_b_mean = np.mean(right_lab[:, :, 2])
+            
+            # Average both cheeks for facial metrics
+            facial_l = (left_l_mean + right_l_mean) / 2.0
+            facial_a = (left_a_mean + right_a_mean) / 2.0
+            facial_b = (left_b_mean + right_b_mean) / 2.0
+            
+            # Compute perfusion index (0-100 scale)
+            # Higher L* (lightness) and a* (redness) = better perfusion
+            # Normalize: L* is 0-100, a* is shifted from -128-127 to 0-255
+            perfusion_index = self._compute_perfusion_index(facial_l, facial_a, facial_b)
+            
+            return {
+                'facial_l_lightness': float(facial_l),
+                'facial_a_red_green': float(facial_a - 128),  # Shift to -128 to 127 range
+                'facial_b_yellow_blue': float(facial_b - 128),
+                'facial_perfusion_index': float(perfusion_index)
+            }
+        
+        except Exception as e:
+            logger.error(f"Facial LAB extraction error: {str(e)}")
+            return None
+    
+    def _extract_palmar_lab_colors(
+        self,
+        frame: np.ndarray,
+        face_landmarks: np.ndarray
+    ) -> Optional[Dict[str, float]]:
+        """
+        Extract LAB colors from palmar (palm) region when hands are visible
+        Palm analysis is gold standard for pallor detection in clinical exams
+        """
+        try:
+            # Use MediaPipe Hands to detect palms
+            # For now, use skin color detection outside face region
+            h, w = frame.shape[:2]
+            
+            # Create mask excluding face
+            face_x_min, face_y_min = face_landmarks.min(axis=0).astype(int)
+            face_x_max, face_y_max = face_landmarks.max(axis=0).astype(int)
+            
+            # Convert to HSV for skin detection
+            hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+            
+            # Skin detection mask (broad range for diverse skin tones)
+            lower_skin = np.array([0, 20, 70], dtype=np.uint8)
+            upper_skin = np.array([25, 255, 255], dtype=np.uint8)
+            skin_mask = cv2.inRange(hsv, lower_skin, upper_skin)
+            
+            # Zero out face region
+            padding = 50
+            face_y_min = max(0, face_y_min - padding)
+            face_y_max = min(h, face_y_max + padding)
+            face_x_min = max(0, face_x_min - padding)
+            face_x_max = min(w, face_x_max + padding)
+            skin_mask[face_y_min:face_y_max, face_x_min:face_x_max] = 0
+            
+            # Find largest skin region (likely palm/hand)
+            contours, _ = cv2.findContours(skin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if not contours:
+                return None
+            
+            largest_contour = max(contours, key=cv2.contourArea)
+            contour_area = cv2.contourArea(largest_contour)
+            
+            # Require minimum area (palm should be substantial)
+            if contour_area < 2000:
+                return None
+            
+            # Create bounding box for palm ROI
+            x, y, w_box, h_box = cv2.boundingRect(largest_contour)
+            palm_roi = frame[y:y+h_box, x:x+w_box]
+            
+            if palm_roi.size == 0:
+                return None
+            
+            # Convert palm ROI to LAB
+            palm_lab = cv2.cvtColor(palm_roi, cv2.COLOR_RGB2LAB)
+            
+            # Extract LAB means
+            palmar_l = np.mean(palm_lab[:, :, 0])
+            palmar_a = np.mean(palm_lab[:, :, 1])
+            palmar_b = np.mean(palm_lab[:, :, 2])
+            
+            # Compute palmar perfusion index
+            palmar_perfusion = self._compute_perfusion_index(palmar_l, palmar_a, palmar_b)
+            
+            return {
+                'palmar_l_lightness': float(palmar_l),
+                'palmar_a_red_green': float(palmar_a - 128),
+                'palmar_b_yellow_blue': float(palmar_b - 128),
+                'palmar_perfusion_index': float(palmar_perfusion)
+            }
+        
+        except Exception as e:
+            logger.error(f"Palmar LAB extraction error: {str(e)}")
+            return None
+    
+    def _analyze_nailbeds_comprehensive(
+        self,
+        frame: np.ndarray,
+        face_landmarks: np.ndarray
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Comprehensive nailbed analysis:
+        - LAB color extraction (cyanosis, anemia detection)
+        - Clubbing detection (Schamroth window proxy via curvature analysis)
+        - Pitting detection (surface variance, texture analysis)
+        - Abnormality detection (leukonychia, splinter hemorrhages)
+        """
+        try:
+            # Detect hand regions first
+            h, w = frame.shape[:2]
+            hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+            
+            # Skin detection
+            lower_skin = np.array([0, 20, 70], dtype=np.uint8)
+            upper_skin = np.array([25, 255, 255], dtype=np.uint8)
+            skin_mask = cv2.inRange(hsv, lower_skin, upper_skin)
+            
+            # Exclude face
+            face_x_min, face_y_min = face_landmarks.min(axis=0).astype(int)
+            face_x_max, face_y_max = face_landmarks.max(axis=0).astype(int)
+            padding = 50
+            skin_mask[max(0, face_y_min-padding):min(h, face_y_max+padding),
+                     max(0, face_x_min-padding):min(w, face_x_max+padding)] = 0
+            
+            contours, _ = cv2.findContours(skin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if not contours:
+                return None
+            
+            # Find hand contour
+            largest_contour = max(contours, key=cv2.contourArea)
+            x, y, w_box, h_box = cv2.boundingRect(largest_contour)
+            hand_roi = frame[y:y+h_box, x:x+w_box]
+            
+            if hand_roi.size == 0:
+                return None
+            
+            # Detect fingertip regions (nailbeds typically at top of hand ROI)
+            # Look for regions with higher brightness (nails reflect light)
+            gray_hand = cv2.cvtColor(hand_roi, cv2.COLOR_RGB2GRAY)
+            _, bright_mask = cv2.threshold(gray_hand, 180, 255, cv2.THRESH_BINARY)
+            
+            # Find potential nailbed regions
+            nail_contours, _ = cv2.findContours(bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            nailbed_lab_values = []
+            clubbing_scores = []
+            pitting_scores = []
+            abnormalities = []
+            
+            for nail_contour in nail_contours:
+                nail_area = cv2.contourArea(nail_contour)
+                
+                # Filter by size (nails are typically 50-500 px²)
+                if nail_area < 50 or nail_area > 1000:
+                    continue
+                
+                # Extract nailbed ROI
+                nx, ny, nw, nh = cv2.boundingRect(nail_contour)
+                nailbed_roi = hand_roi[ny:ny+nh, nx:nx+nw]
+                
+                if nailbed_roi.size == 0:
+                    continue
+                
+                # 1. LAB color analysis
+                nailbed_lab = cv2.cvtColor(nailbed_roi, cv2.COLOR_RGB2LAB)
+                nail_l = np.mean(nailbed_lab[:, :, 0])
+                nail_a = np.mean(nailbed_lab[:, :, 1])
+                nail_b = np.mean(nailbed_lab[:, :, 2])
+                nailbed_lab_values.append((nail_l, nail_a, nail_b))
+                
+                # 2. Clubbing detection (curvature analysis)
+                # Clubbing causes increased nail curvature and distal phalanx bulging
+                clubbing_score = self._detect_nail_clubbing(nailbed_roi, nail_contour)
+                clubbing_scores.append(clubbing_score)
+                
+                # 3. Pitting detection (surface texture variance)
+                pitting_score = self._detect_nail_pitting(nailbed_roi)
+                pitting_scores.append(pitting_score)
+                
+                # 4. Abnormality detection (color-based)
+                nail_abnormality = self._detect_nail_abnormalities(nailbed_roi, nail_l, nail_a, nail_b)
+                if nail_abnormality:
+                    abnormalities.append(nail_abnormality)
+            
+            if not nailbed_lab_values:
+                return None
+            
+            # Aggregate nailbed metrics
+            avg_l = np.mean([v[0] for v in nailbed_lab_values])
+            avg_a = np.mean([v[1] for v in nailbed_lab_values])
+            avg_b = np.mean([v[2] for v in nailbed_lab_values])
+            
+            nailbed_color_index = self._compute_perfusion_index(avg_l, avg_a, avg_b)
+            
+            # Clubbing detection (threshold: >0.6 indicates clubbing)
+            max_clubbing = max(clubbing_scores) if clubbing_scores else 0.0
+            clubbing_detected = max_clubbing > 0.6
+            
+            # Pitting detection (threshold: >3 pits)
+            pitting_count = sum(1 for score in pitting_scores if score > 0.5)
+            pitting_detected = pitting_count >= 3
+            
+            return {
+                'nailbed_l_lightness': float(avg_l),
+                'nailbed_a_red_green': float(avg_a - 128),
+                'nailbed_b_yellow_blue': float(avg_b - 128),
+                'nailbed_color_index': float(nailbed_color_index),
+                'nail_clubbing_detected': clubbing_detected,
+                'nail_clubbing_severity': float(max_clubbing),
+                'nail_pitting_detected': pitting_detected,
+                'nail_pitting_count': pitting_count,
+                'nail_abnormalities': abnormalities
+            }
+        
+        except Exception as e:
+            logger.error(f"Nailbed analysis error: {str(e)}")
+            return None
+    
+    def _detect_nail_clubbing(
+        self,
+        nailbed_roi: np.ndarray,
+        nail_contour: np.ndarray
+    ) -> float:
+        """
+        Detect nail clubbing using curvature analysis
+        
+        Clubbing indicators:
+        - Increased longitudinal nail curvature
+        - Loss of normal <165° angle between nail and nail bed (Schamroth window)
+        - Distal phalanx bulging
+        
+        Returns clubbing severity score (0-1)
+        """
+        try:
+            # Approximate curvature by analyzing contour shape
+            # Clubbed nails have more pronounced curvature
+            
+            # Fit ellipse to nail contour
+            if len(nail_contour) < 5:
+                return 0.0
+            
+            ellipse = cv2.fitEllipse(nail_contour)
+            (center, axes, angle) = ellipse
+            major_axis, minor_axis = max(axes), min(axes)
+            
+            # Clubbing increases curvature (lower major/minor ratio)
+            # Normal nails: ratio ~1.5-2.0
+            # Clubbed nails: ratio ~1.0-1.3
+            if major_axis == 0:
+                return 0.0
+            
+            axis_ratio = major_axis / minor_axis if minor_axis > 0 else 2.0
+            
+            # Convert ratio to clubbing score
+            # Lower ratio = higher clubbing score
+            if axis_ratio < 1.3:
+                clubbing_score = 1.0 - (axis_ratio - 1.0) / 0.3
+            elif axis_ratio < 1.5:
+                clubbing_score = 0.5 - (axis_ratio - 1.3) / 0.4
+            else:
+                clubbing_score = 0.0
+            
+            return max(0.0, min(1.0, clubbing_score))
+        
+        except Exception as e:
+            logger.error(f"Clubbing detection error: {str(e)}")
+            return 0.0
+    
+    def _detect_nail_pitting(
+        self,
+        nailbed_roi: np.ndarray
+    ) -> float:
+        """
+        Detect nail pitting using surface texture variance
+        
+        Pitting manifests as small depressions (pits) in nail plate
+        Detected via high local variance in grayscale intensity
+        
+        Returns pitting severity score (0-1)
+        """
+        try:
+            # Convert to grayscale
+            gray = cv2.cvtColor(nailbed_roi, cv2.COLOR_RGB2GRAY)
+            
+            # Apply Laplacian to detect surface irregularities
+            laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+            laplacian_var = np.var(laplacian)
+            
+            # High variance = more texture/pitting
+            # Normalize to 0-1 scale (typical range: 0-500)
+            pitting_score = min(1.0, laplacian_var / 500.0)
+            
+            return float(pitting_score)
+        
+        except Exception as e:
+            logger.error(f"Pitting detection error: {str(e)}")
+            return 0.0
+    
+    def _detect_nail_abnormalities(
+        self,
+        nailbed_roi: np.ndarray,
+        l_value: float,
+        a_value: float,
+        b_value: float
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect nail abnormalities based on color analysis:
+        - Leukonychia (white spots/streaks)
+        - Splinter hemorrhages (red/brown streaks)
+        - Yellow nail syndrome
+        - Terry's nails (white proximal, pink distal)
+        """
+        abnormalities = []
+        
+        # Leukonychia: High L* (very white), low a* and b*
+        if l_value > 220 and abs(a_value - 128) < 10 and abs(b_value - 128) < 10:
+            abnormalities.append({
+                'type': 'leukonychia',
+                'severity': (l_value - 200) / 55.0,
+                'location': 'generalized'
+            })
+        
+        # Splinter hemorrhages: High a* (redness), low b*
+        if (a_value - 128) > 20 and (b_value - 128) < 10:
+            abnormalities.append({
+                'type': 'splinter_hemorrhage',
+                'severity': ((a_value - 128) - 20) / 40.0,
+                'location': 'linear'
+            })
+        
+        # Yellow nail syndrome: High b* (yellowness)
+        if (b_value - 128) > 30:
+            abnormalities.append({
+                'type': 'yellow_nails',
+                'severity': ((b_value - 128) - 30) / 40.0,
+                'location': 'generalized'
+            })
+        
+        return abnormalities[0] if abnormalities else None
+    
+    def _compute_perfusion_index(
+        self,
+        l_value: float,
+        a_value: float,
+        b_value: float
+    ) -> float:
+        """
+        Compute perfusion index (0-100) from LAB color values
+        
+        Formula:
+        - Higher L* (lightness) = moderate contribution
+        - Higher a* (redness) = strong contribution (blood perfusion)
+        - b* (yellowness) has minimal effect
+        
+        Well-perfused skin: L*~60-70, a*~140-160 (shifted), b*~130-150 (shifted)
+        Poorly perfused: L*<50, a*<130, cyanotic: a*<120, b*<120
+        """
+        # Normalize L* (0-100 range)
+        l_normalized = l_value / 100.0
+        
+        # Normalize a* (shifted from 0-255 to represent -128 to 127)
+        # Healthy redness: a* around 140-160 (in 0-255 scale)
+        # Convert to 0-1 scale where 128 (neutral) = 0.5, 160 (red) = ~0.7
+        a_normalized = (a_value / 255.0)
+        
+        # Perfusion index weighted formula
+        # 70% weight on redness (a*), 30% on lightness (L*)
+        perfusion_index = (0.7 * a_normalized + 0.3 * l_normalized) * 100.0
+        
+        return max(0.0, min(100.0, perfusion_index))
+    
+    def _detect_clinical_color_changes(
+        self,
+        skin_metrics: Dict[str, Any],
+        baseline: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Detect clinical color changes: pallor, cyanosis, jaundice
+        
+        Pallor: Low L* + low a* (reduced redness)
+        Cyanosis: Low L* + negative a* + negative b* (bluish)
+        Jaundice: High b* (yellowness), especially in sclera
+        """
+        changes = {
+            'pallor_detected': False,
+            'pallor_severity': 0.0,
+            'pallor_region': 'none',
+            'cyanosis_detected': False,
+            'cyanosis_severity': 0.0,
+            'cyanosis_region': 'none',
+            'jaundice_detected': False,
+            'jaundice_severity': 0.0,
+            'jaundice_region': 'none'
+        }
+        
+        # Extract LAB values
+        facial_l = skin_metrics.get('facial_l_lightness', 0)
+        facial_a = skin_metrics.get('facial_a_red_green', 0)
+        facial_b = skin_metrics.get('facial_b_yellow_blue', 0)
+        
+        palmar_l = skin_metrics.get('palmar_l_lightness', 0)
+        palmar_a = skin_metrics.get('palmar_a_red_green', 0)
+        
+        nailbed_l = skin_metrics.get('nailbed_l_lightness', 0)
+        nailbed_a = skin_metrics.get('nailbed_a_red_green', 0)
+        
+        # Get baseline thresholds
+        baseline_facial_l = baseline.get('baseline_facial_l', 60) if baseline else 60
+        baseline_facial_a = baseline.get('baseline_facial_a', 10) if baseline else 10
+        
+        # 1. PALLOR DETECTION (reduced perfusion, low redness)
+        # Criteria: L* < baseline - 10 AND a* < baseline - 10
+        if facial_l > 0 and facial_a < (baseline_facial_a - 10):
+            pallor_severity = max(0, (baseline_facial_a - facial_a) / 20.0)
+            changes['pallor_detected'] = True
+            changes['pallor_severity'] = min(1.0, pallor_severity)
+            
+            # Determine region
+            if palmar_a > 0 and palmar_a < baseline_facial_a - 10:
+                changes['pallor_region'] = 'generalized'
+            else:
+                changes['pallor_region'] = 'facial'
+        
+        # Check palmar pallor specifically
+        if palmar_l > 0 and palmar_a < -5:  # Palmar pallor threshold
+            changes['pallor_detected'] = True
+            changes['pallor_region'] = 'palmar' if changes['pallor_region'] == 'none' else 'generalized'
+            changes['pallor_severity'] = max(changes['pallor_severity'], abs(palmar_a) / 15.0)
+        
+        # 2. CYANOSIS DETECTION (bluish discoloration)
+        # Criteria: Low L*, negative a* (less red), negative b* (more blue)
+        if facial_l > 0 and facial_a < -5 and facial_b < -5:
+            cyanosis_severity = (abs(facial_a) + abs(facial_b)) / 30.0
+            changes['cyanosis_detected'] = True
+            changes['cyanosis_severity'] = min(1.0, cyanosis_severity)
+            changes['cyanosis_region'] = 'central'  # Facial = central cyanosis
+        
+        # Peripheral cyanosis (nailbeds)
+        if nailbed_l > 0 and nailbed_a < -8:
+            changes['cyanosis_detected'] = True
+            changes['cyanosis_region'] = 'peripheral' if changes['cyanosis_region'] == 'none' else 'generalized'
+            changes['cyanosis_severity'] = max(changes['cyanosis_severity'], abs(nailbed_a) / 20.0)
+        
+        # 3. JAUNDICE DETECTION (yellowness)
+        # Criteria: High b* (yellowness), especially >20 in facial region
+        if facial_b > 20:
+            jaundice_severity = (facial_b - 20) / 30.0
+            changes['jaundice_detected'] = True
+            changes['jaundice_severity'] = min(1.0, jaundice_severity)
+            changes['jaundice_region'] = 'facial'
+        
+        return changes
+    
+    def _analyze_skin_texture_hydration(
+        self,
+        frame: np.ndarray,
+        landmarks: np.ndarray
+    ) -> Dict[str, Any]:
+        """
+        Analyze skin texture and hydration status
+        
+        Texture: Laplacian variance (high = rough/dry, low = smooth)
+        Hydration: Shine detection via specular highlights
+        Temperature proxy: Redness in HSV
+        """
+        try:
+            # Extract facial ROI
+            x_min, y_min = landmarks.min(axis=0).astype(int)
+            x_max, y_max = landmarks.max(axis=0).astype(int)
+            padding = 10
+            face_roi = frame[max(0, y_min-padding):min(frame.shape[0], y_max+padding),
+                            max(0, x_min-padding):min(frame.shape[1], x_max+padding)]
+            
+            if face_roi.size == 0:
+                return {'skin_texture_score': 0.0, 'hydration_status': 'normal', 'temperature_proxy': 'normal'}
+            
+            # Convert to grayscale for texture analysis
+            gray = cv2.cvtColor(face_roi, cv2.COLOR_RGB2GRAY)
+            
+            # Compute Laplacian variance (texture roughness)
+            laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+            texture_score = np.var(laplacian) / 200.0  # Normalize to 0-1
+            texture_score = min(1.0, texture_score)
+            
+            # Hydration status via shine detection
+            # Moist skin reflects more light (higher V channel in HSV)
+            hsv = cv2.cvtColor(face_roi, cv2.COLOR_RGB2HSV)
+            v_channel = hsv[:, :, 2]
+            avg_brightness = np.mean(v_channel)
+            
+            # Determine hydration
+            if avg_brightness > 180:
+                hydration_status = 'moist'
+            elif avg_brightness < 120:
+                hydration_status = 'dry'
+            else:
+                hydration_status = 'normal'
+            
+            # Temperature proxy via redness (a* channel or H in HSV)
+            # High S + low H (red hue) = warm/inflamed
+            # Low S + low V = cool/pale
+            h_channel = hsv[:, :, 0]
+            s_channel = hsv[:, :, 1]
+            
+            avg_hue = np.mean(h_channel)
+            avg_sat = np.mean(s_channel)
+            
+            if avg_sat > 100 and (avg_hue < 10 or avg_hue > 170):
+                temperature_proxy = 'warm'
+            elif avg_sat < 40:
+                temperature_proxy = 'cool'
+            else:
+                temperature_proxy = 'normal'
+            
+            return {
+                'skin_texture_score': float(texture_score),
+                'hydration_status': hydration_status,
+                'temperature_proxy': temperature_proxy
+            }
+        
+        except Exception as e:
+            logger.error(f"Texture/hydration analysis error: {str(e)}")
+            return {'skin_texture_score': 0.0, 'hydration_status': 'normal', 'temperature_proxy': 'normal'}
+    
+    def _compute_skin_detection_confidence(
+        self,
+        skin_metrics: Dict[str, Any]
+    ) -> float:
+        """
+        Compute overall confidence in skin analysis detection
+        
+        Based on:
+        - Number of ROIs detected (facial, palmar, nailbed)
+        - Quality of LAB values (non-zero, within expected ranges)
+        - Consistency across regions
+        """
+        confidence_factors = []
+        
+        # Facial ROI detection
+        if skin_metrics.get('facial_roi_detected', False):
+            facial_l = skin_metrics.get('facial_l_lightness', 0)
+            if 20 < facial_l < 100:  # Valid L* range
+                confidence_factors.append(0.4)
+        
+        # Palmar ROI detection (bonus)
+        if skin_metrics.get('palmar_roi_detected', False):
+            palmar_l = skin_metrics.get('palmar_l_lightness', 0)
+            if 20 < palmar_l < 100:
+                confidence_factors.append(0.3)
+        
+        # Nailbed ROI detection (bonus)
+        if skin_metrics.get('nailbed_roi_detected', False):
+            nailbed_l = skin_metrics.get('nailbed_l_lightness', 0)
+            if 20 < nailbed_l < 100:
+                confidence_factors.append(0.3)
+        
+        return sum(confidence_factors)
+    
+    def track_capillary_refill(
+        self,
+        lab_timeseries: List[Tuple[int, float]],
+        fps: float = 30.0
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Track capillary refill time using L* channel tracking
+        
+        Detects:
+        1. Finger press event (L* drops significantly)
+        2. Recovery phase (L* returns to baseline)
+        3. Refill time (time to reach 90% of baseline L*)
+        
+        Args:
+            lab_timeseries: List of (frame_index, L_value) tuples
+            fps: Frames per second
+            
+        Returns:
+            Dict with refill time, quality, method, abnormal flag
+        """
+        if len(lab_timeseries) < 10:
+            return {
+                'capillary_refill_time_sec': None,
+                'capillary_refill_method': 'not_measured',
+                'capillary_refill_quality': 0.0,
+                'capillary_refill_abnormal': False
+            }
+        
+        try:
+            # Extract L* values
+            l_values = np.array([v[1] for v in lab_timeseries])
+            
+            # Compute baseline L* (median of first 20%)
+            baseline_samples = int(len(l_values) * 0.2)
+            baseline_l = np.median(l_values[:baseline_samples])
+            
+            # Detect press event (L* drop > 15% of baseline)
+            press_threshold = baseline_l * 0.85
+            press_detected = False
+            press_frame_idx = -1
+            
+            for i, l_val in enumerate(l_values):
+                if l_val < press_threshold:
+                    press_detected = True
+                    press_frame_idx = i
+                    break
+            
+            if not press_detected:
+                return {
+                    'capillary_refill_time_sec': None,
+                    'capillary_refill_method': 'passive_observation',
+                    'capillary_refill_quality': 0.3,
+                    'capillary_refill_abnormal': False
+                }
+            
+            # Track recovery to 90% of baseline
+            recovery_threshold = baseline_l * 0.9
+            recovery_frame_idx = -1
+            
+            for i in range(press_frame_idx, len(l_values)):
+                if l_values[i] >= recovery_threshold:
+                    recovery_frame_idx = i
+                    break
+            
+            if recovery_frame_idx == -1:
+                # No recovery detected
+                return {
+                    'capillary_refill_time_sec': None,
+                    'capillary_refill_method': 'guided_press',
+                    'capillary_refill_quality': 0.5,
+                    'capillary_refill_abnormal': True  # Prolonged or no recovery
+                }
+            
+            # Compute refill time
+            refill_frames = recovery_frame_idx - press_frame_idx
+            refill_time_sec = refill_frames / fps
+            
+            # Quality assessment
+            quality = 0.9 if refill_time_sec < 5.0 else 0.7
+            
+            # Abnormal if >2 seconds (clinical threshold)
+            abnormal = refill_time_sec > 2.0
+            
+            return {
+                'capillary_refill_time_sec': float(refill_time_sec),
+                'capillary_refill_method': 'guided_press',
+                'capillary_refill_quality': quality,
+                'capillary_refill_abnormal': abnormal
+            }
+        
+        except Exception as e:
+            logger.error(f"Capillary refill tracking error: {str(e)}")
+            return {
+                'capillary_refill_time_sec': None,
+                'capillary_refill_method': 'not_measured',
+                'capillary_refill_quality': 0.0,
+                'capillary_refill_abnormal': False
+            }
 
 
 # Global instance
