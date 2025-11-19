@@ -37,8 +37,8 @@ from app.models.user import User
 # Import dependencies
 from app.dependencies import get_current_user
 
-# Import AI engine
-from app.services.video_ai_engine import VideoAIEngine
+# Import AI engine manager (lazy initialization to prevent blocking imports)
+from app.services.ai_engine_manager import AIEngineManager
 
 # Import S3 service with local fallback support
 from app.services.s3_service import s3_service
@@ -622,8 +622,8 @@ async def complete_exam_session(
             video_path = os.path.join(temp_dir, "exam_video.mp4")
             create_video_from_frames(temp_frame_paths, video_path, fps=1)
             
-            # Initialize VideoAI engine
-            video_ai = VideoAIEngine()
+            # Get VideoAI engine from AIEngineManager (singleton pattern)
+            video_ai = AIEngineManager.get_video_engine()
             
             # Analyze video
             analysis_result = await video_ai.analyze_video(

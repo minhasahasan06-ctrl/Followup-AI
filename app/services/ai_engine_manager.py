@@ -94,7 +94,13 @@ class AIEngineManager:
                 logger.info("🚀 All AI engines initialized successfully!")
                 
             except Exception as e:
-                logger.error(f"❌ Failed to initialize AI engines: {str(e)}")
+                logger.error(f"❌ CRITICAL: AI engine initialization failed!")
+                logger.error(f"   Error: {str(e)}")
+                logger.error(f"   Video AI engine: {'✅ Loaded' if cls._video_engine else '❌ Failed'}")
+                logger.error(f"   Audio AI engine: {'✅ Loaded' if cls._audio_engine else '❌ Failed'}")
+                logger.error(f"   All deterioration detection endpoints will be unavailable!")
+                cls._initialized = False
+                # Re-raise to surface error in FastAPI lifespan event
                 raise
     
     @classmethod
