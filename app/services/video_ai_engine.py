@@ -92,6 +92,15 @@ class VideoAIEngine:
             )
         else:
             self.face_mesh = None
+        
+        # Initialize DeepLab Edema Segmentation (optional - lazy loaded)
+        try:
+            from app.services.edema_segmentation_service import EdemaSegmentationService
+            self.edema_service = EdemaSegmentationService()
+            logger.info("Edema segmentation service initialized")
+        except Exception as e:
+            logger.warning(f"Edema segmentation unavailable: {e}")
+            self.edema_service = None
     
     async def analyze_video(
         self,
@@ -216,6 +225,11 @@ class VideoAIEngine:
         frames_analyzed = 0
         frames_with_face = 0
         frames_with_hands = 0
+        
+        # EDEMA SEGMENTATION STORAGE (DeepLab V3+)
+        edema_segmentations = []
+        edema_swelling_detections = []
+        edema_expansion_percentages = []
         
         # Process frames (sample every Nth frame for efficiency)
         sample_rate = max(1, int(fps / 5))  # Analyze 5 frames per second
@@ -379,6 +393,26 @@ class VideoAIEngine:
             if frame_metrics.get('detection_confidence', 0) > 0.3:
                 skin_analysis_frames.append(frame_metrics)
             
+            # EDEMA SEGMENTATION (DeepLab V3+)
+            if self.edema_service and self.edema_service.model:
+                try:
+                    # Segment frame for edema detection
+                    seg_result = self.edema_service.segment_frame(frame)
+                    if seg_result:
+                        # Detect edema regions (would compare to baseline if available)
+                        edema_metrics = self.edema_service.detect_edema_regions(
+                            seg_result,
+                            baseline_mask=patient_baseline.get('edema_baseline_mask') if patient_baseline else None
+                        )
+                        
+                        edema_segmentations.append(seg_result)
+                        edema_swelling_detections.append(edema_metrics.get('swelling_detected', False))
+                        
+                        if edema_metrics.get('overall_expansion_percent') is not None:
+                            edema_expansion_percentages.append(edema_metrics['overall_expansion_percent'])
+                except Exception as e:
+                    logger.warning(f"Edema segmentation failed for frame {frame_idx}: {e}")
+            
             # Frame quality
             frame_qualities.append(frame_metrics.get('frame_quality', 50))
         
@@ -412,6 +446,10 @@ class VideoAIEngine:
             nail_clubbing_detections=nail_clubbing_detections,
             nail_pitting_detections=nail_pitting_detections,
             skin_analysis_frames=skin_analysis_frames,
+            # EDEMA SEGMENTATION PARAMETERS (DeepLab V3+)
+            edema_segmentations=edema_segmentations,
+            edema_swelling_detections=edema_swelling_detections,
+            edema_expansion_percentages=edema_expansion_percentages,
             # HEPATIC/ANEMIA COLOR METRICS PARAMETERS (ALL FIELDS)
             scleral_chromaticity_values=scleral_chromaticity_values,
             scleral_skin_deltas=scleral_skin_deltas,
@@ -1775,6 +1813,10 @@ class VideoAIEngine:
         lip_dryness_values: List[float],
         lip_cyanosis_detections: List[bool],
         lip_roi_detections: List[bool],
+        # EDEMA SEGMENTATION PARAMETERS (DeepLab V3+)
+        edema_segmentations: List[Dict],
+        edema_swelling_detections: List[bool],
+        edema_expansion_percentages: List[float],
         fps: float,
         duration: float,
         frames_analyzed: int,
@@ -2388,6 +2430,27 @@ class VideoAIEngine:
             metrics['lip_cyanosis_detected'] = False
         
         metrics['lip_roi_detected'] = sum(lip_roi_detections) / len(lip_roi_detections) > 0.1 if lip_roi_detections else False
+        
+        # ====================EDEMA SEGMENTATION METRICS (DeepLab V3+) ====================
+        if len(edema_swelling_detections) > 0:
+            swelling_percentage = sum(edema_swelling_detections) / len(edema_swelling_detections) * 100
+            metrics['edema_swelling_detected'] = swelling_percentage > 10  # >10% of frames show swelling
+            metrics['edema_swelling_percentage'] = float(swelling_percentage)
+        else:
+            metrics['edema_swelling_detected'] = False
+            metrics['edema_swelling_percentage'] = 0.0
+        
+        if len(edema_expansion_percentages) > 0:
+            metrics['edema_expansion_avg'] = float(np.mean(edema_expansion_percentages))
+            metrics['edema_expansion_max'] = float(np.max(edema_expansion_percentages))
+            metrics['edema_expansion_trend'] = "worsening" if edema_expansion_percentages[-1] > edema_expansion_percentages[0] else "stable"
+        else:
+            metrics['edema_expansion_avg'] = None
+            metrics['edema_expansion_max'] = None
+            metrics['edema_expansion_trend'] = "unknown"
+        
+        metrics['edema_frames_analyzed'] = len(edema_segmentations)
+        metrics['edema_model_available'] = len(edema_segmentations) > 0
         
         return metrics
     
