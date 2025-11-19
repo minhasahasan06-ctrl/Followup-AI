@@ -60,12 +60,66 @@ class MediaSession(Base):
     )
 
 
+class VideoExamSession(Base):
+    """Track guided video examination sessions with staged frame capture"""
+    __tablename__ = "video_exam_sessions"
+    
+    id = Column(String, primary_key=True, server_default=func.gen_random_uuid())
+    patient_id = Column(String, nullable=False, index=True)
+    
+    # Session lifecycle
+    status = Column(String, nullable=False, server_default='in_progress')  # in_progress, completed, failed
+    current_stage = Column(String, nullable=True)  # eyes, palm, tongue, lips
+    
+    # Frame storage per stage (S3 URIs)
+    eyes_frame_s3_uri = Column(String, nullable=True)
+    palm_frame_s3_uri = Column(String, nullable=True)
+    tongue_frame_s3_uri = Column(String, nullable=True)
+    lips_frame_s3_uri = Column(String, nullable=True)
+    
+    # Stage completion tracking
+    eyes_stage_completed = Column(Boolean, default=False)
+    palm_stage_completed = Column(Boolean, default=False)
+    tongue_stage_completed = Column(Boolean, default=False)
+    lips_stage_completed = Column(Boolean, default=False)
+    
+    # Quality scores per stage (0-100)
+    eyes_quality_score = Column(Float, nullable=True)
+    palm_quality_score = Column(Float, nullable=True)
+    tongue_quality_score = Column(Float, nullable=True)
+    lips_quality_score = Column(Float, nullable=True)
+    
+    # Overall session quality
+    overall_quality_score = Column(Float, nullable=True)
+    
+    # ML analysis reference (links to VideoMetrics after completion)
+    video_metrics_id = Column(Integer, nullable=True)
+    
+    # Exam metadata
+    prep_time_seconds = Column(Integer, default=30)  # 30-second prep screens
+    total_duration_seconds = Column(Float, nullable=True)
+    device_info = Column(JSON, nullable=True)  # Browser/device metadata
+    
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    __table_args__ = (
+        Index('idx_video_exam_patient_id', 'patient_id'),
+        Index('idx_video_exam_status', 'status'),
+        Index('idx_video_exam_created_at', 'created_at'),
+    )
+
+
 class VideoMetrics(Base):
     """Store video AI analysis results (10+ metrics)"""
     __tablename__ = "video_metrics"
 
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(Integer, ForeignKey("media_sessions.id"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("media_sessions.id"), nullable=True, index=True)  # Nullable for guided exams
     patient_id = Column(String, nullable=False, index=True)
     
     # Respiratory metrics

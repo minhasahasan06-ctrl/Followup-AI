@@ -37,6 +37,13 @@ from app.models.medication_side_effects import (
     SideEffectCorrelation,
     MedicationEffectsSummary
 )
+from app.models.video_ai_models import (
+    FacialPuffinessBaseline,
+    FacialPuffinessMetric,
+    VideoExamSession,
+    VideoMetrics,
+    MediaSession
+)
 
 __all__ = [
     "User",
@@ -72,4 +79,9 @@ __all__ = [
     "SymptomLog",
     "SideEffectCorrelation",
     "MedicationEffectsSummary",
+    "FacialPuffinessBaseline",
+    "FacialPuffinessMetric",
+    "VideoExamSession",
+    "VideoMetrics",
+    "MediaSession",
 ]

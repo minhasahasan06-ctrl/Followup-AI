@@ -36,7 +36,8 @@ async def get_current_user(
 async def get_current_doctor(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    if current_user.role != "doctor":
+    user_role = str(current_user.role) if current_user.role else ""
+    if user_role != "doctor":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only doctors can access this resource"
@@ -47,7 +48,8 @@ async def get_current_doctor(
 async def get_current_patient(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    if current_user.role != "patient":
+    user_role = str(current_user.role) if current_user.role else ""
+    if user_role != "patient":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only patients can access this resource"
@@ -61,7 +63,8 @@ def require_role(role: str):
     Usage: current_user = Depends(require_role("patient"))
     """
     async def role_checker(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role != role:
+        user_role = str(current_user.role) if current_user.role else ""
+        if user_role != role:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Only {role}s can access this resource"

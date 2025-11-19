@@ -7,7 +7,7 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta
-from typing import Dict
+from typing import Dict, Optional
 import uuid
 
 from app.models.symptom_journal import BodyArea
@@ -48,6 +48,9 @@ async def upload_symptom_image(
     Returns:
         Dict with bucket, key, and presigned URL
     """
+    if not BUCKET_NAME:
+        raise Exception("AWS_S3_BUCKET_NAME environment variable not configured")
+    
     try:
         # Generate unique filename
         file_extension = content_type.split('/')[-1]
@@ -85,7 +88,7 @@ async def upload_symptom_image(
         raise Exception("Failed to upload image to secure storage")
 
 
-def generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str:
+def generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> Optional[str]:
     """
     Generate a presigned URL for secure image access
     URL expires after specified time (default 1 hour)
@@ -124,6 +127,9 @@ async def upload_file_to_s3(
     Returns:
         Dict with bucket, key, and presigned URL
     """
+    if not BUCKET_NAME:
+        raise Exception("AWS_S3_BUCKET_NAME environment variable not configured")
+    
     try:
         s3_key = f"{folder}/{filename}"
         
