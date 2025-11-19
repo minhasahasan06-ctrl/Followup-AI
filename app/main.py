@@ -27,7 +27,8 @@ from app.routers import (
     # ml_inference,  # TEMPORARILY DISABLED - blocking import issue
     ai_deterioration_api,  # ✅ RE-ENABLED - Fixed dependency injection
     video_exam_sessions,
-    guided_exam  # ✅ RE-ENABLED - Now uses AIEngineManager
+    guided_exam,  # ✅ RE-ENABLED - Now uses AIEngineManager
+    guided_audio_exam  # ✅ NEW - Guided audio examination with YAMNet ML
 )
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,9 @@ app.include_router(ai_deterioration_api.alert_router)
 # Guided Video Examination System
 app.include_router(video_exam_sessions.router)
 app.include_router(guided_exam.router)  # ✅ RE-ENABLED - Now uses AIEngineManager
+
+# Guided Audio Examination System
+app.include_router(guided_audio_exam.router)  # ✅ NEW - With YAMNet ML, neurological metrics
 
 
 @app.get("/")
