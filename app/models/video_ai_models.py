@@ -53,6 +53,7 @@ class MediaSession(Base):
     # Relationships
     video_metrics = relationship("VideoMetrics", back_populates="session", cascade="all, delete-orphan")
     audio_metrics = relationship("AudioMetrics", back_populates="session", cascade="all, delete-orphan")
+    edema_segmentation_metrics = relationship("EdemaSegmentationMetrics", back_populates="session", cascade="all, delete-orphan")
     
     __table_args__ = (
         Index('idx_media_patient_date', 'patient_id', 'created_at'),
@@ -524,3 +525,108 @@ class SkinBaseline(Base):
     
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+
+class EdemaSegmentationMetrics(Base):
+    """
+    DeepLab V3+ Semantic Segmentation Results for Edema/Swelling Monitoring
+    
+    Tracks body region segmentation and swelling detection across video frames
+    Compares to patient baseline for % expansion tracking
+    """
+    __tablename__ = "edema_segmentation_metrics"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("media_sessions.id"), nullable=True, index=True)
+    patient_id = Column(String, nullable=False, index=True)
+    
+    # Segmentation model info
+    model_type = Column(String, default="deeplab_v3_plus")
+    model_version = Column(String)
+    is_finetuned = Column(Boolean, default=False)
+    
+    # Overall segmentation quality
+    segmentation_confidence = Column(Float)
+    person_detected = Column(Boolean, default=False)
+    total_body_area_px = Column(Integer)
+    
+    # Baseline comparison
+    has_baseline = Column(Boolean, default=False)
+    baseline_segmentation_id = Column(Integer, nullable=True)
+    overall_expansion_percent = Column(Float, nullable=True)
+    
+    # Swelling detection flags
+    swelling_detected = Column(Boolean, default=False)
+    swelling_severity = Column(String, nullable=True)
+    swelling_regions_count = Column(Integer, default=0)
+    
+    # Regional analysis: Face/Upper Body
+    face_upper_body_area_px = Column(Integer, nullable=True)
+    face_upper_body_baseline_area_px = Column(Integer, nullable=True)
+    face_upper_body_expansion_percent = Column(Float, nullable=True)
+    face_upper_body_swelling_detected = Column(Boolean, default=False)
+    
+    # Regional analysis: Torso/Hands
+    torso_hands_area_px = Column(Integer, nullable=True)
+    torso_hands_baseline_area_px = Column(Integer, nullable=True)
+    torso_hands_expansion_percent = Column(Float, nullable=True)
+    torso_hands_swelling_detected = Column(Boolean, default=False)
+    
+    # Regional analysis: Legs/Feet (critical for lower limb edema)
+    legs_feet_area_px = Column(Integer, nullable=True)
+    legs_feet_baseline_area_px = Column(Integer, nullable=True)
+    legs_feet_expansion_percent = Column(Float, nullable=True)
+    legs_feet_swelling_detected = Column(Boolean, default=False)
+    
+    # Asymmetry detection: Left vs Right
+    left_lower_limb_area_px = Column(Integer, nullable=True)
+    right_lower_limb_area_px = Column(Integer, nullable=True)
+    left_lower_limb_baseline_area_px = Column(Integer, nullable=True)
+    right_lower_limb_baseline_area_px = Column(Integer, nullable=True)
+    left_expansion_percent = Column(Float, nullable=True)
+    right_expansion_percent = Column(Float, nullable=True)
+    asymmetry_detected = Column(Boolean, default=False)
+    asymmetry_difference_percent = Column(Float, nullable=True)
+    
+    # Fine-tuned model specific regions
+    lower_leg_left_area_px = Column(Integer, nullable=True)
+    lower_leg_right_area_px = Column(Integer, nullable=True)
+    ankle_left_area_px = Column(Integer, nullable=True)
+    ankle_right_area_px = Column(Integer, nullable=True)
+    foot_left_area_px = Column(Integer, nullable=True)
+    foot_right_area_px = Column(Integer, nullable=True)
+    hand_left_area_px = Column(Integer, nullable=True)
+    hand_right_area_px = Column(Integer, nullable=True)
+    periorbital_area_px = Column(Integer, nullable=True)
+    
+    # Disease-specific personalization
+    priority_regions = Column(JSON, nullable=True)
+    patient_conditions = Column(JSON, nullable=True)
+    personalized_thresholds = Column(JSON, nullable=True)
+    
+    # Storage references
+    segmentation_mask_s3_uri = Column(String, nullable=True)
+    visualization_overlay_s3_uri = Column(String, nullable=True)
+    
+    # Processing metadata
+    frame_number = Column(Integer, nullable=True)
+    timestamp_seconds = Column(Float, nullable=True)
+    processing_time_ms = Column(Integer)
+    
+    # Raw data
+    classes_detected = Column(JSON)
+    regional_analysis_json = Column(JSON)
+    
+    # Timestamps
+    analyzed_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    session = relationship("MediaSession", back_populates="edema_segmentation_metrics")
+    
+    __table_args__ = (
+        Index("idx_edema_patient_date", "patient_id", "analyzed_at"),
+        Index("idx_edema_session", "session_id"),
+        Index("idx_edema_swelling", "swelling_detected"),
+    )
+
