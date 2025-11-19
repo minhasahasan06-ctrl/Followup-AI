@@ -28,7 +28,8 @@ from app.routers import (
     ai_deterioration_api,  # ✅ RE-ENABLED - Fixed dependency injection
     video_exam_sessions,
     guided_exam,  # ✅ RE-ENABLED - Now uses AIEngineManager
-    guided_audio_exam  # ✅ NEW - Guided audio examination with YAMNet ML
+    guided_audio_exam,  # ✅ NEW - Guided audio examination with YAMNet ML
+    edema_analysis  # ✅ NEW - DeepLab V3+ edema segmentation
 )
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,9 @@ app.include_router(guided_exam.router)  # ✅ RE-ENABLED - Now uses AIEngineMana
 
 # Guided Audio Examination System
 app.include_router(guided_audio_exam.router)  # ✅ NEW - With YAMNet ML, neurological metrics
+
+# Edema/Swelling Analysis System (DeepLab V3+)
+app.include_router(edema_analysis.router)  # ✅ NEW - Semantic segmentation for edema detection
 
 
 @app.get("/")
