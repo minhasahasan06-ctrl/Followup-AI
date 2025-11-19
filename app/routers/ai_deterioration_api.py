@@ -421,8 +421,7 @@ async def analyze_video(
     session_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    video_engine = Depends(get_video_ai_engine)
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Trigger AI analysis on uploaded video
@@ -466,7 +465,9 @@ async def analyze_video(
             # Merge baselines for comprehensive analysis
             combined_baseline = {**(patient_baseline or {}), **(skin_baseline or {})}
             
-            # Run Video AI Engine with combined baseline (using injected singleton)
+            # Run Video AI Engine with combined baseline (using AIEngineManager singleton)
+            from app.services.ai_engine_manager import AIEngineManager
+            video_engine = AIEngineManager.get_video_engine()
             metrics_dict = await video_engine.analyze_video(temp_video_path, combined_baseline)
         finally:
             # Clean up temporary file
@@ -649,8 +650,7 @@ async def analyze_audio(
     session_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    audio_engine = Depends(get_audio_ai_engine)
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Trigger AI analysis on uploaded audio
@@ -677,7 +677,9 @@ async def analyze_audio(
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=session.s3_key)
         audio_bytes = response['Body'].read()
         
-        # Run Audio AI Engine (using injected singleton)
+        # Run Audio AI Engine (using AIEngineManager singleton)
+        from app.services.ai_engine_manager import AIEngineManager
+        audio_engine = AIEngineManager.get_audio_engine()
         metrics_dict = await audio_engine.analyze_audio(audio_bytes, patient_id_str)
         
         # Create AudioMetrics record
@@ -728,8 +730,7 @@ async def assess_risk(
     patient_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    trend_engine = Depends(get_trend_prediction_engine)
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Run comprehensive risk assessment using Trend Prediction Engine
@@ -751,7 +752,9 @@ async def assess_risk(
         # Audit log
         await audit_log_request(request, db, user, "view", "risk_assessment", patient_id, phi_accessed=True)
         
-        # Run Trend Prediction Engine (using injected instance)
+        # Run Trend Prediction Engine (using AIEngineManager)
+        from app.services.ai_engine_manager import AIEngineManager
+        trend_engine = AIEngineManager.get_trend_engine(db)
         assessment = await trend_engine.assess_risk(patient_id)
         
         # Create TrendSnapshot
@@ -854,11 +857,14 @@ async def get_pending_alerts(
     request: Request,
     severity_filter: Optional[str] = None,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    alert_engine = Depends(get_alert_orchestration_engine)
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Get pending alerts for current doctor"""
     await audit_log_request(request, db, user, "view", "alerts", None, phi_accessed=True)
+    
+    # Get alert engine from AIEngineManager
+    from app.services.ai_engine_manager import AIEngineManager
+    alert_engine = AIEngineManager.get_alert_engine(db)
     
     severity_list = severity_filter.split(",") if severity_filter else None
     alerts = await alert_engine.get_pending_alerts(user["user_id"], severity_list)
@@ -879,11 +885,14 @@ async def acknowledge_alert(
     alert_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user),
-    alert_engine = Depends(get_alert_orchestration_engine)
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Acknowledge alert"""
     await audit_log_request(request, db, user, "update", "alert", None, phi_accessed=True)
+    
+    # Get alert engine from AIEngineManager
+    from app.services.ai_engine_manager import AIEngineManager
+    alert_engine = AIEngineManager.get_alert_engine(db)
     
     success = await alert_engine.acknowledge_alert(alert_id, user["user_id"], user["role"])
     

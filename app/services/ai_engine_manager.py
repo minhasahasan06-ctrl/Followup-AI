@@ -15,7 +15,7 @@ Usage in FastAPI:
 
 import asyncio
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Any
 from sqlalchemy.orm import Session
 
 # Use TYPE_CHECKING to avoid circular imports while providing type hints
@@ -34,10 +34,10 @@ class AIEngineManager:
     Prevents blocking uvicorn startup by deferring heavy library loads.
     """
     
-    _video_engine: Optional[any] = None
-    _audio_engine: Optional[any] = None
-    _trend_engine: Optional[any] = None
-    _alert_engine: Optional[any] = None
+    _video_engine: Optional[Any] = None
+    _audio_engine: Optional[Any] = None
+    _trend_engine: Optional[Any] = None
+    _alert_engine: Optional[Any] = None
     _initialized: bool = False
     _lock = asyncio.Lock()
     
