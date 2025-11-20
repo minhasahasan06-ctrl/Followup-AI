@@ -3,6 +3,12 @@
 ## Overview
 Followup AI is a HIPAA-compliant health monitoring platform for immunocompromised patients, offering personalized health tracking, medication management, and wellness activities. It utilizes AI agents (Agent Clona for patient support and Assistant Lysa for doctor assistance) to enhance patient care through advanced AI and comprehensive health data management. The platform aims to provide insights and streamline healthcare operations, positioning itself as a wellness monitoring and change detection system.
 
+## Recent Changes
+
+- **Audio AI Analysis Dashboard Integration**: Replaced bowel/bladder tracking section in daily follow-up dashboard with comprehensive Audio AI Analysis featuring guided 4-stage examination workflow (breathing, coughing, speaking, reading), latest metrics display (breath cycles, speech pace, cough/wheeze detection, hoarseness scores), YAMNet ML classification results, and "Start Audio Examination" button linking to /ai-audio-dashboard. Dashboard now displays real-time audio metrics from completed examinations with full proxy routing to Python backend (/api/v1/guided-audio-exam/*).
+- **HIPAA Security Framework Deployed**: All tremor and gait analysis endpoints (10 total) now implement complete HIPAA security with authentication, patient ownership verification, comprehensive audit logging with [AUDIT] and [AUTH] tags, data integrity checks, and sanitized error handling preventing PHI exposure.
+- **Daily Follow-up Dashboard Enhancements**: Dashboard now displays latest Video AI metrics (respiratory rate, skin pallor, jaundice risk, facial swelling, tremor detection) from today's guided video examination instead of placeholder data. Dashboard streamlined to show only most critical health data from Device Data, Video AI Analysis, and Audio AI Analysis.
+
 ## User Preferences
 - **Preferred communication style**: Simple, everyday language
 - **Backend Language**: Python only - ALL backend code must be written in Python (FastAPI)
