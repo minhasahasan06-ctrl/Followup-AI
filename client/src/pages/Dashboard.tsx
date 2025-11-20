@@ -36,6 +36,17 @@ export default function Dashboard() {
     queryKey: ["/api/behavioral-insights"],
   });
 
+  // Fetch latest video AI metrics via Express proxy
+  const { data: latestVideoMetrics } = useQuery<any>({
+    queryKey: ["/api/video-ai/latest-metrics"],
+    enabled: !!user,
+  });
+
+  // Check if metrics are from today (12am-12am)
+  const isMetricsFromToday = latestVideoMetrics?.created_at 
+    ? new Date(latestVideoMetrics.created_at).toDateString() === new Date().toDateString()
+    : false;
+
   return (
     <div className="space-y-6">
       {showEmergency && (
@@ -141,8 +152,9 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="device" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="device" data-testid="tab-device">Device Data</TabsTrigger>
+                  <TabsTrigger value="video-ai" data-testid="tab-video-ai">Video AI</TabsTrigger>
                   <TabsTrigger value="bowel" data-testid="tab-bowel">Bowel/Bladder</TabsTrigger>
                 </TabsList>
                 <TabsContent value="device" className="space-y-3">
@@ -164,6 +176,155 @@ export default function Dashboard() {
                       <span className="font-medium" data-testid="value-steps">{todayFollowup?.stepsCount || "--"}</span>
                     </div>
                   </div>
+                </TabsContent>
+                <TabsContent value="video-ai" className="space-y-3">
+                  {isMetricsFromToday && latestVideoMetrics ? (
+                    <>
+                      {/* Today's Video AI Metrics */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium">Today's AI Analysis</p>
+                          <Badge variant="secondary" className="text-xs">
+                            {new Date(latestVideoMetrics.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Badge>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          {latestVideoMetrics.respiratory_rate_bpm && (
+                            <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                              <div className="flex items-center gap-1.5">
+                                <Wind className="h-3 w-3 text-blue-500" />
+                                <span className="text-muted-foreground">Respiratory</span>
+                              </div>
+                              <span className="font-medium">{latestVideoMetrics.respiratory_rate_bpm.toFixed(1)} bpm</span>
+                            </div>
+                          )}
+                          
+                          {latestVideoMetrics.skin_pallor_score !== null && latestVideoMetrics.skin_pallor_score !== undefined && (
+                            <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                              <div className="flex items-center gap-1.5">
+                                <Palette className="h-3 w-3 text-amber-500" />
+                                <span className="text-muted-foreground">Skin Pallor</span>
+                              </div>
+                              <span className="font-medium">{latestVideoMetrics.skin_pallor_score.toFixed(1)}/100</span>
+                            </div>
+                          )}
+                          
+                          {latestVideoMetrics.jaundice_risk_level && (
+                            <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                              <div className="flex items-center gap-1.5">
+                                <Eye className="h-3 w-3 text-yellow-500" />
+                                <span className="text-muted-foreground">Jaundice</span>
+                              </div>
+                              <span className="font-medium capitalize">{latestVideoMetrics.jaundice_risk_level}</span>
+                            </div>
+                          )}
+                          
+                          {latestVideoMetrics.facial_swelling_score !== null && latestVideoMetrics.facial_swelling_score !== undefined && (
+                            <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                              <div className="flex items-center gap-1.5">
+                                <Users className="h-3 w-3 text-rose-500" />
+                                <span className="text-muted-foreground">Swelling</span>
+                              </div>
+                              <span className="font-medium">{latestVideoMetrics.facial_swelling_score.toFixed(1)}/100</span>
+                            </div>
+                          )}
+                          
+                          {latestVideoMetrics.head_stability_score !== null && latestVideoMetrics.head_stability_score !== undefined && (
+                            <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                              <div className="flex items-center gap-1.5">
+                                <Zap className="h-3 w-3 text-purple-500" />
+                                <span className="text-muted-foreground">Tremor</span>
+                              </div>
+                              <span className="font-medium">{latestVideoMetrics.tremor_detected ? 'Detected' : 'None'}</span>
+                            </div>
+                          )}
+                          
+                          {latestVideoMetrics.tongue_color_index !== null && latestVideoMetrics.tongue_color_index !== undefined && (
+                            <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                              <div className="flex items-center gap-1.5">
+                                <Smile className="h-3 w-3 text-pink-500" />
+                                <span className="text-muted-foreground">Tongue</span>
+                              </div>
+                              <span className="font-medium">{latestVideoMetrics.tongue_coating_detected ? 'Coating' : 'Normal'}</span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Quality Metrics */}
+                        {(latestVideoMetrics.lighting_quality_score || latestVideoMetrics.frames_analyzed || latestVideoMetrics.face_detection_confidence) && (
+                          <div className="rounded-md border bg-muted/30 p-2 space-y-1">
+                            <p className="text-xs font-medium">Analysis Quality</p>
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              {latestVideoMetrics.lighting_quality_score && (
+                                <div>
+                                  <span className="text-muted-foreground">Lighting: </span>
+                                  <span className="font-medium">{latestVideoMetrics.lighting_quality_score.toFixed(0)}/100</span>
+                                </div>
+                              )}
+                              {latestVideoMetrics.frames_analyzed && (
+                                <div>
+                                  <span className="text-muted-foreground">Frames: </span>
+                                  <span className="font-medium">{latestVideoMetrics.frames_analyzed}</span>
+                                </div>
+                              )}
+                              {latestVideoMetrics.face_detection_confidence && (
+                                <div>
+                                  <span className="text-muted-foreground">Confidence: </span>
+                                  <span className="font-medium">{(latestVideoMetrics.face_detection_confidence * 100).toFixed(0)}%</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        <Link href="/guided-video-exam">
+                          <Button size="sm" variant="outline" className="w-full gap-2" data-testid="button-new-exam">
+                            <Play className="h-3 w-3" />
+                            Take Another Exam
+                          </Button>
+                        </Link>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* No exam taken today - Prompt to take exam */}
+                      <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="rounded-full bg-primary/10 p-2">
+                            <Video className="h-4 w-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">No Examination Today</p>
+                            <p className="text-xs text-muted-foreground">Complete your daily video exam</p>
+                          </div>
+                        </div>
+
+                        <Link href="/guided-video-exam">
+                          <Button size="sm" className="w-full gap-2" data-testid="button-start-video-exam">
+                            <Play className="h-4 w-4" />
+                            Start Video Examination
+                          </Button>
+                        </Link>
+                        
+                        <p className="text-xs text-center text-muted-foreground">
+                          7-stage AI analysis • ~5-7 minutes • Camera required
+                        </p>
+                      </div>
+                      
+                      <div className="text-xs text-muted-foreground" data-testid="text-video-info">
+                        <p className="font-medium mb-1">AI tracks:</p>
+                        <ul className="space-y-0.5 ml-4 list-disc">
+                          <li>Respiratory rate & breathing</li>
+                          <li>Skin pallor (anemia detection)</li>
+                          <li>Eye sclera yellowness (jaundice)</li>
+                          <li>Facial swelling & edema</li>
+                          <li>Head/hand tremor patterns</li>
+                          <li>Tongue color & coating</li>
+                        </ul>
+                      </div>
+                    </>
+                  )}
                 </TabsContent>
                 <TabsContent value="bowel">
                   <div className="space-y-2 text-sm">
