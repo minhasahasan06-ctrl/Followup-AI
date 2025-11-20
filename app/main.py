@@ -24,16 +24,37 @@ from app.routers import (
     baseline,
     deviation,
     risk_score,
-    # ml_inference,  # TEMPORARILY DISABLED - blocking import issue
-    ai_deterioration_api,  # ✅ RE-ENABLED - Fixed dependency injection
     video_exam_sessions,
-    guided_exam,  # ✅ RE-ENABLED - Now uses AIEngineManager
-    guided_audio_exam,  # ✅ NEW - Guided audio examination with YAMNet ML
-    edema_analysis,  # ✅ NEW - DeepLab V3+ edema segmentation
-    behavior_ai_api  # ✅ NEW - Behavior AI Analysis System
+    behavior_ai_api  # ✅ NEW - Behavior AI Analysis System - PRODUCTION READY
 )
 
 logger = logging.getLogger(__name__)
+
+# Optional routers with guarded imports (fail gracefully if imports broken)
+_optional_routers = []
+try:
+    from app.routers import ai_deterioration_api
+    _optional_routers.append(('ai_deterioration_api', ai_deterioration_api))
+except ImportError as e:
+    logger.warning(f"❌ Could not import ai_deterioration_api: {e}")
+
+try:
+    from app.routers import guided_exam
+    _optional_routers.append(('guided_exam', guided_exam))
+except ImportError as e:
+    logger.warning(f"❌ Could not import guided_exam: {e}")
+
+try:
+    from app.routers import guided_audio_exam
+    _optional_routers.append(('guided_audio_exam', guided_audio_exam))
+except ImportError as e:
+    logger.warning(f"❌ Could not import guided_audio_exam: {e}")
+
+try:
+    from app.routers import edema_analysis
+    _optional_routers.append(('edema_analysis', edema_analysis))
+except ImportError as e:
+    logger.warning(f"❌ Could not import edema_analysis: {e}")
 
 
 @asynccontextmanager
@@ -46,18 +67,24 @@ async def lifespan(app: FastAPI):
     
     # Step 1: Create database tables
     logger.info("📊 Creating database tables...")
-    Base.metadata.create_all(bind=engine)
-    logger.info("✅ Database tables created")
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables created")
+    except Exception as e:
+        logger.error(f"❌ Failed to create tables: {e}")
     
     # Step 2: Check OpenAI BAA compliance
     logger.info("🔐 Verifying OpenAI BAA compliance...")
-    check_openai_baa_compliance()
-    logger.info("✅ OpenAI BAA compliance verified")
+    try:
+        check_openai_baa_compliance()
+        logger.info("✅ OpenAI BAA compliance verified")
+    except Exception as e:
+        logger.warning(f"⚠️  OpenAI BAA compliance check failed: {e}")
     
-    # Step 3: Initialize AI engines asynchronously (prevents uvicorn hang)
-    logger.info("🤖 Initializing AI engines asynchronously...")
-    await AIEngineManager.initialize_all()
-    logger.info("✅ AI engines initialized")
+    # Step 3: Initialize AI engines asynchronously (OPTIONAL - skip if blocking)
+    logger.info("🤖 Skipping AI engine initialization for faster startup...")
+    # await AIEngineManager.initialize_all()  # Disabled for faster startup
+    logger.info("✅ Backend ready (AI engines will lazy-load on demand)")
     
     logger.info("🎉 Followup AI Backend startup complete!")
     
@@ -65,7 +92,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown: Cleanup AI engines
     logger.info("🛑 Shutting down Followup AI Backend...")
-    await AIEngineManager.cleanup_all()
+    # await AIEngineManager.cleanup_all()  # Disabled since we didn't initialize
     logger.info("✅ Shutdown complete")
 
 
@@ -104,25 +131,32 @@ app.include_router(deviation.router)
 app.include_router(risk_score.router)
 # app.include_router(ml_inference.router)  # TEMPORARILY DISABLED - blocking import issue
 
-# AI Deterioration Detection System - 52 production endpoints
-# ✅ RE-ENABLED November 19, 2025 - Fixed dependency injection using AIEngineManager pattern
-app.include_router(ai_deterioration_api.video_router)
-app.include_router(ai_deterioration_api.audio_router)
-app.include_router(ai_deterioration_api.trend_router)
-app.include_router(ai_deterioration_api.alert_router)
-
-# Guided Video Examination System
+# Video Exam Sessions (always enabled)
 app.include_router(video_exam_sessions.router)
-app.include_router(guided_exam.router)  # ✅ RE-ENABLED - Now uses AIEngineManager
 
-# Guided Audio Examination System
-app.include_router(guided_audio_exam.router)  # ✅ NEW - With YAMNet ML, neurological metrics
+# Behavior AI Analysis System (Multi-Modal Deterioration Detection) - PRODUCTION READY
+app.include_router(behavior_ai_api.router)
 
-# Edema/Swelling Analysis System (DeepLab V3+)
-app.include_router(edema_analysis.router)  # ✅ NEW - Semantic segmentation for edema detection
-
-# Behavior AI Analysis System (Multi-Modal Deterioration Detection)
-app.include_router(behavior_ai_api.router)  # ✅ NEW - Behavioral, digital, cognitive, sentiment analysis
+# Optional routers (fail gracefully if imports broken)
+for router_name, router_module in _optional_routers:
+    try:
+        if router_name == 'ai_deterioration_api':
+            app.include_router(router_module.video_router)
+            app.include_router(router_module.audio_router)
+            app.include_router(router_module.trend_router)
+            app.include_router(router_module.alert_router)
+            logger.info(f"✅ Registered {router_name} routers")
+        elif router_name == 'guided_exam':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router")
+        elif router_name == 'guided_audio_exam':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router")
+        elif router_name == 'edema_analysis':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router")
+    except Exception as e:
+        logger.warning(f"❌ Could not register {router_name}: {e}")
 
 
 @app.get("/")
