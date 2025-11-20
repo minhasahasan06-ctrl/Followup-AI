@@ -295,6 +295,7 @@ class GaitAnalysisService:
             'total_strides': len(strides),
             'walking_detected': True,
             'gait_abnormality_detected': clinical_risks['fall_risk_score'] > 50,
+            'overall_quality_score': landmarks_detected_percent,  # Add quality score
             'summary': {
                 'cadence': temporal_params['cadence'],
                 'walking_speed': temporal_params['walking_speed'],

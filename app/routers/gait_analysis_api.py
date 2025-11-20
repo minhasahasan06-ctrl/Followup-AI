@@ -115,7 +115,16 @@ def process_gait_video_background(session_id: int, patient_id: str, video_path: 
         db.commit()
         
         # Analyze video
-        gait_service = GaitAnalysisService(db)
+        try:
+            gait_service = GaitAnalysisService(db)
+        except ImportError as e:
+            logger.error(f"MediaPipe not available: {str(e)}")
+            session.processing_status = "failed"
+            session.error_message = "MediaPipe library not installed. Install with: pip install mediapipe"
+            session.processing_completed_at = datetime.utcnow()
+            db.commit()
+            return
+        
         result = gait_service.analyze_video(
             video_path=video_path,
             patient_id=patient_id,
@@ -129,7 +138,7 @@ def process_gait_video_background(session_id: int, patient_id: str, video_path: 
         session.walking_detected = result['walking_detected']
         session.gait_abnormality_detected = result['gait_abnormality_detected']
         session.gait_abnormality_score = result['summary'].get('fall_risk', 0)
-        session.overall_quality_score = 85.0  # Placeholder
+        session.overall_quality_score = result.get('overall_quality_score', 0.0)  # Actual quality score
         db.commit()
         
         logger.info(f"Gait analysis completed for session {session_id}")
