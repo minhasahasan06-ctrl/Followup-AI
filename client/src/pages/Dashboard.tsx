@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users } from "lucide-react";
+import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users, Mic, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -155,7 +155,7 @@ export default function Dashboard() {
                 <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="device" data-testid="tab-device">Device Data</TabsTrigger>
                   <TabsTrigger value="video-ai" data-testid="tab-video-ai">Video AI</TabsTrigger>
-                  <TabsTrigger value="bowel" data-testid="tab-bowel">Bowel/Bladder</TabsTrigger>
+                  <TabsTrigger value="audio-ai" data-testid="tab-audio-ai">Audio AI</TabsTrigger>
                 </TabsList>
                 <TabsContent value="device" className="space-y-3">
                   <div className="grid grid-cols-2 gap-3 text-sm">
@@ -333,17 +333,79 @@ export default function Dashboard() {
                     </>
                   )}
                 </TabsContent>
-                <TabsContent value="bowel">
-                  <div className="space-y-2 text-sm">
-                    <div data-testid="data-bowel-movements">
-                      <span className="text-muted-foreground">Bowel Movements: </span>
-                      <span className="font-medium" data-testid="value-bowel-movements">{todayFollowup?.bowelMovements || "--"}</span>
+                <TabsContent value="audio-ai">
+                  {todayFollowup?.audioAI ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div data-testid="data-breath-rate">
+                          <span className="text-muted-foreground">Breath Rate: </span>
+                          <span className="font-medium" data-testid="value-breath-rate">
+                            {todayFollowup.audioAI.breathRatePerMin || "--"} /min
+                          </span>
+                        </div>
+                        <div data-testid="data-speech-pace">
+                          <span className="text-muted-foreground">Speech Pace: </span>
+                          <span className="font-medium" data-testid="value-speech-pace">
+                            {todayFollowup.audioAI.speechPaceWpm || "--"} wpm
+                          </span>
+                        </div>
+                        <div data-testid="data-cough-detected">
+                          <span className="text-muted-foreground">Cough Detected: </span>
+                          <span className="font-medium" data-testid="value-cough-detected">
+                            {todayFollowup.audioAI.coughCount ? `${todayFollowup.audioAI.coughCount} times` : "None"}
+                          </span>
+                        </div>
+                        <div data-testid="data-wheeze-detected">
+                          <span className="text-muted-foreground">Wheeze Detected: </span>
+                          <span className="font-medium" data-testid="value-wheeze-detected">
+                            {todayFollowup.audioAI.wheezeDetected ? "Yes" : "No"}
+                          </span>
+                        </div>
+                        <div data-testid="data-hoarseness" className="col-span-2">
+                          <span className="text-muted-foreground">Voice Hoarseness: </span>
+                          <span className="font-medium" data-testid="value-hoarseness">
+                            {todayFollowup.audioAI.hoarsenessScore ? `${todayFollowup.audioAI.hoarsenessScore}/100` : "--"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                        <Volume2 className="h-3 w-3" />
+                        <span>From today's audio examination</span>
+                      </div>
                     </div>
-                    <div data-testid="data-urine-frequency">
-                      <span className="text-muted-foreground">Urine Frequency: </span>
-                      <span className="font-medium" data-testid="value-urine-frequency">{todayFollowup?.urineFrequency || "--"}</span>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <Mic className="h-8 w-8 text-primary flex-shrink-0" />
+                        <div>
+                          <p className="font-medium text-sm">AI Audio Analysis</p>
+                          <p className="text-xs text-muted-foreground">Complete your daily audio exam</p>
+                        </div>
+                      </div>
+
+                      <Link href="/ai-audio-dashboard">
+                        <Button size="sm" className="w-full gap-2" data-testid="button-start-audio-exam">
+                          <Play className="h-4 w-4" />
+                          Start Audio Examination
+                        </Button>
+                      </Link>
+                      
+                      <p className="text-xs text-center text-muted-foreground">
+                        4-stage AI analysis • ~2-3 minutes • Microphone required
+                      </p>
+                      
+                      <div className="text-xs text-muted-foreground" data-testid="text-audio-info">
+                        <p className="font-medium mb-1">AI tracks:</p>
+                        <ul className="space-y-0.5 ml-4 list-disc">
+                          <li>Breath cycles & respiratory rate</li>
+                          <li>Speech pace & fluency</li>
+                          <li>Cough & wheeze detection</li>
+                          <li>Voice hoarseness & fatigue</li>
+                          <li>Pause patterns & neurological markers</li>
+                        </ul>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </TabsContent>
               </Tabs>
             </CardContent>
