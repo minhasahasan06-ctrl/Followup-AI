@@ -3014,3 +3014,384 @@ export const insertVideoExamSegmentSchema = createInsertSchema(videoExamSegments
 
 export type InsertVideoExamSegment = z.infer<typeof insertVideoExamSegmentSchema>;
 export type VideoExamSegment = typeof videoExamSegments.$inferSelect;
+
+// ===========================================================================================
+// BEHAVIOR AI ANALYSIS SYSTEM - Complete Multi-Modal Deterioration Detection
+// ===========================================================================================
+
+// Daily check-ins for behavioral pattern tracking
+export const behaviorCheckins = pgTable("behavior_checkins", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Check-in timing metadata
+  scheduledTime: timestamp("scheduled_time"), // Expected check-in time
+  completedAt: timestamp("completed_at"), // Actual completion time
+  responseLatencyMinutes: integer("response_latency_minutes"), // Delay in minutes
+  skipped: boolean("skipped").default(false),
+  skipReason: text("skip_reason"), // Free text: "too tired", "not today", etc.
+  
+  // Self-reported data
+  symptomSeverity: integer("symptom_severity"), // 1-10 scale
+  symptomDescription: text("symptom_description"),
+  painLevel: integer("pain_level"), // 1-10 scale
+  medicationTaken: boolean("medication_taken").default(false),
+  medicationSkippedReason: text("medication_skipped_reason"),
+  
+  // Engagement metrics
+  sessionDurationSeconds: integer("session_duration_seconds"),
+  interactionCount: integer("interaction_count"), // Number of taps/clicks
+  
+  // Avoidance pattern detection
+  avoidanceLanguageDetected: boolean("avoidance_language_detected").default(false),
+  avoidancePhrases: jsonb("avoidance_phrases").$type<string[]>(),
+  
+  // Sentiment from free text
+  sentimentPolarity: decimal("sentiment_polarity", { precision: 5, scale: 3 }), // -1 to +1
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("behavior_checkins_patient_idx").on(table.patientId),
+  completedIdx: index("behavior_checkins_completed_idx").on(table.completedAt),
+  skippedIdx: index("behavior_checkins_skipped_idx").on(table.skipped),
+}));
+
+export const insertBehaviorCheckinSchema = createInsertSchema(behaviorCheckins).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertBehaviorCheckin = z.infer<typeof insertBehaviorCheckinSchema>;
+export type BehaviorCheckin = typeof behaviorCheckins.$inferSelect;
+
+// Aggregated behavioral metrics (daily rollup)
+export const behaviorMetrics = pgTable("behavior_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  date: timestamp("date").notNull(), // Date of metrics
+  
+  // Check-in consistency
+  checkinTimeConsistencyScore: decimal("checkin_time_consistency_score", { precision: 5, scale: 3 }), // 0-1 (1=very consistent)
+  checkinCompletionRate: decimal("checkin_completion_rate", { precision: 5, scale: 3 }), // % completed vs scheduled
+  avgResponseLatencyMinutes: decimal("avg_response_latency_minutes", { precision: 8, scale: 2 }),
+  skippedCheckinsCount: integer("skipped_checkins_count").default(0),
+  
+  // Routine deviation
+  routineDeviationScore: decimal("routine_deviation_score", { precision: 5, scale: 3 }), // 0-1 (1=major deviation)
+  
+  // Medication adherence
+  medicationAdherenceRate: decimal("medication_adherence_rate", { precision: 5, scale: 3 }), // 0-1
+  medicationSkipsCount: integer("medication_skips_count").default(0),
+  
+  // App engagement
+  appEngagementDurationMinutes: decimal("app_engagement_duration_minutes", { precision: 8, scale: 2 }),
+  appOpenCount: integer("app_open_count").default(0),
+  
+  // Avoidance patterns
+  avoidancePatternsDetected: boolean("avoidance_patterns_detected").default(false),
+  avoidanceCount: integer("avoidance_count").default(0),
+  avoidancePhrases: jsonb("avoidance_phrases").$type<string[]>(),
+  
+  // Tone change detection
+  avgSentimentPolarity: decimal("avg_sentiment_polarity", { precision: 5, scale: 3 }),
+  sentimentTrendSlope: decimal("sentiment_trend_slope", { precision: 8, scale: 5 }), // Rate of sentiment decline
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientDateIdx: index("behavior_metrics_patient_date_idx").on(table.patientId, table.date),
+}));
+
+export const insertBehaviorMetricSchema = createInsertSchema(behaviorMetrics).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertBehaviorMetric = z.infer<typeof insertBehaviorMetricSchema>;
+export type BehaviorMetric = typeof behaviorMetrics.$inferSelect;
+
+// Digital biomarkers from phone/wearable data
+export const digitalBiomarkers = pgTable("digital_biomarkers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  date: timestamp("date").notNull(),
+  
+  // Activity metrics
+  dailyStepCount: integer("daily_step_count"),
+  stepTrend7Day: decimal("step_trend_7day", { precision: 8, scale: 2 }), // Slope of 7-day trend
+  activityBurstCount: integer("activity_burst_count"), // Sudden bursts of activity
+  sedentaryDurationMinutes: integer("sedentary_duration_minutes"),
+  movementVariabilityScore: decimal("movement_variability_score", { precision: 5, scale: 3 }), // 0-1
+  
+  // Circadian rhythm
+  circadianRhythmStability: decimal("circadian_rhythm_stability", { precision: 5, scale: 3 }), // 0-1
+  sleepWakeIrregularityMinutes: integer("sleep_wake_irregularity_minutes"),
+  dailyPeakActivityTime: varchar("daily_peak_activity_time"), // HH:MM format
+  
+  // Phone usage patterns
+  phoneUsageIrregularity: decimal("phone_usage_irregularity", { precision: 5, scale: 3 }), // 0-1
+  nightPhoneInteractionCount: integer("night_phone_interaction_count"), // 10pm-6am
+  screenOnDurationMinutes: integer("screen_on_duration_minutes"),
+  
+  // Mobility changes
+  mobilityDropDetected: boolean("mobility_drop_detected").default(false),
+  mobilityChangePercent: decimal("mobility_change_percent", { precision: 6, scale: 2 }), // % change from baseline
+  
+  // Raw accelerometer stats
+  accelerometerStdDev: decimal("accelerometer_std_dev", { precision: 10, scale: 5 }),
+  accelerometerMeanMagnitude: decimal("accelerometer_mean_magnitude", { precision: 10, scale: 5 }),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientDateIdx: index("digital_biomarkers_patient_date_idx").on(table.patientId, table.date),
+  mobilityDropIdx: index("digital_biomarkers_mobility_drop_idx").on(table.mobilityDropDetected),
+}));
+
+export const insertDigitalBiomarkerSchema = createInsertSchema(digitalBiomarkers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDigitalBiomarker = z.infer<typeof insertDigitalBiomarkerSchema>;
+export type DigitalBiomarker = typeof digitalBiomarkers.$inferSelect;
+
+// Cognitive test results (weekly micro-tests)
+export const cognitiveTests = pgTable("cognitive_tests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  testType: varchar("test_type").notNull(), // 'reaction_time', 'tapping', 'memory', 'pattern_recall', 'instruction_follow'
+  
+  // Test metadata
+  startedAt: timestamp("started_at").notNull(),
+  completedAt: timestamp("completed_at"),
+  durationSeconds: integer("duration_seconds"),
+  
+  // Performance metrics
+  reactionTimeMs: integer("reaction_time_ms"),
+  tappingSpeed: decimal("tapping_speed", { precision: 6, scale: 2 }), // taps/second
+  errorRate: decimal("error_rate", { precision: 5, scale: 3 }), // 0-1
+  memoryScore: decimal("memory_score", { precision: 5, scale: 3 }), // 0-1
+  patternRecallAccuracy: decimal("pattern_recall_accuracy", { precision: 5, scale: 3 }), // 0-1
+  instructionAccuracy: decimal("instruction_accuracy", { precision: 5, scale: 3 }), // 0-1
+  
+  // Detailed results
+  rawResults: jsonb("raw_results").$type<Record<string, any>>(),
+  
+  // Drift detection (vs patient baseline)
+  baselineDeviation: decimal("baseline_deviation", { precision: 6, scale: 3 }), // Z-score
+  anomalyDetected: boolean("anomaly_detected").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientTypeIdx: index("cognitive_tests_patient_type_idx").on(table.patientId, table.testType),
+  anomalyIdx: index("cognitive_tests_anomaly_idx").on(table.anomalyDetected),
+}));
+
+export const insertCognitiveTestSchema = createInsertSchema(cognitiveTests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCognitiveTest = z.infer<typeof insertCognitiveTestSchema>;
+export type CognitiveTest = typeof cognitiveTests.$inferSelect;
+
+// Sentiment/language analysis from text inputs
+export const sentimentAnalysis = pgTable("sentiment_analysis", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  sourceType: varchar("source_type").notNull(), // 'checkin', 'symptom_journal', 'chat', 'audio_transcript'
+  sourceId: varchar("source_id"), // Reference to source record
+  
+  // Raw text
+  textContent: text("text_content").notNull(),
+  analyzedAt: timestamp("analyzed_at").notNull(),
+  
+  // Sentiment metrics (DistilBERT)
+  sentimentPolarity: decimal("sentiment_polarity", { precision: 5, scale: 3 }), // -1 to +1
+  sentimentLabel: varchar("sentiment_label"), // 'positive', 'neutral', 'negative'
+  sentimentConfidence: decimal("sentiment_confidence", { precision: 5, scale: 3 }),
+  
+  // Language biomarkers
+  messageLengthChars: integer("message_length_chars"),
+  wordCount: integer("word_count"),
+  lexicalComplexity: decimal("lexical_complexity", { precision: 5, scale: 3 }), // 0-1
+  negativityRatio: decimal("negativity_ratio", { precision: 5, scale: 3 }), // % negative words
+  
+  // Stress/help-seeking keywords
+  stressKeywordCount: integer("stress_keyword_count").default(0),
+  stressKeywords: jsonb("stress_keywords").$type<string[]>(),
+  helpSeekingDetected: boolean("help_seeking_detected").default(false),
+  helpSeekingPhrases: jsonb("help_seeking_phrases").$type<string[]>(),
+  
+  // Hesitation markers
+  hesitationCount: integer("hesitation_count").default(0),
+  hesitationMarkers: jsonb("hesitation_markers").$type<string[]>(), // "maybe", "idk", "i guess"
+  
+  // Model metadata
+  modelVersion: varchar("model_version").default("distilbert-base-uncased-finetuned-sst-2-english"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientSourceIdx: index("sentiment_analysis_patient_source_idx").on(table.patientId, table.sourceType),
+  polarityIdx: index("sentiment_analysis_polarity_idx").on(table.sentimentPolarity),
+}));
+
+export const insertSentimentAnalysisSchema = createInsertSchema(sentimentAnalysis).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSentimentAnalysis = z.infer<typeof insertSentimentAnalysisSchema>;
+export type SentimentAnalysis = typeof sentimentAnalysis.$inferSelect;
+
+// Multi-modal risk scores (combined from all biomarker streams)
+export const behaviorRiskScores = pgTable("behavior_risk_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  calculatedAt: timestamp("calculated_at").notNull(),
+  
+  // Component risk scores (0-100)
+  behavioralRisk: decimal("behavioral_risk", { precision: 5, scale: 2 }).notNull(),
+  digitalBiomarkerRisk: decimal("digital_biomarker_risk", { precision: 5, scale: 2 }).notNull(),
+  cognitiveRisk: decimal("cognitive_risk", { precision: 5, scale: 2 }).notNull(),
+  sentimentRisk: decimal("sentiment_risk", { precision: 5, scale: 2 }).notNull(),
+  
+  // Composite risk score (weighted combination)
+  compositeRisk: decimal("composite_risk", { precision: 5, scale: 2 }).notNull(),
+  riskLevel: varchar("risk_level").notNull(), // 'low', 'moderate', 'high', 'critical'
+  
+  // Model details
+  modelType: varchar("model_type").default("transformer_xgboost_ensemble"),
+  modelVersion: varchar("model_version"),
+  featureContributions: jsonb("feature_contributions").$type<Record<string, number>>(),
+  
+  // Top risk factors
+  topRiskFactors: jsonb("top_risk_factors").$type<Array<{factor: string; impact: number}>>(),
+  
+  // Confidence
+  predictionConfidence: decimal("prediction_confidence", { precision: 5, scale: 3 }),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientCalcIdx: index("behavior_risk_scores_patient_calc_idx").on(table.patientId, table.calculatedAt),
+  riskLevelIdx: index("behavior_risk_scores_risk_level_idx").on(table.riskLevel),
+}));
+
+export const insertBehaviorRiskScoreSchema = createInsertSchema(behaviorRiskScores).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertBehaviorRiskScore = z.infer<typeof insertBehaviorRiskScoreSchema>;
+export type BehaviorRiskScore = typeof behaviorRiskScores.$inferSelect;
+
+// Deterioration trend detection (temporal patterns)
+export const deteriorationTrends = pgTable("deterioration_trends", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  detectedAt: timestamp("detected_at").notNull(),
+  
+  // Trend metadata
+  trendType: varchar("trend_type").notNull(), // 'declining_engagement', 'mobility_drop', 'cognitive_decline', 'sentiment_deterioration'
+  severity: varchar("severity").notNull(), // 'mild', 'moderate', 'severe'
+  
+  // Temporal analysis
+  trendStartDate: timestamp("trend_start_date"),
+  trendDurationDays: integer("trend_duration_days"),
+  trendSlope: decimal("trend_slope", { precision: 10, scale: 5 }), // Rate of change
+  
+  // Statistical significance
+  zScore: decimal("z_score", { precision: 6, scale: 3 }),
+  pValue: decimal("p_value", { precision: 10, scale: 8 }),
+  confidenceLevel: decimal("confidence_level", { precision: 5, scale: 3 }), // 0-1
+  
+  // Affected metrics
+  affectedMetrics: jsonb("affected_metrics").$type<string[]>(),
+  metricValues: jsonb("metric_values").$type<Record<string, number[]>>(),
+  
+  // Clinical interpretation
+  clinicalSignificance: text("clinical_significance"),
+  recommendedActions: jsonb("recommended_actions").$type<string[]>(),
+  
+  // Alert generated
+  alertGenerated: boolean("alert_generated").default(false),
+  alertId: varchar("alert_id"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientTypeIdx: index("deterioration_trends_patient_type_idx").on(table.patientId, table.trendType),
+  severityIdx: index("deterioration_trends_severity_idx").on(table.severity),
+  alertIdx: index("deterioration_trends_alert_idx").on(table.alertGenerated),
+}));
+
+export const insertDeteriorationTrendSchema = createInsertSchema(deteriorationTrends).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeteriorationTrend = z.infer<typeof insertDeteriorationTrendSchema>;
+export type DeteriorationTrend = typeof deteriorationTrends.$inferSelect;
+
+// Alerts for behavior AI system
+export const behaviorAlerts = pgTable("behavior_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  triggeredAt: timestamp("triggered_at").notNull(),
+  
+  // Alert metadata
+  alertType: varchar("alert_type").notNull(), // 'high_risk', 'trend_detected', 'anomaly', 'critical_decline'
+  severity: varchar("severity").notNull(), // 'low', 'medium', 'high', 'critical'
+  priority: integer("priority").notNull(), // 1-5 (5=highest)
+  
+  // Alert content
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  
+  // Data sources
+  sourceRiskScoreId: varchar("source_risk_score_id").references(() => behaviorRiskScores.id),
+  sourceTrendId: varchar("source_trend_id").references(() => deteriorationTrends.id),
+  
+  // Delivery status
+  emailSent: boolean("email_sent").default(false),
+  emailSentAt: timestamp("email_sent_at"),
+  smsSent: boolean("sms_sent").default(false),
+  smsSentAt: timestamp("sms_sent_at"),
+  dashboardNotified: boolean("dashboard_notified").default(true),
+  
+  // Resolution
+  acknowledged: boolean("acknowledged").default(false),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  acknowledgedBy: varchar("acknowledged_by").references(() => users.id),
+  resolved: boolean("resolved").default(false),
+  resolvedAt: timestamp("resolved_at"),
+  resolutionNotes: text("resolution_notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientSeverityIdx: index("behavior_alerts_patient_severity_idx").on(table.patientId, table.severity),
+  typeIdx: index("behavior_alerts_type_idx").on(table.alertType),
+  acknowledgedIdx: index("behavior_alerts_acknowledged_idx").on(table.acknowledged),
+}));
+
+export const insertBehaviorAlertSchema = createInsertSchema(behaviorAlerts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertBehaviorAlert = z.infer<typeof insertBehaviorAlertSchema>;
+export type BehaviorAlert = typeof behaviorAlerts.$inferSelect;
