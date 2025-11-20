@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users, Mic, Volume2, MicOff, Pause, CheckCircle2, AlertCircle } from "lucide-react";
+import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users, Mic, Volume2, MicOff, Pause, CheckCircle2, AlertCircle, Camera, TrendingDown, Minus, User, Info, GitCompare } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,6 +18,11 @@ import type { DailyFollowup, Medication, DynamicTask, BehavioralInsight } from "
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { format } from "date-fns";
 
 // Audio examination types
 type AudioStage = "breathing" | "coughing" | "speaking" | "reading";
@@ -56,6 +61,32 @@ interface AudioAnalysisResults {
   analysis_confidence: number;
   recommendations: string[];
 }
+
+// Symptom Journal types
+interface SymptomMeasurement {
+  id: number;
+  body_area: string;
+  created_at: string;
+  color_change_percent: number | null;
+  area_change_percent: number | null;
+  respiratory_rate_bpm: number | null;
+  ai_observations: string;
+  detected_changes: string[];
+  image_url?: string;
+  alerts: Array<{
+    severity: string;
+    title: string;
+    message: string;
+    change_percent: number;
+  }>;
+}
+
+const BODY_AREAS = [
+  { value: "legs", label: "Legs (Swelling)", icon: Activity },
+  { value: "face", label: "Face (Color/Swelling)", icon: User },
+  { value: "eyes", label: "Eyes (Redness/Discharge)", icon: Eye },
+  { value: "chest", label: "Breathing (Chest)", icon: Heart },
+];
 
 const STAGE_INFO: Record<AudioStage, StageInfo> = {
   breathing: {
@@ -107,6 +138,28 @@ export default function Dashboard() {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Symptom Journal state
+  const [selectedBodyArea, setSelectedBodyArea] = useState<string>("legs");
+  const [symptomActiveTab, setSymptomActiveTab] = useState("capture");
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [patientNotes, setPatientNotes] = useState("");
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [countdown, setCountdown] = useState(0);
+  const [isRecordingSymptom, setIsRecordingSymptom] = useState(false);
+  const [isRecordingVideo, setIsRecordingVideo] = useState(false);
+  const [recordedVideoBlob, setRecordedVideoBlob] = useState<Blob | null>(null);
+  const [respiratoryResult, setRespiratoryResult] = useState<any | null>(null);
+  const [showComparison, setShowComparison] = useState(false);
+  const [selectedMeasurement1, setSelectedMeasurement1] = useState<number | null>(null);
+  const [selectedMeasurement2, setSelectedMeasurement2] = useState<number | null>(null);
+  
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const symptomMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+
   const { data: todayFollowup } = useQuery<DailyFollowup>({
     queryKey: ["/api/daily-followup/today"],
   });
@@ -133,6 +186,42 @@ export default function Dashboard() {
   const isMetricsFromToday = latestVideoMetrics?.created_at 
     ? new Date(latestVideoMetrics.created_at).toDateString() === new Date().toDateString()
     : false;
+
+  // Symptom Journal queries
+  const measurementsUrl = `/api/v1/symptom-journal/measurements/recent?${new URLSearchParams({
+    ...(selectedBodyArea && { body_area: selectedBodyArea }),
+    days: "30"
+  })}`;
+  
+  const { data: recentData, isLoading: loadingRecent } = useQuery<{ measurements: SymptomMeasurement[] }>({
+    queryKey: [measurementsUrl],
+  });
+
+  const { data: alertsData } = useQuery<{ alerts: any[] }>({
+    queryKey: ["/api/v1/symptom-journal/alerts?acknowledged=false"],
+  });
+
+  const trendsUrl = selectedBodyArea 
+    ? `/api/v1/symptom-journal/trends?${new URLSearchParams({ body_area: selectedBodyArea, days: "30" })}`
+    : null;
+    
+  const { data: trendsData } = useQuery({
+    queryKey: [trendsUrl || "/api/v1/symptom-journal/trends/disabled"],
+    enabled: !!selectedBodyArea && !!trendsUrl,
+  });
+
+  const comparisonUrl = selectedMeasurement1 && selectedMeasurement2 && selectedBodyArea
+    ? `/api/v1/symptom-journal/compare?${new URLSearchParams({
+        body_area: selectedBodyArea,
+        measurement_id_1: selectedMeasurement1.toString(),
+        measurement_id_2: selectedMeasurement2.toString(),
+      })}`
+    : null;
+
+  const { data: comparisonData, isLoading: comparisonLoading } = useQuery({
+    queryKey: [comparisonUrl || "/api/v1/symptom-journal/compare/disabled"],
+    enabled: !!comparisonUrl,
+  });
 
   // Audio examination mutations
   const createAudioSessionMutation = useMutation({
@@ -447,8 +536,9 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="device" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="device" data-testid="tab-device">Device Data</TabsTrigger>
+                  <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal">Symptoms</TabsTrigger>
                   <TabsTrigger value="video-ai" data-testid="tab-video-ai">Video AI</TabsTrigger>
                   <TabsTrigger value="audio-ai" data-testid="tab-audio-ai">Audio AI</TabsTrigger>
                 </TabsList>
@@ -470,6 +560,90 @@ export default function Dashboard() {
                       <span className="text-muted-foreground">Steps: </span>
                       <span className="font-medium" data-testid="value-steps">{todayFollowup?.stepsCount || "--"}</span>
                     </div>
+                  </div>
+                </TabsContent>
+                <TabsContent value="symptom-journal" className="space-y-3">
+                  {/* Symptom Journal - Compact View */}
+                  <div className="space-y-3">
+                    {/* Active Alerts Banner */}
+                    {alertsData && alertsData.alerts.length > 0 && (
+                      <Alert variant="destructive" className="text-xs">
+                        <AlertCircle className="h-3 w-3" />
+                        <AlertDescription>
+                          {alertsData.alerts.length} active alert{alertsData.alerts.length > 1 ? 's' : ''} detected
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    {/* Recent Measurements */}
+                    {loadingRecent ? (
+                      <p className="text-xs text-muted-foreground">Loading measurements...</p>
+                    ) : !recentData || recentData.measurements.length === 0 ? (
+                      <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-3 space-y-2">
+                        <p className="text-xs font-medium">Visual Symptom Tracking</p>
+                        <p className="text-xs text-muted-foreground">
+                          Track changes in legs, face, eyes, or chest over time with AI analysis.
+                        </p>
+                        <Button 
+                          size="sm" 
+                          className="w-full text-xs"
+                          onClick={() => window.location.href = '/symptom-journal'}
+                          data-testid="button-start-symptom-tracking"
+                        >
+                          <Camera className="mr-1 h-3 w-3" />
+                          Start Tracking
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-medium">Latest Measurements</p>
+                          <Button 
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-xs"
+                            onClick={() => window.location.href = '/symptom-journal'}
+                            data-testid="button-view-all-symptoms"
+                          >
+                            View All
+                          </Button>
+                        </div>
+                        
+                        {recentData.measurements.slice(0, 2).map((measurement) => (
+                          <div key={measurement.id} className="rounded-md border bg-muted/30 p-2 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <Badge variant="secondary" className="text-xs">{measurement.body_area}</Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {format(new Date(measurement.created_at), "MMM d, h:mm a")}
+                              </span>
+                            </div>
+                            {measurement.ai_observations && (
+                              <p className="text-xs line-clamp-2">{measurement.ai_observations}</p>
+                            )}
+                            <div className="flex gap-2 text-xs">
+                              {measurement.color_change_percent !== null && (
+                                <div className="flex items-center gap-0.5">
+                                  <strong>Color:</strong>
+                                  {measurement.color_change_percent > 0 ? (
+                                    <TrendingUp className="h-2 w-2 text-orange-500" />
+                                  ) : measurement.color_change_percent < 0 ? (
+                                    <TrendingDown className="h-2 w-2 text-blue-500" />
+                                  ) : (
+                                    <Minus className="h-2 w-2" />
+                                  )}
+                                  <span>{Math.abs(measurement.color_change_percent).toFixed(1)}%</span>
+                                </div>
+                              )}
+                              {measurement.respiratory_rate_bpm && (
+                                <div>
+                                  <strong>Breathing:</strong> {measurement.respiratory_rate_bpm} /min
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
                 <TabsContent value="video-ai" className="space-y-3">

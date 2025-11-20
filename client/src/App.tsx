@@ -64,7 +64,6 @@ import DoctorProfile from "@/pages/DoctorProfile";
 import MyDoctors from "@/pages/MyDoctors";
 import ConsultationRequests from "@/pages/ConsultationRequests";
 import PainDetection from "@/pages/PainDetection";
-import SymptomJournal from "@/pages/SymptomJournal";
 import ExamCoach from "@/pages/ExamCoach";
 import MedicationEffects from "@/pages/MedicationEffects";
 import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
@@ -83,7 +82,6 @@ function PatientRouter() {
       <Route path="/daily-followup" component={DailyFollowup} />
       <Route path="/chat" component={Chat} />
       <Route path="/pain-detection" component={PainDetection} />
-      <Route path="/symptom-journal" component={SymptomJournal} />
       <Route path="/exam-coach" component={ExamCoach} />
       <Route path="/medication-effects" component={MedicationEffects} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
