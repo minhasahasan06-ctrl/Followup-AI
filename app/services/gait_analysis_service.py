@@ -6,8 +6,12 @@ Extracts temporal/spatial gait parameters, symmetry, stability
 
 import cv2
 import numpy as np
-import mediapipe as mp
-from typing import List, Dict, Any, Tuple, Optional
+try:
+    import mediapipe as mp  # type: ignore
+except ImportError:
+    mp = None  # type: ignore
+
+from typing import List, Dict, Any, Tuple, Optional, Union
 from datetime import datetime, timedelta
 from scipy.signal import find_peaks
 from scipy.stats import variation
@@ -59,9 +63,12 @@ class GaitAnalysisService:
     def __init__(self, db: Session):
         self.db = db
         
+        if mp is None:
+            raise ImportError("MediaPipe is required for gait analysis. Install with: pip install mediapipe")
+        
         # Initialize MediaPipe Pose
-        self.mp_pose = mp.solutions.pose
-        self.pose = self.mp_pose.Pose(
+        self.mp_pose = mp.solutions.pose  # type: ignore
+        self.pose = self.mp_pose.Pose(  # type: ignore
             static_image_mode=False,
             model_complexity=2,  # 0=Lite, 1=Full, 2=Heavy (most accurate)
             min_detection_confidence=0.5,
@@ -69,7 +76,7 @@ class GaitAnalysisService:
         )
         
         # Drawing utilities for visualization
-        self.mp_drawing = mp.solutions.drawing_utils
+        self.mp_drawing = mp.solutions.drawing_utils  # type: ignore
         
         logger.info("GaitAnalysisService initialized with MediaPipe Pose Heavy model")
     
@@ -421,7 +428,7 @@ class GaitAnalysisService:
         
         return strides
     
-    def _calculate_temporal_parameters(self, strides: List[Dict], fps: float) -> Dict[str, float]:
+    def _calculate_temporal_parameters(self, strides: List[Dict], fps: float) -> Dict[str, Union[float, None]]:
         """Calculate temporal gait parameters"""
         if len(strides) == 0:
             return {}
@@ -464,7 +471,7 @@ class GaitAnalysisService:
         self,
         strides: List[Dict],
         landmark_trajectories: List[Optional[Dict]]
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Union[float, None]]:
         """Calculate spatial gait parameters"""
         if len(strides) == 0:
             return {}
@@ -553,7 +560,7 @@ class GaitAnalysisService:
         self,
         strides: List[Dict],
         landmark_trajectories: List[Optional[Dict]]
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Union[float, None]]:
         """Calculate joint angles (hip, knee, ankle)"""
         hip_angles_left = []
         hip_angles_right = []
@@ -646,7 +653,7 @@ class GaitAnalysisService:
         spatial_params: Dict,
         joint_angles: Dict,
         landmark_trajectories: List[Optional[Dict]]
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Union[float, None]]:
         """Calculate gait symmetry and stability metrics"""
         # Temporal symmetry (stride time L vs R)
         stride_time_left = temporal_params.get('stride_time_left')
@@ -785,7 +792,7 @@ class GaitAnalysisService:
             'limping': limping_score,
             'unsteady': unsteady_score,
         }
-        primary_activity = max(scores, key=scores.get)
+        primary_activity = max(scores.items(), key=lambda x: x[1])[0]
         
         return {
             'walking_confidence': walking_score,
@@ -866,15 +873,15 @@ class GaitAnalysisService:
         # Calculate deviations
         deviations = []
         
-        if baseline.baseline_stride_time_sec:
+        if baseline.baseline_stride_time_sec is not None:
             stride_time_dev = abs(temporal_params['stride_time_avg'] - baseline.baseline_stride_time_sec) / baseline.baseline_stride_time_sec
             deviations.append(stride_time_dev)
         
-        if baseline.baseline_stride_length_cm:
+        if baseline.baseline_stride_length_cm is not None:
             stride_length_dev = abs(spatial_params['stride_length_avg'] - baseline.baseline_stride_length_cm) / baseline.baseline_stride_length_cm
             deviations.append(stride_length_dev)
         
-        if baseline.baseline_cadence_steps_per_min:
+        if baseline.baseline_cadence_steps_per_min is not None:
             cadence_dev = abs(temporal_params['cadence'] - baseline.baseline_cadence_steps_per_min) / baseline.baseline_cadence_steps_per_min
             deviations.append(cadence_dev)
         
@@ -918,15 +925,16 @@ class GaitAnalysisService:
             # Update baseline with rolling average (weight: 80% old, 20% new)
             alpha = 0.2  # Learning rate
             
-            if baseline.baseline_stride_time_sec:
-                baseline.baseline_stride_time_sec = (1 - alpha) * baseline.baseline_stride_time_sec + alpha * gait_metrics.stride_time_avg_sec
-            if baseline.baseline_cadence_steps_per_min:
-                baseline.baseline_cadence_steps_per_min = (1 - alpha) * baseline.baseline_cadence_steps_per_min + alpha * gait_metrics.cadence_steps_per_min
-            if baseline.baseline_stride_length_cm:
-                baseline.baseline_stride_length_cm = (1 - alpha) * baseline.baseline_stride_length_cm + alpha * gait_metrics.stride_length_avg_cm
+            if baseline.baseline_stride_time_sec is not None and gait_metrics.stride_time_avg_sec is not None:
+                baseline.baseline_stride_time_sec = (1 - alpha) * baseline.baseline_stride_time_sec + alpha * gait_metrics.stride_time_avg_sec  # type: ignore
+            if baseline.baseline_cadence_steps_per_min is not None and gait_metrics.cadence_steps_per_min is not None:
+                baseline.baseline_cadence_steps_per_min = (1 - alpha) * baseline.baseline_cadence_steps_per_min + alpha * gait_metrics.cadence_steps_per_min  # type: ignore
+            if baseline.baseline_stride_length_cm is not None and gait_metrics.stride_length_avg_cm is not None:
+                baseline.baseline_stride_length_cm = (1 - alpha) * baseline.baseline_stride_length_cm + alpha * gait_metrics.stride_length_avg_cm  # type: ignore
             
-            baseline.sessions_used_for_baseline += 1
-            baseline.last_updated = datetime.utcnow()
+            if baseline.sessions_used_for_baseline is not None:
+                baseline.sessions_used_for_baseline += 1  # type: ignore
+            baseline.last_updated = datetime.utcnow()  # type: ignore
         
         self.db.commit()
         logger.info(f"Updated baseline for patient {patient_id}")
