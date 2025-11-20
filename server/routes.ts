@@ -6284,9 +6284,36 @@ Please ask the doctor which date they want to check.`;
         if (response.status === 404) {
           return res.json(null); // No metrics yet - this is expected
         }
-        // Backend error - return 502 Bad Gateway
-        console.error(`Python backend error: ${response.status}`);
-        return res.status(502).json({ error: 'Backend service unavailable' });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching video AI metrics:', error);
+      res.status(500).json({ message: 'Failed to fetch video AI metrics' });
+    }
+  });
+
+  // Proxy all guided-audio-exam endpoints to Python backend
+  app.all('/api/v1/guided-audio-exam/*', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const path = req.path; // e.g., /api/v1/guided-audio-exam/sessions
+      const url = `${pythonBackendUrl}${path}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
+      
+      const response = await fetch(url, {
+        method: req.method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': req.headers.authorization || '',
+        },
+        body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error: ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
       }
       
       const data = await response.json();
