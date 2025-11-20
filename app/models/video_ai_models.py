@@ -630,3 +630,51 @@ class EdemaSegmentationMetrics(Base):
         Index("idx_edema_swelling", "swelling_detected"),
     )
 
+
+class AccelerometerTremorData(Base):
+    """Store accelerometer data for tremor analysis"""
+    __tablename__ = "accelerometer_tremor_data"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(String, nullable=False, index=True)
+    
+    # Raw accelerometer readings (time series arrays)
+    timestamps = Column(JSON, nullable=False)  # List of timestamps in ms
+    accel_x = Column(JSON, nullable=False)  # X-axis acceleration (m/s²)
+    accel_y = Column(JSON, nullable=False)  # Y-axis acceleration
+    accel_z = Column(JSON, nullable=False)  # Z-axis acceleration
+    
+    # Recording metadata
+    sampling_rate_hz = Column(Float, nullable=False)  # e.g., 100 Hz
+    duration_seconds = Column(Float, nullable=False)
+    sample_count = Column(Integer, nullable=False)
+    
+    # Tremor analysis results
+    tremor_index = Column(Float, nullable=True)  # 0-100 score
+    dominant_frequency_hz = Column(Float, nullable=True)  # Peak frequency
+    tremor_amplitude_mg = Column(Float, nullable=True)  # Peak amplitude in millig
+    tremor_detected = Column(Boolean, default=False)
+    
+    # Frequency band analysis
+    low_freq_power = Column(Float, nullable=True)  # 0-4 Hz power
+    tremor_freq_power = Column(Float, nullable=True)  # 4-12 Hz power
+    high_freq_power = Column(Float, nullable=True)  # 12+ Hz power
+    
+    # Clinical flags
+    parkinsonian_tremor_likelihood = Column(Float, nullable=True)  # 4-6 Hz
+    essential_tremor_likelihood = Column(Float, nullable=True)  # 6-12 Hz
+    physiological_tremor = Column(Boolean, default=False)  # Normal tremor
+    
+    # Device info
+    device_type = Column(String)  # "phone", "smartwatch"
+    device_model = Column(String)
+    browser_info = Column(String)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    analyzed_at = Column(DateTime(timezone=True))
+    
+    __table_args__ = (
+        Index('idx_accel_tremor_patient_date', 'patient_id', 'created_at'),
+    )
+
