@@ -29,7 +29,8 @@ from app.routers import (
     video_exam_sessions,
     guided_exam,  # ✅ RE-ENABLED - Now uses AIEngineManager
     guided_audio_exam,  # ✅ NEW - Guided audio examination with YAMNet ML
-    edema_analysis  # ✅ NEW - DeepLab V3+ edema segmentation
+    edema_analysis,  # ✅ NEW - DeepLab V3+ edema segmentation
+    behavior_ai_api  # ✅ NEW - Behavior AI Analysis System
 )
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,9 @@ app.include_router(guided_audio_exam.router)  # ✅ NEW - With YAMNet ML, neurol
 
 # Edema/Swelling Analysis System (DeepLab V3+)
 app.include_router(edema_analysis.router)  # ✅ NEW - Semantic segmentation for edema detection
+
+# Behavior AI Analysis System (Multi-Modal Deterioration Detection)
+app.include_router(behavior_ai_api.router)  # ✅ NEW - Behavioral, digital, cognitive, sentiment analysis
 
 
 @app.get("/")
