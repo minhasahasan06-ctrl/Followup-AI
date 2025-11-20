@@ -6271,6 +6271,33 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // Proxy endpoint to fetch latest Video AI metrics from Python backend
+  app.get('/api/video-ai/latest-metrics', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      // Fetch latest video metrics from Python backend
+      const response = await fetch(`${pythonBackendUrl}/api/v1/video-ai/latest-metrics?patient_id=${userId}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.json(null); // No metrics yet - this is expected
+        }
+        // Backend error - return 502 Bad Gateway
+        console.error(`Python backend error: ${response.status}`);
+        return res.status(502).json({ error: 'Backend service unavailable' });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      // Network or connection error
+      console.error('Error connecting to Python backend:', error);
+      res.status(502).json({ error: 'Failed to connect to AI service' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
