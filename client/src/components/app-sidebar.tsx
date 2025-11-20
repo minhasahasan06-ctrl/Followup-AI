@@ -81,12 +81,6 @@ const patientItems = [
     badge: "AI",
   },
   {
-    title: "Audio AI Analysis",
-    url: "/ai-audio",
-    icon: Mic,
-    badge: "AI",
-  },
-  {
     title: "Health Alerts",
     url: "/ai-alerts",
     icon: Bell,
