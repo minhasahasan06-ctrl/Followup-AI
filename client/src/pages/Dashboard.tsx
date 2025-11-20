@@ -230,13 +230,20 @@ export default function Dashboard() {
                             </div>
                           )}
                           
-                          {(latestVideoMetrics.tremor_detected !== null && latestVideoMetrics.tremor_detected !== undefined) && (
+                          {((latestVideoMetrics.tremor_detected !== null && latestVideoMetrics.tremor_detected !== undefined) || (latestVideoMetrics.head_stability_score !== null && latestVideoMetrics.head_stability_score !== undefined)) && (
                             <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
                               <div className="flex items-center gap-1.5">
                                 <Zap className="h-3 w-3 text-purple-500" />
                                 <span className="text-muted-foreground">Tremor</span>
                               </div>
-                              <span className="font-medium">{latestVideoMetrics.tremor_detected ? 'Detected' : 'None'}</span>
+                              <span className="font-medium">
+                                {latestVideoMetrics.tremor_detected !== null && latestVideoMetrics.tremor_detected !== undefined 
+                                  ? (latestVideoMetrics.tremor_detected ? 'Detected' : 'None')
+                                  : latestVideoMetrics.head_stability_score !== null && latestVideoMetrics.head_stability_score !== undefined
+                                  ? `Score: ${latestVideoMetrics.head_stability_score.toFixed(1)}`
+                                  : 'N/A'
+                                }
+                              </span>
                             </div>
                           )}
                           
