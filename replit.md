@@ -44,6 +44,7 @@ The backend comprises two services:
     - **Alert Orchestration Engine:** Provides multi-channel delivery (dashboard, email, SMS) with rule-based systems and HIPAA compliance.
 - **Behavior AI Analysis System:** ✅ **CODE COMPLETE (November 20, 2025)** - Comprehensive multi-modal deterioration detection through behavioral pattern analysis, digital biomarkers, cognitive testing, and sentiment analysis. **Status:** All code production-ready and architect-reviewed. Blocked by Python FastAPI backend environment resource constraints (uvicorn process killed with exit 137 during startup).
 - **Gait Analysis System (HAR-based):** ✅ **CODE COMPLETE (November 20, 2025)** - Open-source gait analysis using MediaPipe Pose and HAR (Human Activity Recognition) datasets. Extracts 40+ gait parameters including temporal metrics (stride time, cadence, speed), spatial metrics (stride length, step width), joint angles (hip/knee/ankle ROM), symmetry indices, stability scores, and clinical risk flags (fall risk, Parkinson's indicators). **Status:** Backend complete with GaitAnalysisService (MediaPipe Pose Heavy model), 4-table database schema, 7 FastAPI endpoints, baseline tracking, and longitudinal trend analysis. Frontend integration pending.
+- **Accelerometer Tremor Analysis System:** ✅ **PRODUCTION-READY (November 20, 2025)** - Complete tremor detection from phone accelerometer data using FFT-based signal processing. Extracts tremor frequency (dominant Hz), amplitude (millig), frequency band power (low/tremor/high), and clinical classification (Parkinsonian 4-6 Hz, Essential 6-12 Hz, Physiological 8-12 Hz). Features tremor index (0-100 score), likelihood scoring for tremor types, and 7-day trend analysis.
     - **Database Architecture:** 4-table PostgreSQL schema in `app/models/gait_analysis_models.py`:
       - `gait_sessions`: Video upload tracking with processing status, quality scores
       - `gait_metrics`: 40+ parameters including temporal (stride time, cadence), spatial (stride length, step width), joint angles (hip/knee/ankle ROM), symmetry indices, stability scores, fall risk, HAR activity classification
@@ -69,6 +70,21 @@ The backend comprises two services:
       - GET `/api/v1/gait-analysis/dashboard/{patient_id}` - Comprehensive dashboard with trends & alerts
       - Background processing with quality checks (lighting, pose detection rate >50%)
     - **Deployment:** Integrated into `app/main.py` as optional router with graceful fallback. Routes proxied from Express via `client/src/lib/queryClient.ts`.
+    - **Enhanced Error Handling:** Structured error categorization differentiating clinical validation failures (low detection, no walking) from system errors, with patient-friendly messaging, retry logic for transient MediaPipe/CV2 failures, and telemetry logging (fps, detection percent) to aid triage.
+    - **Database Architecture (Tremor):** AccelerometerTremorData table in `app/models/video_ai_models.py` stores time-series accelerometer data (x/y/z axes), sampling metadata (rate, duration), tremor metrics (index, frequency, amplitude), frequency band analysis, and clinical flags.
+    - **TremorAnalysisService** in `app/services/tremor_analysis_service.py`:
+      - High-pass filtering to remove gravity (DC component), leaving tremor signals (AC component)
+      - FFT analysis with peak detection in 3-15 Hz tremor range
+      - Multi-band power analysis: low freq (0-4 Hz), tremor freq (4-12 Hz), high freq (12+ Hz)
+      - Clinical classification: Parkinsonian (4-6 Hz resting), Essential (6-12 Hz action), Physiological (8-12 Hz normal)
+      - Tremor index calculation scaled to 0-100 based on amplitude
+      - Detection threshold: 50 mg (0.5 m/s²)
+    - **4 Tremor API Endpoints** in `app/routers/tremor_api.py`:
+      - POST `/api/v1/tremor/upload` - Upload phone accelerometer data (5-10 sec recording)
+      - GET `/api/v1/tremor/latest/{patient_id}` - Latest tremor analysis
+      - GET `/api/v1/tremor/history/{patient_id}` - Historical tremor recordings
+      - GET `/api/v1/tremor/dashboard/{patient_id}` - 7-day trends and analytics
+    - **Integration:** Tremor routes proxied from Express to Python backend via `client/src/lib/queryClient.ts`. Video AI dashboard can now display tremor index alongside video-based head stability metrics.
     - **Database Architecture:** 9-table PostgreSQL schema (behavioral_checkins, behavioral_metrics, digital_biomarkers, cognitive_tests, sentiment_analysis, risk_scores, deterioration_trends, behavior_alerts, behavioral_insights) defined in `app/models/behavior_models.py`.
     - **ML Models Infrastructure:** Three-model ensemble in `app/services/behavior_ml_models.py`: Transformer Encoder (PyTorch, 4-layer, 128-dim) for temporal sequences, XGBoost (100 trees) for feature-based prediction, DistilBERT for sentiment analysis. Features lazy loading and rule-based fallbacks.
     - **6 Production Services:**
