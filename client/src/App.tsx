@@ -74,6 +74,7 @@ import AIAudioDashboard from "@/pages/AIAudioDashboard";
 import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
 import GuidedVideoExam from "@/pages/GuidedVideoExam";
 import GuidedAudioExam from "@/pages/guided-audio-exam";
+import BehavioralAIInsights from "@/pages/BehavioralAIInsights";
 
 function PatientRouter() {
   return (
@@ -90,6 +91,7 @@ function PatientRouter() {
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/guided-exam" component={GuidedVideoExam} />
       <Route path="/guided-audio-exam" component={GuidedAudioExam} />
+      <Route path="/behavioral-ai-insights" component={BehavioralAIInsights} />
       <Route path="/habits" component={Habits} />
       <Route path="/previous-sessions" component={PreviousSessions} />
       <Route path="/doctor-search" component={DoctorSearch} />
