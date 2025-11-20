@@ -76,6 +76,7 @@ import GuidedVideoExam from "@/pages/GuidedVideoExam";
 import GuidedAudioExam from "@/pages/guided-audio-exam";
 import BehavioralAIInsights from "@/pages/BehavioralAIInsights";
 import DailyFollowup from "@/pages/DailyFollowup";
+import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
   return (
@@ -198,8 +199,13 @@ function AuthenticatedApp() {
     );
   }
   
-  // Not authenticated - redirect to login
+  // Not authenticated - show dev login in development, otherwise redirect to login
   if (!user) {
+    // In development, show quick dev login
+    if (import.meta.env.DEV) {
+      return <DevLogin />;
+    }
+    // In production, redirect to login page
     window.location.href = "/login";
     return null;
   }
