@@ -62,6 +62,12 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import gait_analysis_api: {e}")
 
+try:
+    from app.routers import tremor_api
+    _optional_routers.append(('tremor_api', tremor_api))
+except ImportError as e:
+    logger.warning(f"❌ Could not import tremor_api: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -164,6 +170,9 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'gait_analysis_api':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (HAR-based gait analysis)")
+        elif router_name == 'tremor_api':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Accelerometer tremor analysis)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

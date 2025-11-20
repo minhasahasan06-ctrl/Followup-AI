@@ -125,32 +125,70 @@ def process_gait_video_background(session_id: int, patient_id: str, video_path: 
             db.commit()
             return
         
-        result = gait_service.analyze_video(
-            video_path=video_path,
-            patient_id=patient_id,
-            session_id=session_id
-        )
-        
-        # Update session with results
-        session.processing_status = "completed"
-        session.processing_completed_at = datetime.utcnow()
-        session.total_strides_detected = result['total_strides']
-        session.walking_detected = result['walking_detected']
-        session.gait_abnormality_detected = result['gait_abnormality_detected']
-        session.gait_abnormality_score = result['summary'].get('fall_risk', 0)
-        session.overall_quality_score = result.get('overall_quality_score', 0.0)  # Actual quality score
-        db.commit()
-        
-        logger.info(f"Gait analysis completed for session {session_id}")
-        
-    except Exception as e:
-        logger.error(f"Error in background gait analysis: {str(e)}")
-        session = db.query(GaitSession).filter(GaitSession.id == session_id).first()
-        if session:
+        try:
+            result = gait_service.analyze_video(
+                video_path=video_path,
+                patient_id=patient_id,
+                session_id=session_id
+            )
+            
+            # Update session with results
+            session.processing_status = "completed"
+            session.processing_completed_at = datetime.utcnow()
+            session.total_strides_detected = result['total_strides']
+            session.walking_detected = result['walking_detected']
+            session.gait_abnormality_detected = result['gait_abnormality_detected']
+            session.gait_abnormality_score = result['summary'].get('fall_risk', 0)
+            session.overall_quality_score = result.get('overall_quality_score', 0.0)
+            db.commit()
+            
+            logger.info(f"Gait analysis completed for session {session_id}")
+            
+        except ValueError as e:
+            # Clinical validation errors (expected edge cases)
+            error_msg = str(e)
+            logger.warning(f"Clinical validation error for session {session_id}: {error_msg}")
+            
+            # Map to patient-friendly messages
+            if "Low pose detection rate" in error_msg:
+                patient_message = "Video quality issue: Unable to detect your full body clearly. Please ensure you're fully visible in the frame and try again."
+                error_code = "LOW_DETECTION"
+            elif "No walking detected" in error_msg:
+                patient_message = "No walking motion detected. Please record yourself walking naturally for 10-30 seconds and try again."
+                error_code = "NO_WALKING"
+            elif "Failed to open video" in error_msg:
+                patient_message = "Video file error. Please try recording again."
+                error_code = "VIDEO_CORRUPT"
+            else:
+                patient_message = f"Analysis issue: {error_msg}"
+                error_code = "VALIDATION_ERROR"
+            
             session.processing_status = "failed"
-            session.error_message = str(e)
+            session.error_message = patient_message
             session.processing_completed_at = datetime.utcnow()
             db.commit()
+            logger.info(f"Session {session_id} marked as failed with code: {error_code}")
+        
+        except Exception as e:
+            # System errors (unexpected failures)
+            logger.error(f"System error in gait analysis for session {session_id}: {str(e)}", exc_info=True)
+            session.processing_status = "failed"
+            session.error_message = "System error during analysis. Our team has been notified. Please try again later."
+            session.processing_completed_at = datetime.utcnow()
+            db.commit()
+        
+    except Exception as e:
+        # Outer exception handler (should rarely hit this)
+        logger.error(f"Fatal error in background gait analysis: {str(e)}", exc_info=True)
+        try:
+            session = db.query(GaitSession).filter(GaitSession.id == session_id).first()
+            if session:
+                session.processing_status = "failed"
+                session.error_message = "Unexpected error. Please contact support."
+                session.processing_completed_at = datetime.utcnow()
+                db.commit()
+        except:
+            pass
     
     finally:
         # Cleanup temp file
