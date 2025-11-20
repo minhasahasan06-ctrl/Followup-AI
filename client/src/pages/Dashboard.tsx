@@ -9,16 +9,103 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users, Mic, Volume2 } from "lucide-react";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users, Mic, Volume2, MicOff, Pause, CheckCircle2, AlertCircle } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "wouter";
 import type { DailyFollowup, Medication, DynamicTask, BehavioralInsight } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Progress } from "@/components/ui/progress";
+
+// Audio examination types
+type AudioStage = "breathing" | "coughing" | "speaking" | "reading";
+
+interface AudioSession {
+  session_id: string;
+  status: string;
+  current_stage: AudioStage | null;
+  prep_time_seconds: number;
+  prioritized_stages: AudioStage[];
+}
+
+interface StageInfo {
+  name: string;
+  icon: React.ReactNode;
+  description: string;
+  instructions: string;
+  duration: number;
+}
+
+interface AudioAnalysisResults {
+  session_id: string;
+  yamnet_available: boolean;
+  top_audio_event: string | null;
+  cough_probability_ml: number;
+  speech_probability_ml: number;
+  breathing_probability_ml: number;
+  wheeze_probability_ml: number;
+  speech_fluency_score: number | null;
+  voice_weakness_index: number | null;
+  pause_frequency_per_minute: number | null;
+  vocal_amplitude_db: number | null;
+  breath_rate_per_minute: number | null;
+  wheeze_detected: boolean;
+  cough_count: number;
+  analysis_confidence: number;
+  recommendations: string[];
+}
+
+const STAGE_INFO: Record<AudioStage, StageInfo> = {
+  breathing: {
+    name: "Breathing",
+    icon: <Volume2 className="w-4 h-4" />,
+    description: "Deep Breathing Exercise",
+    instructions: "Take 5-6 deep breaths. Breathe in slowly through your nose, then exhale through your mouth. Try to breathe naturally and deeply.",
+    duration: 30
+  },
+  coughing: {
+    name: "Coughing",
+    icon: <Volume2 className="w-4 h-4" />,
+    description: "Voluntary Cough",
+    instructions: "Cough 2-3 times as you normally would. This helps us detect any changes in your respiratory patterns.",
+    duration: 15
+  },
+  speaking: {
+    name: "Speaking",
+    icon: <Mic className="w-4 h-4" />,
+    description: "Free Speech",
+    instructions: "Speak naturally for 30 seconds. You can describe your day, talk about a hobby, or tell a short story. Speak at a comfortable pace.",
+    duration: 30
+  },
+  reading: {
+    name: "Reading",
+    icon: <Mic className="w-4 h-4" />,
+    description: "Reading Passage",
+    instructions: "Read this passage aloud at your normal speaking pace:\n\n\"When the sunlight strikes raindrops in the air, they act as a prism and form a rainbow. The rainbow is a division of white light into many beautiful colors.\"",
+    duration: 40
+  }
+};
 
 export default function Dashboard() {
   const [showEmergency, setShowEmergency] = useState(false);
   const { user } = useAuth();
+  const { toast } = useToast();
+
+  // Audio examination state
+  const [audioSessionId, setAudioSessionId] = useState<string | null>(null);
+  const [currentAudioStage, setCurrentAudioStage] = useState<AudioStage | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [prepCountdown, setPrepCountdown] = useState(30);
+  const [showPrep, setShowPrep] = useState(false);
+  const [completedStages, setCompletedStages] = useState<Set<AudioStage>>(new Set());
+  const [examComplete, setExamComplete] = useState(false);
+  
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { data: todayFollowup } = useQuery<DailyFollowup>({
     queryKey: ["/api/daily-followup/today"],
@@ -46,6 +133,214 @@ export default function Dashboard() {
   const isMetricsFromToday = latestVideoMetrics?.created_at 
     ? new Date(latestVideoMetrics.created_at).toDateString() === new Date().toDateString()
     : false;
+
+  // Audio examination mutations
+  const createAudioSessionMutation = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) {
+        throw new Error("User not authenticated");
+      }
+      
+      const response = await apiRequest("/api/v1/guided-audio-exam/sessions", {
+        method: "POST",
+        json: {
+          patient_id: String(user.id),
+          device_info: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform
+          }
+        }
+      });
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      setAudioSessionId(data.session_id);
+      setCurrentAudioStage(data.current_stage);
+      toast({
+        title: "Session Created",
+        description: "Audio examination session started successfully"
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Session Creation Failed",
+        description: error.message
+      });
+    }
+  });
+
+  const uploadAudioMutation = useMutation({
+    mutationFn: async ({ stage, audioBlob }: { stage: AudioStage; audioBlob: Blob }) => {
+      const base64Audio = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          const base64Data = base64.split(",")[1];
+          resolve(base64Data);
+        };
+        reader.readAsDataURL(audioBlob);
+      });
+
+      const response = await apiRequest(`/api/v1/guided-audio-exam/sessions/${audioSessionId}/upload`, {
+        method: "POST",
+        json: {
+          stage,
+          audio_base64: base64Audio,
+          duration_seconds: recordingTime
+        }
+      });
+      return await response.json();
+    },
+    onSuccess: (data: any, variables) => {
+      setCompletedStages(prev => new Set(prev).add(variables.stage));
+      
+      if (data.next_stage) {
+        setCurrentAudioStage(data.next_stage as AudioStage);
+        toast({
+          title: "Stage Complete",
+          description: `${STAGE_INFO[variables.stage].name} recorded. Moving to ${STAGE_INFO[data.next_stage as AudioStage].name}.`
+        });
+      } else {
+        toast({
+          title: "All Stages Complete",
+          description: "Completing examination and running AI analysis..."
+        });
+        completeAudioSessionMutation.mutate();
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error.message
+      });
+    }
+  });
+
+  const completeAudioSessionMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest(`/api/v1/guided-audio-exam/sessions/${audioSessionId}/complete`, {
+        method: "POST"
+      });
+      return await response.json();
+    },
+    onSuccess: () => {
+      setExamComplete(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/guided-audio-exam/sessions", audioSessionId, "results"] });
+      toast({
+        title: "Examination Complete",
+        description: "AI analysis completed successfully. View your results in the Audio AI tab."
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Analysis Failed",
+        description: error.message
+      });
+    }
+  });
+
+  // Fetch audio analysis results after completion
+  const { data: audioAnalysisResults, isLoading: audioResultsLoading } = useQuery<AudioAnalysisResults>({
+    queryKey: ["/api/v1/guided-audio-exam/sessions", audioSessionId, "results"],
+    enabled: examComplete && !!audioSessionId,
+    retry: 2
+  });
+
+  // Prep countdown timer effect
+  useEffect(() => {
+    if (showPrep && prepCountdown > 0) {
+      const timer = setTimeout(() => {
+        setPrepCountdown(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (showPrep && prepCountdown === 0) {
+      setShowPrep(false);
+      setPrepCountdown(30);
+      startAudioRecording();
+    }
+  }, [showPrep, prepCountdown]);
+
+  // Recording timer effect
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRecording]);
+
+  // Audio recording functions
+  const startAudioRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/wav" });
+        if (currentAudioStage) {
+          uploadAudioMutation.mutate({ stage: currentAudioStage, audioBlob });
+        }
+        
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Microphone Access Denied",
+        description: "Please allow microphone access to continue."
+      });
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const handleAudioStageStart = () => {
+    setShowPrep(true);
+  };
+
+  const handleStartAudioExam = () => {
+    createAudioSessionMutation.mutate();
+  };
+
+  const handleResetAudioExam = () => {
+    setAudioSessionId(null);
+    setCurrentAudioStage(null);
+    setIsRecording(false);
+    setRecordingTime(0);
+    setPrepCountdown(30);
+    setShowPrep(false);
+    setCompletedStages(new Set());
+    setExamComplete(false);
+  };
+
+  const audioProgressPercent = (completedStages.size / 4) * 100;
 
   return (
     <div className="space-y-6">
@@ -333,68 +628,211 @@ export default function Dashboard() {
                     </>
                   )}
                 </TabsContent>
-                <TabsContent value="audio-ai">
-                  {todayFollowup?.audioAI ? (
-                    <div className="space-y-3">
+                <TabsContent value="audio-ai" className="space-y-4">
+                  {/* Completed Examination Results */}
+                  {examComplete && audioAnalysisResults ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                          <p className="font-medium text-sm">Examination Complete</p>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={handleResetAudioExam} data-testid="button-new-audio-exam">
+                          New Exam
+                        </Button>
+                      </div>
+
                       <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div data-testid="data-breath-rate">
-                          <span className="text-muted-foreground">Breath Rate: </span>
-                          <span className="font-medium" data-testid="value-breath-rate">
-                            {todayFollowup.audioAI.breathRatePerMin || "--"} /min
-                          </span>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Speech Fluency</div>
+                          <div className="text-lg font-bold">{audioAnalysisResults.speech_fluency_score?.toFixed(1) || "N/A"}/100</div>
                         </div>
-                        <div data-testid="data-speech-pace">
-                          <span className="text-muted-foreground">Speech Pace: </span>
-                          <span className="font-medium" data-testid="value-speech-pace">
-                            {todayFollowup.audioAI.speechPaceWpm || "--"} wpm
-                          </span>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Voice Weakness</div>
+                          <div className="text-lg font-bold">{audioAnalysisResults.voice_weakness_index?.toFixed(1) || "N/A"}/100</div>
                         </div>
-                        <div data-testid="data-cough-detected">
-                          <span className="text-muted-foreground">Cough Detected: </span>
-                          <span className="font-medium" data-testid="value-cough-detected">
-                            {todayFollowup.audioAI.coughCount ? `${todayFollowup.audioAI.coughCount} times` : "None"}
-                          </span>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Breath Rate</div>
+                          <div className="text-lg font-bold">{audioAnalysisResults.breath_rate_per_minute?.toFixed(0) || "N/A"} /min</div>
                         </div>
-                        <div data-testid="data-wheeze-detected">
-                          <span className="text-muted-foreground">Wheeze Detected: </span>
-                          <span className="font-medium" data-testid="value-wheeze-detected">
-                            {todayFollowup.audioAI.wheezeDetected ? "Yes" : "No"}
-                          </span>
-                        </div>
-                        <div data-testid="data-hoarseness" className="col-span-2">
-                          <span className="text-muted-foreground">Voice Hoarseness: </span>
-                          <span className="font-medium" data-testid="value-hoarseness">
-                            {todayFollowup.audioAI.hoarsenessScore ? `${todayFollowup.audioAI.hoarsenessScore}/100` : "--"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
-                        <Volume2 className="h-3 w-3" />
-                        <span>From today's audio examination</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <Mic className="h-8 w-8 text-primary flex-shrink-0" />
-                        <div>
-                          <p className="font-medium text-sm">AI Audio Analysis</p>
-                          <p className="text-xs text-muted-foreground">Complete your daily audio exam</p>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Cough Count</div>
+                          <div className="text-lg font-bold">{audioAnalysisResults.cough_count || 0}</div>
                         </div>
                       </div>
 
-                      <Link href="/ai-audio-dashboard">
-                        <Button size="sm" className="w-full gap-2" data-testid="button-start-audio-exam">
-                          <Play className="h-4 w-4" />
-                          Start Audio Examination
+                      <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                        <p className="text-xs font-medium">ML Analysis</p>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">Cough Probability:</span>
+                            <span className="font-semibold">{(audioAnalysisResults.cough_probability_ml * 100).toFixed(1)}%</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">Speech Probability:</span>
+                            <span className="font-semibold">{(audioAnalysisResults.speech_probability_ml * 100).toFixed(1)}%</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">Wheeze Detected:</span>
+                            <Badge variant={audioAnalysisResults.wheeze_detected ? "destructive" : "secondary"} className="text-xs">
+                              {audioAnalysisResults.wheeze_detected ? "Yes" : "No"}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+
+                      {audioAnalysisResults.recommendations && audioAnalysisResults.recommendations.length > 0 && (
+                        <div className="rounded-lg border bg-primary/5 p-3 space-y-2">
+                          <p className="text-xs font-medium">Recommendations:</p>
+                          <ul className="text-xs space-y-1">
+                            {audioAnalysisResults.recommendations.map((rec: string, idx: number) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <CheckCircle2 className="h-3 w-3 mt-0.5 flex-shrink-0 text-primary" />
+                                <span>{rec}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : audioSessionId && !examComplete ? (
+                    /* Active Examination Workflow */
+                    <div className="space-y-4">
+                      {/* Progress Bar */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium">Progress</span>
+                          <span className="text-muted-foreground">{completedStages.size} / 4 stages</span>
+                        </div>
+                        <Progress value={audioProgressPercent} />
+                      </div>
+
+                      {/* Stage Badges */}
+                      <div className="grid grid-cols-4 gap-1">
+                        {(["breathing", "coughing", "speaking", "reading"] as AudioStage[]).map((stage) => (
+                          <Badge 
+                            key={stage}
+                            variant={completedStages.has(stage) ? "default" : "outline"}
+                            className="justify-center text-xs py-1"
+                          >
+                            {completedStages.has(stage) && <CheckCircle2 className="w-2 h-2 mr-1" />}
+                            {STAGE_INFO[stage].name}
+                          </Badge>
+                        ))}
+                      </div>
+
+                      {/* Current Stage Instructions */}
+                      {currentAudioStage && !showPrep && !isRecording && (
+                        <div className="rounded-lg border bg-primary/5 p-3 space-y-3">
+                          <div className="flex items-center gap-2">
+                            {STAGE_INFO[currentAudioStage].icon}
+                            <p className="font-medium text-sm">{STAGE_INFO[currentAudioStage].name} Stage</p>
+                          </div>
+                          <div className="bg-background p-3 rounded text-xs whitespace-pre-line">
+                            {STAGE_INFO[currentAudioStage].instructions}
+                          </div>
+                          <Button 
+                            onClick={handleAudioStageStart}
+                            size="sm"
+                            className="w-full"
+                            data-testid={`button-start-${currentAudioStage}`}
+                          >
+                            Begin {STAGE_INFO[currentAudioStage].name}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Prep Countdown */}
+                      {showPrep && (
+                        <div className="rounded-lg bg-primary text-primary-foreground p-6 text-center space-y-3">
+                          <div className="text-4xl font-bold">{prepCountdown}</div>
+                          <p className="text-sm">Get ready to record...</p>
+                          <p className="text-xs opacity-90">
+                            {currentAudioStage && STAGE_INFO[currentAudioStage].description}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Recording State */}
+                      {isRecording && currentAudioStage && (
+                        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 space-y-4">
+                          <div className="flex justify-center">
+                            <div className="w-16 h-16 bg-destructive rounded-full flex items-center justify-center animate-pulse">
+                              <Mic className="w-8 h-8 text-destructive-foreground" />
+                            </div>
+                          </div>
+                          <div className="text-3xl font-bold text-center">{recordingTime}s</div>
+                          <p className="text-center font-semibold">Recording {STAGE_INFO[currentAudioStage].name}...</p>
+                          <Button 
+                            onClick={stopAudioRecording}
+                            variant="destructive"
+                            size="sm"
+                            className="w-full"
+                            disabled={uploadAudioMutation.isPending}
+                            data-testid="button-stop-recording"
+                          >
+                            {uploadAudioMutation.isPending ? "Uploading..." : "Stop & Continue"}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Not Started State */
+                    <div className="space-y-3">
+                      <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="rounded-full bg-primary/10 p-2">
+                            <Mic className="h-4 w-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">AI Audio Examination</p>
+                            <p className="text-xs text-muted-foreground">4-stage guided examination</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-background/50 p-3 rounded space-y-2">
+                          <p className="text-xs font-medium">What to Expect:</p>
+                          <ul className="text-xs space-y-1 text-muted-foreground">
+                            <li className="flex items-start gap-2">
+                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                              <span>Breathing, Coughing, Speaking, Reading</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                              <span>30-second prep before each stage</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                              <span>YAMNet ML + neurological metrics</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                              <span>~2-3 minutes total</span>
+                            </li>
+                          </ul>
+                        </div>
+                        
+                        <Button 
+                          onClick={handleStartAudioExam}
+                          disabled={createAudioSessionMutation.isPending || !user}
+                          size="sm"
+                          className="w-full gap-2"
+                          data-testid="button-start-audio-exam"
+                        >
+                          {createAudioSessionMutation.isPending ? "Creating Session..." : (
+                            <>
+                              <Play className="h-3 w-3" />
+                              Start Audio Examination
+                            </>
+                          )}
                         </Button>
-                      </Link>
+                        
+                        <p className="text-xs text-center text-muted-foreground">
+                          Microphone access required • Find a quiet space
+                        </p>
+                      </div>
                       
-                      <p className="text-xs text-center text-muted-foreground">
-                        4-stage AI analysis • ~2-3 minutes • Microphone required
-                      </p>
-                      
-                      <div className="text-xs text-muted-foreground" data-testid="text-audio-info">
+                      <div className="text-xs text-muted-foreground">
                         <p className="font-medium mb-1">AI tracks:</p>
                         <ul className="space-y-0.5 ml-4 list-disc">
                           <li>Breath cycles & respiratory rate</li>
