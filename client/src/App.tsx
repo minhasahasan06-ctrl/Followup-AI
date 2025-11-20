@@ -75,11 +75,13 @@ import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
 import GuidedVideoExam from "@/pages/GuidedVideoExam";
 import GuidedAudioExam from "@/pages/guided-audio-exam";
 import BehavioralAIInsights from "@/pages/BehavioralAIInsights";
+import DailyFollowup from "@/pages/DailyFollowup";
 
 function PatientRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/daily-followup" component={DailyFollowup} />
       <Route path="/chat" component={Chat} />
       <Route path="/pain-detection" component={PainDetection} />
       <Route path="/symptom-journal" component={SymptomJournal} />

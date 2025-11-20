@@ -57,6 +57,12 @@ const patientItems = [
     icon: Home,
   },
   {
+    title: "Daily Followup",
+    url: "/daily-followup",
+    icon: Activity,
+    badge: "AI",
+  },
+  {
     title: "Chat with Agent Clona",
     url: "/chat",
     icon: Bot,
@@ -72,12 +78,6 @@ const patientItems = [
     title: "Pain Detection",
     url: "/pain-detection",
     icon: Camera,
-    badge: "AI",
-  },
-  {
-    title: "Video AI Analysis",
-    url: "/ai-video",
-    icon: Video,
     badge: "AI",
   },
   {
