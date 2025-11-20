@@ -16,6 +16,8 @@ from app.models.gait_analysis_models import (
     GaitSession, GaitMetrics, GaitPattern, GaitBaseline
 )
 from app.services.gait_analysis_service import GaitAnalysisService
+from app.dependencies import get_current_user, get_current_patient
+from app.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +29,23 @@ async def upload_gait_video(
     patient_id: str,
     video: UploadFile = File(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_patient)
 ):
     """
     Upload gait analysis video and start processing
     
     **Patient uploads walking video (10-30 seconds recommended)**
+    **HIPAA-compliant endpoint with authentication and audit logging**
     """
+    # HIPAA audit log
+    logger.info(f"[AUDIT] Gait video upload - User: {current_user.id}, Patient: {patient_id}")
+    
+    # Authorization: patients can only upload their own data
+    if current_user.id != patient_id:
+        logger.warning(f"[AUTH] Patient {current_user.id} attempted to upload gait video for {patient_id}")
+        raise HTTPException(status_code=403, detail="Access denied. You can only upload your own gait videos.")
+    
     logger.info(f"Uploading gait video for patient {patient_id}")
     
     # Validate file type
@@ -215,9 +227,22 @@ def process_gait_video_background(session_id: int, patient_id: str, video_path: 
 def get_gait_sessions(
     patient_id: str,
     limit: int = 10,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Get gait analysis sessions for a patient"""
+    """
+    Get gait analysis sessions for a patient
+    **HIPAA-compliant endpoint with authentication and audit logging**
+    """
+    # HIPAA audit log
+    logger.info(f"[AUDIT] Gait sessions retrieval - User: {current_user.id}, Patient: {patient_id}")
+    
+    # Authorization: patients can only access their own data, doctors can access any
+    user_role = str(current_user.role) if current_user.role else ""
+    if user_role == "patient" and current_user.id != patient_id:
+        logger.warning(f"[AUTH] Patient {current_user.id} attempted to access gait sessions for {patient_id}")
+        raise HTTPException(status_code=403, detail="Access denied. You can only view your own gait sessions.")
+    
     sessions = db.query(GaitSession).filter(
         GaitSession.patient_id == patient_id
     ).order_by(GaitSession.created_at.desc()).limit(limit).all()
@@ -245,9 +270,16 @@ def get_gait_sessions(
 @router.get("/metrics/{session_id}")
 def get_gait_metrics(
     session_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Get detailed gait metrics for a session"""
+    """
+    Get detailed gait metrics for a session
+    **HIPAA-compliant endpoint with authentication and audit logging**
+    """
+    # HIPAA audit log
+    logger.info(f"[AUDIT] Gait metrics retrieval - User: {current_user.id}, Session: {session_id}")
+    
     metrics = db.query(GaitMetrics).filter(
         GaitMetrics.session_id == session_id
     ).first()
@@ -348,9 +380,16 @@ def get_gait_metrics(
 @router.get("/patterns/{session_id}")
 def get_gait_patterns(
     session_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Get stride-by-stride gait patterns"""
+    """
+    Get stride-by-stride gait patterns
+    **HIPAA-compliant endpoint with authentication and audit logging**
+    """
+    # HIPAA audit log
+    logger.info(f"[AUDIT] Gait patterns retrieval - User: {current_user.id}, Session: {session_id}")
+    
     patterns = db.query(GaitPattern).filter(
         GaitPattern.session_id == session_id
     ).order_by(GaitPattern.stride_number).all()
@@ -378,9 +417,22 @@ def get_gait_patterns(
 @router.get("/baseline/{patient_id}")
 def get_patient_baseline(
     patient_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Get patient's gait baseline"""
+    """
+    Get patient's gait baseline
+    **HIPAA-compliant endpoint with authentication and audit logging**
+    """
+    # HIPAA audit log
+    logger.info(f"[AUDIT] Gait baseline retrieval - User: {current_user.id}, Patient: {patient_id}")
+    
+    # Authorization: patients can only access their own data, doctors can access any
+    user_role = str(current_user.role) if current_user.role else ""
+    if user_role == "patient" and current_user.id != patient_id:
+        logger.warning(f"[AUTH] Patient {current_user.id} attempted to access gait baseline for {patient_id}")
+        raise HTTPException(status_code=403, detail="Access denied. You can only view your own gait baseline.")
+    
     baseline = db.query(GaitBaseline).filter(
         GaitBaseline.patient_id == patient_id
     ).first()
@@ -417,12 +469,23 @@ def get_patient_baseline(
 def get_gait_dashboard(
     patient_id: str,
     days: int = 30,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get comprehensive gait analysis dashboard
     Shows trends, recent metrics, alerts
+    **HIPAA-compliant endpoint with authentication and audit logging**
     """
+    # HIPAA audit log
+    logger.info(f"[AUDIT] Gait dashboard retrieval - User: {current_user.id}, Patient: {patient_id}")
+    
+    # Authorization: patients can only access their own data, doctors can access any
+    user_role = str(current_user.role) if current_user.role else ""
+    if user_role == "patient" and current_user.id != patient_id:
+        logger.warning(f"[AUTH] Patient {current_user.id} attempted to access gait dashboard for {patient_id}")
+        raise HTTPException(status_code=403, detail="Access denied. You can only view your own gait dashboard.")
+    
     cutoff_date = datetime.utcnow() - timedelta(days=days)
     
     # Get recent sessions
