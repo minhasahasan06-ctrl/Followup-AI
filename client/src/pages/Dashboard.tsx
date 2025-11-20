@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain } from "lucide-react";
+import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -143,7 +143,7 @@ export default function Dashboard() {
               <Tabs defaultValue="device" className="space-y-4">
                 <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="device" data-testid="tab-device">Device Data</TabsTrigger>
-                  <TabsTrigger value="camera" data-testid="tab-camera">Camera</TabsTrigger>
+                  <TabsTrigger value="camera" data-testid="tab-camera">Video AI</TabsTrigger>
                   <TabsTrigger value="bowel" data-testid="tab-bowel">Bowel/Bladder</TabsTrigger>
                 </TabsList>
                 <TabsContent value="device" className="space-y-3">
@@ -166,8 +166,58 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </TabsContent>
-                <TabsContent value="camera">
-                  <p className="text-sm text-muted-foreground" data-testid="text-camera-placeholder">Camera assessment coming soon</p>
+                <TabsContent value="camera" className="space-y-4">
+                  <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-full bg-primary/10 p-2">
+                        <Video className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">AI Video Examination</p>
+                        <p className="text-xs text-muted-foreground">4-stage guided self-assessment</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <Eye className="h-3 w-3 text-blue-500" />
+                        <span className="text-muted-foreground">Eyes (Jaundice)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Hand className="h-3 w-3 text-amber-500" />
+                        <span className="text-muted-foreground">Palm (Anemia)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Smile className="h-3 w-3 text-rose-500" />
+                        <span className="text-muted-foreground">Tongue (Coating)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Smile className="h-3 w-3 text-purple-500" />
+                        <span className="text-muted-foreground">Lips (Hydration)</span>
+                      </div>
+                    </div>
+
+                    <Link href="/guided-video-exam">
+                      <Button size="sm" className="w-full gap-2" data-testid="button-start-video-exam">
+                        <Play className="h-4 w-4" />
+                        Start Video Examination
+                      </Button>
+                    </Link>
+                    
+                    <p className="text-xs text-center text-muted-foreground">
+                      Camera access required • ~2-3 minutes • HIPAA-compliant
+                    </p>
+                  </div>
+                  
+                  <div className="text-xs text-muted-foreground" data-testid="text-video-info">
+                    <p className="font-medium mb-1">What we analyze:</p>
+                    <ul className="space-y-0.5 ml-4 list-disc">
+                      <li>Skin pallor and color changes</li>
+                      <li>Sclera yellowness (jaundice detection)</li>
+                      <li>Facial swelling and edema</li>
+                      <li>Respiratory rate from video</li>
+                    </ul>
+                  </div>
                 </TabsContent>
                 <TabsContent value="bowel">
                   <div className="space-y-2 text-sm">
