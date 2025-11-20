@@ -277,15 +277,33 @@ def get_gait_metrics(
     Get detailed gait metrics for a session
     **HIPAA-compliant endpoint with authentication and audit logging**
     """
+    # Get session to verify ownership
+    session = db.query(GaitSession).filter(GaitSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Gait session not found")
+    
     # HIPAA audit log
-    logger.info(f"[AUDIT] Gait metrics retrieval - User: {current_user.id}, Session: {session_id}")
+    logger.info(f"[AUDIT] Gait metrics retrieval - User: {current_user.id}, Session: {session_id}, Patient: {session.patient_id}")
+    
+    # Authorization: patients can only access their own data, doctors can access any
+    user_role = str(current_user.role) if current_user.role else ""
+    if user_role == "patient" and current_user.id != session.patient_id:
+        logger.warning(f"[AUTH] Patient {current_user.id} attempted to access gait metrics for session {session_id} (patient {session.patient_id})")
+        raise HTTPException(status_code=403, detail="Access denied. You can only view your own gait metrics.")
     
     metrics = db.query(GaitMetrics).filter(
         GaitMetrics.session_id == session_id
     ).first()
     
     if not metrics:
+        # HIPAA audit - 404 case
+        logger.info(f"[AUDIT] Gait metrics not found - User: {current_user.id}, Session: {session_id}, Patient: {session.patient_id}")
         raise HTTPException(status_code=404, detail="Gait metrics not found")
+    
+    # Additional safety: verify metrics patient_id matches session patient_id
+    if metrics.patient_id != session.patient_id:
+        logger.error(f"[SECURITY] Data integrity violation - Metrics patient_id {metrics.patient_id} != Session patient_id {session.patient_id}")
+        raise HTTPException(status_code=500, detail="Data integrity error. Please contact support.")
     
     return {
         "session_id": session_id,
@@ -387,12 +405,31 @@ def get_gait_patterns(
     Get stride-by-stride gait patterns
     **HIPAA-compliant endpoint with authentication and audit logging**
     """
+    # Get session to verify ownership
+    session = db.query(GaitSession).filter(GaitSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Gait session not found")
+    
     # HIPAA audit log
-    logger.info(f"[AUDIT] Gait patterns retrieval - User: {current_user.id}, Session: {session_id}")
+    logger.info(f"[AUDIT] Gait patterns retrieval - User: {current_user.id}, Session: {session_id}, Patient: {session.patient_id}")
+    
+    # Authorization: patients can only access their own data, doctors can access any
+    user_role = str(current_user.role) if current_user.role else ""
+    if user_role == "patient" and current_user.id != session.patient_id:
+        logger.warning(f"[AUTH] Patient {current_user.id} attempted to access gait patterns for session {session_id} (patient {session.patient_id})")
+        raise HTTPException(status_code=403, detail="Access denied. You can only view your own gait patterns.")
     
     patterns = db.query(GaitPattern).filter(
         GaitPattern.session_id == session_id
     ).order_by(GaitPattern.stride_number).all()
+    
+    # HIPAA audit - patterns retrieval (even if empty)
+    logger.info(f"[AUDIT] Gait patterns retrieved - User: {current_user.id}, Session: {session_id}, Patient: {session.patient_id}, Count: {len(patterns)}")
+    
+    # Additional safety: verify all patterns belong to correct patient
+    if patterns and any(p.patient_id != session.patient_id for p in patterns):
+        logger.error(f"[SECURITY] Data integrity violation - Pattern patient_id mismatch for session {session_id}")
+        raise HTTPException(status_code=500, detail="Data integrity error. Please contact support.")
     
     return {
         "session_id": session_id,
