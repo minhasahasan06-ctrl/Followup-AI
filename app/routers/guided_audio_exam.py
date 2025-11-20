@@ -29,7 +29,7 @@ from app.database import get_db
 from app.models.audio_ai_models import AudioExamSession, AudioMetrics
 from app.models.user import User
 from app.dependencies import get_current_user
-from app.services.s3_storage import s3_client, S3_BUCKET
+from app.services.s3_service import s3_service
 from app.services.condition_personalization_service import ConditionPersonalizationService
 from botocore.exceptions import ClientError
 
@@ -127,27 +127,24 @@ async def upload_audio_to_s3(patient_id: str, session_id: str, stage: str, audio
     s3_key = f"audio-exams/{patient_id}/{session_id}/{stage}_{timestamp}.wav"
     
     try:
-        s3_client.put_object(
-            Bucket=S3_BUCKET,
-            Key=s3_key,
-            Body=audio_bytes,
-            ServerSideEncryption='AES256',
-            ContentType='audio/wav',
-            Metadata={
+        # Use s3_service which handles both S3 and local storage
+        s3_uri = await s3_service.upload_file(
+            file_data=audio_bytes,
+            s3_key=s3_key,
+            content_type='audio/wav',
+            metadata={
                 'patient_id': patient_id,
                 'session_id': session_id,
                 'stage': stage,
                 'upload_timestamp': timestamp
             }
         )
-        
-        s3_uri = f"s3://{S3_BUCKET}/{s3_key}"
-        logger.info(f"Audio uploaded to S3: {s3_uri}")
+        logger.info(f"Audio uploaded: {s3_uri}")
         return s3_uri
         
-    except ClientError as e:
-        logger.error(f"S3 upload failed: {e}")
-        raise HTTPException(status_code=500, detail=f"S3 upload error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Audio upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
 
 def get_prioritized_stages(personalization_config: Optional[Dict[str, Any]]) -> list:
     """
@@ -496,10 +493,8 @@ async def complete_audio_exam_session(
                 detail="No audio segments found for analysis"
             )
         
-        # Download audio from S3
-        s3_key = prioritized_uri.replace(f"s3://{S3_BUCKET}/", "")
-        response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
-        audio_bytes = response['Body'].read()
+        # Download audio from S3 or local storage
+        audio_bytes = await s3_service.download_file(prioritized_uri)
         
         # Save to temporary file for AudioAIEngine
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:

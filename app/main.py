@@ -81,10 +81,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  OpenAI BAA compliance check failed: {e}")
     
-    # Step 3: Initialize AI engines asynchronously (OPTIONAL - skip if blocking)
-    logger.info("🤖 Skipping AI engine initialization for faster startup...")
-    # await AIEngineManager.initialize_all()  # Disabled for faster startup
-    logger.info("✅ Backend ready (AI engines will lazy-load on demand)")
+    # Step 3: Initialize AI engines asynchronously
+    logger.info("🤖 Initializing AI engines asynchronously...")
+    await AIEngineManager.initialize_all()
+    logger.info("✅ AI engines initialized successfully")
     
     logger.info("🎉 Followup AI Backend startup complete!")
     
@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown: Cleanup AI engines
     logger.info("🛑 Shutting down Followup AI Backend...")
-    # await AIEngineManager.cleanup_all()  # Disabled since we didn't initialize
+    await AIEngineManager.cleanup_all()
     logger.info("✅ Shutdown complete")
 
 
