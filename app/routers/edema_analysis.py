@@ -12,7 +12,7 @@ from datetime import datetime
 from app.database import get_db
 from app.models.video_ai_models import MediaSession, EdemaSegmentationMetrics
 from app.services.edema_segmentation_service import EdemaSegmentationService
-from app.services.ai_engine_manager import get_ai_engine_manager
+from app.services.ai_engine_manager import AIEngineManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/edema", tags=["Edema Analysis"])
