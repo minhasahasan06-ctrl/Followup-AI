@@ -10,7 +10,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Mic,
   Activity,
-  Upload,
   Waves,
   Wind,
   AlertCircle,
@@ -47,8 +46,6 @@ interface AudioSession {
 
 export default function AIAudioDashboard() {
   const { toast } = useToast();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
 
   const { data: sessions, isLoading } = useQuery<AudioSession[]>({
     queryKey: ["/api/v1/audio-ai/sessions/me"],
@@ -57,56 +54,6 @@ export default function AIAudioDashboard() {
   const { data: latestMetrics } = useQuery<AudioMetrics>({
     queryKey: ["/api/v1/audio-ai/metrics/latest/me"],
   });
-
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("audio_file", file);
-      
-      return apiRequest("/api/v1/audio-ai/upload", {
-        method: "POST",
-        body: formData,
-      });
-    },
-    onSuccess: () => {
-      toast({
-        title: "Audio Uploaded",
-        description: "Your audio is being analyzed. Results will appear shortly.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/audio-ai/sessions/me"] });
-      setSelectedFile(null);
-      setIsUploading(false);
-    },
-    onError: () => {
-      toast({
-        title: "Upload Failed",
-        description: "There was an error uploading your audio. Please try again.",
-        variant: "destructive",
-      });
-      setIsUploading(false);
-    },
-  });
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.type.startsWith("audio/")) {
-        setSelectedFile(file);
-      } else {
-        toast({
-          title: "Invalid File",
-          description: "Please select an audio file.",
-          variant: "destructive",
-        });
-      }
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFile) return;
-    setIsUploading(true);
-    uploadMutation.mutate(selectedFile);
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -308,7 +255,7 @@ export default function AIAudioDashboard() {
               <Mic className="h-16 w-16 mx-auto text-muted-foreground opacity-50 mb-4" />
               <h3 className="text-lg font-semibold mb-2">No Sessions Yet</h3>
               <p className="text-muted-foreground max-w-md mx-auto">
-                Upload your first audio recording to start tracking respiratory health patterns
+                Start your first live audio examination above to begin tracking respiratory health patterns
               </p>
             </div>
           )}
