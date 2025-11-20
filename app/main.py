@@ -56,6 +56,12 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import edema_analysis: {e}")
 
+try:
+    from app.routers import gait_analysis_api
+    _optional_routers.append(('gait_analysis_api', gait_analysis_api))
+except ImportError as e:
+    logger.warning(f"❌ Could not import gait_analysis_api: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -155,6 +161,9 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'edema_analysis':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router")
+        elif router_name == 'gait_analysis_api':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (HAR-based gait analysis)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

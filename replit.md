@@ -43,6 +43,32 @@ The backend comprises two services:
     - **Trend Prediction Engine:** Performs baseline calculation, Z-score analysis, anomaly detection, Bayesian risk modeling, and time-series trend analysis to generate a composite risk score.
     - **Alert Orchestration Engine:** Provides multi-channel delivery (dashboard, email, SMS) with rule-based systems and HIPAA compliance.
 - **Behavior AI Analysis System:** ✅ **CODE COMPLETE (November 20, 2025)** - Comprehensive multi-modal deterioration detection through behavioral pattern analysis, digital biomarkers, cognitive testing, and sentiment analysis. **Status:** All code production-ready and architect-reviewed. Blocked by Python FastAPI backend environment resource constraints (uvicorn process killed with exit 137 during startup).
+- **Gait Analysis System (HAR-based):** ✅ **CODE COMPLETE (November 20, 2025)** - Open-source gait analysis using MediaPipe Pose and HAR (Human Activity Recognition) datasets. Extracts 40+ gait parameters including temporal metrics (stride time, cadence, speed), spatial metrics (stride length, step width), joint angles (hip/knee/ankle ROM), symmetry indices, stability scores, and clinical risk flags (fall risk, Parkinson's indicators). **Status:** Backend complete with GaitAnalysisService (MediaPipe Pose Heavy model), 4-table database schema, 7 FastAPI endpoints, baseline tracking, and longitudinal trend analysis. Frontend integration pending.
+    - **Database Architecture:** 4-table PostgreSQL schema in `app/models/gait_analysis_models.py`:
+      - `gait_sessions`: Video upload tracking with processing status, quality scores
+      - `gait_metrics`: 40+ parameters including temporal (stride time, cadence), spatial (stride length, step width), joint angles (hip/knee/ankle ROM), symmetry indices, stability scores, fall risk, HAR activity classification
+      - `gait_patterns`: Stride-by-stride breakdown for longitudinal analysis
+      - `gait_baselines`: Patient baseline tracking with rolling 7-day averages
+    - **GaitAnalysisService** in `app/services/gait_analysis_service.py`:
+      - MediaPipe Pose Heavy model (33 3D landmarks, model_complexity=2)
+      - Automated gait event detection (heel strikes, toe-offs using peak detection)
+      - Temporal parameter extraction (stride time, step time, cadence, walking speed, stance/swing phases)
+      - Spatial parameter extraction (stride length, step width using normalized coordinates)
+      - Joint angle calculation (hip/knee/ankle flexion/extension, ROM measurement)
+      - Symmetry analysis (temporal, spatial, joint angle symmetry indices)
+      - Stability metrics (trunk sway, head stability, balance confidence)
+      - HAR activity classification (walking, shuffling, limping, unsteady detection)
+      - Clinical risk assessment (fall risk score, Parkinson's/neuropathy/pain indicators)
+      - Baseline tracking with deviation detection (rolling average, 15% deterioration threshold)
+    - **7 FastAPI Endpoints** in `app/routers/gait_analysis_api.py`:
+      - POST `/api/v1/gait-analysis/upload` - Upload walking video for analysis
+      - GET `/api/v1/gait-analysis/sessions/{patient_id}` - Retrieve gait sessions history
+      - GET `/api/v1/gait-analysis/metrics/{session_id}` - Get detailed 40+ gait metrics
+      - GET `/api/v1/gait-analysis/patterns/{session_id}` - Stride-by-stride breakdown
+      - GET `/api/v1/gait-analysis/baseline/{patient_id}` - Patient baseline metrics
+      - GET `/api/v1/gait-analysis/dashboard/{patient_id}` - Comprehensive dashboard with trends & alerts
+      - Background processing with quality checks (lighting, pose detection rate >50%)
+    - **Deployment:** Integrated into `app/main.py` as optional router with graceful fallback. Routes proxied from Express via `client/src/lib/queryClient.ts`.
     - **Database Architecture:** 9-table PostgreSQL schema (behavioral_checkins, behavioral_metrics, digital_biomarkers, cognitive_tests, sentiment_analysis, risk_scores, deterioration_trends, behavior_alerts, behavioral_insights) defined in `app/models/behavior_models.py`.
     - **ML Models Infrastructure:** Three-model ensemble in `app/services/behavior_ml_models.py`: Transformer Encoder (PyTorch, 4-layer, 128-dim) for temporal sequences, XGBoost (100 trees) for feature-based prediction, DistilBERT for sentiment analysis. Features lazy loading and rule-based fallbacks.
     - **6 Production Services:**
