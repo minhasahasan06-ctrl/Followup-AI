@@ -13,6 +13,7 @@ import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brai
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { Link } from "wouter";
 import type { DailyFollowup, Medication, DynamicTask, BehavioralInsight } from "@shared/schema";
 
 export default function Dashboard() {
@@ -245,7 +246,7 @@ export default function Dashboard() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2" data-testid="text-insights-title">
                 <Brain className="h-5 w-5" />
-                Behavioral Insights
+                Behavioral AI Insight
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -261,12 +262,14 @@ export default function Dashboard() {
                 ))
               ) : (
                 <p className="text-sm text-muted-foreground" data-testid="text-insight-placeholder">
-                  Your activity levels have improved by 15% this week. Keep up the great work!
+                  Complete your daily check-ins to unlock AI-powered behavioral insights and health trend detection.
                 </p>
               )}
-              <Button variant="outline" size="sm" className="w-full" data-testid="button-view-insights">
-                View Full Insights
-              </Button>
+              <Link href="/behavioral-ai-insights">
+                <Button variant="outline" size="sm" className="w-full" data-testid="button-view-insights">
+                  View Full Insights
+                </Button>
+              </Link>
             </CardContent>
           </Card>
 
