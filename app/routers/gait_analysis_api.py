@@ -90,11 +90,12 @@ async def upload_gait_video(
         }
     
     except Exception as e:
-        logger.error(f"Error uploading gait video: {str(e)}")
+        # HIPAA-compliant error handling: internal details in logs, sanitized message in DB and HTTP
+        logger.error(f"[ERROR] Error uploading gait video for patient {patient_id}: {str(e)}", exc_info=True)
         gait_session.processing_status = "failed"
-        gait_session.error_message = str(e)
+        gait_session.error_message = "Upload failed. Please try again or contact support."  # Sanitized
         db.commit()
-        raise HTTPException(status_code=500, detail=f"Error processing video: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing video upload. Please try again later.")
 
 
 def process_gait_video_background(session_id: int, patient_id: str, video_path: str):
@@ -146,32 +147,41 @@ def process_gait_video_background(session_id: int, patient_id: str, video_path: 
             
         except ValueError as e:
             # Clinical validation errors (expected edge cases)
-            error_msg = str(e)
-            logger.warning(f"Clinical validation error for session {session_id}: {error_msg}")
+            error_msg = str(e).lower()  # Normalize for matching
             
-            # Map to patient-friendly messages
-            if "Low pose detection rate" in error_msg:
+            # Map to patient-friendly messages (NO internal details leaked)
+            if "low pose detection" in error_msg or "detection rate" in error_msg:
                 patient_message = "Video quality issue: Unable to detect your full body clearly. Please ensure you're fully visible in the frame and try again."
                 error_code = "LOW_DETECTION"
-            elif "No walking detected" in error_msg:
+            elif "no walking" in error_msg or "walking not detected" in error_msg:
                 patient_message = "No walking motion detected. Please record yourself walking naturally for 10-30 seconds and try again."
                 error_code = "NO_WALKING"
-            elif "Failed to open video" in error_msg:
+            elif "failed to open" in error_msg or "corrupt" in error_msg or "invalid video" in error_msg:
                 patient_message = "Video file error. Please try recording again."
                 error_code = "VIDEO_CORRUPT"
+            elif "too short" in error_msg or "insufficient" in error_msg:
+                patient_message = "Video too short. Please record at least 10 seconds of walking."
+                error_code = "VIDEO_TOO_SHORT"
+            elif "lighting" in error_msg or "too dark" in error_msg:
+                patient_message = "Video lighting issue. Please record in better lighting conditions."
+                error_code = "POOR_LIGHTING"
             else:
-                patient_message = f"Analysis issue: {error_msg}"
+                # Generic fallback - NO raw exception text
+                patient_message = "Unable to analyze video. Please ensure good lighting, full body visible, and steady camera position."
                 error_code = "VALIDATION_ERROR"
             
+            # HIPAA-compliant logging: internal details in logs, sanitized message in DB
+            logger.warning(f"[VALIDATION] Session {session_id} - Code: {error_code}, Internal: {str(e)}")
+            
             session.processing_status = "failed"
-            session.error_message = patient_message
+            session.error_message = patient_message  # Sanitized message only
             session.processing_completed_at = datetime.utcnow()
             db.commit()
-            logger.info(f"Session {session_id} marked as failed with code: {error_code}")
         
         except Exception as e:
             # System errors (unexpected failures)
-            logger.error(f"System error in gait analysis for session {session_id}: {str(e)}", exc_info=True)
+            # HIPAA-compliant: Internal details in logs only, sanitized message in DB
+            logger.error(f"[ERROR] System error in gait analysis for session {session_id}: {str(e)}", exc_info=True)
             session.processing_status = "failed"
             session.error_message = "System error during analysis. Our team has been notified. Please try again later."
             session.processing_completed_at = datetime.utcnow()
@@ -179,15 +189,17 @@ def process_gait_video_background(session_id: int, patient_id: str, video_path: 
         
     except Exception as e:
         # Outer exception handler (should rarely hit this)
-        logger.error(f"Fatal error in background gait analysis: {str(e)}", exc_info=True)
+        # HIPAA-compliant: Internal stack trace in logs, sanitized message in DB
+        logger.error(f"[FATAL] Fatal error in background gait analysis for session {session_id}: {str(e)}", exc_info=True)
         try:
             session = db.query(GaitSession).filter(GaitSession.id == session_id).first()
             if session:
                 session.processing_status = "failed"
-                session.error_message = "Unexpected error. Please contact support."
+                session.error_message = "Unexpected error. Please contact support."  # Sanitized
                 session.processing_completed_at = datetime.utcnow()
                 db.commit()
-        except:
+        except Exception as db_error:
+            logger.error(f"[FATAL] Failed to update session status: {str(db_error)}")
             pass
     
     finally:
