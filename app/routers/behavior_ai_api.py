@@ -13,10 +13,11 @@ FastAPI endpoints for Behavior AI system:
 
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 
 from app.database import get_db
 from app.models.behavior_models import (
