@@ -67,8 +67,17 @@ class TremorAnalysisService:
         # Calculate sampling rate
         time_diffs = np.diff(timestamps_arr)
         avg_sample_interval_ms = np.mean(time_diffs)
+        
+        # Guard against zero/negative intervals
+        if avg_sample_interval_ms <= 0:
+            raise ValueError("Invalid timestamps: zero or negative sampling interval detected")
+        
         sampling_rate = 1000.0 / avg_sample_interval_ms  # Convert to Hz
         duration = (timestamps_arr[-1] - timestamps_arr[0]) / 1000.0  # seconds
+        
+        # Guard against zero duration
+        if duration <= 0:
+            raise ValueError("Invalid timestamps: zero or negative duration")
         
         logger.info(f"Sampling rate: {sampling_rate:.1f} Hz, Duration: {duration:.1f}s")
         
@@ -92,13 +101,12 @@ class TremorAnalysisService:
         tremor_range_freqs = xf[tremor_range_mask]
         
         if len(tremor_range_power) == 0:
-            logger.warning("No data in tremor frequency range (3-15 Hz)")
-            dominant_frequency = 0
-            peak_amplitude = 0
-        else:
-            peak_idx = np.argmax(tremor_range_power)
-            dominant_frequency = tremor_range_freqs[peak_idx]
-            peak_amplitude = tremor_range_power[peak_idx]
+            logger.warning(f"No data in tremor frequency range (3-15 Hz) for patient {patient_id}")
+            raise ValueError("Recording too short to analyze tremor frequency. Please record for at least 5 seconds.")
+        
+        peak_idx = np.argmax(tremor_range_power)
+        dominant_frequency = tremor_range_freqs[peak_idx]
+        peak_amplitude = tremor_range_power[peak_idx]
         
         # Convert amplitude to millig (1g = 9.8 m/s²)
         peak_amplitude_mg = (peak_amplitude / 9.8) * 1000
