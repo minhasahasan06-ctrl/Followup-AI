@@ -17,10 +17,12 @@ import {
   Info,
   TrendingUp,
   Volume2,
-  Sparkles
+  Sparkles,
+  Play
 } from "lucide-react";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Link } from "wouter";
 
 interface AudioMetrics {
   session_id: number;
@@ -142,55 +144,50 @@ export default function AIAudioDashboard() {
           Audio AI Analysis
         </h1>
         <p className="text-muted-foreground leading-relaxed">
-          AI-powered audio analysis for respiratory health, speech patterns, and vocal wellness
+          Start live AI-guided examinations with real-time voice directions, or view your analysis history
         </p>
       </div>
 
       <LegalDisclaimer />
 
-      {/* Upload Section */}
-      <Card data-testid="card-upload">
+      {/* Live Examination Section */}
+      <Card className="bg-gradient-to-br from-primary/5 to-primary/10" data-testid="card-live-exam">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
-            Upload Audio for Analysis
+            <Mic className="h-5 w-5" />
+            Live Audio Examination
           </CardTitle>
           <CardDescription>
-            Record 30-60 seconds of breathing and speaking in a quiet environment
+            AI-guided examination with real-time directions for breathing, coughing, speaking, and reading
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-4">
-            <input
-              type="file"
-              accept="audio/*"
-              onChange={handleFileSelect}
-              className="flex-1"
-              data-testid="input-audio-file"
-            />
-            <Button
-              onClick={handleUpload}
-              disabled={!selectedFile || isUploading}
-              data-testid="button-upload-audio"
-            >
-              {isUploading ? (
-                <>
-                  <Activity className="h-4 w-4 mr-2 animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload & Analyze
-                </>
-              )}
-            </Button>
-          </div>
-          {selectedFile && (
-            <div className="text-sm text-muted-foreground">
-              Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+          <div className="rounded-lg border bg-background/50 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="rounded-full bg-primary/10 p-2">
+                <Play className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">4-Stage Audio Examination</p>
+                <p className="text-xs text-muted-foreground">Breathing • Coughing • Speaking • Reading</p>
+              </div>
             </div>
-          )}
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Volume2 className="h-4 w-4" />
+              <span>Voice-guided instructions • Real-time recording • AI analysis</span>
+            </div>
+          </div>
+          
+          <Link href="/guided-audio-exam">
+            <Button className="w-full gap-2" size="lg" data-testid="button-start-live-exam">
+              <Play className="h-5 w-5" />
+              Start Live Examination
+            </Button>
+          </Link>
+          
+          <p className="text-xs text-center text-muted-foreground">
+            Allow microphone access when prompted. The examination takes ~2-3 minutes.
+          </p>
         </CardContent>
       </Card>
 
