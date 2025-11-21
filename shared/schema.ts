@@ -3395,3 +3395,147 @@ export const insertBehaviorAlertSchema = createInsertSchema(behaviorAlerts).omit
 
 export type InsertBehaviorAlert = z.infer<typeof insertBehaviorAlertSchema>;
 export type BehaviorAlert = typeof behaviorAlerts.$inferSelect;
+
+// Mental Health Questionnaire Responses - Standardized instruments (PHQ-9, GAD-7, etc.)
+export const mentalHealthResponses = pgTable("mental_health_responses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Questionnaire identification
+  questionnaireType: varchar("questionnaire_type").notNull(), // 'PHQ9', 'GAD7', 'PCL5', 'PSS10'
+  questionnaireVersion: varchar("questionnaire_version").default("1.0"),
+  
+  // Response data - array of question responses
+  responses: jsonb("responses").$type<Array<{
+    questionId: string;
+    questionText: string;
+    response: number | string; // Numeric scores or text responses
+    responseText?: string; // Human-readable response
+  }>>().notNull(),
+  
+  // Scoring results
+  totalScore: integer("total_score"),
+  maxScore: integer("max_score"),
+  severityLevel: varchar("severity_level"), // 'minimal', 'mild', 'moderate', 'moderately_severe', 'severe'
+  
+  // Symptom cluster scores (domain-specific)
+  clusterScores: jsonb("cluster_scores").$type<{
+    [key: string]: {
+      score: number;
+      maxScore: number;
+      label: string;
+      items: string[];
+    };
+  }>(),
+  
+  // Crisis flags
+  crisisDetected: boolean("crisis_detected").default(false),
+  crisisQuestionIds: jsonb("crisis_question_ids").$type<string[]>(),
+  crisisResponses: jsonb("crisis_responses").$type<Array<{
+    questionId: string;
+    questionText: string;
+    response: number | string;
+  }>>(),
+  
+  // Completion metadata
+  completedAt: timestamp("completed_at").defaultNow(),
+  durationSeconds: integer("duration_seconds"), // Time taken to complete
+  
+  // Privacy and consent
+  allowStorage: boolean("allow_storage").default(true),
+  allowClinicalSharing: boolean("allow_clinical_sharing").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientTypeIdx: index("mh_responses_patient_type_idx").on(table.patientId, table.questionnaireType),
+  severityIdx: index("mh_responses_severity_idx").on(table.severityLevel),
+  crisisIdx: index("mh_responses_crisis_idx").on(table.crisisDetected),
+  completedIdx: index("mh_responses_completed_idx").on(table.completedAt),
+}));
+
+export const insertMentalHealthResponseSchema = createInsertSchema(mentalHealthResponses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMentalHealthResponse = z.infer<typeof insertMentalHealthResponseSchema>;
+export type MentalHealthResponse = typeof mentalHealthResponses.$inferSelect;
+
+// AI-powered pattern analysis for mental health data
+export const mentalHealthPatternAnalysis = pgTable("mental_health_pattern_analysis", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  responseId: varchar("response_id").references(() => mentalHealthResponses.id),
+  
+  // Analysis type
+  analysisType: varchar("analysis_type").notNull(), // 'symptom_clustering', 'temporal_trends', 'cross_questionnaire', 'llm_insights'
+  
+  // Pattern detection results
+  patterns: jsonb("patterns").$type<Array<{
+    patternType: string;
+    patternName: string;
+    description: string;
+    severity: string;
+    confidence: number;
+    supportingData: any;
+  }>>(),
+  
+  // Symptom clusters identified by LLM
+  symptomClusters: jsonb("symptom_clusters").$type<{
+    [key: string]: {
+      clusterName: string;
+      symptoms: string[];
+      frequency: string;
+      severity: string;
+      neutralDescription: string;
+    };
+  }>(),
+  
+  // Temporal trends (changes over time)
+  temporalTrends: jsonb("temporal_trends").$type<Array<{
+    metric: string;
+    direction: string; // 'improving', 'worsening', 'stable', 'fluctuating'
+    magnitude: string;
+    timeframe: string;
+    dataPoints: Array<{ date: string; value: number }>;
+  }>>(),
+  
+  // LLM-generated neutral summary (no diagnostic language)
+  neutralSummary: text("neutral_summary"),
+  
+  // Key observations (non-diagnostic)
+  keyObservations: jsonb("key_observations").$type<string[]>(),
+  
+  // Recommended actions (general wellness, not treatment)
+  suggestedActions: jsonb("suggested_actions").$type<Array<{
+    category: string;
+    action: string;
+    priority: string;
+  }>>(),
+  
+  // LLM model information
+  llmModel: varchar("llm_model").default("gpt-4o"),
+  llmTokensUsed: integer("llm_tokens_used"),
+  
+  // Analysis metadata
+  analysisVersion: varchar("analysis_version").default("1.0"),
+  analysisCompletedAt: timestamp("analysis_completed_at").defaultNow(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("mh_analysis_patient_idx").on(table.patientId),
+  responseIdx: index("mh_analysis_response_idx").on(table.responseId),
+  analysisTypeIdx: index("mh_analysis_type_idx").on(table.analysisType),
+}));
+
+export const insertMentalHealthPatternAnalysisSchema = createInsertSchema(mentalHealthPatternAnalysis).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMentalHealthPatternAnalysis = z.infer<typeof insertMentalHealthPatternAnalysisSchema>;
+export type MentalHealthPatternAnalysis = typeof mentalHealthPatternAnalysis.$inferSelect;

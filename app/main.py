@@ -25,7 +25,8 @@ from app.routers import (
     deviation,
     risk_score,
     video_exam_sessions,
-    behavior_ai_api  # ✅ NEW - Behavior AI Analysis System - PRODUCTION READY
+    behavior_ai_api,  # ✅ Behavior AI Analysis System - PRODUCTION READY
+    mental_health  # ✅ Mental Health Questionnaires - PRODUCTION READY
 )
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,9 @@ app.include_router(video_exam_sessions.router)
 
 # Behavior AI Analysis System (Multi-Modal Deterioration Detection) - PRODUCTION READY
 app.include_router(behavior_ai_api.router)
+
+# Mental Health Questionnaires (PHQ-9, GAD-7, PSS-10) - PRODUCTION READY
+app.include_router(mental_health.router)
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:
