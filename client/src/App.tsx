@@ -64,13 +64,10 @@ import DoctorProfile from "@/pages/DoctorProfile";
 import MyDoctors from "@/pages/MyDoctors";
 import ConsultationRequests from "@/pages/ConsultationRequests";
 import PainDetection from "@/pages/PainDetection";
-import ExamCoach from "@/pages/ExamCoach";
 import MedicationEffects from "@/pages/MedicationEffects";
 import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
 import DeteriorationDashboard from "@/pages/DeteriorationDashboard";
-import AIVideoDashboard from "@/pages/AIVideoDashboard";
 import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
-import GuidedVideoExam from "@/pages/GuidedVideoExam";
 import BehavioralAIInsights from "@/pages/BehavioralAIInsights";
 import DailyFollowup from "@/pages/DailyFollowup";
 import MentalHealth from "@/pages/MentalHealth";
@@ -83,12 +80,9 @@ function PatientRouter() {
       <Route path="/daily-followup" component={DailyFollowup} />
       <Route path="/chat" component={Chat} />
       <Route path="/pain-detection" component={PainDetection} />
-      <Route path="/exam-coach" component={ExamCoach} />
       <Route path="/medication-effects" component={MedicationEffects} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
-      <Route path="/ai-video" component={AIVideoDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
-      <Route path="/guided-exam" component={GuidedVideoExam} />
       <Route path="/behavioral-ai-insights" component={BehavioralAIInsights} />
       <Route path="/mental-health" component={MentalHealth} />
       <Route path="/habits" component={Habits} />
