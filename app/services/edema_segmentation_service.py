@@ -88,8 +88,7 @@ class EdemaSegmentationService:
         # Load model if dependencies available
         if TF_AVAILABLE and TF_HUB_AVAILABLE:
             self._load_model()
-        else:
-            logger.warning("TensorFlow/TF-Hub unavailable - DeepLab segmentation disabled")
+        # No warning - DeepLab is optional
     
     def _load_dependencies(self):
         """Lazy load TensorFlow and TensorFlow Hub"""
@@ -101,9 +100,8 @@ class EdemaSegmentationService:
                 import tensorflow as tf_module
                 tf = tf_module
                 TF_AVAILABLE = True
-                logger.info(f"TensorFlow loaded successfully (version {tf.__version__})")
             except ImportError:
-                logger.warning("TensorFlow not available - DeepLab disabled")
+                # TensorFlow is optional - no warning
                 TF_AVAILABLE = False
             _TF_CHECKED = True
         
@@ -113,9 +111,8 @@ class EdemaSegmentationService:
                 import tensorflow_hub as hub_module
                 hub = hub_module
                 TF_HUB_AVAILABLE = True
-                logger.info("TensorFlow Hub loaded successfully")
             except ImportError:
-                logger.warning("TensorFlow Hub not available - DeepLab disabled")
+                # TensorFlow Hub is optional - no warning
                 TF_HUB_AVAILABLE = False
             _TF_HUB_CHECKED = True
     
@@ -174,7 +171,7 @@ class EdemaSegmentationService:
             Dictionary with segmentation mask, confidence, and metadata
         """
         if not self.model or not TF_AVAILABLE:
-            logger.warning("DeepLab model unavailable - skipping segmentation")
+            # DeepLab is optional - skip silently
             return None
         
         try:
