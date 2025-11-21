@@ -6,24 +6,28 @@ const PYTHON_BACKEND_URL = import.meta.env.VITE_PYTHON_BACKEND_URL || "http://lo
 // Helper to determine if URL should go to Python backend
 function getPythonBackendUrl(url: string): string {
   // If it's already an absolute URL (starts with http:// or https://), return unchanged
-  if (url.startsWith('http://') || url.startsWith('https://')) {
+  if (url.startsWith("http://") || url.startsWith("https://")) {
     return url;
   }
-  
+
   // Normalize URL (ensure leading slash for relative paths)
-  const normalizedUrl = url.startsWith('/') ? url : `/${url}`;
-  
+  const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
+
   // Routes that should go to Python FastAPI backend
-  if (normalizedUrl.startsWith("/api/v1/video-ai") || 
-      normalizedUrl.startsWith("/api/v1/audio-ai") || 
-      normalizedUrl.startsWith("/api/v1/trends") || 
-      normalizedUrl.startsWith("/api/v1/alerts") ||
-      normalizedUrl.startsWith("/api/v1/guided-audio-exam") ||
-      normalizedUrl.startsWith("/api/v1/guided-exam") ||
-      normalizedUrl.startsWith("/api/v1/gait-analysis") ||
-      normalizedUrl.startsWith("/api/v1/tremor")) {
+  if (
+    normalizedUrl.startsWith("/api/v1/video-ai") ||
+    normalizedUrl.startsWith("/api/v1/audio-ai") ||
+    normalizedUrl.startsWith("/api/v1/trends") ||
+    normalizedUrl.startsWith("/api/v1/alerts") ||
+    normalizedUrl.startsWith("/api/v1/guided-audio-exam") ||
+    normalizedUrl.startsWith("/api/v1/guided-exam") ||
+    normalizedUrl.startsWith("/api/v1/gait-analysis") ||
+    normalizedUrl.startsWith("/api/v1/tremor") ||
+    normalizedUrl.startsWith("/api/v1/mental-health")
+  ) {
     return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
   }
+
   return normalizedUrl;
 }
 
