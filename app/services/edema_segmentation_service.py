@@ -135,7 +135,8 @@ class EdemaSegmentationService:
             logger.info("DeepLab model loaded successfully")
             
         except Exception as e:
-            logger.error(f"Failed to load DeepLab model: {e}")
+            # DeepLab is optional - don't spam errors
+            logger.info("DeepLab model unavailable - edema segmentation disabled (optional feature)")
             self.model = None
     
     def preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
