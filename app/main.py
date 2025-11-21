@@ -42,7 +42,6 @@ from app.routers import (
     video_consultation,
     pain_tracking,
     symptom_journal,
-    exam_coach,
     medication_timeline,
     symptom_logging,
     medication_side_effects,
@@ -160,7 +159,6 @@ app.include_router(agent_clona.router)
 app.include_router(video_consultation.router)
 app.include_router(pain_tracking.router)
 app.include_router(symptom_journal.router)
-app.include_router(exam_coach.router)
 app.include_router(medication_timeline.router)
 app.include_router(symptom_logging.router)
 app.include_router(medication_side_effects.router)
