@@ -74,6 +74,20 @@ const upload = multer({
   }
 });
 
+// Configure multer for PainTrack video uploads (memory storage)
+const paintrackVideoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB combined limit
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = ['video/webm', 'video/mp4'];
+    if (allowedMimeTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .webm and .mp4 video files are allowed'));
+    }
+  }
+});
+
 // Configure multer for medical document uploads (stored in memory before S3)
 const medicalDocUpload = multer({
   storage: multer.memoryStorage(),
@@ -1235,6 +1249,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching PainTrack session:", error);
       res.status(500).json({ message: "Failed to fetch PainTrack session" });
+    }
+  });
+
+  // PainTrack video upload endpoint
+  app.post('/api/paintrack/upload-video', isAuthenticated, paintrackVideoUpload.single('video'), async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const videoBuffer = req.file?.buffer;
+      const videoType = req.body.videoType; // 'front' or 'back'
+      const module = req.body.module;
+      const joint = req.body.joint;
+
+      if (!videoBuffer) {
+        return res.status(400).json({ message: "No video file provided" });
+      }
+
+      if (!videoType || !['front', 'back'].includes(videoType)) {
+        return res.status(400).json({ message: "Invalid videoType. Must be 'front' or 'back'" });
+      }
+
+      // Generate deterministic S3 key
+      const timestamp = Date.now();
+      const sessionId = `${userId}-${timestamp}`;
+      const s3Key = `paintrack/${userId}/${sessionId}/${videoType}.webm`;
+
+      // Upload to S3 with server-side encryption
+      const uploadCommand = new PutObjectCommand({
+        Bucket: AWS_S3_BUCKET,
+        Key: s3Key,
+        Body: videoBuffer,
+        ContentType: req.file!.mimetype,
+        ServerSideEncryption: 'AES256',
+        Metadata: {
+          userId,
+          videoType,
+          module: module || '',
+          joint: joint || '',
+          uploadedAt: new Date().toISOString(),
+        }
+      });
+
+      await s3Client.send(uploadCommand);
+
+      const videoUrl = `https://${AWS_S3_BUCKET}.s3.amazonaws.com/${s3Key}`;
+
+      // HIPAA audit log
+      console.log(`[AUDIT] PainTrack video uploaded - User: ${userId}, Type: ${videoType}, S3: ${s3Key}, Size: ${videoBuffer.length} bytes`);
+
+      res.json({ videoUrl, s3Key });
+    } catch (error) {
+      console.error("Error uploading PainTrack video:", error);
+      res.status(500).json({ message: "Failed to upload video" });
     }
   });
 
