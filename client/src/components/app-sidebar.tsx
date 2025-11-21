@@ -124,12 +124,6 @@ const patientItems = [
     icon: MessageCircle,
   },
   {
-    title: "Mental Health",
-    url: "/mental-health",
-    icon: Brain,
-    badge: "AI",
-  },
-  {
     title: "App Connections",
     url: "/consents",
     icon: LinkIcon,
