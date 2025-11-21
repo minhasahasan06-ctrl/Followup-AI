@@ -73,8 +73,8 @@ except ImportError as e:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Application lifespan manager with async AI engine initialization.
-    Prevents blocking uvicorn startup by deferring heavy library loads to startup event.
+    Application lifespan manager with LAZY AI engine initialization.
+    Heavy ML models are loaded on-demand, not at startup for instant boot.
     """
     logger.info("🚀 Starting Followup AI Backend...")
     
@@ -94,18 +94,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  OpenAI BAA compliance check failed: {e}")
     
-    # Step 3: Initialize AI engines asynchronously
-    logger.info("🤖 Initializing AI engines asynchronously...")
-    await AIEngineManager.initialize_all()
-    logger.info("✅ AI engines initialized successfully")
-    
+    # Step 3: SKIP heavy ML model initialization for fast startup
+    # ML engines (Video AI, Audio AI) will be lazy-loaded on first use
+    logger.info("⚡ ML engines set to lazy-load on first use (instant startup!)")
     logger.info("🎉 Followup AI Backend startup complete!")
     
     yield
     
-    # Shutdown: Cleanup AI engines
+    # Shutdown: Cleanup AI engines if they were initialized
     logger.info("🛑 Shutting down Followup AI Backend...")
-    await AIEngineManager.cleanup_all()
+    if AIEngineManager.is_initialized():
+        await AIEngineManager.cleanup_all()
     logger.info("✅ Shutdown complete")
 
 
