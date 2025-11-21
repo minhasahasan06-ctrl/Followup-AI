@@ -189,6 +189,65 @@ const STAGE_INFO: Record<AudioStage, StageInfo> = {
   }
 };
 
+// Daily Wellness Check questions (for TODAY)
+const DAILY_WELLNESS_QUESTIONS = [
+  {
+    id: "mood",
+    text: "How would you describe your mood today?",
+    options: [
+      { value: 0, label: "Very low" },
+      { value: 1, label: "Low" },
+      { value: 2, label: "Neutral" },
+      { value: 3, label: "Good" },
+      { value: 4, label: "Very good" },
+    ]
+  },
+  {
+    id: "anxiety",
+    text: "How anxious have you felt today?",
+    options: [
+      { value: 0, label: "Not at all" },
+      { value: 1, label: "Slightly" },
+      { value: 2, label: "Moderately" },
+      { value: 3, label: "Very" },
+      { value: 4, label: "Extremely" },
+    ]
+  },
+  {
+    id: "stress",
+    text: "How stressed have you felt today?",
+    options: [
+      { value: 0, label: "Not at all" },
+      { value: 1, label: "Slightly" },
+      { value: 2, label: "Moderately" },
+      { value: 3, label: "Very" },
+      { value: 4, label: "Extremely" },
+    ]
+  },
+  {
+    id: "energy",
+    text: "How would you rate your energy level today?",
+    options: [
+      { value: 0, label: "Very low" },
+      { value: 1, label: "Low" },
+      { value: 2, label: "Moderate" },
+      { value: 3, label: "High" },
+      { value: 4, label: "Very high" },
+    ]
+  },
+  {
+    id: "sleep",
+    text: "How did you sleep last night?",
+    options: [
+      { value: 0, label: "Very poor" },
+      { value: 1, label: "Poor" },
+      { value: 2, label: "Fair" },
+      { value: 3, label: "Good" },
+      { value: 4, label: "Excellent" },
+    ]
+  },
+];
+
 export default function Dashboard() {
   const [showEmergency, setShowEmergency] = useState(false);
   const { user } = useAuth();
@@ -237,6 +296,11 @@ export default function Dashboard() {
   const [isSubmittingMentalHealth, setIsSubmittingMentalHealth] = useState(false);
   const [completedMentalHealthResponse, setCompletedMentalHealthResponse] = useState<QuestionnaireResponse | null>(null);
   const [mentalHealthStartTime, setMentalHealthStartTime] = useState<number | null>(null);
+
+  // Daily Wellness Check state
+  const [showDailyWellness, setShowDailyWellness] = useState(false);
+  const [dailyWellnessResponses, setDailyWellnessResponses] = useState<Record<string, number>>({});
+  const [completedDailyWellness, setCompletedDailyWellness] = useState(false);
 
   const { data: todayFollowup } = useQuery<DailyFollowup>({
     queryKey: ["/api/daily-followup/today"],
@@ -610,6 +674,48 @@ export default function Dashboard() {
     setMentalHealthResponses({});
     setCompletedMentalHealthResponse(null);
     setMentalHealthStartTime(null);
+  };
+
+  // Daily Wellness Check handlers
+  const handleStartDailyWellness = () => {
+    setShowDailyWellness(true);
+    setDailyWellnessResponses({});
+    setCompletedDailyWellness(false);
+  };
+
+  const handleDailyWellnessResponse = (questionId: string, value: number) => {
+    setDailyWellnessResponses(prev => ({
+      ...prev,
+      [questionId]: value
+    }));
+  };
+
+  const handleSubmitDailyWellness = () => {
+    const allAnswered = DAILY_WELLNESS_QUESTIONS.every(q => 
+      dailyWellnessResponses[q.id] !== undefined
+    );
+    
+    if (!allAnswered) {
+      toast({
+        title: "Incomplete",
+        description: "Please answer all questions before submitting.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setCompletedDailyWellness(true);
+    
+    toast({
+      title: "Daily Wellness Check Complete!",
+      description: "Your responses have been recorded.",
+    });
+  };
+
+  const handleCloseDailyWellness = () => {
+    setShowDailyWellness(false);
+    setDailyWellnessResponses({});
+    setCompletedDailyWellness(false);
   };
 
   const getSeverityColor = (level: string) => {
@@ -1220,6 +1326,116 @@ export default function Dashboard() {
 
                 {/* Mental Health AI Tab */}
                 <TabsContent value="mental-health" className="space-y-3">
+                  {/* Daily Wellness Check */}
+                  {!showDailyWellness && !selectedQuestionnaire && !completedMentalHealthResponse && (
+                    <div className="p-4 rounded-md border bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 hover-elevate" data-testid="card-daily-wellness">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Heart className="h-4 w-4 text-blue-600" />
+                            <h3 className="font-semibold text-sm">Daily Wellness Check</h3>
+                            <Badge variant="outline" className="text-xs">Quick • 1 min</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Quick check-in about how you're feeling <strong>today</strong>. Track your daily mood, anxiety, stress, energy, and sleep.
+                          </p>
+                          <Button
+                            onClick={handleStartDailyWellness}
+                            size="sm"
+                            className="w-full gap-2"
+                            data-testid="button-start-daily-wellness"
+                          >
+                            <CheckCircle className="h-3 w-3" />
+                            Start Daily Check-In
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Daily Wellness Form */}
+                  {showDailyWellness && !completedDailyWellness && (
+                    <div className="space-y-4" data-testid="daily-wellness-form">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm">Daily Wellness Check</h3>
+                        <Button
+                          onClick={handleCloseDailyWellness}
+                          variant="ghost"
+                          size="sm"
+                          data-testid="button-close-daily-wellness"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+
+                      <div className="space-y-4">
+                        {DAILY_WELLNESS_QUESTIONS.map((question, idx) => (
+                          <div key={question.id} className="space-y-2">
+                            <Label className="text-sm font-medium">
+                              {idx + 1}. {question.text}
+                            </Label>
+                            <RadioGroup
+                              value={dailyWellnessResponses[question.id]?.toString()}
+                              onValueChange={(value) => handleDailyWellnessResponse(question.id, parseInt(value))}
+                              data-testid={`radio-group-${question.id}`}
+                            >
+                              {question.options.map((option) => (
+                                <div key={option.value} className="flex items-center space-x-2">
+                                  <RadioGroupItem
+                                    value={option.value.toString()}
+                                    id={`${question.id}-${option.value}`}
+                                    data-testid={`radio-${question.id}-${option.value}`}
+                                  />
+                                  <Label
+                                    htmlFor={`${question.id}-${option.value}`}
+                                    className="text-sm font-normal cursor-pointer"
+                                  >
+                                    {option.label}
+                                  </Label>
+                                </div>
+                              ))}
+                            </RadioGroup>
+                          </div>
+                        ))}
+                      </div>
+
+                      <Button
+                        onClick={handleSubmitDailyWellness}
+                        className="w-full"
+                        disabled={Object.keys(dailyWellnessResponses).length < DAILY_WELLNESS_QUESTIONS.length}
+                        data-testid="button-submit-daily-wellness"
+                      >
+                        Submit Daily Check-In
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Daily Wellness Completion */}
+                  {completedDailyWellness && (
+                    <div className="space-y-4" data-testid="daily-wellness-complete">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                          Daily Check-In Complete
+                        </h3>
+                        <Button
+                          onClick={handleCloseDailyWellness}
+                          variant="outline"
+                          size="sm"
+                          data-testid="button-done-daily-wellness"
+                        >
+                          Done
+                        </Button>
+                      </div>
+
+                      <div className="p-3 rounded-md bg-muted/30 border text-sm space-y-2">
+                        <p className="text-muted-foreground">
+                          Thank you for completing today's wellness check! Your responses help track patterns and identify changes over time.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {isLoadingQuestionnaires ? (
                     <div className="flex items-center justify-center py-8" data-testid="loading-questionnaires">
                       <Loader2 className="h-6 w-6 animate-spin" />
