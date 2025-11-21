@@ -3539,3 +3539,139 @@ export const insertMentalHealthPatternAnalysisSchema = createInsertSchema(mental
 
 export type InsertMentalHealthPatternAnalysis = z.infer<typeof insertMentalHealthPatternAnalysisSchema>;
 export type MentalHealthPatternAnalysis = typeof mentalHealthPatternAnalysis.$inferSelect;
+
+// PainTrack - Chronic pain tracking platform
+export const paintrackSessions = pgTable("paintrack_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Module and tracking info
+  module: varchar("module").notNull(), // 'ArthroTrack', 'MuscleTrack', 'PostOpTrack'
+  joint: varchar("joint").notNull(), // 'knee', 'hip', 'shoulder', 'elbow', 'wrist', 'ankle'
+  laterality: varchar("laterality"), // 'left', 'right', 'bilateral'
+  
+  // Dual-camera video URLs (S3)
+  frontVideoUrl: varchar("front_video_url"), // Face camera
+  jointVideoUrl: varchar("joint_video_url"), // Joint camera
+  
+  // Self-reported pain (VAS 0-10)
+  patientVas: integer("patient_vas"), // Visual Analog Scale 0-10
+  patientNotes: text("patient_notes"), // Optional patient notes
+  medicationTaken: boolean("medication_taken").default(false),
+  medicationDetails: text("medication_details"),
+  
+  // Session metadata
+  recordingDuration: integer("recording_duration"), // seconds
+  deviceType: varchar("device_type"), // 'iPhone 17 Pro', 'Android', etc.
+  dualCameraSupported: boolean("dual_camera_supported").default(false),
+  
+  // Processing status
+  status: varchar("status").default("pending"), // 'pending', 'processing', 'completed', 'failed'
+  processingError: text("processing_error"),
+  
+  // Video quality metrics
+  videoQuality: jsonb("video_quality").$type<{
+    lighting: number; // mean luminance
+    motionBlur: number;
+    occlusion: number;
+    frameRate: number;
+    visibility: string; // 'good', 'fair', 'poor'
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("paintrack_user_idx").on(table.userId),
+  moduleIdx: index("paintrack_module_idx").on(table.module),
+  jointIdx: index("paintrack_joint_idx").on(table.joint),
+  statusIdx: index("paintrack_status_idx").on(table.status),
+}));
+
+export const insertPaintrackSessionSchema = createInsertSchema(paintrackSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPaintrackSession = z.infer<typeof insertPaintrackSessionSchema>;
+export type PaintrackSession = typeof paintrackSessions.$inferSelect;
+
+// Session metrics extracted from ML models
+export const sessionMetrics = pgTable("session_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => paintrackSessions.id),
+  
+  // Joint/body metrics (MediaPipe BlazePose)
+  jointMetrics: jsonb("joint_metrics").$type<{
+    maxFlexionAngle: number;
+    maxExtensionAngle: number;
+    rangeOfMotion: number;
+    extensionSpeed: number;
+    flexionSpeed: number;
+    smoothness: number; // inversely related to jerk
+    accelerationVariability: number;
+    symmetryScore?: number; // for paired limbs
+  }>(),
+  
+  // Facial metrics (MediaPipe FaceMesh)
+  facialMetrics: jsonb("facial_metrics").$type<{
+    eyebrowMovementAmplitude: number;
+    blinkRate: number;
+    lipCornerDisplacement: number;
+    mouthCornerDisplacement: number;
+    headOrientationStability: number;
+  }>(),
+  
+  // Anomaly detection (IsolationForest, LSTM Autoencoder)
+  anomalyScore: decimal("anomaly_score", { precision: 5, scale: 3 }), // Change from baseline
+  baselineDeviation: decimal("baseline_deviation", { precision: 5, scale: 3 }),
+  
+  // Correlation analysis (XGBoost) - OBSERVATIONAL ONLY
+  correlationScore: decimal("correlation_score", { precision: 5, scale: 3 }), // Correlation with VAS (not pain prediction)
+  
+  // Model versions
+  modelVersions: jsonb("model_versions").$type<{
+    blazePose: string;
+    faceMesh: string;
+    isolationForest: string;
+    lstmAutoencoder?: string;
+    xgboost?: string;
+  }>(),
+  
+  processedAt: timestamp("processed_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  sessionIdx: index("session_metrics_session_idx").on(table.sessionId),
+}));
+
+export const insertSessionMetricsSchema = createInsertSchema(sessionMetrics).omit({
+  id: true,
+  createdAt: true,
+  processedAt: true,
+});
+
+export type InsertSessionMetrics = z.infer<typeof insertSessionMetricsSchema>;
+export type SessionMetrics = typeof sessionMetrics.$inferSelect;
+
+// Clinician notes on PainTrack sessions
+export const clinicianNotes = pgTable("clinician_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => paintrackSessions.id),
+  clinicianId: varchar("clinician_id").notNull().references(() => users.id),
+  note: text("note").notNull(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  sessionIdx: index("clinician_notes_session_idx").on(table.sessionId),
+  clinicianIdx: index("clinician_notes_clinician_idx").on(table.clinicianId),
+}));
+
+export const insertClinicianNoteSchema = createInsertSchema(clinicianNotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertClinicianNote = z.infer<typeof insertClinicianNoteSchema>;
+export type ClinicianNote = typeof clinicianNotes.$inferSelect;

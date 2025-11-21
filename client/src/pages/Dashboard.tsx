@@ -302,6 +302,16 @@ export default function Dashboard() {
   const [dailyWellnessResponses, setDailyWellnessResponses] = useState<Record<string, number>>({});
   const [completedDailyWellness, setCompletedDailyWellness] = useState(false);
 
+  // PainTrack state
+  const [paintrackStep, setPaintrackStep] = useState<'select-module' | 'select-joint' | 'instructions' | 'recording' | 'pain-report' | 'complete'>('select-module');
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const [selectedJoint, setSelectedJoint] = useState<string | null>(null);
+  const [selectedLaterality, setSelectedLaterality] = useState<'left' | 'right' | 'bilateral' | null>(null);
+  const [painVAS, setPainVAS] = useState<number>(5);
+  const [painNotes, setPainNotes] = useState<string>("");
+  const [medicationTaken, setMedicationTaken] = useState<boolean>(false);
+  const [medicationDetails, setMedicationDetails] = useState<string>("");
+
   const { data: todayFollowup } = useQuery<DailyFollowup>({
     queryKey: ["/api/daily-followup/today"],
   });
@@ -836,11 +846,15 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="device" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-5">
+                <TabsList className="grid w-full grid-cols-6">
                   <TabsTrigger value="device" data-testid="tab-device">Device Data</TabsTrigger>
                   <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal">Symptoms</TabsTrigger>
                   <TabsTrigger value="video-ai" data-testid="tab-video-ai">Video AI</TabsTrigger>
                   <TabsTrigger value="audio-ai" data-testid="tab-audio-ai">Audio AI</TabsTrigger>
+                  <TabsTrigger value="paintrack" data-testid="tab-paintrack">
+                    <Activity className="w-3 h-3 mr-1" />
+                    PainTrack
+                  </TabsTrigger>
                   <TabsTrigger value="mental-health" data-testid="tab-mental-health">
                     <Brain className="w-3 h-3 mr-1" />
                     Mental Health
@@ -1320,6 +1334,308 @@ export default function Dashboard() {
                           <li>Pause patterns & neurological markers</li>
                         </ul>
                       </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* PainTrack Tab */}
+                <TabsContent value="paintrack" className="space-y-3">
+                  {paintrackStep === 'select-module' && (
+                    <div className="space-y-4" data-testid="paintrack-module-selection">
+                      <div>
+                        <h3 className="font-semibold text-sm mb-1">PainTrack - Select Module</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Choose the type of pain tracking you need
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3">
+                        {['ArthroTrack', 'MuscleTrack', 'PostOpTrack'].map((module) => (
+                          <div
+                            key={module}
+                            className="p-3 rounded-md border hover-elevate cursor-pointer"
+                            onClick={() => {
+                              setSelectedModule(module);
+                              setPaintrackStep('select-joint');
+                            }}
+                            data-testid={`card-module-${module.toLowerCase()}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Activity className="h-4 w-4 text-primary" />
+                              <h4 className="font-medium text-sm">{module}</h4>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {module === 'ArthroTrack' && 'Track arthritis pain across joints'}
+                              {module === 'MuscleTrack' && 'Monitor muscle pain and strain'}
+                              {module === 'PostOpTrack' && 'Post-surgery recovery tracking'}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {paintrackStep === 'select-joint' && (
+                    <div className="space-y-4" data-testid="paintrack-joint-selection">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-semibold text-sm mb-1">Select Joint</h3>
+                          <p className="text-xs text-muted-foreground">
+                            Module: {selectedModule}
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => setPaintrackStep('select-module')}
+                          variant="ghost"
+                          size="sm"
+                          data-testid="button-back-to-modules"
+                        >
+                          Back
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Knee', 'Hip', 'Shoulder', 'Elbow', 'Wrist', 'Ankle'].map((joint) => (
+                          <Button
+                            key={joint}
+                            variant="outline"
+                            className="h-auto p-3 flex-col gap-1"
+                            onClick={() => {
+                              setSelectedJoint(joint.toLowerCase());
+                              setPaintrackStep('instructions');
+                            }}
+                            data-testid={`button-joint-${joint.toLowerCase()}`}
+                          >
+                            <Activity className="h-4 w-4" />
+                            <span className="text-xs">{joint}</span>
+                          </Button>
+                        ))}
+                      </div>
+
+                      {selectedJoint && (
+                        <div className="space-y-2">
+                          <Label className="text-sm">Which side?</Label>
+                          <RadioGroup
+                            value={selectedLaterality || ''}
+                            onValueChange={(value) => setSelectedLaterality(value as 'left' | 'right' | 'bilateral')}
+                            data-testid="radio-group-laterality"
+                          >
+                            {['left', 'right', 'bilateral'].map((side) => (
+                              <div key={side} className="flex items-center space-x-2">
+                                <RadioGroupItem
+                                  value={side}
+                                  id={`laterality-${side}`}
+                                  data-testid={`radio-laterality-${side}`}
+                                />
+                                <Label
+                                  htmlFor={`laterality-${side}`}
+                                  className="text-sm font-normal cursor-pointer capitalize"
+                                >
+                                  {side}
+                                </Label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {paintrackStep === 'instructions' && (
+                    <div className="space-y-4" data-testid="paintrack-instructions">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm">Recording Instructions</h3>
+                        <Button
+                          onClick={() => setPaintrackStep('select-joint')}
+                          variant="ghost"
+                          size="sm"
+                          data-testid="button-back-to-joints"
+                        >
+                          Back
+                        </Button>
+                      </div>
+
+                      <Alert data-testid="alert-instructions">
+                        <Info className="h-4 w-4" />
+                        <AlertTitle className="text-sm">Dual-Camera Recording</AlertTitle>
+                        <AlertDescription className="text-xs space-y-2">
+                          <p>We'll record two simultaneous videos:</p>
+                          <ul className="list-disc ml-4 space-y-1">
+                            <li>Front camera: Your face (for pain indicators)</li>
+                            <li>Back camera: The {selectedJoint} joint</li>
+                          </ul>
+                        </AlertDescription>
+                      </Alert>
+
+                      <div className="space-y-2 text-xs">
+                        <p className="font-medium">Before you start:</p>
+                        <ul className="space-y-1 ml-4 list-disc text-muted-foreground">
+                          <li>Ensure good lighting on both face and joint</li>
+                          <li>Position camera to see full joint movement</li>
+                          <li>Keep camera stable (use a stand if possible)</li>
+                          <li>Recording will last 15-20 seconds</li>
+                        </ul>
+                      </div>
+
+                      <div className="p-3 rounded-md bg-muted/30 border text-xs space-y-1">
+                        <p className="font-medium">Guided Movement:</p>
+                        <p className="text-muted-foreground">
+                          {selectedJoint === 'knee' && 'Fully extend your knee, then slowly flex it'}
+                          {selectedJoint === 'hip' && 'Rotate your hip through full range of motion'}
+                          {selectedJoint === 'shoulder' && 'Raise arm overhead, then lower slowly'}
+                          {selectedJoint === 'elbow' && 'Fully extend elbow, then flex slowly'}
+                          {selectedJoint === 'wrist' && 'Rotate wrist through full range'}
+                          {selectedJoint === 'ankle' && 'Point toe down, then flex up'}
+                        </p>
+                      </div>
+
+                      <Button
+                        onClick={() => setPaintrackStep('pain-report')}
+                        className="w-full gap-2"
+                        data-testid="button-start-recording"
+                      >
+                        <Camera className="h-4 w-4" />
+                        Start Recording
+                      </Button>
+                    </div>
+                  )}
+
+                  {paintrackStep === 'pain-report' && (
+                    <div className="space-y-4" data-testid="paintrack-pain-report">
+                      <h3 className="font-semibold text-sm">Self-Report Pain Level</h3>
+
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-sm">Pain Level (0-10)</Label>
+                          <div className="flex items-center gap-3 mt-2">
+                            <span className="text-xs text-muted-foreground">0</span>
+                            <input
+                              type="range"
+                              min="0"
+                              max="10"
+                              value={painVAS}
+                              onChange={(e) => setPainVAS(parseInt(e.target.value))}
+                              className="flex-1"
+                              data-testid="slider-pain-vas"
+                            />
+                            <span className="text-xs text-muted-foreground">10</span>
+                          </div>
+                          <div className="flex justify-between mt-1 text-xs text-muted-foreground">
+                            <span>No pain</span>
+                            <Badge variant="outline" className="font-bold text-base">
+                              {painVAS}
+                            </Badge>
+                            <span>Worst pain</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label className="text-sm">Additional Notes (Optional)</Label>
+                          <textarea
+                            value={painNotes}
+                            onChange={(e) => setPainNotes(e.target.value)}
+                            className="w-full mt-1 p-2 text-sm border rounded-md"
+                            rows={3}
+                            placeholder="Describe your pain, triggers, or any other details..."
+                            data-testid="textarea-pain-notes"
+                          />
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={medicationTaken}
+                            onChange={(e) => setMedicationTaken(e.target.checked)}
+                            id="medication-taken"
+                            data-testid="checkbox-medication-taken"
+                            className="rounded"
+                          />
+                          <Label htmlFor="medication-taken" className="text-sm cursor-pointer">
+                            I took pain medication today
+                          </Label>
+                        </div>
+
+                        {medicationTaken && (
+                          <div>
+                            <Label className="text-sm">Medication Details</Label>
+                            <input
+                              type="text"
+                              value={medicationDetails}
+                              onChange={(e) => setMedicationDetails(e.target.value)}
+                              className="w-full mt-1 p-2 text-sm border rounded-md"
+                              placeholder="e.g., Ibuprofen 400mg at 9am"
+                              data-testid="input-medication-details"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <Button
+                        onClick={() => {
+                          setPaintrackStep('complete');
+                          toast({
+                            title: "Session Saved!",
+                            description: `Pain level ${painVAS}/10 recorded for ${selectedJoint}`,
+                          });
+                        }}
+                        className="w-full"
+                        data-testid="button-submit-pain-report"
+                      >
+                        Submit Report
+                      </Button>
+                    </div>
+                  )}
+
+                  {paintrackStep === 'complete' && (
+                    <div className="space-y-4" data-testid="paintrack-complete">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5 text-green-600" />
+                        <h3 className="font-semibold">Session Complete!</h3>
+                      </div>
+
+                      <div className="p-3 rounded-md bg-muted/30 border space-y-2 text-sm">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Module</p>
+                            <p className="font-medium">{selectedModule}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Joint</p>
+                            <p className="font-medium capitalize">{selectedLaterality} {selectedJoint}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Pain Level</p>
+                            <p className="font-medium">{painVAS}/10</p>
+                          </div>
+                          {medicationTaken && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Medication</p>
+                              <p className="font-medium text-xs">{medicationDetails || 'Yes'}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground">
+                        Your video will be analyzed for joint metrics and facial pain indicators. Results will appear in your dashboard within a few minutes.
+                      </p>
+
+                      <Button
+                        onClick={() => {
+                          setPaintrackStep('select-module');
+                          setSelectedModule(null);
+                          setSelectedJoint(null);
+                          setSelectedLaterality(null);
+                          setPainVAS(5);
+                          setPainNotes('');
+                          setMedicationTaken(false);
+                          setMedicationDetails('');
+                        }}
+                        className="w-full"
+                        data-testid="button-new-session"
+                      >
+                        New Session
+                      </Button>
                     </div>
                   )}
                 </TabsContent>
