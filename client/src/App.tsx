@@ -70,7 +70,9 @@ import DeteriorationDashboard from "@/pages/DeteriorationDashboard";
 import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
 import BehavioralAIInsights from "@/pages/BehavioralAIInsights";
 import AIVideoDashboard from "@/pages/AIVideoDashboard";
+import AIAudioDashboard from "@/pages/AIAudioDashboard";
 import GuidedVideoExam from "@/pages/GuidedVideoExam";
+import GuidedAudioExam from "@/pages/guided-audio-exam";
 import DailyFollowup from "@/pages/DailyFollowup";
 import MentalHealth from "@/pages/MentalHealth";
 import { DevLogin } from "@/components/DevLogin";
@@ -86,7 +88,9 @@ function PatientRouter() {
       <Route path="/deterioration" component={DeteriorationDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/ai-video" component={AIVideoDashboard} />
+      <Route path="/ai-audio" component={AIAudioDashboard} />
       <Route path="/guided-exam" component={GuidedVideoExam} />
+      <Route path="/guided-audio-exam" component={GuidedAudioExam} />
       <Route path="/behavioral-ai-insights" component={BehavioralAIInsights} />
       <Route path="/mental-health" component={MentalHealth} />
       <Route path="/habits" component={Habits} />
