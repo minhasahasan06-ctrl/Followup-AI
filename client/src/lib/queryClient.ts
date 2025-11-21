@@ -14,6 +14,7 @@ function getPythonBackendUrl(url: string): string {
   const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
 
   // Routes that should go to Python FastAPI backend
+  // NOTE: mental-health routes go through Express proxy for authentication/CORS handling
   if (
     normalizedUrl.startsWith("/api/v1/video-ai") ||
     normalizedUrl.startsWith("/api/v1/audio-ai") ||
@@ -22,8 +23,7 @@ function getPythonBackendUrl(url: string): string {
     normalizedUrl.startsWith("/api/v1/guided-audio-exam") ||
     normalizedUrl.startsWith("/api/v1/guided-exam") ||
     normalizedUrl.startsWith("/api/v1/gait-analysis") ||
-    normalizedUrl.startsWith("/api/v1/tremor") ||
-    normalizedUrl.startsWith("/api/v1/mental-health")
+    normalizedUrl.startsWith("/api/v1/tremor")
   ) {
     return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
   }
