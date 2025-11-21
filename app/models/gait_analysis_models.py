@@ -179,7 +179,6 @@ class GaitMetrics(Base):
     
     __table_args__ = (
         Index('idx_gait_metrics_patient_date', 'patient_id', 'created_at'),
-        Index('idx_gait_metrics_abnormality', 'gait_abnormality_detected'),
         Index('idx_gait_metrics_fall_risk', 'fall_risk_score'),
     )
 
