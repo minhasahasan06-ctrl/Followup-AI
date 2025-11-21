@@ -206,6 +206,9 @@ import {
   type InsertGmailSync,
   type GmailSyncLog,
   type InsertGmailSyncLog,
+  paintrackSessions,
+  type PaintrackSession,
+  type InsertPaintrackSession,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, sql, gte, lte, like, ilike, inArray, between } from "drizzle-orm";
@@ -607,6 +610,11 @@ export interface IStorage {
   createGmailSyncLog(log: InsertGmailSyncLog): Promise<GmailSyncLog>;
   getGmailSyncLogs(doctorId: string, limit?: number): Promise<GmailSyncLog[]>;
   getEmailThreadByExternalId(externalThreadId: string): Promise<EmailThread | undefined>;
+  
+  // PainTrack operations
+  createPaintrackSession(session: InsertPaintrackSession): Promise<PaintrackSession>;
+  getPaintrackSessions(userId: string, limit?: number): Promise<PaintrackSession[]>;
+  getPaintrackSession(id: string, userId: string): Promise<PaintrackSession | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3686,6 +3694,29 @@ export class DatabaseStorage implements IStorage {
       .from(emailThreads)
       .where(eq(emailThreads.externalThreadId, externalThreadId));
     return thread;
+  }
+
+  // PainTrack operations
+  async createPaintrackSession(session: InsertPaintrackSession): Promise<PaintrackSession> {
+    const [created] = await db.insert(paintrackSessions).values(session).returning();
+    return created;
+  }
+
+  async getPaintrackSessions(userId: string, limit: number = 30): Promise<PaintrackSession[]> {
+    return await db
+      .select()
+      .from(paintrackSessions)
+      .where(eq(paintrackSessions.userId, userId))
+      .orderBy(desc(paintrackSessions.createdAt))
+      .limit(limit);
+  }
+
+  async getPaintrackSession(id: string, userId: string): Promise<PaintrackSession | undefined> {
+    const [session] = await db
+      .select()
+      .from(paintrackSessions)
+      .where(and(eq(paintrackSessions.id, id), eq(paintrackSessions.userId, userId)));
+    return session;
   }
 }
 

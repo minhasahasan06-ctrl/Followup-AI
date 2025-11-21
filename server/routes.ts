@@ -5,6 +5,7 @@ import { isAuthenticated, isDoctor, isPatient, getSession } from "./auth";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 import * as schema from "@shared/schema";
+import { z } from "zod";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
 import { s3Client, textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -1166,29 +1167,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/paintrack/sessions', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user!.id;
-      const { module, joint, laterality, patientVas, patientNotes, medicationTaken, medicationDetails } = req.body;
-
-      // Validate required fields
-      if (!module || !joint || patientVas === undefined) {
-        return res.status(400).json({ message: "Missing required fields: module, joint, patientVas" });
-      }
-
-      // Validate VAS range (0-10)
-      if (patientVas < 0 || patientVas > 10) {
-        return res.status(400).json({ message: "Pain VAS must be between 0 and 10" });
-      }
-
-      const [session] = await db.insert(schema.paintrackSessions).values({
+      
+      // Validate request body using Zod schema
+      const validationResult = schema.insertPaintrackSessionSchema.extend({
+        patientVas: z.number().min(0).max(10),
+      }).safeParse({
+        ...req.body,
         userId,
-        module,
-        joint,
-        laterality: laterality || null,
-        patientVas,
-        patientNotes: patientNotes || null,
-        medicationTaken: medicationTaken || false,
-        medicationDetails: medicationDetails || null,
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const sessionData = validationResult.data;
+
+      // Use storage abstraction
+      const session = await storage.createPaintrackSession({
+        ...sessionData,
         status: 'pending',
-      }).returning();
+      });
 
       res.json(session);
     } catch (error) {
@@ -1202,11 +1203,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 30;
 
-      const sessions = await db.select()
-        .from(schema.paintrackSessions)
-        .where(eq(schema.paintrackSessions.userId, userId))
-        .orderBy(desc(schema.paintrackSessions.createdAt))
-        .limit(limit);
+      // Use storage abstraction
+      const sessions = await storage.getPaintrackSessions(userId, limit);
 
       res.json(sessions);
     } catch (error) {
@@ -1220,13 +1218,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       const { id } = req.params;
 
-      const [session] = await db.select()
-        .from(schema.paintrackSessions)
-        .where(and(
-          eq(schema.paintrackSessions.id, id),
-          eq(schema.paintrackSessions.userId, userId)
-        ))
-        .limit(1);
+      // Use storage abstraction
+      const session = await storage.getPaintrackSession(id, userId);
 
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
