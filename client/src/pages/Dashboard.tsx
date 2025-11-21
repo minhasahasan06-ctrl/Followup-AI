@@ -14,7 +14,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "wouter";
-import type { DailyFollowup, Medication, DynamicTask, BehavioralInsight } from "@shared/schema";
+import type { DailyFollowup, Medication, DynamicTask, BehavioralInsight, PaintrackSession } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Progress } from "@/components/ui/progress";
@@ -311,6 +311,20 @@ export default function Dashboard() {
   const [painNotes, setPainNotes] = useState<string>("");
   const [medicationTaken, setMedicationTaken] = useState<boolean>(false);
   const [medicationDetails, setMedicationDetails] = useState<string>("");
+  
+  // Dual-camera capture state
+  const [isRecordingPain, setIsRecordingPain] = useState<boolean>(false);
+  const [painRecordingTime, setPainRecordingTime] = useState<number>(0);
+  const [frontCameraStream, setFrontCameraStream] = useState<MediaStream | null>(null);
+  const [backCameraStream, setBackCameraStream] = useState<MediaStream | null>(null);
+  const [frontMediaRecorder, setFrontMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [backMediaRecorder, setBackMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [frontVideoBlob, setFrontVideoBlob] = useState<Blob | null>(null);
+  const [backVideoBlob, setBackVideoBlob] = useState<Blob | null>(null);
+  const [dualCameraSupported, setDualCameraSupported] = useState<boolean>(false);
+  const frontVideoRef = useRef<HTMLVideoElement>(null);
+  const backVideoRef = useRef<HTMLVideoElement>(null);
+  const painTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: todayFollowup } = useQuery<DailyFollowup>({
     queryKey: ["/api/daily-followup/today"],
@@ -375,7 +389,7 @@ export default function Dashboard() {
   });
 
   // PainTrack sessions query
-  const { data: paintrackSessions } = useQuery({
+  const { data: paintrackSessions, isLoading: paintrackSessionsLoading } = useQuery<PaintrackSession[]>({
     queryKey: ["/api/paintrack/sessions"],
     enabled: !!user,
   });
@@ -1381,6 +1395,35 @@ export default function Dashboard() {
 
                 {/* PainTrack Tab */}
                 <TabsContent value="paintrack" className="space-y-3">
+                  {/* Recent Sessions History */}
+                  {paintrackSessions && Array.isArray(paintrackSessions) && paintrackSessions.length > 0 && paintrackStep === 'select-module' && (
+                    <div className="p-3 rounded-md border bg-muted/30" data-testid="paintrack-session-history">
+                      <h3 className="font-semibold text-xs mb-2">Recent Sessions</h3>
+                      {paintrackSessionsLoading ? (
+                        <p className="text-xs text-muted-foreground">Loading sessions...</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {paintrackSessions.slice(0, 3).map((session: PaintrackSession) => (
+                            <div key={session.id} className="p-2 rounded-md bg-background border text-xs" data-testid={`paintrack-session-${session.id}`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-3 w-3 text-muted-foreground" />
+                                  <span className="font-medium capitalize">{session.laterality || ''} {session.joint}</span>
+                                </div>
+                                <Badge variant="outline" className="text-xs">
+                                  {session.patientVas}/10
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {session.module} • {new Date(session.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {paintrackStep === 'select-module' && (
                     <div className="space-y-4" data-testid="paintrack-module-selection">
                       <div>
@@ -1508,19 +1551,19 @@ export default function Dashboard() {
                         </AlertDescription>
                       </Alert>
 
-                      <div className="space-y-2 text-xs">
+                      <div className="space-y-2 text-xs" data-testid="prep-checklist">
                         <p className="font-medium">Before you start:</p>
                         <ul className="space-y-1 ml-4 list-disc text-muted-foreground">
-                          <li>Ensure good lighting on both face and joint</li>
-                          <li>Position camera to see full joint movement</li>
-                          <li>Keep camera stable (use a stand if possible)</li>
-                          <li>Recording will last 15-20 seconds</li>
+                          <li data-testid="prep-item-lighting">Ensure good lighting on both face and joint</li>
+                          <li data-testid="prep-item-positioning">Position camera to see full joint movement</li>
+                          <li data-testid="prep-item-stability">Keep camera stable (use a stand if possible)</li>
+                          <li data-testid="prep-item-duration">Recording will last 15-20 seconds</li>
                         </ul>
                       </div>
 
-                      <div className="p-3 rounded-md bg-muted/30 border text-xs space-y-1">
+                      <div className="p-3 rounded-md bg-muted/30 border text-xs space-y-1" data-testid="movement-instructions">
                         <p className="font-medium">Guided Movement:</p>
-                        <p className="text-muted-foreground">
+                        <p className="text-muted-foreground" data-testid={`movement-guidance-${selectedJoint}`}>
                           {selectedJoint === 'knee' && 'Fully extend your knee, then slowly flex it'}
                           {selectedJoint === 'hip' && 'Rotate your hip through full range of motion'}
                           {selectedJoint === 'shoulder' && 'Raise arm overhead, then lower slowly'}
@@ -1674,7 +1717,7 @@ export default function Dashboard() {
                       </div>
 
                       <p className="text-xs text-muted-foreground">
-                        Your video will be analyzed for joint metrics and facial pain indicators. Results will appear in your dashboard within a few minutes.
+                        Your self-reported pain level has been recorded. Optional video analysis (if recorded) will extract technical movement metrics only - pain is always based on your self-report.
                       </p>
 
                       <Button
