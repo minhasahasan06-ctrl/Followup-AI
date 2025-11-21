@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users, Mic, Volume2, MicOff, Pause, CheckCircle2, AlertCircle, Camera, TrendingDown, Minus, User, Info, GitCompare } from "lucide-react";
+import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users, Mic, Volume2, MicOff, Pause, CheckCircle2, AlertCircle, Camera, TrendingDown, Minus, User, Info, GitCompare, ClipboardList, AlertTriangle, Check, FileText, Phone, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,7 +21,10 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
 
 // Audio examination types
@@ -60,6 +63,73 @@ interface AudioAnalysisResults {
   cough_count: number;
   analysis_confidence: number;
   recommendations: string[];
+}
+
+// Mental Health types
+interface QuestionnaireTemplate {
+  type: string;
+  full_name: string;
+  description: string;
+  public_domain: boolean;
+  timeframe: string;
+  instructions: string;
+  response_options: Array<{
+    value: number;
+    label: string;
+  }>;
+  questions: Array<{
+    id: string;
+    text: string;
+    cluster: string;
+    crisis_flag?: boolean;
+    reverse_scored?: boolean;
+  }>;
+  scoring: {
+    max_score: number;
+    severity_levels: Array<{
+      range: number[];
+      level: string;
+      description: string;
+    }>;
+  };
+}
+
+interface QuestionnaireResponse {
+  response_id: string;
+  questionnaire_type: string;
+  score: {
+    total_score: number;
+    max_score: number;
+    severity_level: string;
+    severity_description: string;
+    cluster_scores: Record<string, any>;
+    neutral_summary: string;
+    key_observations: string[];
+  };
+  crisis_intervention?: {
+    crisis_detected: boolean;
+    crisis_severity: string;
+    intervention_message: string;
+    crisis_hotlines: Array<{
+      name: string;
+      phone?: string;
+      sms?: string;
+      description: string;
+      website: string;
+    }>;
+    next_steps: string[];
+  };
+  analysis_id?: string;
+}
+
+interface MentalHealthHistoryItem {
+  response_id: string;
+  questionnaire_type: string;
+  completed_at: string;
+  total_score: number;
+  max_score: number;
+  severity_level: string;
+  crisis_detected: boolean;
 }
 
 // Symptom Journal types
@@ -160,6 +230,14 @@ export default function Dashboard() {
   const symptomMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
+  // Mental Health state
+  const [selectedQuestionnaire, setSelectedQuestionnaire] = useState<QuestionnaireTemplate | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [mentalHealthResponses, setMentalHealthResponses] = useState<Record<string, { response: number; response_text: string }>>({});
+  const [isSubmittingMentalHealth, setIsSubmittingMentalHealth] = useState(false);
+  const [completedMentalHealthResponse, setCompletedMentalHealthResponse] = useState<QuestionnaireResponse | null>(null);
+  const [mentalHealthStartTime, setMentalHealthStartTime] = useState<number | null>(null);
+
   const { data: todayFollowup } = useQuery<DailyFollowup>({
     queryKey: ["/api/daily-followup/today"],
   });
@@ -221,6 +299,15 @@ export default function Dashboard() {
   const { data: comparisonData, isLoading: comparisonLoading } = useQuery({
     queryKey: [comparisonUrl || "/api/v1/symptom-journal/compare/disabled"],
     enabled: !!comparisonUrl,
+  });
+
+  // Mental Health queries
+  const { data: questionnairesData, isLoading: isLoadingQuestionnaires, isError: isErrorQuestionnaires, error: questionnaireError } = useQuery({
+    queryKey: ["/api/v1/mental-health/questionnaires"],
+  });
+
+  const { data: mentalHealthHistoryData, refetch: refetchMentalHealthHistory } = useQuery({
+    queryKey: ["/api/v1/mental-health/history"],
   });
 
   // Audio examination mutations
@@ -431,6 +518,113 @@ export default function Dashboard() {
 
   const audioProgressPercent = (completedStages.size / 4) * 100;
 
+  // Mental Health handlers
+  const handleStartQuestionnaire = (template: QuestionnaireTemplate) => {
+    setSelectedQuestionnaire(template);
+    setCurrentQuestionIndex(0);
+    setMentalHealthResponses({});
+    setCompletedMentalHealthResponse(null);
+    setMentalHealthStartTime(Date.now());
+  };
+
+  const handleMentalHealthResponseSelect = (questionId: string, value: number, label: string) => {
+    setMentalHealthResponses(prev => ({
+      ...prev,
+      [questionId]: { response: value, response_text: label }
+    }));
+  };
+
+  const handleMentalHealthNext = () => {
+    if (selectedQuestionnaire && currentQuestionIndex < selectedQuestionnaire.questions.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+    }
+  };
+
+  const handleMentalHealthPrevious = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+    }
+  };
+
+  const handleSubmitMentalHealth = async () => {
+    if (!selectedQuestionnaire) return;
+
+    const allQuestionsAnswered = selectedQuestionnaire.questions.every(q => mentalHealthResponses[q.id]);
+    if (!allQuestionsAnswered) {
+      toast({
+        title: "Incomplete Questionnaire",
+        description: "Please answer all questions before submitting.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmittingMentalHealth(true);
+
+    try {
+      const durationSeconds = mentalHealthStartTime ? Math.round((Date.now() - mentalHealthStartTime) / 1000) : null;
+
+      const formattedResponses = selectedQuestionnaire.questions.map(q => ({
+        question_id: q.id,
+        question_text: q.text,
+        response: mentalHealthResponses[q.id].response,
+        response_text: mentalHealthResponses[q.id].response_text,
+      }));
+
+      const result = await apiRequest<QuestionnaireResponse>("/api/v1/mental-health/submit", {
+        method: "POST",
+        body: JSON.stringify({
+          questionnaire_type: selectedQuestionnaire.type,
+          responses: formattedResponses,
+          duration_seconds: durationSeconds,
+          allow_storage: true,
+          allow_clinical_sharing: true,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      setCompletedMentalHealthResponse(result);
+      refetchMentalHealthHistory();
+      
+      toast({
+        title: "Questionnaire Submitted",
+        description: "Your responses have been recorded and analyzed.",
+      });
+
+    } catch (error: any) {
+      toast({
+        title: "Submission Failed",
+        description: error.message || "Failed to submit questionnaire. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingMentalHealth(false);
+    }
+  };
+
+  const handleStartNewMentalHealth = () => {
+    setSelectedQuestionnaire(null);
+    setCurrentQuestionIndex(0);
+    setMentalHealthResponses({});
+    setCompletedMentalHealthResponse(null);
+    setMentalHealthStartTime(null);
+  };
+
+  const getSeverityColor = (level: string) => {
+    const colors: Record<string, string> = {
+      minimal: "bg-green-500/10 text-green-700 dark:text-green-400",
+      low: "bg-green-500/10 text-green-700 dark:text-green-400",
+      mild: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
+      moderate: "bg-orange-500/10 text-orange-700 dark:text-orange-400",
+      moderately_severe: "bg-red-500/10 text-red-700 dark:text-red-400",
+      severe: "bg-red-600/10 text-red-700 dark:text-red-400",
+      high: "bg-red-500/10 text-red-700 dark:text-red-400",
+    };
+    return colors[level] || "bg-gray-500/10 text-gray-700 dark:text-gray-400";
+  };
+
   return (
     <div className="space-y-6">
       {showEmergency && (
@@ -536,11 +730,15 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="device" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-5">
                   <TabsTrigger value="device" data-testid="tab-device">Device Data</TabsTrigger>
                   <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal">Symptoms</TabsTrigger>
                   <TabsTrigger value="video-ai" data-testid="tab-video-ai">Video AI</TabsTrigger>
                   <TabsTrigger value="audio-ai" data-testid="tab-audio-ai">Audio AI</TabsTrigger>
+                  <TabsTrigger value="mental-health" data-testid="tab-mental-health">
+                    <Brain className="w-3 h-3 mr-1" />
+                    Mental Health
+                  </TabsTrigger>
                 </TabsList>
                 <TabsContent value="device" className="space-y-3">
                   <div className="grid grid-cols-2 gap-3 text-sm">
@@ -1016,6 +1214,311 @@ export default function Dashboard() {
                           <li>Pause patterns & neurological markers</li>
                         </ul>
                       </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Mental Health AI Tab */}
+                <TabsContent value="mental-health" className="space-y-3">
+                  {isLoadingQuestionnaires ? (
+                    <div className="flex items-center justify-center py-8" data-testid="loading-questionnaires">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : isErrorQuestionnaires ? (
+                    <Alert variant="destructive" data-testid="alert-questionnaires-error">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Error Loading Questionnaires</AlertTitle>
+                      <AlertDescription>
+                        {questionnaireError?.message || "Failed to load mental health questionnaires. Please try again."}
+                      </AlertDescription>
+                    </Alert>
+                  ) : completedMentalHealthResponse ? (
+                    <div className="space-y-4" data-testid="mental-health-results">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                          Assessment Complete
+                        </h3>
+                        <Button
+                          onClick={handleStartNewMentalHealth}
+                          variant="outline"
+                          size="sm"
+                          data-testid="button-start-new-assessment"
+                        >
+                          New Assessment
+                        </Button>
+                      </div>
+
+                      {completedMentalHealthResponse.crisis_intervention?.crisis_detected && (
+                        <Alert variant="destructive" className="border-red-600" data-testid="alert-crisis-detected">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertTitle>Immediate Support Available</AlertTitle>
+                          <AlertDescription className="space-y-2">
+                            <p>{completedMentalHealthResponse.crisis_intervention.intervention_message}</p>
+                            <div className="mt-3 space-y-2">
+                              {completedMentalHealthResponse.crisis_intervention.crisis_hotlines.map((hotline, idx) => (
+                                <div key={idx} className="flex items-start gap-2 text-sm">
+                                  <Phone className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                                  <div>
+                                    <strong>{hotline.name}:</strong> {hotline.phone || hotline.sms}
+                                    <p className="text-xs opacity-90">{hotline.description}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      <div className="grid gap-3">
+                        <div className="p-3 rounded-md bg-card border">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium">Overall Score</span>
+                            <Badge className={getSeverityColor(completedMentalHealthResponse.score.severity_level)}>
+                              {completedMentalHealthResponse.score.severity_level.replace(/_/g, ' ')}
+                            </Badge>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-bold">{completedMentalHealthResponse.score.total_score}</span>
+                            <span className="text-sm text-muted-foreground">/ {completedMentalHealthResponse.score.max_score}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {completedMentalHealthResponse.score.severity_description}
+                          </p>
+                        </div>
+
+                        <div className="p-3 rounded-md bg-muted/30 border text-sm space-y-2">
+                          <p className="font-medium flex items-center gap-2">
+                            <Brain className="h-3 w-3" />
+                            AI Analysis Summary
+                          </p>
+                          <p className="text-muted-foreground text-xs leading-relaxed">
+                            {completedMentalHealthResponse.score.neutral_summary}
+                          </p>
+                          {completedMentalHealthResponse.score.key_observations.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              <p className="text-xs font-medium">Key Observations:</p>
+                              <ul className="space-y-0.5">
+                                {completedMentalHealthResponse.score.key_observations.map((obs, idx) => (
+                                  <li key={idx} className="text-xs text-muted-foreground flex items-start gap-2">
+                                    <Check className="h-2 w-2 mt-0.5 flex-shrink-0" />
+                                    <span>{obs}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        {mentalHealthHistoryData?.history && mentalHealthHistoryData.history.length > 1 && (
+                          <div className="p-3 rounded-md bg-muted/30 border">
+                            <p className="text-sm font-medium mb-2">Recent History</p>
+                            <div className="space-y-1">
+                              {mentalHealthHistoryData.history.slice(0, 3).map((item: MentalHealthHistoryItem) => (
+                                <div key={item.response_id} className="flex items-center justify-between text-xs">
+                                  <span className="text-muted-foreground">
+                                    {format(new Date(item.completed_at), 'MMM d, yyyy')}
+                                  </span>
+                                  <Badge variant="outline" className={getSeverityColor(item.severity_level)}>
+                                    {item.total_score}/{item.max_score}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                            <Link href="/mental-health">
+                              <Button variant="link" size="sm" className="p-0 h-auto text-xs mt-2">
+                                View Full History →
+                              </Button>
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : selectedQuestionnaire ? (
+                    <div className="space-y-4" data-testid="questionnaire-active">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-semibold text-sm">{selectedQuestionnaire.full_name}</h3>
+                          <p className="text-xs text-muted-foreground">{selectedQuestionnaire.description}</p>
+                        </div>
+                        <Button
+                          onClick={handleStartNewMentalHealth}
+                          variant="ghost"
+                          size="sm"
+                          data-testid="button-cancel-questionnaire"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Question {currentQuestionIndex + 1} of {selectedQuestionnaire.questions.length}</span>
+                          <span>{Math.round(((currentQuestionIndex + 1) / selectedQuestionnaire.questions.length) * 100)}%</span>
+                        </div>
+                        <Progress value={((currentQuestionIndex + 1) / selectedQuestionnaire.questions.length) * 100} />
+                      </div>
+
+                      <ScrollArea className="h-[300px]">
+                        <div className="space-y-4 pr-4">
+                          <div className="p-4 rounded-md bg-muted/30 border">
+                            <p className="text-sm font-medium leading-relaxed">
+                              {selectedQuestionnaire.questions[currentQuestionIndex].text}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              {selectedQuestionnaire.timeframe}
+                            </p>
+                          </div>
+
+                          <RadioGroup
+                            value={mentalHealthResponses[selectedQuestionnaire.questions[currentQuestionIndex].id]?.response.toString() || ""}
+                            onValueChange={(value) => {
+                              const option = selectedQuestionnaire.response_options.find(o => o.value.toString() === value);
+                              if (option) {
+                                handleMentalHealthResponseSelect(
+                                  selectedQuestionnaire.questions[currentQuestionIndex].id,
+                                  option.value,
+                                  option.label
+                                );
+                              }
+                            }}
+                            className="space-y-2"
+                          >
+                            {selectedQuestionnaire.response_options.map((option) => (
+                              <div
+                                key={option.value}
+                                className="flex items-center space-x-2 p-2 rounded-md hover-elevate border"
+                                data-testid={`radio-option-${option.value}`}
+                              >
+                                <RadioGroupItem value={option.value.toString()} id={`option-${option.value}`} />
+                                <Label htmlFor={`option-${option.value}`} className="flex-1 text-sm cursor-pointer">
+                                  {option.label}
+                                </Label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      </ScrollArea>
+
+                      <div className="flex items-center justify-between gap-2 pt-2">
+                        <Button
+                          onClick={handleMentalHealthPrevious}
+                          disabled={currentQuestionIndex === 0}
+                          variant="outline"
+                          size="sm"
+                          data-testid="button-previous-question"
+                        >
+                          Previous
+                        </Button>
+                        
+                        {currentQuestionIndex === selectedQuestionnaire.questions.length - 1 ? (
+                          <Button
+                            onClick={handleSubmitMentalHealth}
+                            disabled={!selectedQuestionnaire.questions.every(q => mentalHealthResponses[q.id]) || isSubmittingMentalHealth}
+                            size="sm"
+                            className="gap-2"
+                            data-testid="button-submit-questionnaire"
+                          >
+                            {isSubmittingMentalHealth ? (
+                              <>
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Analyzing...
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-3 w-3" />
+                                Submit & Analyze
+                              </>
+                            )}
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={handleMentalHealthNext}
+                            disabled={!mentalHealthResponses[selectedQuestionnaire.questions[currentQuestionIndex].id]}
+                            size="sm"
+                            data-testid="button-next-question"
+                          >
+                            Next
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4" data-testid="questionnaire-selection">
+                      <div>
+                        <h3 className="font-semibold text-sm mb-1">Mental Health Screening</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Select a validated questionnaire to assess your mental wellbeing
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3">
+                        {questionnairesData?.questionnaires?.map((template: QuestionnaireTemplate) => (
+                          <div
+                            key={template.type}
+                            className="p-3 rounded-md border hover-elevate cursor-pointer"
+                            onClick={() => handleStartQuestionnaire(template)}
+                            data-testid={`card-questionnaire-${template.type}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <ClipboardList className="h-4 w-4" />
+                                  <h4 className="font-medium text-sm">{template.full_name}</h4>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">{template.description}</p>
+                                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                                  <span>{template.questions.length} questions</span>
+                                  <span>•</span>
+                                  <span>~2-3 min</span>
+                                  {template.public_domain && (
+                                    <>
+                                      <span>•</span>
+                                      <Badge variant="outline" className="h-5 text-xs">Public Domain</Badge>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              <FileText className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <Alert className="text-xs" data-testid="alert-mental-health-disclaimer">
+                        <Info className="h-3 w-3" />
+                        <AlertDescription>
+                          These are screening tools, not diagnostic assessments. Results are analyzed by AI for pattern detection and stored securely for trend tracking.
+                        </AlertDescription>
+                      </Alert>
+
+                      {mentalHealthHistoryData?.history && mentalHealthHistoryData.history.length > 0 && (
+                        <div className="p-3 rounded-md bg-muted/30 border">
+                          <p className="text-sm font-medium mb-2">Recent Assessments</p>
+                          <div className="space-y-1">
+                            {mentalHealthHistoryData.history.slice(0, 2).map((item: MentalHealthHistoryItem) => (
+                              <div key={item.response_id} className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">
+                                  {format(new Date(item.completed_at), 'MMM d, h:mm a')}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className={getSeverityColor(item.severity_level)}>
+                                    {item.total_score}/{item.max_score}
+                                  </Badge>
+                                  {item.crisis_detected && (
+                                    <AlertTriangle className="h-3 w-3 text-red-600" />
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <Link href="/mental-health">
+                            <Button variant="link" size="sm" className="p-0 h-auto text-xs mt-2">
+                              View All History →
+                            </Button>
+                          </Link>
+                        </div>
+                      )}
                     </div>
                   )}
                 </TabsContent>
