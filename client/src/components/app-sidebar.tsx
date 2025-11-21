@@ -88,12 +88,6 @@ const patientItems = [
     badge: "AI",
   },
   {
-    title: "Exam Coach",
-    url: "/exam-coach",
-    icon: Camera,
-    badge: "AI",
-  },
-  {
     title: "Medication Effects",
     url: "/medication-effects",
     icon: Pill,
