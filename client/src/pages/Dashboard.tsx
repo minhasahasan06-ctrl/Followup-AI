@@ -317,14 +317,16 @@ export default function Dashboard() {
   const [painRecordingTime, setPainRecordingTime] = useState<number>(0);
   const [frontCameraStream, setFrontCameraStream] = useState<MediaStream | null>(null);
   const [backCameraStream, setBackCameraStream] = useState<MediaStream | null>(null);
-  const [frontMediaRecorder, setFrontMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [backMediaRecorder, setBackMediaRecorder] = useState<MediaRecorder | null>(null);
   const [frontVideoBlob, setFrontVideoBlob] = useState<Blob | null>(null);
   const [backVideoBlob, setBackVideoBlob] = useState<Blob | null>(null);
   const [dualCameraSupported, setDualCameraSupported] = useState<boolean>(false);
   const frontVideoRef = useRef<HTMLVideoElement>(null);
   const backVideoRef = useRef<HTMLVideoElement>(null);
   const painTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const frontMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const backMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const frontChunksRef = useRef<Blob[]>([]);
+  const backChunksRef = useRef<Blob[]>([]);
 
   const { data: todayFollowup } = useQuery<DailyFollowup>({
     queryKey: ["/api/daily-followup/today"],
@@ -625,6 +627,223 @@ export default function Dashboard() {
       setIsRecording(false);
     }
   };
+
+  // PainTrack dual-camera recording functions
+  const startDualCameraRecording = async () => {
+    try {
+      // Reset dual-camera status at start of each session
+      setDualCameraSupported(false);
+      
+      // Check MediaRecorder API availability
+      if (typeof MediaRecorder === 'undefined') {
+        throw new Error('Video recording is not supported on this browser. Please use Chrome, Firefox, or Safari 14.1+');
+      }
+      
+      // Determine best MIME type with fallback chain
+      let mimeType: string;
+      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      
+      // Test MIME types in order of preference
+      if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+        mimeType = 'video/mp4;codecs=h264';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        mimeType = 'video/webm;codecs=vp9';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+        mimeType = 'video/webm;codecs=vp8';
+      } else if (MediaRecorder.isTypeSupported('video/webm')) {
+        mimeType = 'video/webm';
+      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        mimeType = 'video/mp4';
+      } else {
+        throw new Error('MediaRecorder not supported on this device. Please use a modern browser.');
+      }
+      
+      console.log(`[PainTrack] Selected MIME type: ${mimeType}, iOS: ${isIOS}`);
+
+      // Front camera (user-facing)
+      const frontConstraints: MediaStreamConstraints = {
+        video: { facingMode: 'user', width: 1280, height: 720 },
+        audio: false
+      };
+
+      // Back camera (environment-facing for joint)
+      const backConstraints: MediaStreamConstraints = {
+        video: { facingMode: 'environment', width: 1280, height: 720 },
+        audio: false
+      };
+
+      // Attempt to get both streams
+      const frontStream = await navigator.mediaDevices.getUserMedia(frontConstraints);
+      setFrontCameraStream(frontStream);
+      
+      if (frontVideoRef.current) {
+        frontVideoRef.current.srcObject = frontStream;
+      }
+
+      // Try to get back camera (may not be supported on all devices)
+      let backStream: MediaStream | null = null;
+      try {
+        backStream = await navigator.mediaDevices.getUserMedia(backConstraints);
+        setBackCameraStream(backStream);
+        
+        if (backVideoRef.current) {
+          backVideoRef.current.srcObject = backStream;
+        }
+      } catch (backCameraError) {
+        console.warn("Back camera not available, using front camera only:", backCameraError);
+        toast({
+          title: "Single Camera Mode",
+          description: "Using front camera only. Back camera not available on this device.",
+        });
+      }
+
+      // Start recording on both streams using refs for stability
+      frontChunksRef.current = [];
+      const frontRecorder = new MediaRecorder(frontStream, { mimeType });
+      
+      frontRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          frontChunksRef.current.push(event.data);
+        }
+      };
+
+      frontRecorder.onstop = () => {
+        const blob = new Blob(frontChunksRef.current, { type: mimeType });
+        setFrontVideoBlob(blob);
+        frontChunksRef.current = [];
+      };
+
+      frontRecorder.onerror = (event) => {
+        console.error('[PainTrack] Front camera recording error:', event);
+        toast({
+          variant: "destructive",
+          title: "Recording Error",
+          description: "Front camera recording failed. Please try again.",
+        });
+      };
+
+      frontRecorder.start();
+      frontMediaRecorderRef.current = frontRecorder;
+
+      // Record back camera if available (use local backStream variable, not state)
+      if (backStream) {
+        backChunksRef.current = [];
+        const backRecorder = new MediaRecorder(backStream, { mimeType });
+        
+        backRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            backChunksRef.current.push(event.data);
+          }
+        };
+
+        backRecorder.onstop = () => {
+          const blob = new Blob(backChunksRef.current, { type: mimeType });
+          // Only set blob if we have chunks (confirms successful recording)
+          if (backChunksRef.current.length > 0) {
+            setBackVideoBlob(blob);
+          } else {
+            console.warn('[PainTrack] Back camera stopped with no data');
+            setDualCameraSupported(false);
+          }
+          backChunksRef.current = [];
+        };
+
+        backRecorder.onerror = (event) => {
+          console.error('[PainTrack] Back camera recording error:', event);
+          setDualCameraSupported(false);
+          toast({
+            title: "Single Camera Mode",
+            description: "Back camera failed. Continuing with front camera only.",
+          });
+        };
+
+        try {
+          backRecorder.start();
+          backMediaRecorderRef.current = backRecorder;
+          
+          // Set dualCameraSupported only after back camera successfully started
+          setDualCameraSupported(true);
+          console.log('[PainTrack] Dual-camera recording started successfully');
+        } catch (startError) {
+          console.error('[PainTrack] Failed to start back camera recorder:', startError);
+          setDualCameraSupported(false);
+        }
+      } else {
+        // Back camera not available
+        setDualCameraSupported(false);
+        console.log('[PainTrack] Single-camera mode (back camera unavailable)');
+      }
+
+      setIsRecordingPain(true);
+      setPainRecordingTime(0);
+
+      // Auto-stop after 20 seconds
+      setTimeout(() => {
+        stopDualCameraRecording();
+      }, 20000);
+
+    } catch (error) {
+      console.error("Camera access error:", error);
+      toast({
+        variant: "destructive",
+        title: "Camera Access Denied",
+        description: "Please allow camera access to record your movement.",
+      });
+    }
+  };
+
+  const stopDualCameraRecording = () => {
+    // Use refs directly to ensure we have stable references
+    const frontRec = frontMediaRecorderRef.current;
+    const backRec = backMediaRecorderRef.current;
+    
+    if (frontRec && frontRec.state !== 'inactive') {
+      frontRec.stop();
+    }
+    if (backRec && backRec.state !== 'inactive') {
+      backRec.stop();
+    }
+
+    // Stop all tracks
+    frontCameraStream?.getTracks().forEach(track => track.stop());
+    backCameraStream?.getTracks().forEach(track => track.stop());
+
+    setIsRecordingPain(false);
+    
+    if (painTimerRef.current) {
+      clearInterval(painTimerRef.current);
+      painTimerRef.current = null;
+    }
+
+    // Wait for blob creation before moving to next step
+    // DO NOT clear refs here - they're needed for blob creation in onstop handlers
+    setTimeout(() => {
+      setPaintrackStep('pain-report');
+    }, 1000); // Increased to 1s to ensure blobs are ready
+  };
+
+  // Timer effect for pain recording
+  useEffect(() => {
+    if (isRecordingPain) {
+      painTimerRef.current = setInterval(() => {
+        setPainRecordingTime(prev => prev + 1);
+      }, 1000);
+    } else if (painTimerRef.current) {
+      clearInterval(painTimerRef.current);
+      painTimerRef.current = null;
+    }
+    return () => {
+      if (painTimerRef.current) clearInterval(painTimerRef.current);
+    };
+  }, [isRecordingPain]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      frontCameraStream?.getTracks().forEach(track => track.stop());
+      backCameraStream?.getTracks().forEach(track => track.stop());
+    };
+  }, [frontCameraStream, backCameraStream]);
 
   const handleAudioStageStart = () => {
     setShowPrep(true);
@@ -1574,12 +1793,94 @@ export default function Dashboard() {
                       </div>
 
                       <Button
-                        onClick={() => setPaintrackStep('pain-report')}
+                        onClick={() => {
+                          setPaintrackStep('recording');
+                          startDualCameraRecording();
+                        }}
                         className="w-full gap-2"
                         data-testid="button-start-recording"
                       >
                         <Camera className="h-4 w-4" />
-                        Start Recording
+                        Start Dual-Camera Recording
+                      </Button>
+                    </div>
+                  )}
+
+                  {paintrackStep === 'recording' && (
+                    <div className="space-y-4" data-testid="paintrack-recording">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm">Recording in Progress</h3>
+                        <Badge variant="outline" className="text-xs">
+                          {Math.floor(painRecordingTime / 60)}:{(painRecordingTime % 60).toString().padStart(2, '0')}
+                        </Badge>
+                      </div>
+
+                      {dualCameraSupported && (
+                        <Alert data-testid="alert-iphone17-detected">
+                          <Info className="h-4 w-4" />
+                          <AlertDescription className="text-xs">
+                            iPhone 17 Pro detected - Dual-camera recording active
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium">Front Camera (Face)</p>
+                          <video
+                            ref={frontVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full rounded-md border bg-black aspect-video"
+                            data-testid="video-front-camera"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium">Back Camera (Joint)</p>
+                          <video
+                            ref={backVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full rounded-md border bg-black aspect-video"
+                            data-testid="video-back-camera"
+                          />
+                          {!backCameraStream && (
+                            <p className="text-xs text-muted-foreground">
+                              Single camera mode
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-md bg-muted/30 border text-xs" data-testid="movement-guidance-active">
+                        <p className="font-medium mb-1">Perform movement:</p>
+                        <p className="text-muted-foreground">
+                          {selectedJoint === 'knee' && 'Fully extend your knee, then slowly flex it'}
+                          {selectedJoint === 'hip' && 'Rotate your hip through full range of motion'}
+                          {selectedJoint === 'shoulder' && 'Raise arm overhead, then lower slowly'}
+                          {selectedJoint === 'elbow' && 'Fully extend elbow, then flex slowly'}
+                          {selectedJoint === 'wrist' && 'Rotate wrist through full range'}
+                          {selectedJoint === 'ankle' && 'Point toe down, then flex up'}
+                        </p>
+                      </div>
+
+                      {isRecordingPain && (
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="h-3 w-3 rounded-full bg-red-500 animate-pulse" />
+                          <span className="text-sm font-medium">Recording...</span>
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={stopDualCameraRecording}
+                        variant="outline"
+                        className="w-full"
+                        disabled={!isRecordingPain}
+                        data-testid="button-stop-recording"
+                      >
+                        Stop Recording
                       </Button>
                     </div>
                   )}
@@ -1665,16 +1966,94 @@ export default function Dashboard() {
                             return;
                           }
                           
-                          createPaintrackSessionMutation.mutate({
-                            module: selectedModule,
-                            joint: selectedJoint,
-                            laterality: selectedLaterality,
-                            patientVas: painVAS,
-                            patientNotes: painNotes,
-                            medicationTaken,
-                            medicationDetails,
-                          });
+                          // Calculate video metadata
+                          const hasVideos = frontVideoBlob !== null;
+                          const hasDualCamera = backVideoBlob !== null;
+                          const recordingDuration = painRecordingTime;
                           
+                          // S3 Upload Implementation
+                          const uploadVideosAndSubmit = async () => {
+                            let frontVideoUrl: string | undefined;
+                            let jointVideoUrl: string | undefined;
+                            let frontUploadSuccess = false;
+                            let backUploadSuccess = false;
+
+                            try {
+                              // Upload front camera video if available
+                              if (frontVideoBlob) {
+                                const frontFormData = new FormData();
+                                frontFormData.append('video', frontVideoBlob, `paintrack-front-${Date.now()}.webm`);
+                                frontFormData.append('videoType', 'front');
+                                frontFormData.append('module', selectedModule);
+                                frontFormData.append('joint', selectedJoint || '');
+
+                                const frontUpload = await fetch('/api/paintrack/upload-video', {
+                                  method: 'POST',
+                                  body: frontFormData,
+                                });
+
+                                if (frontUpload.ok) {
+                                  const frontData = await frontUpload.json();
+                                  frontVideoUrl = frontData.videoUrl;
+                                  frontUploadSuccess = true;
+                                } else {
+                                  console.warn("Front camera upload failed, proceeding without video");
+                                }
+                              }
+
+                              // Upload back camera video if available
+                              if (backVideoBlob) {
+                                const backFormData = new FormData();
+                                backFormData.append('video', backVideoBlob, `paintrack-back-${Date.now()}.webm`);
+                                backFormData.append('videoType', 'back');
+                                backFormData.append('module', selectedModule);
+                                backFormData.append('joint', selectedJoint || '');
+
+                                const backUpload = await fetch('/api/paintrack/upload-video', {
+                                  method: 'POST',
+                                  body: backFormData,
+                                });
+
+                                if (backUpload.ok) {
+                                  const backData = await backUpload.json();
+                                  jointVideoUrl = backData.videoUrl;
+                                  backUploadSuccess = true;
+                                } else {
+                                  console.warn("Back camera upload failed, proceeding without joint video");
+                                }
+                              }
+                            } catch (uploadError) {
+                              console.error("Video upload error:", uploadError);
+                              toast({
+                                variant: "destructive",
+                                title: "Video Upload Issue",
+                                description: "Videos could not be uploaded, but your pain report will still be saved.",
+                              });
+                            }
+
+                            // Submit session with video URLs or metadata only
+                            // dualCameraSupported is true ONLY if BOTH uploads succeeded
+                            const actualDualCameraSuccess = frontUploadSuccess && backUploadSuccess;
+                            
+                            console.log(`[PainTrack] Upload summary - Front: ${frontUploadSuccess}, Back: ${backUploadSuccess}, Dual: ${actualDualCameraSuccess}`);
+                            
+                            createPaintrackSessionMutation.mutate({
+                              module: selectedModule,
+                              joint: selectedJoint,
+                              laterality: selectedLaterality,
+                              patientVas: painVAS,
+                              patientNotes: painNotes,
+                              medicationTaken,
+                              medicationDetails,
+                              recordingDuration: hasVideos ? recordingDuration : undefined,
+                              dualCameraSupported: actualDualCameraSuccess, // TRUE only if both uploaded
+                              frontVideoUrl,
+                              jointVideoUrl,
+                            });
+                          };
+
+                          // Execute upload and submission
+                          uploadVideosAndSubmit();
                           setPaintrackStep('complete');
                         }}
                         className="w-full"
@@ -1715,6 +2094,15 @@ export default function Dashboard() {
                           )}
                         </div>
                       </div>
+
+                      {frontVideoBlob && (
+                        <Alert data-testid="alert-videos-captured">
+                          <CheckCircle className="h-4 w-4" />
+                          <AlertDescription className="text-xs">
+                            ✓ Video captured ({backVideoBlob ? 'Dual-camera' : 'Single camera'}) - {painRecordingTime}s recording
+                          </AlertDescription>
+                        </Alert>
+                      )}
 
                       <p className="text-xs text-muted-foreground">
                         Your self-reported pain level has been recorded. Optional video analysis (if recorded) will extract technical movement metrics only - pain is always based on your self-report.
