@@ -92,12 +92,12 @@ export default function MentalHealth() {
   const [startTime, setStartTime] = useState<number | null>(null);
 
   // Fetch available questionnaires
-  const { data: questionnairesData } = useQuery({
+  const { data: questionnairesData, isLoading: isLoadingQuestionnaires, isError: isErrorQuestionnaires, error: questionnaireError } = useQuery({
     queryKey: ["/api/v1/mental-health/questionnaires"],
   });
 
   // Fetch history
-  const { data: historyData, refetch: refetchHistory } = useQuery({
+  const { data: historyData, isLoading: isLoadingHistory, isError: isErrorHistory, refetch: refetchHistory } = useQuery({
     queryKey: ["/api/v1/mental-health/history"],
   });
 
@@ -260,7 +260,40 @@ export default function MentalHealth() {
                   </AlertDescription>
                 </Alert>
 
-                {questionnairesData?.questionnaires?.map((template: QuestionnaireTemplate) => (
+                {/* Loading State */}
+                {isLoadingQuestionnaires && (
+                  <Card>
+                    <CardContent className="flex items-center justify-center p-12">
+                      <div className="flex flex-col items-center gap-4">
+                        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                        <p className="text-muted-foreground">Loading questionnaires...</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Error State */}
+                {isErrorQuestionnaires && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Connection Error</AlertTitle>
+                    <AlertDescription className="space-y-2">
+                      <p>Unable to load mental health questionnaires. The mental health service may not be running.</p>
+                      <p className="text-sm font-mono bg-destructive/10 p-2 rounded">
+                        {questionnaireError?.message || "Failed to connect to /api/v1/mental-health/questionnaires"}
+                      </p>
+                      <p className="text-sm mt-2">Please ensure both backends are running:</p>
+                      <ul className="text-sm list-disc list-inside ml-2">
+                        <li>Express backend (port 5000)</li>
+                        <li>Python backend (port 8000)</li>
+                      </ul>
+                      <p className="text-sm mt-2">Run: <code className="bg-destructive/10 px-1 rounded">bash start-both-backends.sh</code></p>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Questionnaires List */}
+                {!isLoadingQuestionnaires && !isErrorQuestionnaires && questionnairesData?.questionnaires?.map((template: QuestionnaireTemplate) => (
                   <Card key={template.type} className="hover-elevate active-elevate-2 cursor-pointer" onClick={() => handleStartQuestionnaire(template)} data-testid={`card-questionnaire-${template.type}`}>
                     <CardHeader>
                       <div className="flex items-start justify-between">
