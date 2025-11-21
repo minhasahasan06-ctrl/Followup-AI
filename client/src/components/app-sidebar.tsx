@@ -32,6 +32,7 @@ import {
   Mic,
   Bell,
   TrendingUp,
+  Brain,
 } from "lucide-react";
 import {
   Sidebar,
@@ -127,6 +128,12 @@ const patientItems = [
     title: "Counseling",
     url: "/counseling",
     icon: MessageCircle,
+  },
+  {
+    title: "Mental Health",
+    url: "/mental-health",
+    icon: Brain,
+    badge: "AI",
   },
   {
     title: "App Connections",
