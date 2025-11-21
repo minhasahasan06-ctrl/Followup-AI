@@ -56,7 +56,7 @@ class AudioAIEngine:
                 sf = sf_module
                 LIBROSA_AVAILABLE = True
             except ImportError:
-                logger.warning("Librosa/soundfile not available - audio processing disabled")
+                # Librosa is optional - no warning
                 LIBROSA_AVAILABLE = False
             _LIBROSA_CHECKED = True
         
@@ -70,7 +70,7 @@ class AudioAIEngine:
                 fft = scipy_fft
                 SCIPY_AVAILABLE = True
             except ImportError:
-                logger.warning("SciPy not available - advanced signal processing disabled")
+                # SciPy is optional - no warning
                 SCIPY_AVAILABLE = False
             _SCIPY_CHECKED = True
         
@@ -105,9 +105,8 @@ class AudioAIEngine:
                     yamnet_class_names = ['Speech', 'Cough', 'Breathing', 'Wheeze', 'Snoring']
                 
                 YAMNET_AVAILABLE = True
-                logger.info(f"✅ YAMNet loaded with {len(yamnet_class_names)} audio event classes")
             except Exception as e:
-                logger.warning(f"YAMNet not available - ML audio classification disabled: {e}")
+                # YAMNet is optional - no warning
                 YAMNET_AVAILABLE = False
             _YAMNET_CHECKED = True
     
