@@ -69,6 +69,8 @@ import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
 import DeteriorationDashboard from "@/pages/DeteriorationDashboard";
 import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
 import BehavioralAIInsights from "@/pages/BehavioralAIInsights";
+import AIVideoDashboard from "@/pages/AIVideoDashboard";
+import GuidedVideoExam from "@/pages/GuidedVideoExam";
 import DailyFollowup from "@/pages/DailyFollowup";
 import MentalHealth from "@/pages/MentalHealth";
 import { DevLogin } from "@/components/DevLogin";
@@ -83,6 +85,8 @@ function PatientRouter() {
       <Route path="/medication-effects" component={MedicationEffects} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
+      <Route path="/ai-video" component={AIVideoDashboard} />
+      <Route path="/guided-exam" component={GuidedVideoExam} />
       <Route path="/behavioral-ai-insights" component={BehavioralAIInsights} />
       <Route path="/mental-health" component={MentalHealth} />
       <Route path="/habits" component={Habits} />
