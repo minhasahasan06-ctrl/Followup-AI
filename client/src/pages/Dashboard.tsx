@@ -339,6 +339,47 @@ export default function Dashboard() {
     ? new Date(latestVideoMetrics.created_at).toDateString() === new Date().toDateString()
     : false;
 
+  // PainTrack mutations
+  const createPaintrackSessionMutation = useMutation({
+    mutationFn: async (sessionData: {
+      module: string;
+      joint: string;
+      laterality: string | null;
+      patientVas: number;
+      patientNotes: string;
+      medicationTaken: boolean;
+      medicationDetails: string;
+    }) => {
+      return await apiRequest("/api/paintrack/sessions", {
+        method: "POST",
+        body: JSON.stringify(sessionData),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/paintrack/sessions"] });
+      toast({
+        title: "Session Saved!",
+        description: `Pain level ${painVAS}/10 recorded for ${selectedJoint}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Failed to Save Session",
+        description: error.message
+      });
+    }
+  });
+
+  // PainTrack sessions query
+  const { data: paintrackSessions } = useQuery({
+    queryKey: ["/api/paintrack/sessions"],
+    enabled: !!user,
+  });
+
   // Symptom Journal queries
   const measurementsUrl = `/api/v1/symptom-journal/measurements/recent?${new URLSearchParams({
     ...(selectedBodyArea && { body_area: selectedBodyArea }),
@@ -1572,16 +1613,32 @@ export default function Dashboard() {
 
                       <Button
                         onClick={() => {
-                          setPaintrackStep('complete');
-                          toast({
-                            title: "Session Saved!",
-                            description: `Pain level ${painVAS}/10 recorded for ${selectedJoint}`,
+                          if (!selectedModule || !selectedJoint) {
+                            toast({
+                              variant: "destructive",
+                              title: "Missing Information",
+                              description: "Module and joint are required",
+                            });
+                            return;
+                          }
+                          
+                          createPaintrackSessionMutation.mutate({
+                            module: selectedModule,
+                            joint: selectedJoint,
+                            laterality: selectedLaterality,
+                            patientVas: painVAS,
+                            patientNotes: painNotes,
+                            medicationTaken,
+                            medicationDetails,
                           });
+                          
+                          setPaintrackStep('complete');
                         }}
                         className="w-full"
+                        disabled={createPaintrackSessionMutation.isPending}
                         data-testid="button-submit-pain-report"
                       >
-                        Submit Report
+                        {createPaintrackSessionMutation.isPending ? "Saving..." : "Submit Report"}
                       </Button>
                     </div>
                   )}
