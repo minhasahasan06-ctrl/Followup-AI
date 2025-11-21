@@ -16,6 +16,7 @@ import fs from "fs";
 import speakeasy from "speakeasy";
 import QRCode from "qrcode";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import { personalizationService } from "./personalizationService";
 import { rlRewardCalculator } from "./rlRewardCalculator";
 import { 
@@ -6291,6 +6292,50 @@ Please ask the doctor which date they want to check.`;
     } catch (error) {
       console.error('Error fetching video AI metrics:', error);
       res.status(500).json({ message: 'Failed to fetch video AI metrics' });
+    }
+  });
+
+  // Proxy all mental-health endpoints to Python backend
+  app.all('/api/v1/mental-health/*', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const path = req.path; // e.g., /api/v1/mental-health/questionnaires
+      const url = `${pythonBackendUrl}${path}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
+      
+      // Generate dev mode JWT token for Python backend authentication
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        // Create dev mode JWT token
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(url, {
+        method: req.method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+          'X-User-Id': req.user?.id || '',
+        },
+        body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (mental-health): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      // Network or connection error
+      console.error('Error connecting to Python backend (mental-health):', error);
+      res.status(502).json({ error: 'Failed to connect to mental health service' });
     }
   });
 
