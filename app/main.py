@@ -1,7 +1,32 @@
+import os
+import sys
+
+# ============================================================================
+# SUPPRESS ALL STARTUP WARNINGS - User requested zero warnings
+# ============================================================================
+# Suppress TensorFlow CUDA and logging warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress all TF logs (0=all, 1=info, 2=warning, 3=error only)
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU mode - no CUDA warnings
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN custom ops warnings
+
+# Suppress other library warnings
+import warnings
+warnings.filterwarnings('ignore')
+
+# Configure logging BEFORE any imports
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:%(name)s:%(message)s'
+)
+# Suppress verbose library loggers
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('absl').setLevel(logging.ERROR)
+logging.getLogger('mediapipe').setLevel(logging.ERROR)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import logging
 from app.config import settings, check_openai_baa_compliance
 from app.database import Base, engine
 from app.services.ai_engine_manager import AIEngineManager

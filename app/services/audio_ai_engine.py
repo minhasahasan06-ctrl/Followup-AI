@@ -81,7 +81,7 @@ class AudioAIEngine:
                 nr = nr_module
                 NOISEREDUCE_AVAILABLE = True
             except ImportError:
-                logger.warning("Noisereduce not available - noise reduction disabled")
+                # Noisereduce is optional - don't spam warnings
                 NOISEREDUCE_AVAILABLE = False
             _NOISEREDUCE_CHECKED = True
         
