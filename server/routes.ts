@@ -6295,7 +6295,31 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
-  // Proxy all mental-health endpoints to Python backend
+  // Proxy questionnaire templates endpoint (public - these are public domain instruments)
+  app.all('/api/v1/mental-health/questionnaires*', async (req: any, res) => {
+    try {
+      const path = req.path; // e.g., /api/v1/mental-health/questionnaires
+      const PYTHON_BACKEND = `http://localhost:8000`;
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      const url = `${PYTHON_BACKEND}${path}${queryString ? '?' + queryString : ''}`;
+
+      const response = await fetch(url, {
+        method: req.method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        ...(req.method !== 'GET' && req.method !== 'HEAD' ? { body: JSON.stringify(req.body) } : {})
+      });
+
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } catch (error: any) {
+      console.error('Error connecting to Python backend (mental-health questionnaires):', error);
+      res.status(500).json({ message: 'Mental Health service unavailable', detail: error.message });
+    }
+  });
+
+  // Proxy other mental-health endpoints (require authentication for submissions/history)
   app.all('/api/v1/mental-health/*', isAuthenticated, async (req: any, res) => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
