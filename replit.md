@@ -5,7 +5,8 @@ Followup AI is a HIPAA-compliant health monitoring platform for immunocompromise
 
 ## Recent Changes
 
-- **Mental Health Questionnaire System (Latest)**: Comprehensive production-ready mental health assessment platform with standardized screening questionnaires (PHQ-9, GAD-7, PSS-10). Features include validated scoring algorithms, crisis detection with immediate intervention messaging, LLM-powered non-diagnostic pattern analysis and symptom clustering, temporal trend tracking, visualization components, and export functionality for clinical sharing. Complete Python FastAPI backend with 9 endpoints and React frontend with clean UI, progress tracking, and history visualization. Accessible via sidebar Mental Health link with "AI" badge.
+- **Database Schema Fix (Latest)**: Fixed medication_timeline foreign key type mismatch - changed medication_id from Integer to String to match medications.id VARCHAR type. Resolved "DatatypeMismatch" error preventing Python backend startup.
+- **Mental Health Questionnaire System**: Comprehensive production-ready mental health assessment platform with standardized screening questionnaires (PHQ-9, GAD-7, PSS-10). Features include validated scoring algorithms, crisis detection with immediate intervention messaging, LLM-powered non-diagnostic pattern analysis and symptom clustering, temporal trend tracking, visualization components, and export functionality for clinical sharing. Complete Python FastAPI backend with 9 endpoints and React frontend with clean UI, progress tracking, and history visualization. Accessible via sidebar Mental Health link with "AI" badge.
 - **Symptom Journal Dashboard Integration**: Moved symptom journal from sidebar to daily followup dashboard as 4th tab (positioned between Device Data and Video AI). Tab displays recent measurements with AI observations, color change tracking, respiratory rate for chest exams, and active alerts banner. Compact view shows latest 2 measurements with link to full symptom journal page. Removed /symptom-journal from sidebar navigation while keeping route active for detailed tracking functionality.
 - **Complete Audio AI Workflow Inline Integration**: Fully integrated 4-stage guided audio examination workflow directly into Dashboard.tsx daily followup section. Complete implementation includes session management (create/upload/complete), MediaRecorder API integration with prep countdown (30s breathing/speaking, 15s coughing, 40s reading), real-time recording with pulsing mic UI, progress tracking across all 4 stages, ML analysis results display with YAMNet classification, and comprehensive error handling. Removed standalone /ai-audio and /guided-audio-exam routes and pages. All audio AI functionality now accessed inline within daily dashboard tabs - no navigation required. Full proxy routing to Python backend (/api/v1/guided-audio-exam/*).
 - **HIPAA Security Framework Deployed**: All tremor and gait analysis endpoints (10 total) now implement complete HIPAA security with authentication, patient ownership verification, comprehensive audit logging with [AUDIT] and [AUTH] tags, data integrity checks, and sanitized error handling preventing PHI exposure.
@@ -25,7 +26,33 @@ The frontend is built with React, TypeScript, Vite, Wouter for routing, TanStack
 ### Backend
 The backend consists of two services:
 - **Node.js Express Backend (Port 5000)**: Manages the Agent Clona chatbot (GPT-4o powered), appointments, calendar, consultations, pain tracking, symptom journal, voice analysis, baseline calculation, deviation detection, and risk scoring.
-- **Python FastAPI Backend (Port 8000)**: Handles all AI deterioration detection endpoints, guided video and audio examinations, database interactions, and core authentication. It uses an async AI engine initialization with an `AIEngineManager` singleton.
+- **Python FastAPI Backend (Port 8000)**: Handles all AI deterioration detection endpoints, guided video and audio examinations, mental health questionnaires, database interactions, and core authentication. It uses an async AI engine initialization with an `AIEngineManager` singleton.
+
+#### Starting the Python Backend
+The Python backend loads heavy ML models at startup (TensorFlow, MediaPipe, YAMNet) which takes **30-60 seconds**:
+
+```bash
+# From project root
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
+```
+
+**Startup sequence:**
+1. TensorFlow initialization (~10-15s) - expect CUDA warnings (normal, no GPU)
+2. MediaPipe Face Mesh & Pose loading (~10-15s)
+3. YAMNet audio classifier loading (~5-10s)
+4. AI engine initialization (~5-10s)
+5. Server ready (~30-60s total)
+
+**Expected warnings (safe to ignore):**
+- `Could not find cuda drivers` - Running on CPU (expected)
+- `Unable to register cuFFT/cuDNN/cuBLAS factory` - TensorFlow GPU warnings (harmless)
+- `Failed to load DeepLab model` - Optional feature, doesn't block core functionality
+- `Noisereduce not available` - Optional audio enhancement, doesn't block core functionality
+
+**Verify backend is running:**
+```bash
+curl http://localhost:8000/api/v1/mental-health/questionnaires
+```
 
 ### Core Features & Technical Implementations
 - **AI Integration:** Leverages OpenAI API (GPT-4o) for various AI functionalities, including symptom analysis, wellness suggestions, doctor assistance, sentiment analysis, and medical entity extraction.

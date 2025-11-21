@@ -127,35 +127,23 @@ class AIEngineManager:
             logger.info("✅ AI engines shut down successfully")
     
     @classmethod
-    async def get_video_engine(cls):
-        """Get Video AI Engine (lazy-loaded singleton)"""
-        if cls._video_engine is None:
-            async with cls._lock:
-                # Double-check after acquiring lock
-                if cls._video_engine is None:
-                    logger.info("🔄 Lazy-loading Video AI Engine (first use)...")
-                    loop = asyncio.get_event_loop()
-                    def _create_video_engine():
-                        from app.services.video_ai_engine import VideoAIEngine
-                        return VideoAIEngine()
-                    cls._video_engine = await loop.run_in_executor(None, _create_video_engine)
-                    logger.info("✅ Video AI Engine lazy-loaded successfully")
+    def get_video_engine(cls):
+        """Get initialized Video AI Engine (singleton)"""
+        if not cls._initialized or cls._video_engine is None:
+            raise RuntimeError(
+                "Video AI Engine not initialized. "
+                "Ensure AIEngineManager.initialize_all() was called during startup."
+            )
         return cls._video_engine
     
     @classmethod
-    async def get_audio_engine(cls):
-        """Get Audio AI Engine (lazy-loaded singleton)"""
-        if cls._audio_engine is None:
-            async with cls._lock:
-                # Double-check after acquiring lock
-                if cls._audio_engine is None:
-                    logger.info("🔄 Lazy-loading Audio AI Engine (first use)...")
-                    loop = asyncio.get_event_loop()
-                    def _create_audio_engine():
-                        from app.services.audio_ai_engine import AudioAIEngine
-                        return AudioAIEngine()
-                    cls._audio_engine = await loop.run_in_executor(None, _create_audio_engine)
-                    logger.info("✅ Audio AI Engine lazy-loaded successfully")
+    def get_audio_engine(cls):
+        """Get initialized Audio AI Engine (singleton)"""
+        if not cls._initialized or cls._audio_engine is None:
+            raise RuntimeError(
+                "Audio AI Engine not initialized. "
+                "Ensure AIEngineManager.initialize_all() was called during startup."
+            )
         return cls._audio_engine
     
     @classmethod

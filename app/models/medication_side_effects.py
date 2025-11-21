@@ -46,7 +46,7 @@ class MedicationTimeline(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(String, nullable=False, index=True)
-    medication_id = Column(Integer, ForeignKey("medications.id"))
+    medication_id = Column(String, ForeignKey("medications.id"))
     
     # Medication details (denormalized for historical accuracy)
     medication_name = Column(String, nullable=False)
