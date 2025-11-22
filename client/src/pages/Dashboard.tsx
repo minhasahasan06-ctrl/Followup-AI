@@ -248,6 +248,272 @@ const DAILY_WELLNESS_QUESTIONS = [
   },
 ];
 
+// Behavioral AI Components
+function BehavioralRiskScore() {
+  const { user } = useAuth();
+  const { data, isLoading } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/dashboard/${user?.id}`],
+    enabled: !!user?.id,
+  });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground">Loading risk score...</div>;
+  }
+
+  const riskScore = data?.risk_score;
+  const riskPercentage = riskScore?.composite_risk 
+    ? Math.round(riskScore.composite_risk * 100) 
+    : null;
+
+  const riskColors: Record<string, string> = {
+    critical: "text-red-600",
+    high: "text-orange-600",
+    moderate: "text-yellow-600",
+    low: "text-green-600",
+    minimal: "text-blue-600"
+  };
+
+  if (!riskScore) {
+    return (
+      <div className="text-xs text-muted-foreground" data-testid="text-no-risk-score">
+        Complete daily check-ins to generate risk assessment
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between" data-testid="behavioral-risk-score">
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">Deterioration Risk</div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-2xl font-bold" data-testid="value-risk-percentage">{riskPercentage}%</span>
+          <Badge 
+            variant="outline" 
+            className={riskColors[riskScore.risk_level] || ""}
+            data-testid="badge-risk-level"
+          >
+            {riskScore.risk_level.toUpperCase()}
+          </Badge>
+        </div>
+      </div>
+      <TrendingUp className={`h-8 w-8 ${riskColors[riskScore.risk_level] || "text-muted-foreground"}`} />
+    </div>
+  );
+}
+
+function BehavioralMetricsPreview() {
+  const { user } = useAuth();
+  const { data } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/behavioral-metrics/${user?.id}/latest`],
+    enabled: !!user?.id,
+  });
+
+  const metrics = [
+    { 
+      label: "Check-in Consistency", 
+      value: data?.checkinCompletionRate ? `${Math.round(parseFloat(data.checkinCompletionRate) * 100)}%` : "N/A",
+      icon: <CheckCircle2 className="h-3 w-3" />,
+      trend: data?.checkinCompletionRate ? parseFloat(data.checkinCompletionRate) > 0.8 ? "good" : "warning" : null
+    },
+    { 
+      label: "Med Adherence", 
+      value: data?.medicationAdherenceRate ? `${Math.round(parseFloat(data.medicationAdherenceRate) * 100)}%` : "N/A",
+      icon: <Activity className="h-3 w-3" />,
+      trend: data?.medicationAdherenceRate ? parseFloat(data.medicationAdherenceRate) > 0.9 ? "good" : "warning" : null
+    },
+    { 
+      label: "App Engagement", 
+      value: data?.appEngagementDurationMinutes ? `${Math.round(parseFloat(data.appEngagementDurationMinutes))}m` : "N/A",
+      icon: <TrendingUp className="h-3 w-3" />,
+      trend: null
+    },
+    { 
+      label: "Avoidance Detected", 
+      value: data?.avoidancePatternsDetected ? "Yes" : "No",
+      icon: <AlertTriangle className="h-3 w-3" />,
+      trend: data?.avoidancePatternsDetected ? "warning" : "good"
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2" data-testid="behavioral-metrics-preview">
+      {metrics.map((metric, idx) => (
+        <div key={idx} className="flex items-center gap-1.5" data-testid={`metric-${idx}`}>
+          {metric.icon}
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
+            <div className={`text-xs font-medium ${
+              metric.trend === "good" ? "text-green-600" : 
+              metric.trend === "warning" ? "text-orange-600" : ""
+            }`} data-testid={`value-${idx}`}>
+              {metric.value}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DigitalBiomarkersPreview() {
+  const { user } = useAuth();
+  const { data } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/digital-biomarkers/${user?.id}/latest`],
+    enabled: !!user?.id,
+  });
+
+  const metrics = [
+    { 
+      label: "Daily Steps", 
+      value: data?.dailyStepCount ? data.dailyStepCount.toLocaleString() : "N/A",
+      icon: <Activity className="h-3 w-3" />
+    },
+    { 
+      label: "Mobility Change", 
+      value: data?.mobilityChangePercent ? `${data.mobilityChangePercent > 0 ? '+' : ''}${Math.round(parseFloat(data.mobilityChangePercent))}%` : "N/A",
+      icon: <TrendingUp className="h-3 w-3" />,
+      trend: data?.mobilityChangePercent ? parseFloat(data.mobilityChangePercent) < -20 ? "warning" : null : null
+    },
+    { 
+      label: "Circadian Stability", 
+      value: data?.circadianStabilityScore ? `${Math.round(parseFloat(data.circadianStabilityScore) * 100)}%` : "N/A",
+      icon: <Moon className="h-3 w-3" />
+    },
+    { 
+      label: "Night Interactions", 
+      value: data?.nightPhoneInteractions || "N/A",
+      icon: <Phone className="h-3 w-3" />,
+      trend: data?.nightPhoneInteractions > 5 ? "warning" : null
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2" data-testid="digital-biomarkers-preview">
+      {metrics.map((metric, idx) => (
+        <div key={idx} className="flex items-center gap-1.5" data-testid={`biomarker-${idx}`}>
+          {metric.icon}
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
+            <div className={`text-xs font-medium ${
+              metric.trend === "warning" ? "text-orange-600" : ""
+            }`} data-testid={`value-${idx}`}>
+              {metric.value}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CognitiveBiomarkersPreview() {
+  const { user } = useAuth();
+  const { data } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/cognitive-tests/${user?.id}/latest`],
+    enabled: !!user?.id,
+  });
+
+  const metrics = [
+    { 
+      label: "Reaction Time", 
+      value: data?.reactionTimeMs ? `${data.reactionTimeMs}ms` : "N/A",
+      icon: <Zap className="h-3 w-3" />
+    },
+    { 
+      label: "Tapping Speed", 
+      value: data?.tappingSpeed ? `${parseFloat(data.tappingSpeed).toFixed(1)} t/s` : "N/A",
+      icon: <Hand className="h-3 w-3" />
+    },
+    { 
+      label: "Memory Score", 
+      value: data?.memoryScore ? `${Math.round(parseFloat(data.memoryScore) * 100)}%` : "N/A",
+      icon: <Brain className="h-3 w-3" />
+    },
+    { 
+      label: "Cognitive Drift", 
+      value: data?.baselineDeviation ? `${parseFloat(data.baselineDeviation).toFixed(2)}σ` : "N/A",
+      icon: <TrendingDown className="h-3 w-3" />,
+      trend: data?.anomalyDetected ? "warning" : null
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2" data-testid="cognitive-biomarkers-preview">
+      {metrics.map((metric, idx) => (
+        <div key={idx} className="flex items-center gap-1.5" data-testid={`cognitive-${idx}`}>
+          {metric.icon}
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
+            <div className={`text-xs font-medium ${
+              metric.trend === "warning" ? "text-orange-600" : ""
+            }`} data-testid={`value-${idx}`}>
+              {metric.value}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SentimentBiomarkersPreview() {
+  const { user } = useAuth();
+  const { data } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/sentiment/${user?.id}/latest`],
+    enabled: !!user?.id,
+  });
+
+  const polarityLabel = (polarity: number) => {
+    if (polarity > 0.3) return "Positive";
+    if (polarity < -0.3) return "Negative";
+    return "Neutral";
+  };
+
+  const metrics = [
+    { 
+      label: "Sentiment Trend", 
+      value: data?.sentimentPolarity ? polarityLabel(parseFloat(data.sentimentPolarity)) : "N/A",
+      icon: <Smile className="h-3 w-3" />,
+      trend: data?.sentimentPolarity ? parseFloat(data.sentimentPolarity) < -0.3 ? "warning" : null : null
+    },
+    { 
+      label: "Stress Keywords", 
+      value: data?.stressKeywordCount || "N/A",
+      icon: <AlertTriangle className="h-3 w-3" />,
+      trend: data?.stressKeywordCount > 5 ? "warning" : null
+    },
+    { 
+      label: "Message Length", 
+      value: data?.avgMessageLength ? `${Math.round(data.avgMessageLength)} chars` : "N/A",
+      icon: <FileText className="h-3 w-3" />
+    },
+    { 
+      label: "Hesitation Level", 
+      value: data?.hesitationRatio ? `${Math.round(parseFloat(data.hesitationRatio) * 100)}%` : "N/A",
+      icon: <Info className="h-3 w-3" />,
+      trend: data?.hesitationRatio ? parseFloat(data.hesitationRatio) > 0.3 ? "warning" : null : null
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2" data-testid="sentiment-biomarkers-preview">
+      {metrics.map((metric, idx) => (
+        <div key={idx} className="flex items-center gap-1.5" data-testid={`sentiment-${idx}`}>
+          {metric.icon}
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
+            <div className={`text-xs font-medium ${
+              metric.trend === "warning" ? "text-orange-600" : ""
+            }`} data-testid={`value-${idx}`}>
+              {metric.value}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [showEmergency, setShowEmergency] = useState(false);
   const { user } = useAuth();
@@ -1120,27 +1386,53 @@ export default function Dashboard() {
           {/* Behavioral AI Insight */}
           <Card data-testid="card-behavioral-insights">
             <CardHeader>
-              <CardTitle data-testid="text-insights-title">Behavioral AI Insight</CardTitle>
+              <CardTitle className="flex items-center gap-2" data-testid="text-insights-title">
+                <Brain className="h-5 w-5" />
+                Behavioral AI Insight
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {insights && insights.length > 0 ? (
-                insights.slice(0, 2).map((insight, idx) => (
-                  <div key={idx} className="flex items-start gap-2" data-testid={`insight-item-${idx}`}>
-                    <TrendingUp className="h-4 w-4 text-chart-2 mt-0.5 flex-shrink-0" />
-                    <div className="text-sm">
-                      <p className="font-medium mb-1" data-testid={`text-stress-level-${idx}`}>Stress Level: {insight.stressScore}/10</p>
-                      <p className="text-muted-foreground" data-testid={`text-activity-level-${idx}`}>Activity: {insight.activityLevel}</p>
-                    </div>
+            <CardContent className="space-y-4">
+              {/* Risk Score Summary */}
+              <BehavioralRiskScore />
+              
+              {/* Metrics Categories */}
+              <div className="space-y-3 border-t pt-3">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Activity className="h-4 w-4 text-primary" />
+                    <span className="text-xs font-semibold text-muted-foreground">BEHAVIORAL METRICS</span>
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground" data-testid="text-insight-placeholder">
-                  Complete your daily check-ins to unlock AI-powered behavioral insights and health trend detection.
-                </p>
-              )}
+                  <BehavioralMetricsPreview />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingUp className="h-4 w-4 text-chart-2" />
+                    <span className="text-xs font-semibold text-muted-foreground">DIGITAL BIOMARKERS</span>
+                  </div>
+                  <DigitalBiomarkersPreview />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Zap className="h-4 w-4 text-chart-3" />
+                    <span className="text-xs font-semibold text-muted-foreground">COGNITIVE BIOMARKERS</span>
+                  </div>
+                  <CognitiveBiomarkersPreview />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="h-4 w-4 text-chart-4" />
+                    <span className="text-xs font-semibold text-muted-foreground">SENTIMENT ANALYSIS</span>
+                  </div>
+                  <SentimentBiomarkersPreview />
+                </div>
+              </div>
+
               <Link href="/behavioral-ai-insights">
                 <Button variant="outline" size="sm" className="w-full" data-testid="button-view-insights">
-                  View Full Insights
+                  View Full Analysis & Trends
                 </Button>
               </Link>
             </CardContent>
