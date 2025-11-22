@@ -1115,9 +1115,102 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Sidebar content - right column - Temporarily Empty */}
+        {/* Sidebar content - right column */}
         <div className="space-y-6">
-          {/* This is now empty - Daily Follow-up moved to full width below */}
+          {/* Behavioral Insights */}
+          <Card data-testid="card-behavioral-insights">
+            <CardHeader>
+              <CardTitle data-testid="text-insights-title">AI Insights</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {insights && insights.length > 0 ? (
+                insights.slice(0, 3).map((insight) => (
+                  <div key={insight.id} className="p-3 rounded-md border bg-muted/30" data-testid={`insight-item-${insight.id}`}>
+                    <div className="flex items-start gap-2 mb-2">
+                      <Brain className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" data-testid={`icon-insight-${insight.id}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium" data-testid={`text-insight-category-${insight.id}`}>{insight.category}</p>
+                        <Badge variant="outline" className="text-xs mt-1" data-testid={`badge-insight-confidence-${insight.id}`}>
+                          {Math.round(insight.confidence * 100)}% confidence
+                        </Badge>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground" data-testid={`text-insight-message-${insight.id}`}>{insight.message}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground" data-testid="text-no-insights">No insights available</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Medication Adherence */}
+          <Card data-testid="card-medication-adherence">
+            <CardHeader>
+              <CardTitle data-testid="text-adherence-title">Medication Adherence</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {medications && medications.length > 0 ? (
+                <>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">This Week</span>
+                      <span className="font-medium" data-testid="text-adherence-percentage">
+                        {Math.round((medications.filter(m => m.status === 'taken').length / medications.length) * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div 
+                        className="h-full bg-chart-2 transition-all" 
+                        style={{ 
+                          width: `${(medications.filter(m => m.status === 'taken').length / medications.length) * 100}%` 
+                        }}
+                        data-testid="progress-adherence"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground" data-testid="text-adherence-subtitle">
+                    {medications.filter(m => m.status === 'taken').length} of {medications.length} medications taken today
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground" data-testid="text-no-medications">No medications tracked</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Dynamic Tasks */}
+          <Card data-testid="card-dynamic-tasks">
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle data-testid="text-tasks-title">Dynamic Tasks</CardTitle>
+              <Badge variant="secondary" data-testid="badge-tasks-pending">
+                {tasks?.filter(t => !t.completed).length || 0} pending
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              {tasks && tasks.length > 0 ? (
+                <div className="space-y-2">
+                  {tasks.slice(0, 5).map((task) => (
+                    <div key={task.id} className="flex items-center gap-2 p-2 rounded-md hover-elevate" data-testid={`task-item-${task.id}`}>
+                      {task.completed ? (
+                        <CheckCircle className="h-4 w-4 text-chart-2 flex-shrink-0" data-testid={`icon-task-completed-${task.id}`} />
+                      ) : (
+                        <div className="h-4 w-4 rounded-full border-2 flex-shrink-0" data-testid={`icon-task-pending-${task.id}`} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" data-testid={`text-task-title-${task.id}`}>{task.title}</p>
+                        {task.description && (
+                          <p className="text-xs text-muted-foreground truncate" data-testid={`text-task-description-${task.id}`}>{task.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground" data-testid="text-no-tasks">No tasks for today</p>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
 
