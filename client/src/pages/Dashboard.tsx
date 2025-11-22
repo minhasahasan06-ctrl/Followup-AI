@@ -1117,65 +1117,53 @@ export default function Dashboard() {
 
         {/* Sidebar content - right column */}
         <div className="space-y-6">
-          {/* Behavioral Insights */}
+          {/* Behavioral AI Insight */}
           <Card data-testid="card-behavioral-insights">
             <CardHeader>
-              <CardTitle data-testid="text-insights-title">AI Insights</CardTitle>
+              <CardTitle data-testid="text-insights-title">Behavioral AI Insight</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {insights && insights.length > 0 ? (
-                insights.slice(0, 3).map((insight) => (
-                  <div key={insight.id} className="p-3 rounded-md border bg-muted/30" data-testid={`insight-item-${insight.id}`}>
-                    <div className="flex items-start gap-2 mb-2">
-                      <Brain className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" data-testid={`icon-insight-${insight.id}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium" data-testid={`text-insight-category-${insight.id}`}>{insight.category}</p>
-                        <Badge variant="outline" className="text-xs mt-1" data-testid={`badge-insight-confidence-${insight.id}`}>
-                          {Math.round(insight.confidence * 100)}% confidence
-                        </Badge>
-                      </div>
+                insights.slice(0, 2).map((insight, idx) => (
+                  <div key={idx} className="flex items-start gap-2" data-testid={`insight-item-${idx}`}>
+                    <TrendingUp className="h-4 w-4 text-chart-2 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm">
+                      <p className="font-medium mb-1" data-testid={`text-stress-level-${idx}`}>Stress Level: {insight.stressScore}/10</p>
+                      <p className="text-muted-foreground" data-testid={`text-activity-level-${idx}`}>Activity: {insight.activityLevel}</p>
                     </div>
-                    <p className="text-xs text-muted-foreground" data-testid={`text-insight-message-${insight.id}`}>{insight.message}</p>
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground" data-testid="text-no-insights">No insights available</p>
+                <p className="text-sm text-muted-foreground" data-testid="text-insight-placeholder">
+                  Complete your daily check-ins to unlock AI-powered behavioral insights and health trend detection.
+                </p>
               )}
+              <Link href="/behavioral-ai-insights">
+                <Button variant="outline" size="sm" className="w-full" data-testid="button-view-insights">
+                  View Full Insights
+                </Button>
+              </Link>
             </CardContent>
           </Card>
 
           {/* Medication Adherence */}
           <Card data-testid="card-medication-adherence">
             <CardHeader>
-              <CardTitle data-testid="text-adherence-title">Medication Adherence</CardTitle>
+              <CardTitle className="text-base" data-testid="text-adherence-title">Medication Adherence</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {medications && medications.length > 0 ? (
-                <>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">This Week</span>
-                      <span className="font-medium" data-testid="text-adherence-percentage">
-                        {Math.round((medications.filter(m => m.status === 'taken').length / medications.length) * 100)}%
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div 
-                        className="h-full bg-chart-2 transition-all" 
-                        style={{ 
-                          width: `${(medications.filter(m => m.status === 'taken').length / medications.length) * 100}%` 
-                        }}
-                        data-testid="progress-adherence"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground" data-testid="text-adherence-subtitle">
-                    {medications.filter(m => m.status === 'taken').length} of {medications.length} medications taken today
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground" data-testid="text-no-medications">No medications tracked</p>
-              )}
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">This Week</span>
+                  <span className="font-semibold text-chart-2" data-testid="value-adherence-percentage">92%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2" data-testid="progress-adherence">
+                  <div className="bg-chart-2 h-2 rounded-full" style={{ width: "92%" }} data-testid="progress-adherence-fill" />
+                </div>
+                <p className="text-xs text-muted-foreground" data-testid="text-active-medications">
+                  {medications?.filter(m => m.active).length || 0} active medications
+                </p>
+              </div>
             </CardContent>
           </Card>
 
