@@ -75,7 +75,6 @@ import AIAudioDashboard from "@/pages/AIAudioDashboard";
 import GuidedVideoExam from "@/pages/GuidedVideoExam";
 import GuidedAudioExam from "@/pages/guided-audio-exam";
 import DailyFollowup from "@/pages/DailyFollowup";
-import DailySymptomCheckin from "@/pages/DailySymptomCheckin";
 import MentalHealth from "@/pages/MentalHealth";
 import { DevLogin } from "@/components/DevLogin";
 
@@ -84,7 +83,6 @@ function PatientRouter() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/daily-followup" component={DailyFollowup} />
-      <Route path="/symptom-checkin" component={DailySymptomCheckin} />
       <Route path="/chat" component={Chat} />
       <Route path="/pain-detection" component={PainDetection} />
       <Route path="/medication-effects" component={MedicationEffects} />

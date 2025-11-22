@@ -5,6 +5,7 @@ import { ReminderCard } from "@/components/ReminderCard";
 import { EmergencyAlert } from "@/components/EmergencyAlert";
 import DynamicWelcome from "@/components/DynamicWelcome";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
+import { DailySymptomCheckin } from "@/components/DailySymptomCheckin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1668,89 +1669,9 @@ export default function Dashboard() {
               </div>
             </TabsContent>
             <TabsContent value="symptom-journal" className="space-y-3">
-                  {/* Symptom Journal - Compact View */}
-                  <div className="space-y-3">
-                    {/* Active Alerts Banner */}
-                    {alertsData && alertsData.alerts.length > 0 && (
-                      <Alert variant="destructive" className="text-xs">
-                        <AlertCircle className="h-3 w-3" />
-                        <AlertDescription>
-                          {alertsData.alerts.length} active alert{alertsData.alerts.length > 1 ? 's' : ''} detected
-                        </AlertDescription>
-                      </Alert>
-                    )}
-
-                    {/* Recent Measurements */}
-                    {loadingRecent ? (
-                      <p className="text-xs text-muted-foreground">Loading measurements...</p>
-                    ) : !recentData || recentData.measurements.length === 0 ? (
-                      <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-3 space-y-2">
-                        <p className="text-xs font-medium">Visual Symptom Tracking</p>
-                        <p className="text-xs text-muted-foreground">
-                          Track changes in legs, face, eyes, or chest over time with AI analysis.
-                        </p>
-                        <Button 
-                          size="sm" 
-                          className="w-full text-xs"
-                          onClick={() => window.location.href = '/symptom-journal'}
-                          data-testid="button-start-symptom-tracking"
-                        >
-                          <Camera className="mr-1 h-3 w-3" />
-                          Start Tracking
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-medium">Latest Measurements</p>
-                          <Button 
-                            variant="outline"
-                            size="sm"
-                            className="h-6 text-xs"
-                            onClick={() => window.location.href = '/symptom-journal'}
-                            data-testid="button-view-all-symptoms"
-                          >
-                            View All
-                          </Button>
-                        </div>
-                        
-                        {recentData.measurements.slice(0, 2).map((measurement) => (
-                          <div key={measurement.id} className="rounded-md border bg-muted/30 p-2 space-y-1">
-                            <div className="flex items-center justify-between">
-                              <Badge variant="secondary" className="text-xs">{measurement.body_area}</Badge>
-                              <span className="text-xs text-muted-foreground">
-                                {format(new Date(measurement.created_at), "MMM d, h:mm a")}
-                              </span>
-                            </div>
-                            {measurement.ai_observations && (
-                              <p className="text-xs line-clamp-2">{measurement.ai_observations}</p>
-                            )}
-                            <div className="flex gap-2 text-xs">
-                              {measurement.color_change_percent !== null && (
-                                <div className="flex items-center gap-0.5">
-                                  <strong>Color:</strong>
-                                  {measurement.color_change_percent > 0 ? (
-                                    <TrendingUp className="h-2 w-2 text-orange-500" />
-                                  ) : measurement.color_change_percent < 0 ? (
-                                    <TrendingDown className="h-2 w-2 text-blue-500" />
-                                  ) : (
-                                    <Minus className="h-2 w-2" />
-                                  )}
-                                  <span>{Math.abs(measurement.color_change_percent).toFixed(1)}%</span>
-                                </div>
-                              )}
-                              {measurement.respiratory_rate_bpm && (
-                                <div>
-                                  <strong>Breathing:</strong> {measurement.respiratory_rate_bpm} /min
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </TabsContent>
+              {/* Daily Symptom Check-In */}
+              <DailySymptomCheckin />
+            </TabsContent>
                 <TabsContent value="video-ai" className="space-y-3">
                   {isMetricsFromToday && latestVideoMetrics ? (
                     <>
