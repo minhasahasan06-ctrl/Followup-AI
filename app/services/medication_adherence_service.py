@@ -207,17 +207,17 @@ class MedicationAdherenceService:
     
     def _calculate_regimen_risk(self, patient_id: str) -> Dict[str, str]:
         """
-        Calculate regimen risk based on:
+        Calculate comprehensive regimen risk based on:
         - Active medication count (from medications table)
         - Missed doses count (last 30 days from medication_adherence table)
+        - Drug interaction count (from drug_interactions table via drugs mapping)
         
-        NOTE: Drug interactions are not included because the 'drugs' reference table
-        does not exist in the current schema. Risk is calculated from medication
-        count and adherence data only.
+        Risk levels: high, moderate, low
         """
         try:
             active_med_count = self._get_active_medication_count(patient_id)
             missed_doses_count = self._get_total_missed_doses(patient_id)
+            interaction_count = self._get_drug_interaction_count(patient_id)
             
             # Calculate risk level based on thresholds
             risk_factors = []
@@ -238,10 +238,16 @@ class MedicationAdherenceService:
             elif missed_doses_count > 0:
                 risk_factors.append(f"{missed_doses_count} missed doses in last 30 days")
             
-            # Determine overall risk level (based on medication count and missed doses only)
-            if active_med_count > 10 or missed_doses_count > 10:
+            # Drug interactions risk
+            if interaction_count > 2:
+                risk_factors.append(f"{interaction_count} drug interactions (severe/moderate)")
+            elif interaction_count > 0:
+                risk_factors.append(f"{interaction_count} drug interactions detected")
+            
+            # Determine overall risk level (comprehensive assessment)
+            if active_med_count > 10 or missed_doses_count > 10 or interaction_count > 2:
                 level = "high"
-            elif active_med_count > 5 or missed_doses_count > 5:
+            elif active_med_count > 5 or missed_doses_count > 5 or interaction_count > 0:
                 level = "moderate"
             else:
                 level = "low"
@@ -305,20 +311,56 @@ class MedicationAdherenceService:
     
     def _get_drug_interaction_count(self, patient_id: str) -> int:
         """
-        Get count of potential drug interactions for patient's active medications
+        Get count of moderate/severe drug interactions for patient's active medications
         
-        NOTE: Currently returns 0 because the 'drugs' reference table does not exist
-        in the schema. The drug_interactions table requires drug IDs, but medications
-        table only stores drug names without references to a drugs table.
-        
-        To enable this feature:
-        1. Create a 'drugs' reference table with standardized drug names and IDs
-        2. Link medications.name to drugs.id (or drugs.name)
-        3. Then query drug_interactions for patient's active drug combinations
+        Uses medication.drug_id foreign key for direct joins to drug_interactions
+        Falls back to name matching if drug_id is NULL (legacy data)
         """
-        # Cannot query drug interactions without a drugs reference table
-        # Returning 0 to maintain data integrity (no fabricated interaction counts)
-        return 0
+        try:
+            # Query drug interactions using drug_id foreign key
+            query = text("""
+                WITH patient_drugs AS (
+                    -- Get all drug IDs for patient's active medications
+                    -- Prefer drug_id FK, fallback to name matching for legacy data
+                    SELECT DISTINCT 
+                        COALESCE(m.drug_id, d.id) as drug_id,
+                        m.name as med_name
+                    FROM medications m
+                    LEFT JOIN drugs d ON (
+                        m.drug_id IS NULL AND (
+                            LOWER(TRIM(m.name)) = LOWER(TRIM(d.name)) OR
+                            LOWER(TRIM(m.name)) = LOWER(TRIM(d.generic_name)) OR
+                            LOWER(TRIM(m.name)) = LOWER(TRIM(d.rxcui))
+                        )
+                    )
+                    WHERE m.patient_id = :patient_id
+                    AND m.active = true
+                    AND (m.end_date IS NULL OR m.end_date >= CURRENT_DATE)
+                    AND (m.drug_id IS NOT NULL OR d.id IS NOT NULL)
+                ),
+                patient_interactions AS (
+                    -- Find all interactions between patient's drugs
+                    SELECT DISTINCT di.id, di.severity_level
+                    FROM drug_interactions di
+                    JOIN patient_drugs pd1 ON (di.drug1_id = pd1.drug_id)
+                    JOIN patient_drugs pd2 ON (di.drug2_id = pd2.drug_id)
+                    WHERE di.severity_level IN ('severe', 'moderate')
+                    AND pd1.drug_id != pd2.drug_id
+                )
+                SELECT COUNT(*) FROM patient_interactions
+            """)
+            
+            result = self.db.execute(query, {"patient_id": patient_id}).fetchone()
+            count = result[0] if result else 0
+            
+            logger.info(f"Found {count} moderate/severe drug interactions for patient {patient_id}")
+            return count
+        
+        except Exception as e:
+            # Log error but return 0 to avoid breaking the endpoint
+            # This allows the system to gracefully handle missing data
+            logger.error(f"Error querying drug interactions for patient {patient_id}: {str(e)}")
+            return 0
     
     def _get_missed_dose_escalation(self, patient_id: str) -> Dict[str, Any]:
         """Get missed dose escalation data"""

@@ -304,6 +304,10 @@ export const medications = pgTable("medications", {
   startDate: timestamp("start_date").defaultNow(),
   endDate: timestamp("end_date"),
   active: boolean("active").default(true),
+  // Foreign key to drugs table for standardized drug mapping
+  drugId: varchar("drug_id").references(() => drugs.id),
+  // RxNorm concept unique identifier (RxCUI) for direct API mapping
+  rxcui: varchar("rxcui"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -315,9 +319,39 @@ export const insertMedicationSchema = createInsertSchema(medications).omit({
 export type InsertMedication = z.infer<typeof insertMedicationSchema>;
 export type Medication = typeof medications.$inferSelect;
 
+// Medication-Drug matching audit table
+// Tracks how medications are mapped to standardized drugs with confidence scores
+export const medicationDrugMatches = pgTable("medication_drug_matches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  medicationId: varchar("medication_id").notNull().references(() => medications.id),
+  drugId: varchar("drug_id").notNull().references(() => drugs.id),
+  matchSource: varchar("match_source").notNull(), // 'rxnorm_exact', 'rxnorm_approximate', 'manual', 'openfda'
+  confidenceScore: decimal("confidence_score").notNull(), // 0.0-1.0
+  matchedBy: varchar("matched_by"), // User ID who confirmed the match
+  matchedAt: timestamp("matched_at").defaultNow(),
+  isActive: boolean("is_active").default(true), // Allow multiple candidate matches
+  matchMetadata: jsonb("match_metadata").$type<{
+    rxcuiCandidates?: string[];
+    searchTerm?: string;
+    apiResponse?: any;
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMedicationDrugMatchSchema = createInsertSchema(medicationDrugMatches).omit({
+  id: true,
+  createdAt: true,
+  matchedAt: true,
+});
+
+export type InsertMedicationDrugMatch = z.infer<typeof insertMedicationDrugMatchSchema>;
+export type MedicationDrugMatch = typeof medicationDrugMatches.$inferSelect;
+
 // Drug knowledge base - Comprehensive drug information
 export const drugs = pgTable("drugs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // RxNorm standardized identifiers
+  rxcui: varchar("rxcui").unique(), // RxNorm Concept Unique Identifier
   name: varchar("name").notNull(),
   genericName: varchar("generic_name"),
   brandNames: jsonb("brand_names").$type<string[]>(),
@@ -342,6 +376,9 @@ export const drugs = pgTable("drugs", {
   peakPlasmaTime: varchar("peak_plasma_time"),
   immunocompromisedSafety: varchar("immunocompromised_safety"), // 'safe', 'caution', 'avoid'
   pregnancyCategory: varchar("pregnancy_category"),
+  // Data versioning and provenance
+  dataSource: varchar("data_source").default("rxnorm"), // 'rxnorm', 'openfda', 'manual'
+  dataVersion: varchar("data_version"), // RxNorm release date (YYYYMMDD format)
   lastUpdated: timestamp("last_updated").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 });
