@@ -1,18 +1,7 @@
 # Followup AI - HIPAA-Compliant Health Platform
 
 ## Overview
-Followup AI is a HIPAA-compliant health monitoring platform for immunocompromised patients, offering personalized health tracking, medication management, and wellness activities. It utilizes AI agents (Agent Clona for patient support and Assistant Lysa for doctor assistance) to enhance patient care through advanced AI and comprehensive health data management. The platform aims to provide insights and streamline healthcare operations, positioning itself as a wellness monitoring and change detection system.
-
-## Recent Changes
-
-- **PainTrack Platform - PRODUCTION READY (Latest)**: Complete chronic pain tracking system with dual-camera video capture integrated as 6th tab in Daily Follow-up Dashboard. Features module selection (ArthroTrack, MuscleTrack, PostOpTrack), joint selection (knee, hip, shoulder, elbow, wrist, ankle), laterality tracking (left/right/bilateral), live dual-camera recording (front for facial pain indicators, back for joint movement), self-reported VAS pain slider (0-10), medication tracking, and patient notes. Cross-platform MediaRecorder implementation with MIME type detection (video/mp4 for iOS/Safari, video/webm for other platforms) using MediaRecorder.isTypeSupported() fallback chain. Dual-camera capture uses MediaDevices API with stable refs, runtime error handling, and automatic fallback to single-camera mode on unsupported devices. S3 upload endpoint (POST /api/paintrack/upload-video) with AES256 encryption, HIPAA audit logging, 500MB multer limit. Database schema: paintrack_sessions with frontVideoUrl, jointVideoUrl, recordingDuration, dualCameraSupported (TRUE only when both videos successfully uploaded). Complete storage abstraction with typed methods (createPaintrackSession, getPaintrackSessions). Legal constraint: Pain is ALWAYS self-reported via VAS slider - ML metrics from video are technical features only (joint angles, facial movements, anomaly scores) and NEVER inferred as pain levels.
-- **Mental Health AI Dashboard Integration**: Fully integrated Mental Health questionnaire system into Daily Follow-up dashboard as 5th tab beside Audio AI. Complete inline workflow includes: questionnaire selection (PHQ-9, GAD-7, PSS-10), step-by-step question navigation with progress tracking, AI-powered GPT-4o analysis, crisis detection with immediate intervention messaging and hotlines, severity scoring with color-coded badges, cluster analysis with key observations, and recent history display. Mental Health removed from sidebar navigation while keeping `/mental-health` route active for full history access. All data queries and mutations integrated into Dashboard.tsx with comprehensive state management and handler functions.
-- **Database Schema Fix**: Fixed medication_timeline foreign key type mismatch - changed medication_id from Integer to String to match medications.id VARCHAR type. Resolved "DatatypeMismatch" error preventing Python backend startup.
-- **Mental Health Questionnaire System Backend**: Comprehensive production-ready mental health assessment platform backend with standardized screening questionnaires (PHQ-9, GAD-7, PSS-10). Features include validated scoring algorithms, crisis detection with immediate intervention messaging, LLM-powered non-diagnostic pattern analysis and symptom clustering, temporal trend tracking, and export functionality for clinical sharing. Complete Python FastAPI backend with 9 endpoints (`/api/v1/mental-health/*`).
-- **Symptom Journal Dashboard Integration**: Moved symptom journal from sidebar to daily followup dashboard as 4th tab (positioned between Device Data and Video AI). Tab displays recent measurements with AI observations, color change tracking, respiratory rate for chest exams, and active alerts banner. Compact view shows latest 2 measurements with link to full symptom journal page. Removed /symptom-journal from sidebar navigation while keeping route active for detailed tracking functionality.
-- **Complete Audio AI Workflow Inline Integration**: Fully integrated 4-stage guided audio examination workflow directly into Dashboard.tsx daily followup section. Complete implementation includes session management (create/upload/complete), MediaRecorder API integration with prep countdown (30s breathing/speaking, 15s coughing, 40s reading), real-time recording with pulsing mic UI, progress tracking across all 4 stages, ML analysis results display with YAMNet classification, and comprehensive error handling. Removed standalone /ai-audio and /guided-audio-exam routes and pages. All audio AI functionality now accessed inline within daily dashboard tabs - no navigation required. Full proxy routing to Python backend (/api/v1/guided-audio-exam/*).
-- **HIPAA Security Framework Deployed**: All tremor and gait analysis endpoints (10 total) now implement complete HIPAA security with authentication, patient ownership verification, comprehensive audit logging with [AUDIT] and [AUTH] tags, data integrity checks, and sanitized error handling preventing PHI exposure.
-- **Daily Follow-up Dashboard Enhancements**: Dashboard now displays latest Video AI metrics (respiratory rate, skin pallor, jaundice risk, facial swelling, tremor detection) from today's guided video examination instead of placeholder data. Dashboard now has 6 comprehensive tabs: Device Data, Symptom Journal, Video AI Analysis, Audio AI Analysis, **PainTrack**, and Mental Health.
+Followup AI is a HIPAA-compliant health monitoring platform designed for immunocompromised patients. It provides personalized health tracking, medication management, and wellness activities, leveraging AI agents (Agent Clona for patient support and Assistant Lysa for doctor assistance) to enhance patient care. The platform focuses on advanced AI and comprehensive health data management to offer insights and streamline healthcare operations, aiming to be a wellness monitoring and change detection system.
 
 ## User Preferences
 - **Preferred communication style**: Simple, everyday language
@@ -23,41 +12,15 @@ Followup AI is a HIPAA-compliant health monitoring platform for immunocompromise
 ## System Architecture
 
 ### Frontend
-The frontend is built with React, TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, and Tailwind CSS for styling. It uses Radix UI and shadcn/ui for a clinical aesthetic, supporting role-based routing and context-based theming. It routes Python AI endpoints to the FastAPI backend on port 8000 and other endpoints to an Express server on port 5000.
+The frontend is built with React, TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, and Tailwind CSS for styling. It utilizes Radix UI and shadcn/ui for a clinical aesthetic, supporting role-based routing and context-based theming. It routes Python AI endpoints to the FastAPI backend on port 8000 and other endpoints to an Express server on port 5000.
 
 ### Backend
-The backend consists of two services:
+The backend comprises two services:
 - **Node.js Express Backend (Port 5000)**: Manages the Agent Clona chatbot (GPT-4o powered), appointments, calendar, consultations, pain tracking, symptom journal, voice analysis, baseline calculation, deviation detection, and risk scoring.
-- **Python FastAPI Backend (Port 8000)**: Handles all AI deterioration detection endpoints, guided video and audio examinations, mental health questionnaires, database interactions, and core authentication. It uses an async AI engine initialization with an `AIEngineManager` singleton.
-
-#### Starting the Python Backend
-The Python backend loads heavy ML models at startup (TensorFlow, MediaPipe, YAMNet) which takes **30-60 seconds**:
-
-```bash
-# From project root
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
-```
-
-**Startup sequence:**
-1. TensorFlow initialization (~10-15s) - expect CUDA warnings (normal, no GPU)
-2. MediaPipe Face Mesh & Pose loading (~10-15s)
-3. YAMNet audio classifier loading (~5-10s)
-4. AI engine initialization (~5-10s)
-5. Server ready (~30-60s total)
-
-**Expected warnings (safe to ignore):**
-- `Could not find cuda drivers` - Running on CPU (expected)
-- `Unable to register cuFFT/cuDNN/cuBLAS factory` - TensorFlow GPU warnings (harmless)
-- `Failed to load DeepLab model` - Optional feature, doesn't block core functionality
-- `Noisereduce not available` - Optional audio enhancement, doesn't block core functionality
-
-**Verify backend is running:**
-```bash
-curl http://localhost:8000/api/v1/mental-health/questionnaires
-```
+- **Python FastAPI Backend (Port 8000)**: Handles all AI deterioration detection endpoints, guided video and audio examinations, mental health questionnaires, database interactions, and core authentication. It uses an async AI engine initialization with an `AIEngineManager` singleton. The Python backend loads heavy ML models at startup (TensorFlow, MediaPipe, YAMNet), which can take 30-60 seconds.
 
 ### Core Features & Technical Implementations
-- **AI Integration:** Leverages OpenAI API (GPT-4o) for various AI functionalities, including symptom analysis, wellness suggestions, doctor assistance, sentiment analysis, and medical entity extraction.
+- **AI Integration:** Leverages OpenAI API (GPT-4o) for symptom analysis, wellness suggestions, doctor assistance, sentiment analysis, and medical entity extraction.
 - **Personalization & Recommendation System:** A rule-based recommendation engine enhanced with Retrieval-Augmented Generation (RAG).
 - **Real-Time Immune Function Monitoring:** AI-powered digital biomarker tracking from wearable data.
 - **Voice-Based Daily Followups:** Uses OpenAI Whisper for transcription and GPT-4 for analysis.
@@ -68,16 +31,19 @@ curl http://localhost:8000/api/v1/mental-health/questionnaires
 - **Home Clinical Exam Coach (HCEC):** AI-powered guided self-examination using OpenAI Vision.
 - **Deterioration Prediction System:** Comprehensive health change detection with baseline calculation, Z-score analysis, anomaly detection, Bayesian risk modeling, and time-series trend analysis to generate a composite risk score.
 - **ML Inference Infrastructure:** A self-hosted system with a model registry, Redis caching, async inference, HIPAA-compliant audit logging, batch processing, and ONNX optimization, including pre-trained Clinical-BERT and custom LSTM models.
-- **Guided Video Examination System:** A HIPAA-compliant 4-stage self-examination workflow (Eyes, Palm, Tongue, Lips) with clinical-grade LAB color analysis for hepatic and anemia detection, disease-specific personalization, and S3 encrypted storage. The Video AI Engine extracts metrics like respiratory rate, skin pallor, sclera yellowness, facial swelling, head tremor, and nail bed analysis.
+- **Guided Video Examination System:** A HIPAA-compliant 4-stage self-examination workflow (Eyes, Palm, Tongue, Lips) with clinical-grade LAB color analysis, disease-specific personalization, and S3 encrypted storage. Extracts metrics like respiratory rate, skin pallor, sclera yellowness, facial swelling, head tremor, and nail bed analysis.
 - **Facial Puffiness Score (FPS) System:** Comprehensive facial contour tracking using MediaPipe Face Mesh, providing regional scores, baseline comparison, composite FPS, and asymmetry detection.
 - **Comprehensive Respiratory Metrics System:** Measures Respiratory Variability Index (RVI), tracks patient baselines, performs temporal analytics, anomaly detection, and advanced pattern detection.
 - **DeepLab V3+ Edema Segmentation System:** Medical-grade semantic segmentation for swelling/edema detection using DeepLab V3+ MobileNetV2, featuring 8-Region Anatomical Segmentation, Confidence Scoring, and Advanced Regional Analysis.
-- **Guided Audio Examination System:** A HIPAA-compliant 4-stage audio recording workflow (Breathing, Coughing, Speaking, Reading) with YAMNet ML classification, neurological metrics, disease-specific personalization, and S3 encrypted storage. The Audio AI Engine extracts metrics like breath cycles, speech pace, cough detection, wheeze detection, and voice quality.
+- **Guided Audio Examination System:** A HIPAA-compliant 4-stage audio recording workflow (Breathing, Coughing, Speaking, Reading) with YAMNet ML classification, neurological metrics, disease-specific personalization, and S3 encrypted storage. Extracts metrics like breath cycles, speech pace, cough detection, wheeze detection, and voice quality.
 - **Trend Prediction Engine:** Performs baseline calculation, Z-score analysis, anomaly detection, Bayesian risk modeling, and time-series trend analysis to generate a composite risk score.
 - **Alert Orchestration Engine:** Provides multi-channel delivery (dashboard, email, SMS) with rule-based systems and HIPAA compliance.
-- **Behavior AI Analysis System:** Comprehensive multi-modal deterioration detection through behavioral pattern analysis, digital biomarkers, cognitive testing, and sentiment analysis. It utilizes an ensemble of ML models (Transformer Encoder, XGBoost, DistilBERT) and various services for behavioral metrics, digital biomarkers, cognitive tests, and sentiment analysis, culminating in a risk scoring engine and deterioration trend engine.
-- **Gait Analysis System (HAR-based):** Open-source gait analysis using MediaPipe Pose and HAR datasets, extracting over 40 gait parameters including temporal, spatial, and joint angle metrics, symmetry indices, stability scores, and clinical risk flags.
-- **Accelerometer Tremor Analysis System:** Tremor detection from phone accelerometer data using FFT-based signal processing, extracting tremor frequency, amplitude, frequency band power, and clinical classification for Parkinsonian, Essential, and Physiological tremors.
+- **Behavior AI Analysis System:** Comprehensive multi-modal deterioration detection through behavioral pattern analysis, digital biomarkers, cognitive testing, and sentiment analysis. Utilizes an ensemble of ML models (Transformer Encoder, XGBoost, DistilBERT) and various services for behavioral metrics, digital biomarkers, cognitive tests, and sentiment analysis, culminating in a risk scoring engine and deterioration trend engine.
+- **Gait Analysis System (HAR-based):** Open-source gait analysis using MediaPipe Pose and HAR datasets, extracting over 40 gait parameters.
+- **Accelerometer Tremor Analysis System:** Tremor detection from phone accelerometer data using FFT-based signal processing.
+- **Drug-Drug Interaction Detection System:** Medication adherence system with RxNorm-standardized drug library and clinical interaction detection, including RxNorm API integration and real-time interaction detection.
+- **PainTrack Platform:** Chronic pain tracking system with dual-camera video capture, self-reported VAS pain slider, medication tracking, and patient notes.
+- **Mental Health AI Dashboard Integration:** Integrated questionnaire system (PHQ-9, GAD-7, PSS-10) with AI-powered GPT-4o analysis, crisis detection, severity scoring, and cluster analysis.
 
 ### Security and Compliance
 The platform is HIPAA-compliant, featuring AWS Cognito for authentication, BAA verification for all integrations, comprehensive audit logging, end-to-end encryption for video consultations, and strict PHI handling. It is positioned as a General Wellness Product.
