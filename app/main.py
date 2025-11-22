@@ -44,6 +44,7 @@ from app.routers import (
     symptom_journal,
     medication_timeline,
     symptom_logging,
+    symptom_checkin_api,  # ✅ Daily Follow-up Symptom Tracking - PRODUCTION READY
     medication_side_effects,
     baseline,
     deviation,
@@ -162,6 +163,7 @@ app.include_router(pain_tracking.router)
 app.include_router(symptom_journal.router)
 app.include_router(medication_timeline.router)
 app.include_router(symptom_logging.router)
+app.include_router(symptom_checkin_api.router)
 app.include_router(medication_side_effects.router)
 app.include_router(baseline.router)
 app.include_router(deviation.router)
