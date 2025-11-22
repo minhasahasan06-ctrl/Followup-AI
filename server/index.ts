@@ -3,8 +3,21 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
-// Trust the first proxy so secure cookies are set correctly when running behind a load balancer
-app.set("trust proxy", 1);
+
+// Only trust proxy headers when explicitly enabled to avoid spoofed client IPs on direct connections
+const trustProxyEnabled = (process.env.TRUST_PROXY ?? "").toLowerCase() === "true";
+const trustedProxyIps = (process.env.TRUSTED_PROXY_IPS ?? "")
+  .split(",")
+  .map((ip) => ip.trim())
+  .filter(Boolean);
+
+if (trustProxyEnabled) {
+  if (trustedProxyIps.length > 0) {
+    app.set("trust proxy", (ip) => Boolean(ip && trustedProxyIps.includes(ip)));
+  } else {
+    app.set("trust proxy", 1);
+  }
+}
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
