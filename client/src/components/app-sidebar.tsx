@@ -94,6 +94,12 @@ const patientItems = [
     badge: "AI",
   },
   {
+    title: "Medication Adherence",
+    url: "/medication-adherence",
+    icon: Pill,
+    badge: "AI",
+  },
+  {
     title: "Previous Sessions",
     url: "/previous-sessions",
     icon: History,

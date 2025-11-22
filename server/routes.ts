@@ -1998,6 +1998,35 @@ Please ask the doctor which date they want to check.`;
         ...req.body,
       });
       
+      // AUTOMATIC DRUG NORMALIZATION VIA RXNORM
+      // Normalize medication name and link to standardized drug record
+      try {
+        const normalizationResponse = await fetch(`http://localhost:8000/api/v1/drug-normalization/normalize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ medication_name: req.body.name })
+        });
+        
+        if (normalizationResponse.ok) {
+          const normalizationData = await normalizationResponse.json();
+          
+          if (normalizationData.drug_id) {
+            // Update medication with drug_id from RxNorm normalization
+            await storage.updateMedication(medication.id, {
+              drugId: normalizationData.drug_id,
+              rxcui: normalizationData.rxcui
+            });
+            
+            console.log(`✓ Normalized medication "${req.body.name}" to drug_id=${normalizationData.drug_id} (RxCUI: ${normalizationData.rxcui})`);
+          } else {
+            console.warn(`⚠️  Could not normalize medication "${req.body.name}" via RxNorm (not found in database)`);
+          }
+        }
+      } catch (normalizationError) {
+        // Log but don't fail medication creation
+        console.error("Error normalizing medication via RxNorm:", normalizationError);
+      }
+      
       // AUTOMATIC DRUG INTERACTION CHECKING
       // Check for interactions with existing medications and create alerts
       try {
