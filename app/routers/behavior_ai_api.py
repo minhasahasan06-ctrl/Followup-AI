@@ -31,6 +31,7 @@ from app.services.cognitive_test_service import CognitiveTestService
 from app.services.sentiment_analysis_service import SentimentAnalysisService
 from app.services.risk_scoring_engine import RiskScoringEngine
 from app.services.deterioration_trend_engine import DeteriorationTrendEngine
+from app.services.medication_adherence_service import MedicationAdherenceService
 
 logger = logging.getLogger(__name__)
 
@@ -526,3 +527,60 @@ async def get_dashboard_data(
             for a in unresolved_alerts
         ]
     }
+
+
+# ===========================================================================================
+# MEDICATION ADHERENCE ENDPOINTS
+# ===========================================================================================
+
+class AdherenceTrendPoint(BaseModel):
+    """Single point in adherence trend"""
+    date: str
+    adherenceRate: float
+
+
+class RegimenRisk(BaseModel):
+    """Regimen risk assessment"""
+    level: str = Field(..., description="Risk level: low, moderate, high, unknown")
+    rationale: str = Field(..., description="Explanation of risk level")
+
+
+class MissedDoseEscalation(BaseModel):
+    """Missed dose escalation data"""
+    count: int = Field(..., description="Total missed doses")
+    severity: str = Field(..., description="Severity: none, warning, critical")
+
+
+class MedicationAdherenceResponse(BaseModel):
+    """Comprehensive medication adherence analytics"""
+    currentAdherenceRate: Optional[float] = Field(None, description="Current adherence rate (0.0 - 1.0)")
+    sevenDayTrend: List[AdherenceTrendPoint] = Field(default_factory=list, description="7-day adherence trend")
+    regimenRisk: RegimenRisk
+    missedDoseEscalation: MissedDoseEscalation
+
+
+@router.get("/medication-adherence/{patient_id}", response_model=MedicationAdherenceResponse)
+async def get_medication_adherence(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get comprehensive medication adherence analytics
+    
+    Returns:
+    - Current adherence rate
+    - 7-day adherence trend for sparkline visualization
+    - Regimen risk analysis (low/moderate/high)
+    - Missed dose escalation data
+    """
+    logger.info(f"[ADHERENCE] Fetching medication adherence for patient {patient_id}")
+    
+    try:
+        service = MedicationAdherenceService(db)
+        analytics = service.get_adherence_analytics(patient_id)
+        
+        return MedicationAdherenceResponse(**analytics)
+    
+    except Exception as e:
+        logger.error(f"[ADHERENCE] Error fetching adherence: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching medication adherence: {str(e)}")
