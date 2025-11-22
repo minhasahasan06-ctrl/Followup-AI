@@ -248,22 +248,20 @@ const DAILY_WELLNESS_QUESTIONS = [
   },
 ];
 
-// Medication Adherence Component - API-driven only
+// Medication Adherence Component - Shows ONLY explicit backend fields
 function MedicationAdherenceCard({ medications }: { medications: Medication[] | undefined }) {
   const { user } = useAuth();
   
-  // Fetch adherence data from backend
-  const { data: adherenceData, isLoading } = useQuery({
+  // Fetch adherence data from backend - ONLY use explicit fields
+  const { data: adherenceData, isLoading, isError } = useQuery({
     queryKey: [`/api/v1/behavior-ai/behavioral-metrics/${user?.id}/latest`],
     enabled: !!user?.id,
   });
 
+  // ONLY use explicit backend field - no calculations
   const weeklyAdherence = adherenceData?.medicationAdherenceRate 
     ? Math.round(parseFloat(adherenceData.medicationAdherenceRate) * 100) 
     : null;
-
-  const missedDosesCount = medications?.reduce((sum, m) => sum + (m.missedDoses || 0), 0) || 0;
-  const activeMedCount = medications?.filter(m => m.active).length || 0;
 
   return (
     <Card data-testid="card-medication-adherence">
@@ -281,25 +279,21 @@ function MedicationAdherenceCard({ medications }: { medications: Medication[] | 
           </div>
         )}
 
-        {/* Missed Dose Escalation Banner - Real Data */}
-        {!isLoading && missedDosesCount > 2 && (
-          <Alert variant="destructive" className="py-2" data-testid="alert-missed-doses">
-            <AlertTriangle className="h-3 w-3" />
-            <AlertDescription className="text-xs">
-              {missedDosesCount} missed doses detected. Please contact your care team.
-            </AlertDescription>
-          </Alert>
+        {/* Error State */}
+        {isError && (
+          <div className="text-xs text-destructive" data-testid="error-adherence">
+            Error loading adherence data
+          </div>
         )}
 
-        {/* Weekly Adherence - Real Backend Data Only */}
-        {!isLoading && (
+        {/* Weekly Adherence - ONLY from backend medicationAdherenceRate field */}
+        {!isLoading && !isError && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">This Week</span>
+              <span className="text-muted-foreground" data-testid="label-adherence">Current Rate</span>
               {weeklyAdherence !== null ? (
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-chart-2" data-testid="value-adherence-percentage">{weeklyAdherence}%</span>
-                  <TrendingUp className="h-3 w-3 text-chart-2" data-testid="icon-adherence-trend" />
                 </div>
               ) : (
                 <span className="text-xs text-muted-foreground" data-testid="text-no-adherence-data">No data</span>
@@ -313,21 +307,14 @@ function MedicationAdherenceCard({ medications }: { medications: Medication[] | 
           </div>
         )}
 
-        {/* Active Medications Count */}
-        {!isLoading && (
+        {/* Link to Detailed View */}
+        {!isLoading && !isError && (
           <div className="pt-2 border-t">
-            <p className="text-xs text-muted-foreground" data-testid="text-active-medications">
-              {activeMedCount} active medication{activeMedCount !== 1 ? 's' : ''}
-            </p>
-          </div>
-        )}
-
-        {/* View History Button */}
-        {!isLoading && (
-          <div className="pt-2 border-t">
-            <Button variant="outline" size="sm" className="w-full h-7 text-xs" data-testid="button-view-history">
-              View Detailed History
-            </Button>
+            <Link href="/medications">
+              <Button variant="outline" size="sm" className="w-full h-7 text-xs" data-testid="button-view-medications">
+                View All Medications
+              </Button>
+            </Link>
           </div>
         )}
       </CardContent>
@@ -338,13 +325,17 @@ function MedicationAdherenceCard({ medications }: { medications: Medication[] | 
 // Behavioral AI Components
 function BehavioralRiskScore() {
   const { user } = useAuth();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: [`/api/v1/behavior-ai/dashboard/${user?.id}`],
     enabled: !!user?.id,
   });
 
   if (isLoading) {
-    return <div className="text-xs text-muted-foreground">Loading risk score...</div>;
+    return <div className="text-xs text-muted-foreground" data-testid="loading-risk-score">Loading risk score...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-risk-score">Error loading risk score</div>;
   }
 
   const riskScore = data?.risk_score;
@@ -390,49 +381,61 @@ function BehavioralRiskScore() {
 
 function BehavioralMetricsPreview() {
   const { user } = useAuth();
-  const { data } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: [`/api/v1/behavior-ai/behavioral-metrics/${user?.id}/latest`],
     enabled: !!user?.id,
   });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="loading-behavioral-metrics">Loading...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-behavioral-metrics">Error loading data</div>;
+  }
 
   const metrics = [
     { 
       label: "Check-in Consistency", 
       value: data?.checkinCompletionRate ? `${Math.round(parseFloat(data.checkinCompletionRate) * 100)}%` : "N/A",
       icon: <CheckCircle2 className="h-3 w-3" />,
-      trend: data?.checkinCompletionRate ? parseFloat(data.checkinCompletionRate) > 0.8 ? "good" : "warning" : null
+      trend: data?.checkinCompletionRate ? parseFloat(data.checkinCompletionRate) > 0.8 ? "good" : "warning" : null,
+      testid: "metric-checkin-consistency"
     },
     { 
       label: "Med Adherence", 
       value: data?.medicationAdherenceRate ? `${Math.round(parseFloat(data.medicationAdherenceRate) * 100)}%` : "N/A",
       icon: <Activity className="h-3 w-3" />,
-      trend: data?.medicationAdherenceRate ? parseFloat(data.medicationAdherenceRate) > 0.9 ? "good" : "warning" : null
+      trend: data?.medicationAdherenceRate ? parseFloat(data.medicationAdherenceRate) > 0.9 ? "good" : "warning" : null,
+      testid: "metric-med-adherence"
     },
     { 
       label: "App Engagement", 
       value: data?.appEngagementDurationMinutes ? `${Math.round(parseFloat(data.appEngagementDurationMinutes))}m` : "N/A",
       icon: <TrendingUp className="h-3 w-3" />,
-      trend: null
+      trend: null,
+      testid: "metric-app-engagement"
     },
     { 
       label: "Avoidance Detected", 
       value: data?.avoidancePatternsDetected ? "Yes" : "No",
       icon: <AlertTriangle className="h-3 w-3" />,
-      trend: data?.avoidancePatternsDetected ? "warning" : "good"
+      trend: data?.avoidancePatternsDetected ? "warning" : "good",
+      testid: "metric-avoidance-detected"
     },
   ];
 
   return (
     <div className="grid grid-cols-2 gap-2" data-testid="behavioral-metrics-preview">
-      {metrics.map((metric, idx) => (
-        <div key={idx} className="flex items-center gap-1.5" data-testid={`metric-${idx}`}>
+      {metrics.map((metric) => (
+        <div key={metric.testid} className="flex items-center gap-1.5" data-testid={metric.testid}>
           {metric.icon}
           <div className="min-w-0 flex-1">
             <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
             <div className={`text-xs font-medium ${
               metric.trend === "good" ? "text-green-600" : 
               metric.trend === "warning" ? "text-orange-600" : ""
-            }`} data-testid={`value-${idx}`}>
+            }`} data-testid={`${metric.testid}-value`}>
               {metric.value}
             </div>
           </div>
@@ -444,46 +447,58 @@ function BehavioralMetricsPreview() {
 
 function DigitalBiomarkersPreview() {
   const { user } = useAuth();
-  const { data } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: [`/api/v1/behavior-ai/digital-biomarkers/${user?.id}/latest`],
     enabled: !!user?.id,
   });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="loading-digital-biomarkers">Loading...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-digital-biomarkers">Error loading data</div>;
+  }
 
   const metrics = [
     { 
       label: "Daily Steps", 
       value: data?.dailyStepCount ? data.dailyStepCount.toLocaleString() : "N/A",
-      icon: <Activity className="h-3 w-3" />
+      icon: <Activity className="h-3 w-3" />,
+      testid: "biomarker-daily-steps"
     },
     { 
       label: "Mobility Change", 
       value: data?.mobilityChangePercent ? `${data.mobilityChangePercent > 0 ? '+' : ''}${Math.round(parseFloat(data.mobilityChangePercent))}%` : "N/A",
       icon: <TrendingUp className="h-3 w-3" />,
-      trend: data?.mobilityChangePercent ? parseFloat(data.mobilityChangePercent) < -20 ? "warning" : null : null
+      trend: data?.mobilityChangePercent ? parseFloat(data.mobilityChangePercent) < -20 ? "warning" : null : null,
+      testid: "biomarker-mobility-change"
     },
     { 
       label: "Circadian Stability", 
       value: data?.circadianStabilityScore ? `${Math.round(parseFloat(data.circadianStabilityScore) * 100)}%` : "N/A",
-      icon: <Moon className="h-3 w-3" />
+      icon: <Moon className="h-3 w-3" />,
+      testid: "biomarker-circadian-stability"
     },
     { 
       label: "Night Interactions", 
       value: data?.nightPhoneInteractions || "N/A",
       icon: <Phone className="h-3 w-3" />,
-      trend: data?.nightPhoneInteractions > 5 ? "warning" : null
+      trend: data?.nightPhoneInteractions > 5 ? "warning" : null,
+      testid: "biomarker-night-interactions"
     },
   ];
 
   return (
     <div className="grid grid-cols-2 gap-2" data-testid="digital-biomarkers-preview">
-      {metrics.map((metric, idx) => (
-        <div key={idx} className="flex items-center gap-1.5" data-testid={`biomarker-${idx}`}>
+      {metrics.map((metric) => (
+        <div key={metric.testid} className="flex items-center gap-1.5" data-testid={metric.testid}>
           {metric.icon}
           <div className="min-w-0 flex-1">
             <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
             <div className={`text-xs font-medium ${
               metric.trend === "warning" ? "text-orange-600" : ""
-            }`} data-testid={`value-${idx}`}>
+            }`} data-testid={`${metric.testid}-value`}>
               {metric.value}
             </div>
           </div>
@@ -495,45 +510,57 @@ function DigitalBiomarkersPreview() {
 
 function CognitiveBiomarkersPreview() {
   const { user } = useAuth();
-  const { data } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: [`/api/v1/behavior-ai/cognitive-tests/${user?.id}/latest`],
     enabled: !!user?.id,
   });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="loading-cognitive-biomarkers">Loading...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-cognitive-biomarkers">Error loading data</div>;
+  }
 
   const metrics = [
     { 
       label: "Reaction Time", 
       value: data?.reactionTimeMs ? `${data.reactionTimeMs}ms` : "N/A",
-      icon: <Zap className="h-3 w-3" />
+      icon: <Zap className="h-3 w-3" />,
+      testid: "cognitive-reaction-time"
     },
     { 
       label: "Tapping Speed", 
       value: data?.tappingSpeed ? `${parseFloat(data.tappingSpeed).toFixed(1)} t/s` : "N/A",
-      icon: <Hand className="h-3 w-3" />
+      icon: <Hand className="h-3 w-3" />,
+      testid: "cognitive-tapping-speed"
     },
     { 
       label: "Memory Score", 
       value: data?.memoryScore ? `${Math.round(parseFloat(data.memoryScore) * 100)}%` : "N/A",
-      icon: <Brain className="h-3 w-3" />
+      icon: <Brain className="h-3 w-3" />,
+      testid: "cognitive-memory-score"
     },
     { 
       label: "Cognitive Drift", 
       value: data?.baselineDeviation ? `${parseFloat(data.baselineDeviation).toFixed(2)}σ` : "N/A",
       icon: <TrendingDown className="h-3 w-3" />,
-      trend: data?.anomalyDetected ? "warning" : null
+      trend: data?.anomalyDetected ? "warning" : null,
+      testid: "cognitive-drift"
     },
   ];
 
   return (
     <div className="grid grid-cols-2 gap-2" data-testid="cognitive-biomarkers-preview">
-      {metrics.map((metric, idx) => (
-        <div key={idx} className="flex items-center gap-1.5" data-testid={`cognitive-${idx}`}>
+      {metrics.map((metric) => (
+        <div key={metric.testid} className="flex items-center gap-1.5" data-testid={metric.testid}>
           {metric.icon}
           <div className="min-w-0 flex-1">
             <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
             <div className={`text-xs font-medium ${
               metric.trend === "warning" ? "text-orange-600" : ""
-            }`} data-testid={`value-${idx}`}>
+            }`} data-testid={`${metric.testid}-value`}>
               {metric.value}
             </div>
           </div>
@@ -545,10 +572,18 @@ function CognitiveBiomarkersPreview() {
 
 function SentimentBiomarkersPreview() {
   const { user } = useAuth();
-  const { data } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: [`/api/v1/behavior-ai/sentiment/${user?.id}/latest`],
     enabled: !!user?.id,
   });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="loading-sentiment-biomarkers">Loading...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-sentiment-biomarkers">Error loading data</div>;
+  }
 
   const polarityLabel = (polarity: number) => {
     if (polarity > 0.3) return "Positive";
@@ -561,37 +596,41 @@ function SentimentBiomarkersPreview() {
       label: "Sentiment Trend", 
       value: data?.sentimentPolarity ? polarityLabel(parseFloat(data.sentimentPolarity)) : "N/A",
       icon: <Smile className="h-3 w-3" />,
-      trend: data?.sentimentPolarity ? parseFloat(data.sentimentPolarity) < -0.3 ? "warning" : null : null
+      trend: data?.sentimentPolarity ? parseFloat(data.sentimentPolarity) < -0.3 ? "warning" : null : null,
+      testid: "sentiment-trend"
     },
     { 
       label: "Stress Keywords", 
       value: data?.stressKeywordCount || "N/A",
       icon: <AlertTriangle className="h-3 w-3" />,
-      trend: data?.stressKeywordCount > 5 ? "warning" : null
+      trend: data?.stressKeywordCount > 5 ? "warning" : null,
+      testid: "sentiment-stress-keywords"
     },
     { 
       label: "Message Length", 
       value: data?.avgMessageLength ? `${Math.round(data.avgMessageLength)} chars` : "N/A",
-      icon: <FileText className="h-3 w-3" />
+      icon: <FileText className="h-3 w-3" />,
+      testid: "sentiment-message-length"
     },
     { 
       label: "Hesitation Level", 
       value: data?.hesitationRatio ? `${Math.round(parseFloat(data.hesitationRatio) * 100)}%` : "N/A",
       icon: <Info className="h-3 w-3" />,
-      trend: data?.hesitationRatio ? parseFloat(data.hesitationRatio) > 0.3 ? "warning" : null : null
+      trend: data?.hesitationRatio ? parseFloat(data.hesitationRatio) > 0.3 ? "warning" : null : null,
+      testid: "sentiment-hesitation-level"
     },
   ];
 
   return (
     <div className="grid grid-cols-2 gap-2" data-testid="sentiment-biomarkers-preview">
-      {metrics.map((metric, idx) => (
-        <div key={idx} className="flex items-center gap-1.5" data-testid={`sentiment-${idx}`}>
+      {metrics.map((metric) => (
+        <div key={metric.testid} className="flex items-center gap-1.5" data-testid={metric.testid}>
           {metric.icon}
           <div className="min-w-0 flex-1">
             <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
             <div className={`text-xs font-medium ${
               metric.trend === "warning" ? "text-orange-600" : ""
-            }`} data-testid={`value-${idx}`}>
+            }`} data-testid={`${metric.testid}-value`}>
               {metric.value}
             </div>
           </div>
