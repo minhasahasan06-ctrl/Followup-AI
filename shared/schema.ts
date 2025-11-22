@@ -3712,3 +3712,230 @@ export const insertClinicianNoteSchema = createInsertSchema(clinicianNotes).omit
 
 export type InsertClinicianNote = z.infer<typeof insertClinicianNoteSchema>;
 export type ClinicianNote = typeof clinicianNotes.$inferSelect;
+
+// ============================================================================
+// DAILY FOLLOW-UP SYMPTOM TRACKING SYSTEM
+// ============================================================================
+// Comprehensive symptom tracking module for daily check-ins with conversational
+// extraction, ML-based trend/anomaly detection, and clinician-ready summaries.
+// All outputs are labeled "observational" and non-diagnostic per HIPAA compliance.
+// ============================================================================
+
+// Symptom check-ins - Structured daily check-in data
+export const symptomCheckins = pgTable("symptom_checkins", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  
+  // Structured symptom metrics (0-10 scales for self-reported patient data)
+  painLevel: integer("pain_level"), // 0-10, null if not reported
+  fatigueLevel: integer("fatigue_level"), // 0-10, null if not reported
+  breathlessnessLevel: integer("breathlessness_level"), // 0-10, null if not reported
+  sleepQuality: integer("sleep_quality"), // 0-10, null if not reported
+  mood: varchar("mood"), // 'great', 'good', 'okay', 'low', 'very_low'
+  mobilityScore: integer("mobility_score"), // 0-10, null if not reported
+  medicationsTaken: boolean("medications_taken"), // Did patient take meds today?
+  
+  // Free-form symptom data
+  triggers: text("triggers").array(), // Environmental/activity triggers
+  symptoms: text("symptoms").array(), // List of symptoms experienced
+  note: text("note"), // Optional free-text patient note
+  voiceNoteUrl: varchar("voice_note_url"), // Optional S3 URL for voice recording
+  voiceNoteDuration: integer("voice_note_duration"), // seconds
+  
+  // Source tracking
+  source: varchar("source").notNull().default("app"), // 'app', 'agent', 'voice'
+  sessionId: varchar("session_id").references(() => chatSessions.id), // If from Agent Clona
+  
+  // Metadata
+  deviceType: varchar("device_type"), // 'ios', 'android', 'web'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSymptomCheckinSchema = createInsertSchema(symptomCheckins).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSymptomCheckin = z.infer<typeof insertSymptomCheckinSchema>;
+export type SymptomCheckin = typeof symptomCheckins.$inferSelect;
+
+// Chat symptoms - Extracted symptoms from Agent Clona conversations
+export const chatSymptoms = pgTable("chat_symptoms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id),
+  messageId: varchar("message_id").references(() => chatMessages.id),
+  
+  // Raw conversation data
+  rawText: text("raw_text").notNull(), // Original message text
+  
+  // AI-extracted structured data
+  extractedJson: jsonb("extracted_json").$type<{
+    locations?: string[]; // Body locations mentioned
+    symptomTypes?: string[]; // Types of symptoms (headache, nausea, etc.)
+    intensityMentions?: string[]; // Severity descriptors (mild, severe, etc.)
+    temporalInfo?: string; // When symptoms started/duration
+    aggravatingFactors?: string[];
+    relievingFactors?: string[];
+  }>().notNull(),
+  
+  // Extraction metadata
+  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0.0-1.0 confidence score
+  extractionModel: varchar("extraction_model").default("gpt-4o"), // AI model used
+  
+  // Link to structured check-in (if created)
+  symptomCheckinId: varchar("symptom_checkin_id").references(() => symptomCheckins.id),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertChatSymptomSchema = createInsertSchema(chatSymptoms).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertChatSymptom = z.infer<typeof insertChatSymptomSchema>;
+export type ChatSymptom = typeof chatSymptoms.$inferSelect;
+
+// Passive metrics - Device-collected health data (wearables, phone sensors)
+export const passiveMetrics = pgTable("passive_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  date: timestamp("date").notNull(), // Date of data collection
+  
+  // Activity metrics
+  steps: integer("steps"),
+  activeMinutes: integer("active_minutes"),
+  caloriesBurned: integer("calories_burned"),
+  distanceMeters: integer("distance_meters"),
+  
+  // Heart metrics
+  hrMean: integer("hr_mean"), // Average heart rate (bpm)
+  hrMin: integer("hr_min"),
+  hrMax: integer("hr_max"),
+  hrv: integer("hrv"), // Heart rate variability (ms)
+  restingHr: integer("resting_hr"),
+  
+  // Sleep metrics
+  sleepMinutes: integer("sleep_minutes"), // Total sleep duration
+  deepSleepMinutes: integer("deep_sleep_minutes"),
+  remSleepMinutes: integer("rem_sleep_minutes"),
+  lightSleepMinutes: integer("light_sleep_minutes"),
+  awakeMinutes: integer("awake_minutes"),
+  sleepScore: integer("sleep_score"), // 0-100 if device provides
+  
+  // Respiratory metrics
+  respiratoryRate: integer("respiratory_rate"), // Breaths per minute
+  spo2Mean: integer("spo2_mean"), // Average oxygen saturation %
+  spo2Min: integer("spo2_min"),
+  
+  // Stress/recovery
+  stressScore: integer("stress_score"), // 0-100 if device provides
+  recoveryScore: integer("recovery_score"), // 0-100 if device provides
+  
+  // Device metadata
+  deviceMeta: jsonb("device_meta").$type<{
+    source: string; // 'fitbit', 'apple_watch', 'garmin', 'phone_sensor'
+    model?: string;
+    firmwareVersion?: string;
+    batteryLevel?: number;
+  }>(),
+  
+  // Sync metadata
+  syncedAt: timestamp("synced_at").defaultNow(),
+  dataQuality: varchar("data_quality"), // 'high', 'medium', 'low' based on completeness
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userDateIdx: index("passive_metrics_user_date_idx").on(table.userId, table.date),
+}));
+
+export const insertPassiveMetricSchema = createInsertSchema(passiveMetrics).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPassiveMetric = z.infer<typeof insertPassiveMetricSchema>;
+export type PassiveMetric = typeof passiveMetrics.$inferSelect;
+
+// Trend reports - ML-generated trend analysis and anomaly detection
+export const trendReports = pgTable("trend_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  reportType: varchar("report_type").notNull(), // '3day', '7day', '15day', '30day'
+  
+  // Aggregated metrics (observational data only)
+  aggregatedMetrics: jsonb("aggregated_metrics").$type<{
+    // Average values across period
+    avgPainLevel?: number;
+    avgFatigueLevel?: number;
+    avgBreathlessness?: number;
+    avgSleepQuality?: number;
+    avgMobilityScore?: number;
+    
+    // Device metrics averages
+    avgSteps?: number;
+    avgHrMean?: number;
+    avgHrv?: number;
+    avgSleepMinutes?: number;
+    avgSpo2?: number;
+    
+    // Trends (increasing, stable, decreasing)
+    painTrend?: string;
+    fatigueTrend?: string;
+    sleepTrend?: string;
+    activityTrend?: string;
+    
+    // Most common symptoms
+    topSymptoms?: Array<{ symptom: string; frequency: number }>;
+    topTriggers?: Array<{ trigger: string; frequency: number }>;
+  }>(),
+  
+  // ML-detected anomalies (observational, non-diagnostic)
+  anomalies: jsonb("anomalies").$type<Array<{
+    metricName: string; // e.g., "pain_level", "sleep_quality"
+    date: string;
+    value: number;
+    expectedRange: { min: number; max: number };
+    severity: "mild" | "moderate" | "significant"; // Observational severity
+    description: string; // Patient-friendly description
+  }>>(),
+  
+  // Correlational insights (observational patterns only)
+  correlations: jsonb("correlations").$type<Array<{
+    metric1: string;
+    metric2: string;
+    correlationType: "positive" | "negative" | "none";
+    strength: number; // 0.0-1.0
+    observationalNote: string; // e.g., "Lower sleep quality appears associated with higher pain levels"
+  }>>(),
+  
+  // Clinician-ready summary (observational language)
+  clinicianSummary: text("clinician_summary"), // Plain English summary for doctor review
+  
+  // Metadata
+  generatedBy: varchar("generated_by").default("ml_trend_engine"), // Algorithm identifier
+  dataPointsAnalyzed: integer("data_points_analyzed"), // Number of check-ins included
+  confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }), // 0.0-1.0
+  
+  generatedAt: timestamp("generated_at").defaultNow(),
+  reviewedByDoctor: boolean("reviewed_by_doctor").default(false),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userPeriodIdx: index("trend_reports_user_period_idx").on(table.userId, table.periodStart, table.periodEnd),
+}));
+
+export const insertTrendReportSchema = createInsertSchema(trendReports).omit({
+  id: true,
+  createdAt: true,
+  generatedAt: true,
+});
+
+export type InsertTrendReport = z.infer<typeof insertTrendReportSchema>;
+export type TrendReport = typeof trendReports.$inferSelect;
