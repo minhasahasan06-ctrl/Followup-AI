@@ -10,17 +10,20 @@ Provides endpoints for:
 All outputs are labeled observational and non-diagnostic per HIPAA compliance.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import desc, and_
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 
 from app.database import get_db
-from app.dependencies import get_current_user_py
+from app.dependencies import get_current_user, require_role
 from app.models.user import User
+from app.models.symptom_checkin_models import SymptomCheckin, ChatSymptom, PassiveMetric, TrendReport
 from app.services.symptom_checkin_service import SymptomExtractionService, SymptomTrendService
 from app.services.s3_service import S3Service
+from app.services.audit_logger import AuditLogger
 
 router = APIRouter(prefix="/api/symptom-checkin", tags=["Symptom Check-in"])
 
@@ -100,13 +103,57 @@ class TrendReportResponse(BaseModel):
 
 
 # ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def checkin_to_response(checkin: SymptomCheckin) -> SymptomCheckinResponse:
+    """Convert SQLAlchemy SymptomCheckin to Pydantic response model"""
+    return SymptomCheckinResponse(
+        id=str(checkin.id),
+        userId=str(checkin.user_id),
+        timestamp=checkin.timestamp,
+        painLevel=checkin.pain_level,
+        fatigueLevel=checkin.fatigue_level,
+        breathlessnessLevel=checkin.breathlessness_level,
+        sleepQuality=checkin.sleep_quality,
+        mood=checkin.mood,
+        mobilityScore=checkin.mobility_score,
+        medicationsTaken=checkin.medications_taken,
+        triggers=checkin.triggers or [],
+        symptoms=checkin.symptoms or [],
+        note=checkin.note,
+        source=checkin.source,
+        createdAt=checkin.created_at
+    )
+
+
+def report_to_response(report: TrendReport) -> TrendReportResponse:
+    """Convert SQLAlchemy TrendReport to Pydantic response model"""
+    return TrendReportResponse(
+        id=str(report.id),
+        userId=str(report.user_id),
+        periodStart=report.period_start,
+        periodEnd=report.period_end,
+        reportType=report.report_type,
+        aggregatedMetrics=report.aggregated_metrics,
+        anomalies=report.anomalies or [],
+        correlations=report.correlations or [],
+        clinicianSummary=report.clinician_summary,
+        dataPointsAnalyzed=report.data_points_analyzed,
+        confidenceScore=report.confidence_score or 0.0,
+        generatedAt=report.generated_at
+    )
+
+
+# ============================================================================
 # ENDPOINTS
 # ============================================================================
 
 @router.post("/checkin", response_model=SymptomCheckinResponse)
 def create_symptom_checkin(
     checkin_data: SymptomCheckinCreate,
-    current_user: User = Depends(get_current_user_py),
+    request: Request,
+    current_user: User = Depends(require_role("patient")),
     db: Session = Depends(get_db)
 ):
     """
@@ -116,249 +163,475 @@ def create_symptom_checkin(
     All data is observational and requires clinician interpretation.
     """
     try:
-        # Create check-in record (using Drizzle/PostgreSQL schema)
-        # For now, return a mock response until we wire up the database
-        # In production, this would insert into symptom_checkins table
-        
-        # Create mock response for now
-        # TODO: Wire up with actual database insert
-        return SymptomCheckinResponse(
-            id="mock-id-123",
-            userId=current_user.id,
-            timestamp=datetime.utcnow(),
-            painLevel=checkin_data.painLevel,
-            fatigueLevel=checkin_data.fatigueLevel,
-            breathlessnessLevel=checkin_data.breathlessnessLevel,
-            sleepQuality=checkin_data.sleepQuality,
+        # Create check-in record
+        checkin = SymptomCheckin(
+            user_id=current_user.id,
+            pain_level=checkin_data.painLevel,
+            fatigue_level=checkin_data.fatigueLevel,
+            breathlessness_level=checkin_data.breathlessnessLevel,
+            sleep_quality=checkin_data.sleepQuality,
             mood=checkin_data.mood,
-            mobilityScore=checkin_data.mobilityScore,
-            medicationsTaken=checkin_data.medicationsTaken,
-            triggers=checkin_data.triggers,
-            symptoms=checkin_data.symptoms,
+            mobility_score=checkin_data.mobilityScore,
+            medications_taken=checkin_data.medicationsTaken,
+            triggers=checkin_data.triggers or [],
+            symptoms=checkin_data.symptoms or [],
             note=checkin_data.note,
             source="app",
-            createdAt=datetime.utcnow()
+            device_type=checkin_data.deviceType
         )
         
+        db.add(checkin)
+        db.commit()
+        db.refresh(checkin)
+        
+        # HIPAA Audit Log (AFTER successful operation)
+        AuditLogger.log_event(
+            event_type="symptom_checkin_created",
+            user_id=current_user.id,
+            resource_type="symptom_checkin",
+            resource_id=checkin.id,
+            action="create",
+            status="success",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        
+        # Convert to response model
+        return checkin_to_response(checkin)
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create symptom check-in: {str(e)}")
+        db.rollback()
+        # HIPAA Audit Log (failure)
+        AuditLogger.log_event(
+            event_type="symptom_checkin_created",
+            user_id=current_user.id,
+            resource_type="symptom_checkin",
+            resource_id=None,
+            action="create",
+            status="failure",
+            metadata={"error": str(e)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to create check-in: {str(e)}")
 
 
-@router.get("/checkins/recent", response_model=List[SymptomCheckinResponse])
-def get_recent_checkins(
-    days: int = Query(7, ge=1, le=90, description="Number of days to retrieve"),
-    current_user: User = Depends(get_current_user_py),
+@router.get("/history", response_model=List[SymptomCheckinResponse])
+def get_symptom_history(
+    request: Request,
+    days: int = 30,
+    current_user: User = Depends(require_role("patient")),
     db: Session = Depends(get_db)
 ):
     """
-    Get recent symptom check-ins for the current user.
-    
-    Args:
-        days: Number of days to retrieve (default: 7, max: 90)
-    
-    Returns:
-        List of symptom check-ins in reverse chronological order
+    Get symptom check-in history for the authenticated patient.
+    Returns check-ins from the last N days.
     """
     try:
-        # TODO: Query symptom_checkins table
-        # For now, return empty list
-        return []
+        # Get check-ins from the last N days
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        checkins = db.query(SymptomCheckin).filter(
+            and_(
+                SymptomCheckin.user_id == current_user.id,
+                SymptomCheckin.timestamp >= cutoff_date
+            )
+        ).order_by(desc(SymptomCheckin.timestamp)).all()
+        
+        # HIPAA Audit Log (AFTER successful operation)
+        AuditLogger.log_event(
+            event_type="symptom_checkin_viewed",
+            user_id=current_user.id,
+            resource_type="symptom_checkin",
+            resource_id=None,
+            action="view",
+            status="success",
+            metadata={"count": len(checkins), "days": days},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        
+        # Convert to response models
+        return [checkin_to_response(c) for c in checkins]
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve check-ins: {str(e)}")
+        # HIPAA Audit Log (failure)
+        AuditLogger.log_event(
+            event_type="symptom_checkin_viewed",
+            user_id=current_user.id,
+            resource_type="symptom_checkin",
+            resource_id=None,
+            action="view",
+            status="failure",
+            metadata={"error": str(e)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
 
 
 @router.post("/extract-from-chat", response_model=ChatSymptomExtractResponse)
 def extract_symptoms_from_chat(
     extract_request: ChatSymptomExtractRequest,
-    current_user: User = Depends(get_current_user_py),
+    request: Request,
+    current_user: User = Depends(require_role("patient")),
     db: Session = Depends(get_db)
 ):
     """
-    Extract structured symptom data from Agent Clona conversation message.
+    Extract structured symptom data from Agent Clona conversation using GPT-4o.
     
-    Uses GPT-4o to parse conversational text and extract:
-    - Body locations
-    - Symptom types
-    - Intensity descriptors
-    - Temporal information
-    - Aggravating/relieving factors
-    
-    This is an observational extraction for tracking purposes only.
+    Returns extracted symptom information with confidence score.
+    This is observational data requiring clinician interpretation.
     """
     try:
-        # Extract symptoms using AI service (synchronous)
-        extraction_result = SymptomExtractionService.extract_from_conversation(
-            patient_id=current_user.id,
-            message_text=extract_request.messageText,
-            session_id=extract_request.sessionId,
-            message_id=extract_request.messageId
+        # Initialize extraction service
+        extraction_service = SymptomExtractionService()
+        
+        # Extract symptoms using GPT-4o
+        extraction_result = extraction_service.extract_from_conversation(
+            message_text=extract_request.messageText
         )
         
-        if not extraction_result.get("success"):
-            return ChatSymptomExtractResponse(
-                success=False,
-                extractedJson=None,
-                confidence=0.0,
-                chatSymptomId=None
-            )
+        # Store extraction in database
+        chat_symptom = ChatSymptom(
+            user_id=current_user.id,
+            session_id=extract_request.sessionId,
+            message_id=extract_request.messageId,
+            extracted_json=extraction_result.get("extracted_data", {}),
+            confidence=extraction_result.get("confidence", 0.0),
+            locations=extraction_result.get("locations", []),
+            symptom_types=extraction_result.get("symptom_types", []),
+            intensity_mentions=extraction_result.get("intensity_mentions", []),
+            temporal_info=extraction_result.get("temporal_info"),
+            aggravating_factors=extraction_result.get("aggravating_factors", []),
+            relieving_factors=extraction_result.get("relieving_factors", []),
+            extraction_model="gpt-4o"
+        )
         
-        # TODO: Store in chat_symptoms table
-        # For now, just return extraction result
+        db.add(chat_symptom)
+        db.commit()
+        db.refresh(chat_symptom)
+        
+        # HIPAA Audit Log (AFTER successful operation)
+        AuditLogger.log_event(
+            event_type="chat_symptom_extracted",
+            user_id=current_user.id,
+            resource_type="chat_symptom",
+            resource_id=chat_symptom.id,
+            action="extract",
+            status="success",
+            metadata={"session_id": extract_request.sessionId, "confidence": chat_symptom.confidence},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
         
         return ChatSymptomExtractResponse(
             success=True,
-            extractedJson=extraction_result.get("extracted_json"),
-            confidence=extraction_result.get("confidence", 0.0),
-            chatSymptomId="mock-chat-symptom-id"
+            extractedJson=chat_symptom.extracted_json or {},
+            confidence=float(chat_symptom.confidence) if chat_symptom.confidence else 0.0,
+            chatSymptomId=str(chat_symptom.id)
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to extract symptoms: {str(e)}")
+        db.rollback()
+        # HIPAA Audit Log (failure)
+        AuditLogger.log_event(
+            event_type="chat_symptom_extracted",
+            user_id=current_user.id,
+            resource_type="chat_symptom",
+            resource_id=extract_request.sessionId,
+            action="extract",
+            status="failure",
+            metadata={"error": str(e)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
 
 
 @router.post("/trend-report", response_model=TrendReportResponse)
 def generate_trend_report(
     report_request: TrendReportRequest,
-    current_user: User = Depends(get_current_user_py),
+    request: Request,
+    current_user: User = Depends(require_role("patient")),
     db: Session = Depends(get_db)
 ):
     """
-    Generate ML-based trend analysis report for symptom data.
+    Generate ML-based trend report for symptom data.
     
-    Provides:
-    - Aggregated symptom averages
-    - Anomaly detection (observational, non-diagnostic)
-    - Correlational insights
-    - Clinician-ready summary
-    
-    Report types:
-    - '3day': 3-day snapshot
-    - '7day': 1-week overview
-    - '15day': 2-week trends
-    - '30day': Monthly comprehensive analysis
-    
-    IMPORTANT: All outputs are observational and require clinician interpretation.
-    This is NOT a diagnostic tool.
+    Available report types: 3day, 7day, 15day, 30day
+    Returns aggregated metrics, anomalies, correlations, and clinician summary.
+    All outputs are observational and non-diagnostic.
     """
     try:
-        # Validate report type
-        valid_types = ["3day", "7day", "15day", "30day"]
-        if report_request.reportType not in valid_types:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid report type. Must be one of: {', '.join(valid_types)}"
-            )
+        # Map report type to days
+        report_type_map = {
+            "3day": 3,
+            "7day": 7,
+            "15day": 15,
+            "30day": 30
+        }
         
-        # Determine period
-        days_map = {"3day": 3, "7day": 7, "15day": 15, "30day": 30}
-        days = days_map[report_request.reportType]
+        days = report_type_map.get(report_request.reportType)
+        if not days:
+            raise HTTPException(status_code=400, detail="Invalid report type. Must be 3day, 7day, 15day, or 30day")
         
+        # Calculate period
         period_end = datetime.utcnow()
         period_start = period_end - timedelta(days=days)
         
-        # TODO: Fetch actual data from symptom_checkins and passive_metrics tables
-        # For now, create mock report
+        # Get check-ins for the period
+        checkins = db.query(SymptomCheckin).filter(
+            and_(
+                SymptomCheckin.user_id == current_user.id,
+                SymptomCheckin.timestamp >= period_start,
+                SymptomCheckin.timestamp <= period_end
+            )
+        ).order_by(SymptomCheckin.timestamp).all()
         
-        # Mock aggregated metrics
-        aggregated_metrics = {
-            "avgPainLevel": 4.2,
-            "avgFatigueLevel": 5.1,
-            "avgSleepQuality": 6.8,
-            "topSymptoms": [
-                {"symptom": "headache", "frequency": 3},
-                {"symptom": "fatigue", "frequency": 5}
-            ]
-        }
+        if not checkins:
+            raise HTTPException(status_code=404, detail="No symptom data found for this period")
         
-        # Mock anomalies
-        anomalies = []
+        # Initialize trend service
+        trend_service = SymptomTrendService()
         
-        # Mock correlations
-        correlations = []
-        
-        # Generate clinician summary
-        clinician_summary = SymptomTrendService.generate_clinician_summary(
-            aggregated_metrics=aggregated_metrics,
-            anomalies=anomalies,
-            correlations=correlations,
-            period_days=days
+        # Generate trend analysis
+        trend_analysis = trend_service.generate_trend_report(
+            user_id=current_user.id,
+            checkins=checkins,
+            period_start=period_start,
+            period_end=period_end
         )
         
-        return TrendReportResponse(
-            id="mock-report-id",
-            userId=current_user.id,
-            periodStart=period_start,
-            periodEnd=period_end,
-            reportType=report_request.reportType,
-            aggregatedMetrics=aggregated_metrics,
-            anomalies=anomalies,
-            correlations=correlations,
-            clinicianSummary=clinician_summary,
-            dataPointsAnalyzed=0,
-            confidenceScore=0.75,
-            generatedAt=datetime.utcnow()
+        # Store report in database
+        report = TrendReport(
+            user_id=current_user.id,
+            report_type=report_request.reportType,
+            period_start=period_start,
+            period_end=period_end,
+            aggregated_metrics=trend_analysis["aggregated_metrics"],
+            anomalies=trend_analysis["anomalies"],
+            correlations=trend_analysis["correlations"],
+            clinician_summary=trend_analysis["clinician_summary"],
+            data_points_analyzed=len(checkins),
+            confidence_score=trend_analysis["confidence_score"]
         )
+        
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        
+        # HIPAA Audit Log (AFTER successful operation)
+        AuditLogger.log_event(
+            event_type="trend_report_generated",
+            user_id=current_user.id,
+            resource_type="trend_report",
+            resource_id=report.id,
+            action="generate",
+            status="success",
+            metadata={"report_type": report_request.reportType, "data_points": len(checkins)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        
+        return report_to_response(report)
         
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate trend report: {str(e)}")
+        db.rollback()
+        # HIPAA Audit Log (failure)
+        AuditLogger.log_event(
+            event_type="trend_report_generated",
+            user_id=current_user.id,
+            resource_type="trend_report",
+            resource_id=report_request.reportType,
+            action="generate",
+            status="failure",
+            metadata={"error": str(e)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
 
 
-@router.post("/voice-note-upload")
-async def upload_voice_note(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user_py)
+@router.get("/trend-reports", response_model=List[TrendReportResponse])
+def get_trend_reports(
+    request: Request,
+    limit: int = 10,
+    current_user: User = Depends(require_role("patient")),
+    db: Session = Depends(get_db)
 ):
     """
-    Upload voice note for symptom check-in.
-    
-    Uploads audio file to S3 with encryption and returns URL for storage.
-    Voice notes provide additional context for symptom tracking.
+    Get previously generated trend reports for the authenticated patient.
+    """
+    try:
+        reports = db.query(TrendReport).filter(
+            TrendReport.user_id == current_user.id
+        ).order_by(desc(TrendReport.generated_at)).limit(limit).all()
+        
+        # HIPAA Audit Log (AFTER successful operation)
+        AuditLogger.log_event(
+            event_type="trend_reports_viewed",
+            user_id=current_user.id,
+            resource_type="trend_report",
+            resource_id=None,
+            action="view",
+            status="success",
+            metadata={"count": len(reports), "limit": limit},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        
+        return [report_to_response(r) for r in reports]
+        
+    except Exception as e:
+        # HIPAA Audit Log (failure)
+        AuditLogger.log_event(
+            event_type="trend_reports_viewed",
+            user_id=current_user.id,
+            resource_type="trend_report",
+            resource_id=None,
+            action="view",
+            status="failure",
+            metadata={"error": str(e)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to fetch reports: {str(e)}")
+
+
+@router.post("/upload-voice-note")
+async def upload_voice_note(
+    file: UploadFile = File(...),
+    checkin_id: Optional[str] = None,
+    request: Request = None,
+    current_user: User = Depends(require_role("patient")),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a voice note attachment for a symptom check-in.
+    Stores in S3 with SSE-KMS encryption and links to check-in record.
     """
     try:
         # Validate file type
         if not file.content_type or not file.content_type.startswith("audio/"):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid file type. Must be audio file."
-            )
-        
-        # Read file content
-        file_content = await file.read()
+            raise HTTPException(status_code=400, detail="File must be an audio file")
         
         # Upload to S3
-        s3_url = S3Service.upload_file(
-            file_content=file_content,
-            filename=file.filename or "voice_note.wav",
-            content_type=file.content_type,
-            folder="symptom-voice-notes",
-            patient_id=current_user.id
+        s3_service = S3Service()
+        file_content = await file.read()  # Async file read
+        
+        s3_key = f"voice-notes/{current_user.id}/{datetime.utcnow().strftime('%Y%m%d')}/{file.filename}"
+        s3_url = await s3_service.upload_file(
+            file_data=file_content,
+            s3_key=s3_key,
+            content_type=file.content_type
+        )
+        
+        # Update check-in if checkin_id provided
+        if checkin_id:
+            checkin = db.query(SymptomCheckin).filter(
+                and_(
+                    SymptomCheckin.id == checkin_id,
+                    SymptomCheckin.user_id == current_user.id
+                )
+            ).first()
+            
+            if checkin:
+                checkin.voice_note_url = s3_url
+                # Note: source remains as originally set
+                db.commit()
+        
+        # HIPAA Audit Log (AFTER successful operation)
+        AuditLogger.log_event(
+            event_type="voice_note_uploaded",
+            user_id=current_user.id,
+            resource_type="voice_note",
+            resource_id=checkin_id or "new",
+            action="upload",
+            status="success",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
         )
         
         return {
             "success": True,
             "voiceNoteUrl": s3_url,
-            "durationSeconds": None  # Would need audio processing to determine
+            "message": "Voice note uploaded successfully"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload voice note: {str(e)}")
+        db.rollback()
+        # HIPAA Audit Log (failure)
+        AuditLogger.log_event(
+            event_type="voice_note_uploaded",
+            user_id=current_user.id,
+            resource_type="voice_note",
+            resource_id=checkin_id or "new",
+            action="upload",
+            status="failure",
+            metadata={"error": str(e)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
-@router.get("/health")
-async def symptom_checkin_health():
-    """Health check endpoint for symptom check-in API"""
-    return {
-        "status": "healthy",
-        "service": "symptom-checkin-api",
-        "timestamp": datetime.utcnow().isoformat(),
-        "features": [
-            "daily_checkins",
-            "chat_extraction",
-            "trend_reports",
-            "anomaly_detection",
-            "voice_notes"
-        ]
-    }
+@router.delete("/checkin/{checkin_id}")
+def delete_symptom_checkin(
+    checkin_id: str,
+    request: Request,
+    current_user: User = Depends(require_role("patient")),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a symptom check-in (patient can only delete their own).
+    """
+    try:
+        checkin = db.query(SymptomCheckin).filter(
+            and_(
+                SymptomCheckin.id == checkin_id,
+                SymptomCheckin.user_id == current_user.id
+            )
+        ).first()
+        
+        if not checkin:
+            raise HTTPException(status_code=404, detail="Check-in not found")
+        
+        db.delete(checkin)
+        db.commit()
+        
+        # HIPAA Audit Log (AFTER successful operation)
+        AuditLogger.log_event(
+            event_type="symptom_checkin_deleted",
+            user_id=current_user.id,
+            resource_type="symptom_checkin",
+            resource_id=checkin_id,
+            action="delete",
+            status="success",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        
+        return {"success": True, "message": "Check-in deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        # HIPAA Audit Log (failure)
+        AuditLogger.log_event(
+            event_type="symptom_checkin_deleted",
+            user_id=current_user.id,
+            resource_type="symptom_checkin",
+            resource_id=checkin_id,
+            action="delete",
+            status="failure",
+            metadata={"error": str(e)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
