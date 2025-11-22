@@ -1120,16 +1120,16 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="device" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-6 gap-1">
-                  <TabsTrigger value="device" data-testid="tab-device">Device Data</TabsTrigger>
-                  <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal">Symptoms</TabsTrigger>
-                  <TabsTrigger value="video-ai" data-testid="tab-video-ai">Video AI</TabsTrigger>
-                  <TabsTrigger value="audio-ai" data-testid="tab-audio-ai">Audio AI</TabsTrigger>
-                  <TabsTrigger value="paintrack" data-testid="tab-paintrack">
+                <TabsList className="w-full flex gap-2 h-auto flex-wrap p-2">
+                  <TabsTrigger value="device" data-testid="tab-device" className="flex-1 min-w-[100px]">Device Data</TabsTrigger>
+                  <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal" className="flex-1 min-w-[100px]">Symptoms</TabsTrigger>
+                  <TabsTrigger value="video-ai" data-testid="tab-video-ai" className="flex-1 min-w-[100px]">Video AI</TabsTrigger>
+                  <TabsTrigger value="audio-ai" data-testid="tab-audio-ai" className="flex-1 min-w-[100px]">Audio AI</TabsTrigger>
+                  <TabsTrigger value="paintrack" data-testid="tab-paintrack" className="flex-1 min-w-[110px]">
                     <Activity className="w-3 h-3 mr-1" />
                     PainTrack
                   </TabsTrigger>
-                  <TabsTrigger value="mental-health" data-testid="tab-mental-health">
+                  <TabsTrigger value="mental-health" data-testid="tab-mental-health" className="flex-1 min-w-[130px]">
                     <Brain className="w-3 h-3 mr-1" />
                     Mental Health
                   </TabsTrigger>
