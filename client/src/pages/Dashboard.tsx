@@ -248,6 +248,93 @@ const DAILY_WELLNESS_QUESTIONS = [
   },
 ];
 
+// Medication Adherence Component - API-driven only
+function MedicationAdherenceCard({ medications }: { medications: Medication[] | undefined }) {
+  const { user } = useAuth();
+  
+  // Fetch adherence data from backend
+  const { data: adherenceData, isLoading } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/behavioral-metrics/${user?.id}/latest`],
+    enabled: !!user?.id,
+  });
+
+  const weeklyAdherence = adherenceData?.medicationAdherenceRate 
+    ? Math.round(parseFloat(adherenceData.medicationAdherenceRate) * 100) 
+    : null;
+
+  const missedDosesCount = medications?.reduce((sum, m) => sum + (m.missedDoses || 0), 0) || 0;
+  const activeMedCount = medications?.filter(m => m.active).length || 0;
+
+  return (
+    <Card data-testid="card-medication-adherence">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2" data-testid="text-adherence-title">
+          <Activity className="h-4 w-4" />
+          Medication Adherence
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Loading State */}
+        {isLoading && (
+          <div className="text-xs text-muted-foreground" data-testid="loading-adherence">
+            Loading adherence data...
+          </div>
+        )}
+
+        {/* Missed Dose Escalation Banner - Real Data */}
+        {!isLoading && missedDosesCount > 2 && (
+          <Alert variant="destructive" className="py-2" data-testid="alert-missed-doses">
+            <AlertTriangle className="h-3 w-3" />
+            <AlertDescription className="text-xs">
+              {missedDosesCount} missed doses detected. Please contact your care team.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Weekly Adherence - Real Backend Data Only */}
+        {!isLoading && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">This Week</span>
+              {weeklyAdherence !== null ? (
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-chart-2" data-testid="value-adherence-percentage">{weeklyAdherence}%</span>
+                  <TrendingUp className="h-3 w-3 text-chart-2" data-testid="icon-adherence-trend" />
+                </div>
+              ) : (
+                <span className="text-xs text-muted-foreground" data-testid="text-no-adherence-data">No data</span>
+              )}
+            </div>
+            {weeklyAdherence !== null && (
+              <div className="w-full bg-muted rounded-full h-2" data-testid="progress-adherence">
+                <div className="bg-chart-2 h-2 rounded-full" style={{ width: `${weeklyAdherence}%` }} data-testid="progress-adherence-fill" />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Active Medications Count */}
+        {!isLoading && (
+          <div className="pt-2 border-t">
+            <p className="text-xs text-muted-foreground" data-testid="text-active-medications">
+              {activeMedCount} active medication{activeMedCount !== 1 ? 's' : ''}
+            </p>
+          </div>
+        )}
+
+        {/* View History Button */}
+        {!isLoading && (
+          <div className="pt-2 border-t">
+            <Button variant="outline" size="sm" className="w-full h-7 text-xs" data-testid="button-view-history">
+              View Detailed History
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // Behavioral AI Components
 function BehavioralRiskScore() {
   const { user } = useAuth();
@@ -1383,81 +1470,8 @@ export default function Dashboard() {
 
         {/* Sidebar content - right column */}
         <div className="space-y-6">
-          {/* Behavioral AI Insight */}
-          <Card data-testid="card-behavioral-insights">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2" data-testid="text-insights-title">
-                <Brain className="h-5 w-5" />
-                Behavioral AI Insight
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Risk Score Summary */}
-              <BehavioralRiskScore />
-              
-              {/* Metrics Categories */}
-              <div className="space-y-3 border-t pt-3">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Activity className="h-4 w-4 text-primary" />
-                    <span className="text-xs font-semibold text-muted-foreground">BEHAVIORAL METRICS</span>
-                  </div>
-                  <BehavioralMetricsPreview />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <TrendingUp className="h-4 w-4 text-chart-2" />
-                    <span className="text-xs font-semibold text-muted-foreground">DIGITAL BIOMARKERS</span>
-                  </div>
-                  <DigitalBiomarkersPreview />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Zap className="h-4 w-4 text-chart-3" />
-                    <span className="text-xs font-semibold text-muted-foreground">COGNITIVE BIOMARKERS</span>
-                  </div>
-                  <CognitiveBiomarkersPreview />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <FileText className="h-4 w-4 text-chart-4" />
-                    <span className="text-xs font-semibold text-muted-foreground">SENTIMENT ANALYSIS</span>
-                  </div>
-                  <SentimentBiomarkersPreview />
-                </div>
-              </div>
-
-              <Link href="/behavioral-ai-insights">
-                <Button variant="outline" size="sm" className="w-full" data-testid="button-view-insights">
-                  View Full Analysis & Trends
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-
-          {/* Medication Adherence */}
-          <Card data-testid="card-medication-adherence">
-            <CardHeader>
-              <CardTitle className="text-base" data-testid="text-adherence-title">Medication Adherence</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">This Week</span>
-                  <span className="font-semibold text-chart-2" data-testid="value-adherence-percentage">92%</span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-2" data-testid="progress-adherence">
-                  <div className="bg-chart-2 h-2 rounded-full" style={{ width: "92%" }} data-testid="progress-adherence-fill" />
-                </div>
-                <p className="text-xs text-muted-foreground" data-testid="text-active-medications">
-                  {medications?.filter(m => m.active).length || 0} active medications
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Enhanced Medication Adherence */}
+          <MedicationAdherenceCard medications={medications} />
 
           {/* Dynamic Tasks */}
           <Card data-testid="card-dynamic-tasks">
@@ -2926,6 +2940,71 @@ export default function Dashboard() {
               </Tabs>
             </CardContent>
           </Card>
+
+      {/* Behavioral AI Insight - Full Width Card */}
+      <Card data-testid="card-behavioral-ai-full">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2" data-testid="text-behavioral-ai-title">
+            <Brain className="h-5 w-5" />
+            Behavioral AI Insight
+          </CardTitle>
+          <p className="text-sm text-muted-foreground" data-testid="text-behavioral-ai-subtitle">
+            Complete daily check-ins to generate risk assessment
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Risk Score Dashboard */}
+          <BehavioralRiskScore />
+
+          {/* Metrics Grid - 4 Categories */}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {/* Behavioral Metrics */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold text-muted-foreground">BEHAVIORAL METRICS</h3>
+              </div>
+              <BehavioralMetricsPreview />
+            </div>
+
+            {/* Digital Biomarkers */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-chart-2" />
+                <h3 className="text-sm font-semibold text-muted-foreground">DIGITAL BIOMARKERS</h3>
+              </div>
+              <DigitalBiomarkersPreview />
+            </div>
+
+            {/* Cognitive Biomarkers */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-chart-3" />
+                <h3 className="text-sm font-semibold text-muted-foreground">COGNITIVE BIOMARKERS</h3>
+              </div>
+              <CognitiveBiomarkersPreview />
+            </div>
+
+            {/* Sentiment Analysis */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-chart-4" />
+                <h3 className="text-sm font-semibold text-muted-foreground">SENTIMENT ANALYSIS</h3>
+              </div>
+              <SentimentBiomarkersPreview />
+            </div>
+          </div>
+
+          {/* View Full Analysis Button */}
+          <div className="pt-3 border-t">
+            <Link href="/behavioral-ai-insights">
+              <Button variant="outline" className="w-full" data-testid="button-view-full-analysis">
+                View Full Analysis & Trends
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
         </div>
   );
 }
