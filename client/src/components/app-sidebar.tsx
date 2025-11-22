@@ -64,12 +64,6 @@ const patientItems = [
     badge: "AI",
   },
   {
-    title: "Symptom Tracker",
-    url: "/symptom-checkin",
-    icon: Heart,
-    badge: "AI",
-  },
-  {
     title: "Chat with Agent Clona",
     url: "/chat",
     icon: Bot,
