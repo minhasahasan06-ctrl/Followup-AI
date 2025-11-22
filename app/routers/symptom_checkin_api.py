@@ -216,6 +216,59 @@ def create_symptom_checkin(
         raise HTTPException(status_code=500, detail=f"Failed to create check-in: {str(e)}")
 
 
+@router.get("/checkins/recent", response_model=List[SymptomCheckinResponse])
+def get_recent_checkins(
+    request: Request,
+    current_user: User = Depends(require_role("patient")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get recent symptom check-ins for dashboard display (last 7 days).
+    This is the canonical endpoint for dashboard symptom history.
+    """
+    try:
+        # Get check-ins from the last 7 days
+        cutoff_date = datetime.utcnow() - timedelta(days=7)
+        
+        checkins = db.query(SymptomCheckin).filter(
+            and_(
+                SymptomCheckin.user_id == current_user.id,
+                SymptomCheckin.timestamp >= cutoff_date
+            )
+        ).order_by(desc(SymptomCheckin.timestamp)).all()
+        
+        # HIPAA Audit Log (AFTER successful operation)
+        AuditLogger.log_event(
+            event_type="symptom_checkin_viewed",
+            user_id=current_user.id,
+            resource_type="symptom_checkin",
+            resource_id=None,
+            action="view",
+            status="success",
+            metadata={"count": len(checkins), "days": 7},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        
+        # Convert to response models
+        return [checkin_to_response(c) for c in checkins]
+        
+    except Exception as e:
+        # HIPAA Audit Log (failure)
+        AuditLogger.log_event(
+            event_type="symptom_checkin_viewed",
+            user_id=current_user.id,
+            resource_type="symptom_checkin",
+            resource_id=None,
+            action="view",
+            status="failure",
+            metadata={"error": str(e)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to fetch recent check-ins: {str(e)}")
+
+
 @router.get("/history", response_model=List[SymptomCheckinResponse])
 def get_symptom_history(
     request: Request,

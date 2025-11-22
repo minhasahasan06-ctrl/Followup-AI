@@ -3760,6 +3760,28 @@ export const insertSymptomCheckinSchema = createInsertSchema(symptomCheckins).om
 export type InsertSymptomCheckin = z.infer<typeof insertSymptomCheckinSchema>;
 export type SymptomCheckin = typeof symptomCheckins.$inferSelect;
 
+// Daily symptom check-in form validation schema
+export const dailyCheckinFormSchema = z.object({
+  painLevel: z.number().min(0).max(10), // Always required, never null (legal requirement)
+  fatigueLevel: z.number().min(0).max(10),
+  breathlessnessLevel: z.number().min(0).max(10),
+  sleepQuality: z.number().min(0).max(10),
+  mood: z.enum(["great", "good", "okay", "low", "very_low"]),
+  mobilityScore: z.number().min(0).max(10),
+  medicationsTaken: z.boolean(),
+  symptoms: z.array(z.string()).default([]),
+  triggers: z.array(z.string()).default([]),
+  note: z.string().trim().optional(),
+}).transform((data) => ({
+  ...data,
+  // Convert zero values to null for optional metrics (pain always sent)
+  fatigueLevel: data.fatigueLevel > 0 ? data.fatigueLevel : null,
+  breathlessnessLevel: data.breathlessnessLevel > 0 ? data.breathlessnessLevel : null,
+  note: data.note && data.note.length > 0 ? data.note : null,
+}));
+
+export type DailyCheckinFormInput = z.infer<typeof dailyCheckinFormSchema>;
+
 // Chat symptoms - Extracted symptoms from Agent Clona conversations
 export const chatSymptoms = pgTable("chat_symptoms", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
