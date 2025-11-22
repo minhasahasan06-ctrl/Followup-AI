@@ -1113,48 +1113,56 @@ export default function Dashboard() {
               />
             </CardContent>
           </Card>
+        </div>
 
-          <Card data-testid="card-daily-followup">
-            <CardHeader>
-              <CardTitle data-testid="text-followup-title">Daily Follow-up</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="device" className="space-y-4">
-                <TabsList className="w-full flex gap-2 h-auto flex-wrap p-2">
-                  <TabsTrigger value="device" data-testid="tab-device" className="flex-1 min-w-[100px]">Device Data</TabsTrigger>
-                  <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal" className="flex-1 min-w-[100px]">Symptoms</TabsTrigger>
-                  <TabsTrigger value="video-ai" data-testid="tab-video-ai" className="flex-1 min-w-[100px]">Video AI</TabsTrigger>
-                  <TabsTrigger value="audio-ai" data-testid="tab-audio-ai" className="flex-1 min-w-[100px]">Audio AI</TabsTrigger>
-                  <TabsTrigger value="paintrack" data-testid="tab-paintrack" className="flex-1 min-w-[110px]">
-                    <Activity className="w-3 h-3 mr-1" />
-                    PainTrack
-                  </TabsTrigger>
-                  <TabsTrigger value="mental-health" data-testid="tab-mental-health" className="flex-1 min-w-[130px]">
-                    <Brain className="w-3 h-3 mr-1" />
-                    Mental Health
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="device" className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div data-testid="data-heart-rate">
-                      <span className="text-muted-foreground">Heart Rate: </span>
-                      <span className="font-medium" data-testid="value-heart-rate">{todayFollowup?.heartRate || "--"} bpm</span>
-                    </div>
-                    <div data-testid="data-spo2">
-                      <span className="text-muted-foreground">SpO2: </span>
-                      <span className="font-medium" data-testid="value-spo2">{todayFollowup?.oxygenSaturation || "--"}%</span>
-                    </div>
-                    <div data-testid="data-temperature">
-                      <span className="text-muted-foreground">Temp: </span>
-                      <span className="font-medium" data-testid="value-temperature">{todayFollowup?.temperature || "--"}°F</span>
-                    </div>
-                    <div data-testid="data-steps">
-                      <span className="text-muted-foreground">Steps: </span>
-                      <span className="font-medium" data-testid="value-steps">{todayFollowup?.stepsCount || "--"}</span>
-                    </div>
-                  </div>
-                </TabsContent>
-                <TabsContent value="symptom-journal" className="space-y-3">
+        {/* Sidebar content - right column - Temporarily Empty */}
+        <div className="space-y-6">
+          {/* This is now empty - Daily Follow-up moved to full width below */}
+        </div>
+      </div>
+
+      {/* Daily Follow-up - Full Width Card */}
+      <Card data-testid="card-daily-followup">
+        <CardHeader>
+          <CardTitle data-testid="text-followup-title">Daily Follow-up</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="device" className="space-y-4">
+            <TabsList className="w-full flex gap-2 h-auto p-2">
+              <TabsTrigger value="device" data-testid="tab-device" className="flex-1">Device Data</TabsTrigger>
+              <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal" className="flex-1">Symptoms</TabsTrigger>
+              <TabsTrigger value="video-ai" data-testid="tab-video-ai" className="flex-1">Video AI</TabsTrigger>
+              <TabsTrigger value="audio-ai" data-testid="tab-audio-ai" className="flex-1">Audio AI</TabsTrigger>
+              <TabsTrigger value="paintrack" data-testid="tab-paintrack" className="flex-1">
+                <Activity className="w-3 h-3 mr-1" />
+                PainTrack
+              </TabsTrigger>
+              <TabsTrigger value="mental-health" data-testid="tab-mental-health" className="flex-1">
+                <Brain className="w-3 h-3 mr-1" />
+                Mental Health
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="device" className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div data-testid="data-heart-rate">
+                  <span className="text-muted-foreground">Heart Rate: </span>
+                  <span className="font-medium" data-testid="value-heart-rate">{todayFollowup?.heartRate || "--"} bpm</span>
+                </div>
+                <div data-testid="data-spo2">
+                  <span className="text-muted-foreground">SpO2: </span>
+                  <span className="font-medium" data-testid="value-spo2">{todayFollowup?.oxygenSaturation || "--"}%</span>
+                </div>
+                <div data-testid="data-temperature">
+                  <span className="text-muted-foreground">Temp: </span>
+                  <span className="font-medium" data-testid="value-temperature">{todayFollowup?.temperature || "--"}°F</span>
+                </div>
+                <div data-testid="data-steps">
+                  <span className="text-muted-foreground">Steps: </span>
+                  <span className="font-medium" data-testid="value-steps">{todayFollowup?.stepsCount || "--"}</span>
+                </div>
+              </div>
+            </TabsContent>
+            <TabsContent value="symptom-journal" className="space-y-3">
                   {/* Symptom Journal - Compact View */}
                   <div className="space-y-3">
                     {/* Active Alerts Banner */}
@@ -2545,116 +2553,6 @@ export default function Dashboard() {
               </Tabs>
             </CardContent>
           </Card>
-
-          <Card data-testid="card-dynamic-tasks">
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-              <CardTitle data-testid="text-tasks-title">Dynamic Tasks</CardTitle>
-              <Badge variant="secondary" data-testid="badge-tasks-pending">{tasks?.filter(t => !t.completed).length || 0} pending</Badge>
-            </CardHeader>
-            <CardContent>
-              {tasks && tasks.length > 0 ? (
-                <div className="space-y-2">
-                  {tasks.slice(0, 5).map((task) => (
-                    <div key={task.id} className="flex items-center gap-2 p-2 rounded-md hover-elevate" data-testid={`task-item-${task.id}`}>
-                      {task.completed ? (
-                        <CheckCircle className="h-4 w-4 text-chart-2 flex-shrink-0" data-testid={`icon-task-completed-${task.id}`} />
-                      ) : (
-                        <div className="h-4 w-4 rounded-full border-2 flex-shrink-0" data-testid={`icon-task-pending-${task.id}`} />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate" data-testid={`text-task-title-${task.id}`}>{task.title}</p>
-                        {task.description && (
-                          <p className="text-xs text-muted-foreground truncate" data-testid={`text-task-description-${task.id}`}>{task.description}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground" data-testid="text-no-tasks">No tasks for today</p>
-              )}
-            </CardContent>
-          </Card>
         </div>
-
-        <div className="space-y-6">
-          <Card data-testid="card-reminders">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2" data-testid="text-reminders-title">
-                <Calendar className="h-5 w-5" />
-                Reminders
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <ReminderCard
-                type="water"
-                title="Drink Water"
-                time="2:00 PM"
-                description="You've had 4 glasses today. Goal: 8 glasses"
-                testId="reminder-water"
-              />
-              <ReminderCard
-                type="exercise"
-                title="Gentle Stretching"
-                time="3:00 PM"
-                description="15-minute low-impact session"
-                testId="reminder-exercise"
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-primary/5 to-primary/10" data-testid="card-behavioral-insights">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2" data-testid="text-insights-title">
-                <Brain className="h-5 w-5" />
-                Behavioral AI Insight
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {insights && insights.length > 0 ? (
-                insights.slice(0, 2).map((insight, idx) => (
-                  <div key={idx} className="flex items-start gap-2" data-testid={`insight-item-${idx}`}>
-                    <TrendingUp className="h-4 w-4 text-chart-2 mt-0.5 flex-shrink-0" />
-                    <div className="text-sm">
-                      <p className="font-medium mb-1" data-testid={`text-stress-level-${idx}`}>Stress Level: {insight.stressScore}/10</p>
-                      <p className="text-muted-foreground" data-testid={`text-activity-level-${idx}`}>Activity: {insight.activityLevel}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground" data-testid="text-insight-placeholder">
-                  Complete your daily check-ins to unlock AI-powered behavioral insights and health trend detection.
-                </p>
-              )}
-              <Link href="/behavioral-ai-insights">
-                <Button variant="outline" size="sm" className="w-full" data-testid="button-view-insights">
-                  View Full Insights
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-medication-adherence">
-            <CardHeader>
-              <CardTitle className="text-base" data-testid="text-adherence-title">Medication Adherence</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">This Week</span>
-                  <span className="font-semibold text-chart-2" data-testid="value-adherence-percentage">92%</span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-2" data-testid="progress-adherence">
-                  <div className="bg-chart-2 h-2 rounded-full" style={{ width: "92%" }} data-testid="progress-adherence-fill" />
-                </div>
-                <p className="text-xs text-muted-foreground" data-testid="text-active-medications">
-                  {medications?.filter(m => m.active).length || 0} active medications
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
   );
 }
