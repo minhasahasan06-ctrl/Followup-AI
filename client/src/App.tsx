@@ -65,6 +65,7 @@ import MyDoctors from "@/pages/MyDoctors";
 import ConsultationRequests from "@/pages/ConsultationRequests";
 import PainDetection from "@/pages/PainDetection";
 import MedicationEffects from "@/pages/MedicationEffects";
+import MedicationAdherence from "@/pages/MedicationAdherence";
 import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
 import DeteriorationDashboard from "@/pages/DeteriorationDashboard";
 import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
@@ -85,6 +86,7 @@ function PatientRouter() {
       <Route path="/chat" component={Chat} />
       <Route path="/pain-detection" component={PainDetection} />
       <Route path="/medication-effects" component={MedicationEffects} />
+      <Route path="/medication-adherence" component={MedicationAdherence} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/ai-video" component={AIVideoDashboard} />
