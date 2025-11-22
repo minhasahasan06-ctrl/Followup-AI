@@ -248,28 +248,51 @@ const DAILY_WELLNESS_QUESTIONS = [
   },
 ];
 
-// Medication Adherence Component - Shows ONLY explicit backend fields
+// Medication Adherence Component - Enhanced with backend analytics
 function MedicationAdherenceCard({ medications }: { medications: Medication[] | undefined }) {
   const { user } = useAuth();
   
-  // Fetch adherence data from backend - ONLY use explicit fields
+  // Fetch comprehensive adherence analytics from backend
   const { data: adherenceData, isLoading, isError } = useQuery({
-    queryKey: [`/api/v1/behavior-ai/behavioral-metrics/${user?.id}/latest`],
+    queryKey: [`/api/v1/behavior-ai/medication-adherence/${user?.id}`],
     enabled: !!user?.id,
   });
 
-  // ONLY use explicit backend field - no calculations
-  const weeklyAdherence = adherenceData?.medicationAdherenceRate 
-    ? Math.round(parseFloat(adherenceData.medicationAdherenceRate) * 100) 
+  // Extract backend fields - no client-side calculations
+  const currentAdherence = adherenceData?.currentAdherenceRate 
+    ? Math.round(adherenceData.currentAdherenceRate * 100) 
     : null;
+  
+  const sevenDayTrend = adherenceData?.sevenDayTrend || [];
+  const regimenRisk = adherenceData?.regimenRisk;
+  const missedDoseEscalation = adherenceData?.missedDoseEscalation;
+
+  // Risk badge styling
+  const riskColors: Record<string, { bg: string; text: string; border: string }> = {
+    low: { bg: "bg-green-50 dark:bg-green-950", text: "text-green-700 dark:text-green-400", border: "border-green-200 dark:border-green-800" },
+    moderate: { bg: "bg-yellow-50 dark:bg-yellow-950", text: "text-yellow-700 dark:text-yellow-400", border: "border-yellow-200 dark:border-yellow-800" },
+    high: { bg: "bg-red-50 dark:bg-red-950", text: "text-red-700 dark:text-red-400", border: "border-red-200 dark:border-red-800" },
+  };
 
   return (
     <Card data-testid="card-medication-adherence">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2" data-testid="text-adherence-title">
-          <Activity className="h-4 w-4" />
-          Medication Adherence
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2" data-testid="text-adherence-title">
+            <Activity className="h-4 w-4" />
+            Medication Adherence
+          </CardTitle>
+          {/* Regimen Risk Badge */}
+          {!isLoading && !isError && regimenRisk && regimenRisk.level !== "unknown" && (
+            <Badge 
+              variant="outline" 
+              className={`text-xs ${riskColors[regimenRisk.level as keyof typeof riskColors]?.bg} ${riskColors[regimenRisk.level as keyof typeof riskColors]?.text} ${riskColors[regimenRisk.level as keyof typeof riskColors]?.border}`}
+              data-testid={`badge-regimen-risk-${regimenRisk.level}`}
+            >
+              {regimenRisk.level.charAt(0).toUpperCase() + regimenRisk.level.slice(1)} Risk
+            </Badge>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Loading State */}
@@ -286,24 +309,80 @@ function MedicationAdherenceCard({ medications }: { medications: Medication[] | 
           </div>
         )}
 
-        {/* Weekly Adherence - ONLY from backend medicationAdherenceRate field */}
+        {/* Missed Dose Escalation Alert */}
+        {!isLoading && !isError && missedDoseEscalation && missedDoseEscalation.severity !== "none" && (
+          <div 
+            className={`p-3 rounded-md border ${
+              missedDoseEscalation.severity === "critical" 
+                ? "bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800" 
+                : "bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800"
+            }`}
+            data-testid={`alert-missed-doses-${missedDoseEscalation.severity}`}
+          >
+            <div className="flex items-start gap-2">
+              <AlertCircle className={`h-4 w-4 mt-0.5 ${
+                missedDoseEscalation.severity === "critical" 
+                  ? "text-red-600 dark:text-red-400" 
+                  : "text-yellow-600 dark:text-yellow-400"
+              }`} />
+              <div className="text-xs">
+                <p className="font-medium" data-testid="text-missed-doses-count">
+                  {missedDoseEscalation.count} missed {missedDoseEscalation.count === 1 ? 'dose' : 'doses'}
+                </p>
+                <p className="text-muted-foreground mt-1">
+                  Please review your medication schedule
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Current Adherence Rate */}
         {!isLoading && !isError && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground" data-testid="label-adherence">Current Rate</span>
-              {weeklyAdherence !== null ? (
+              {currentAdherence !== null ? (
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-chart-2" data-testid="value-adherence-percentage">{weeklyAdherence}%</span>
+                  <span className="font-semibold text-chart-2" data-testid="value-adherence-percentage">{currentAdherence}%</span>
                 </div>
               ) : (
                 <span className="text-xs text-muted-foreground" data-testid="text-no-adherence-data">No data</span>
               )}
             </div>
-            {weeklyAdherence !== null && (
+            {currentAdherence !== null && (
               <div className="w-full bg-muted rounded-full h-2" data-testid="progress-adherence">
-                <div className="bg-chart-2 h-2 rounded-full" style={{ width: `${weeklyAdherence}%` }} data-testid="progress-adherence-fill" />
+                <div className="bg-chart-2 h-2 rounded-full" style={{ width: `${currentAdherence}%` }} data-testid="progress-adherence-fill" />
               </div>
             )}
+          </div>
+        )}
+
+        {/* 7-Day Trend Sparkline */}
+        {!isLoading && !isError && sevenDayTrend.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground" data-testid="label-trend">7-Day Trend</p>
+            <div className="flex items-end justify-between h-12 gap-1" data-testid="sparkline-trend">
+              {sevenDayTrend.map((point: any, index: number) => {
+                const height = point.adherenceRate * 100;
+                return (
+                  <div 
+                    key={index} 
+                    className="flex-1 bg-chart-2/30 rounded-sm hover:bg-chart-2/50 transition-colors"
+                    style={{ height: `${height}%` }}
+                    data-testid={`sparkline-bar-${index}`}
+                    title={`${new Date(point.date).toLocaleDateString()}: ${Math.round(height)}%`}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Regimen Risk Rationale */}
+        {!isLoading && !isError && regimenRisk && regimenRisk.level !== "unknown" && (
+          <div className="text-xs text-muted-foreground pt-2 border-t" data-testid="text-risk-rationale">
+            {regimenRisk.rationale}
           </div>
         )}
 

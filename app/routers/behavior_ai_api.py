@@ -281,7 +281,7 @@ async def submit_cognitive_test(
         "status": "success",
         "test_id": test_record.id,
         "anomaly_detected": test_record.anomaly_detected,
-        "baseline_deviation": float(test_record.baseline_deviation) if test_record.baseline_deviation else None
+        "baseline_deviation": float(test_record.baseline_deviation) if test_record.baseline_deviation is not None else None
     }
 
 
@@ -501,7 +501,7 @@ async def get_dashboard_data(
     return {
         "status": "success",
         "risk_score": {
-            "composite_risk": float(latest_risk.composite_risk) if latest_risk else None,
+            "composite_risk": float(latest_risk.composite_risk) if latest_risk and latest_risk.composite_risk is not None else None,
             "risk_level": latest_risk.risk_level if latest_risk else None,
             "calculated_at": latest_risk.calculated_at.isoformat() if latest_risk else None
         } if latest_risk else None,
