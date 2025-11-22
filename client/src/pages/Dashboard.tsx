@@ -1120,7 +1120,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="device" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-6">
+                <TabsList className="grid w-full grid-cols-6 gap-1">
                   <TabsTrigger value="device" data-testid="tab-device">Device Data</TabsTrigger>
                   <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal">Symptoms</TabsTrigger>
                   <TabsTrigger value="video-ai" data-testid="tab-video-ai">Video AI</TabsTrigger>
