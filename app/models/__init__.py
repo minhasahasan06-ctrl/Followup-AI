@@ -44,6 +44,12 @@ from app.models.video_ai_models import (
     VideoMetrics,
     MediaSession
 )
+from app.models.symptom_checkin_models import (
+    SymptomCheckin,
+    ChatSymptom,
+    PassiveMetric,
+    TrendReport
+)
 
 __all__ = [
     "User",
@@ -84,4 +90,8 @@ __all__ = [
     "VideoExamSession",
     "VideoMetrics",
     "MediaSession",
+    "SymptomCheckin",
+    "ChatSymptom",
+    "PassiveMetric",
+    "TrendReport",
 ]
