@@ -54,6 +54,9 @@ async def normalize_drug(
     
     Use this when creating new medication records to ensure standardized drug mapping.
     """
+    import json
+    from datetime import datetime
+    
     try:
         logger.info(f"[NORMALIZE] Normalizing medication: {request.medication_name}")
         
@@ -61,10 +64,21 @@ async def normalize_drug(
         result = service.normalize_medication(request.medication_name)
         
         if result["drug_id"]:
-            logger.info(
-                f"[NORMALIZE] ✓ Successfully normalized '{request.medication_name}' "
-                f"to drug_id={result['drug_id']} (RxCUI: {result.get('rxcui')})"
-            )
+            # HIPAA audit log - successful normalization
+            audit_log = {
+                "event": "drug_normalization_success",
+                "medication_name": request.medication_name,
+                "drug_id": result["drug_id"],
+                "rxcui": result.get("rxcui"),
+                "drug_name": result.get("drug_name"),
+                "generic_name": result.get("generic_name"),
+                "confidence_score": result.get("confidence_score", 0.0),
+                "match_source": result.get("match_source", "unknown"),
+                "matched_by": result.get("matched_by"),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            logger.info(json.dumps(audit_log))
+            
             return DrugNormalizationResponse(
                 drug_id=result["drug_id"],
                 rxcui=result.get("rxcui"),
@@ -76,10 +90,15 @@ async def normalize_drug(
                 message=f"Successfully normalized to drug: {result.get('drug_name')}"
             )
         else:
-            logger.warning(
-                f"[NORMALIZE] ✗ Could not normalize '{request.medication_name}' "
-                f"(not found in RxNorm)"
-            )
+            # HIPAA audit log - normalization failed (not found)
+            audit_log = {
+                "event": "drug_normalization_not_found",
+                "medication_name": request.medication_name,
+                "reason": "Not found in RxNorm database",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            logger.warning(json.dumps(audit_log))
+            
             return DrugNormalizationResponse(
                 drug_id=None,
                 rxcui=None,
@@ -92,7 +111,15 @@ async def normalize_drug(
             )
     
     except Exception as e:
-        logger.error(f"[NORMALIZE] Error normalizing medication: {str(e)}")
+        # HIPAA audit log - exception occurred
+        audit_log = {
+            "event": "drug_normalization_exception",
+            "medication_name": request.medication_name,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        logger.error(json.dumps(audit_log))
+        
         raise HTTPException(
             status_code=500,
             detail=f"Failed to normalize medication: {str(e)}"

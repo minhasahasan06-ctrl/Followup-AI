@@ -42,6 +42,7 @@ The backend comprises two services:
 - **Gait Analysis System (HAR-based):** Open-source gait analysis using MediaPipe Pose and HAR datasets, extracting over 40 gait parameters.
 - **Accelerometer Tremor Analysis System:** Tremor detection from phone accelerometer data using FFT-based signal processing.
 - **Drug-Drug Interaction Detection System:** Medication adherence system with RxNorm-standardized drug library and clinical interaction detection, including RxNorm API integration and real-time interaction detection.
+- **Automatic Drug Normalization System:** On-demand medication normalization against RxNorm API. When patients enter medications, the system automatically normalizes names against the RxNorm database, creates standardized drug records, and links medications via drug_id foreign keys. Features non-blocking normalization (5s timeout), HIPAA-compliant audit logging, confidence scoring, and graceful degradation when Python service unavailable. Eliminates need for pre-seeded drug database.
 - **PainTrack Platform:** Chronic pain tracking system with dual-camera video capture, self-reported VAS pain slider, medication tracking, and patient notes.
 - **Mental Health AI Dashboard Integration:** Integrated questionnaire system (PHQ-9, GAD-7, PSS-10) with AI-powered GPT-4o analysis, crisis detection, severity scoring, and cluster analysis.
 

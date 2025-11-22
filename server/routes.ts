@@ -1998,34 +1998,83 @@ Please ask the doctor which date they want to check.`;
         ...req.body,
       });
       
-      // AUTOMATIC DRUG NORMALIZATION VIA RXNORM
+      // AUTOMATIC DRUG NORMALIZATION VIA RXNORM (NON-BLOCKING)
       // Normalize medication name and link to standardized drug record
-      try {
-        const normalizationResponse = await fetch(`http://localhost:8000/api/v1/drug-normalization/normalize`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ medication_name: req.body.name })
-        });
-        
-        if (normalizationResponse.ok) {
-          const normalizationData = await normalizationResponse.json();
+      // This runs asynchronously and does NOT block medication creation response
+      (async () => {
+        try {
+          // Timeout after 5 seconds to prevent blocking if Python service is loading
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
           
-          if (normalizationData.drug_id) {
-            // Update medication with drug_id from RxNorm normalization
-            await storage.updateMedication(medication.id, {
-              drugId: normalizationData.drug_id,
-              rxcui: normalizationData.rxcui
-            });
+          const normalizationResponse = await fetch(`http://localhost:8000/api/v1/drug-normalization/normalize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ medication_name: req.body.name }),
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (normalizationResponse.ok) {
+            const normalizationData = await normalizationResponse.json();
             
-            console.log(`✓ Normalized medication "${req.body.name}" to drug_id=${normalizationData.drug_id} (RxCUI: ${normalizationData.rxcui})`);
+            if (normalizationData.drug_id) {
+              // Update medication with drug_id from RxNorm normalization
+              await storage.updateMedication(medication.id, {
+                drugId: normalizationData.drug_id,
+                rxcui: normalizationData.rxcui
+              });
+              
+              // HIPAA audit log
+              console.log(JSON.stringify({
+                event: 'medication_normalized',
+                medication_id: medication.id,
+                patient_id: userId,
+                medication_name: req.body.name,
+                drug_id: normalizationData.drug_id,
+                rxcui: normalizationData.rxcui,
+                confidence_score: normalizationData.confidence_score,
+                match_source: normalizationData.match_source,
+                timestamp: new Date().toISOString()
+              }));
+            } else {
+              // HIPAA audit log - normalization failed
+              console.warn(JSON.stringify({
+                event: 'medication_normalization_failed',
+                medication_id: medication.id,
+                patient_id: userId,
+                medication_name: req.body.name,
+                reason: normalizationData.message || 'Not found in RxNorm',
+                timestamp: new Date().toISOString()
+              }));
+            }
           } else {
-            console.warn(`⚠️  Could not normalize medication "${req.body.name}" via RxNorm (not found in database)`);
+            // Service returned error status
+            console.error(JSON.stringify({
+              event: 'medication_normalization_error',
+              medication_id: medication.id,
+              patient_id: userId,
+              medication_name: req.body.name,
+              http_status: normalizationResponse.status,
+              timestamp: new Date().toISOString()
+            }));
           }
+        } catch (normalizationError: any) {
+          // Log failure with full context for debugging
+          console.error(JSON.stringify({
+            event: 'medication_normalization_exception',
+            medication_id: medication.id,
+            patient_id: userId,
+            medication_name: req.body.name,
+            error: normalizationError.name === 'AbortError' ? 'Timeout (5s)' : normalizationError.message,
+            timestamp: new Date().toISOString()
+          }));
         }
-      } catch (normalizationError) {
-        // Log but don't fail medication creation
-        console.error("Error normalizing medication via RxNorm:", normalizationError);
-      }
+      })().catch(err => {
+        // Catch any unhandled promise rejections
+        console.error('Unhandled normalization error:', err);
+      });
       
       // AUTOMATIC DRUG INTERACTION CHECKING
       // Check for interactions with existing medications and create alerts
