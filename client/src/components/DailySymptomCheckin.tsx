@@ -478,13 +478,17 @@ export function DailySymptomCheckin() {
             </div>
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {unifiedFeed.slice(0, 10).map((item: any) => (
+              {unifiedFeed.slice(0, 10).map((item: any) => {
+                const timestamp = item.timestamp ? new Date(item.timestamp) : new Date();
+                const isValidDate = timestamp instanceof Date && !isNaN(timestamp.getTime());
+                
+                return (
                 <div key={item.id} className="rounded-md border bg-muted/30 p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
                       <span className="text-xs font-medium">
-                        {format(new Date(item.timestamp), "MMM d, h:mm a")}
+                        {isValidDate ? format(timestamp, "MMM d, h:mm a") : "Invalid date"}
                       </span>
                     </div>
                     <div className="flex gap-1">
@@ -591,7 +595,8 @@ export function DailySymptomCheckin() {
                     </>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
