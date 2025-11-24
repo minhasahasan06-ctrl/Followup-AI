@@ -21,9 +21,9 @@ type FormValues = z.infer<typeof dailyCheckinFormSchema>;
 export function DailySymptomCheckin() {
   const { toast } = useToast();
   
-  // Fetch recent check-ins using canonical dashboard endpoint
-  const { data: recentCheckins, isLoading: isLoadingCheckins, error: checkinsError } = useQuery({
-    queryKey: ["/api/symptom-checkin/checkins/recent"]
+  // Fetch unified symptom feed (patient-reported + AI-extracted from Agent Clona)
+  const { data: unifiedFeed, isLoading: isLoadingFeed, error: feedError } = useQuery({
+    queryKey: ["/api/symptom-checkin/feed/unified"]
   });
 
   // Form setup with validation
@@ -78,8 +78,8 @@ export function DailySymptomCheckin() {
       });
       // Reset form to default values
       form.reset();
-      // Invalidate symptom check-in queries to refresh UI
-      queryClient.invalidateQueries({ queryKey: ["/api/symptom-checkin/checkins/recent"] });
+      // Invalidate unified feed to refresh UI
+      queryClient.invalidateQueries({ queryKey: ["/api/symptom-checkin/feed/unified"] });
     },
     onError: (error: any) => {
       toast({
@@ -442,13 +442,13 @@ export function DailySymptomCheckin() {
           All data is patient-reported and observational. Not a diagnostic tool.
         </p>
 
-        {/* Recent Check-ins */}
+        {/* Unified Symptom Feed (Patient-reported + AI-extracted) */}
         <Separator />
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">Recent Check-Ins (Last 7 Days)</Label>
-            {recentCheckins && recentCheckins.length > 0 && (
-              <Badge variant="secondary" className="text-xs">{recentCheckins.length}</Badge>
+            <Label className="text-sm font-medium">Symptom Timeline (Last 7 Days)</Label>
+            {unifiedFeed && unifiedFeed.length > 0 && (
+              <Badge variant="secondary" className="text-xs">{unifiedFeed.length}</Badge>
             )}
           </div>
           
@@ -456,80 +456,139 @@ export function DailySymptomCheckin() {
           <Alert className="bg-muted/30" data-testid="alert-history-disclaimer">
             <Info className="h-3 w-3" />
             <AlertDescription className="text-xs">
-              All historical check-ins are patient-reported observational data. Not diagnostic. Requires clinician interpretation.
+              Timeline combines patient-reported check-ins and AI-observed symptoms from Agent Clona. All data is observational. Not diagnostic. Requires clinician interpretation.
             </AlertDescription>
           </Alert>
           
-          {isLoadingCheckins ? (
+          {isLoadingFeed ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">Loading check-ins...</span>
+              <span className="ml-2 text-sm text-muted-foreground">Loading symptom feed...</span>
             </div>
-          ) : checkinsError ? (
+          ) : feedError ? (
             <Alert variant="destructive">
               <AlertDescription className="text-xs">
-                Failed to load check-in history. Please try again later.
+                Failed to load symptom feed. Please try again later.
               </AlertDescription>
             </Alert>
-          ) : !recentCheckins || recentCheckins.length === 0 ? (
+          ) : !unifiedFeed || unifiedFeed.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-sm text-muted-foreground">No check-ins recorded in the last 7 days.</p>
-              <p className="text-xs text-muted-foreground mt-1">Submit your first check-in above to start tracking.</p>
+              <p className="text-sm text-muted-foreground">No symptom data recorded in the last 7 days.</p>
+              <p className="text-xs text-muted-foreground mt-1">Submit a check-in above or chat with Agent Clona to start tracking.</p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {recentCheckins.slice(0, 5).map((checkin: any) => (
-                <div key={checkin.id} className="rounded-md border bg-muted/30 p-3 space-y-2">
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {unifiedFeed.slice(0, 10).map((item: any) => (
+                <div key={item.id} className="rounded-md border bg-muted/30 p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
                       <span className="text-xs font-medium">
-                        {format(new Date(checkin.timestamp), "MMM d, h:mm a")}
+                        {format(new Date(item.timestamp), "MMM d, h:mm a")}
                       </span>
                     </div>
                     <div className="flex gap-1">
-                      {/* Per-Entry Disclaimer Badge */}
-                      <Badge variant="outline" className="text-xs" data-testid={`badge-observational-${checkin.id}`}>
-                        Patient-reported
+                      {/* Data Source Badge - Critical for HIPAA compliance */}
+                      <Badge 
+                        variant={item.dataSource === "patient-reported" ? "outline" : "secondary"} 
+                        className="text-xs" 
+                        data-testid={`badge-observational-${item.id}`}
+                      >
+                        {item.observationalLabel}
                       </Badge>
-                      {checkin.medicationsTaken && (
+                      {item.confidence && (
+                        <Badge variant="outline" className="text-xs">
+                          {Math.round(item.confidence * 100)}% confidence
+                        </Badge>
+                      )}
+                      {item.medicationsTaken && (
                         <Badge variant="outline" className="text-xs">Meds Taken</Badge>
                       )}
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Pain: </span>
-                      <span className="font-medium">{checkin.painLevel}/10</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Fatigue: </span>
-                      <span className="font-medium">{checkin.fatigueLevel || 0}/10</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Sleep: </span>
-                      <span className="font-medium">{checkin.sleepQuality}/10</span>
-                    </div>
-                  </div>
-                  
-                  {checkin.note && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">{checkin.note}</p>
+                  {/* Patient-Reported Check-In */}
+                  {item.dataSource === "patient-reported" && (
+                    <>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">Pain: </span>
+                          <span className="font-medium">{item.painLevel}/10</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Fatigue: </span>
+                          <span className="font-medium">{item.fatigueLevel || 0}/10</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Sleep: </span>
+                          <span className="font-medium">{item.sleepQuality}/10</span>
+                        </div>
+                      </div>
+                      
+                      {item.note && (
+                        <p className="text-xs text-muted-foreground line-clamp-2">{item.note}</p>
+                      )}
+                      
+                      {item.symptoms && item.symptoms.length > 0 && (
+                        <div className="flex gap-1 flex-wrap">
+                          {item.symptoms.slice(0, 3).map((symptom: string) => (
+                            <Badge key={symptom} variant="secondary" className="text-xs">
+                              {symptom}
+                            </Badge>
+                          ))}
+                          {item.symptoms.length > 3 && (
+                            <Badge variant="secondary" className="text-xs">
+                              +{item.symptoms.length - 3} more
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                   
-                  {checkin.symptoms && checkin.symptoms.length > 0 && (
-                    <div className="flex gap-1 flex-wrap">
-                      {checkin.symptoms.slice(0, 3).map((symptom: string) => (
-                        <Badge key={symptom} variant="secondary" className="text-xs">
-                          {symptom}
-                        </Badge>
-                      ))}
-                      {checkin.symptoms.length > 3 && (
-                        <Badge variant="secondary" className="text-xs">
-                          +{checkin.symptoms.length - 3} more
-                        </Badge>
+                  {/* AI-Extracted Symptoms from Agent Clona */}
+                  {item.dataSource === "ai-extracted" && (
+                    <>
+                      {item.symptomTypes && item.symptomTypes.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium text-muted-foreground">AI-detected symptoms:</div>
+                          <div className="flex gap-1 flex-wrap">
+                            {item.symptomTypes.map((type: string) => (
+                              <Badge key={type} variant="default" className="text-xs bg-blue-100 text-blue-900 dark:bg-blue-900 dark:text-blue-100">
+                                {type}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                    </div>
+                      
+                      {item.locations && item.locations.length > 0 && (
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">Locations: </span>
+                          <span className="font-medium">{item.locations.join(", ")}</span>
+                        </div>
+                      )}
+                      
+                      {item.intensityMentions && item.intensityMentions.length > 0 && (
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">Intensity: </span>
+                          <span className="font-medium">{item.intensityMentions.join(", ")}</span>
+                        </div>
+                      )}
+                      
+                      {item.temporalInfo && (
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">Timing: </span>
+                          <span className="font-medium">{item.temporalInfo}</span>
+                        </div>
+                      )}
+                      
+                      {item.sessionId && (
+                        <div className="text-xs text-muted-foreground">
+                          From chat session: {item.sessionId.slice(0, 8)}...
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
