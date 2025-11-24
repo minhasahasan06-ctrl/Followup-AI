@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { ChatMessage } from "@/components/ChatMessage";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,10 +45,18 @@ export default function Chat() {
   const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [, setLocation] = useLocation();
   const { user } = useAuth();
   const isDoctor = user?.role === "doctor";
   const agentType = isDoctor ? "lysa" : "clona";
   const agentName = isDoctor ? "Assistant Lysa" : "Agent Clona";
+
+  // Redirect to login if 401 error (not authenticated)
+  useEffect(() => {
+    if (messagesError && messagesError.message.includes("401")) {
+      setLocation("/login");
+    }
+  }, [messagesError, setLocation]);
 
   // Fetch all sessions
   const { data: sessions, isLoading: sessionsLoading } = useQuery<ChatSession[]>({
