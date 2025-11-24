@@ -6,6 +6,7 @@ import { EmergencyAlert } from "@/components/EmergencyAlert";
 import DynamicWelcome from "@/components/DynamicWelcome";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { DailySymptomCheckin } from "@/components/DailySymptomCheckin";
+import { MentalHealthRedFlags } from "@/components/MentalHealthRedFlags";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -2975,6 +2976,23 @@ export default function Dashboard() {
                       )}
                     </div>
                   )}
+
+                  {/* Mental Health Red Flag Symptoms from Agent Clona */}
+                  <div className="space-y-3 mt-6 pt-4 border-t">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-semibold text-sm flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-orange-600" />
+                          Mental Health Symptom Indicators
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          AI-observed indicators from your conversations with Agent Clona
+                        </p>
+                      </div>
+                    </div>
+
+                    <MentalHealthRedFlags />
+                  </div>
                 </TabsContent>
               </Tabs>
             </CardContent>
