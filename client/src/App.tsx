@@ -43,7 +43,6 @@ import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
 import Counseling from "@/pages/Counseling";
 import ConsentManagement from "@/pages/ConsentManagement";
-import PreviousSessions from "@/pages/PreviousSessions";
 import WearableDevices from "@/pages/WearableDevices";
 import Referrals from "@/pages/Referrals";
 import Wallet from "@/pages/Wallet";
@@ -92,7 +91,6 @@ function PatientRouter() {
       <Route path="/behavioral-ai-insights" component={BehavioralAIInsights} />
       <Route path="/mental-health" component={MentalHealth} />
       <Route path="/habits" component={Habits} />
-      <Route path="/previous-sessions" component={PreviousSessions} />
       <Route path="/doctor-search" component={DoctorSearch} />
       <Route path="/doctor/:doctorId" component={DoctorProfile} />
       <Route path="/my-doctors" component={MyDoctors} />

@@ -16,7 +16,6 @@ import {
   LogOut,
   MessageCircle,
   Link as LinkIcon,
-  History,
   Watch,
   Wallet as WalletIcon,
   Gift,
@@ -92,11 +91,6 @@ const patientItems = [
     url: "/medications",
     icon: Pill,
     badge: "AI",
-  },
-  {
-    title: "Previous Sessions",
-    url: "/previous-sessions",
-    icon: History,
   },
   {
     title: "My Doctors",
