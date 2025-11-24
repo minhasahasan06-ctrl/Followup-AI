@@ -292,7 +292,7 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 
-// Medications
+// Medications - Extended for complete lifecycle management
 export const medications = pgTable("medications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   patientId: varchar("patient_id").notNull().references(() => users.id),
@@ -308,16 +308,166 @@ export const medications = pgTable("medications", {
   drugId: varchar("drug_id").references(() => drugs.id),
   // RxNorm concept unique identifier (RxCUI) for direct API mapping
   rxcui: varchar("rxcui"),
+  
+  // Medication source tracking
+  source: varchar("source").notNull().default("manual"), // 'manual', 'document', 'prescription'
+  sourceDocumentId: varchar("source_document_id"), // Link to medical document if from upload
+  sourcePrescriptionId: varchar("source_prescription_id"), // Link to prescription if from doctor
+  
+  // Status and confirmation tracking
+  status: varchar("status").notNull().default("active"), // 'active', 'pending_confirmation', 'inactive'
+  confirmedAt: timestamp("confirmed_at"),
+  confirmedBy: varchar("confirmed_by"), // User ID who confirmed
+  addedBy: varchar("added_by").notNull().default("patient"), // 'patient', 'doctor', 'system'
+  autoDetected: boolean("auto_detected").default(false), // True if extracted from document
+  
+  // Discontinuation tracking
+  discontinuedAt: timestamp("discontinued_at"),
+  discontinuedBy: varchar("discontinued_by"), // User ID who discontinued
+  discontinuationReason: text("discontinuation_reason"),
+  replacementMedicationId: varchar("replacement_medication_id"), // If switched to different medication
+  
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const insertMedicationSchema = createInsertSchema(medications).omit({
   id: true,
   createdAt: true,
+  updatedAt: true,
 });
 
 export type InsertMedication = z.infer<typeof insertMedicationSchema>;
 export type Medication = typeof medications.$inferSelect;
+
+// Prescriptions - Doctor-created prescriptions for patients
+export const prescriptions = pgTable("prescriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Medication details
+  drugId: varchar("drug_id").references(() => drugs.id),
+  rxcui: varchar("rxcui"), // RxNorm code
+  medicationName: varchar("medication_name").notNull(),
+  dosage: varchar("dosage").notNull(),
+  frequency: varchar("frequency").notNull(),
+  dosageInstructions: text("dosage_instructions"), // "Take with food", "Avoid alcohol", etc.
+  
+  // Prescription details
+  quantity: integer("quantity"), // Number of pills/doses
+  refills: integer("refills").default(0),
+  startDate: timestamp("start_date").defaultNow(),
+  expirationDate: timestamp("expiration_date"), // When prescription expires
+  
+  // Status and tracking
+  status: varchar("status").notNull().default("sent"), // 'sent', 'acknowledged', 'filled', 'expired'
+  acknowledgedAt: timestamp("acknowledged_at"),
+  acknowledgedBy: varchar("acknowledged_by"), // Patient who acknowledged
+  
+  // Link to medical document (generated prescription PDF)
+  documentId: varchar("document_id"), // Reference to medical_documents
+  
+  // Link to created medication
+  medicationId: varchar("medication_id").references(() => medications.id),
+  
+  // Audit
+  notes: text("notes"), // Doctor's notes about prescription
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertPrescriptionSchema = createInsertSchema(prescriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPrescription = z.infer<typeof insertPrescriptionSchema>;
+export type Prescription = typeof prescriptions.$inferSelect;
+
+// Medication Change Log - Complete audit trail of all medication changes
+export const medicationChangeLog = pgTable("medication_change_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  medicationId: varchar("medication_id").notNull().references(() => medications.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Change type and metadata
+  changeType: varchar("change_type").notNull(), // 'added', 'dosage_changed', 'frequency_changed', 'discontinued', 'reactivated'
+  changedBy: varchar("changed_by").notNull(), // 'patient', 'doctor', 'system'
+  changedByUserId: varchar("changed_by_user_id").notNull(), // User ID who made the change
+  
+  // For dosage/frequency changes
+  oldDosage: varchar("old_dosage"),
+  newDosage: varchar("new_dosage"),
+  oldFrequency: varchar("old_frequency"),
+  newFrequency: varchar("new_frequency"),
+  
+  // For discontinuation
+  discontinuationReason: text("discontinuation_reason"),
+  replacementMedicationId: varchar("replacement_medication_id"),
+  
+  // Additional context
+  changeReason: text("change_reason"), // Why the change was made
+  notes: text("notes"),
+  
+  // HIPAA audit tracking
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMedicationChangeLogSchema = createInsertSchema(medicationChangeLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMedicationChangeLog = z.infer<typeof insertMedicationChangeLogSchema>;
+export type MedicationChangeLog = typeof medicationChangeLog.$inferSelect;
+
+// Dosage Change Requests - Patient-initiated requests pending doctor approval
+export const dosageChangeRequests = pgTable("dosage_change_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  medicationId: varchar("medication_id").notNull().references(() => medications.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Requested changes
+  requestType: varchar("request_type").notNull(), // 'dosage_change', 'frequency_change', 'scheduled_change'
+  currentDosage: varchar("current_dosage").notNull(),
+  requestedDosage: varchar("requested_dosage").notNull(),
+  currentFrequency: varchar("current_frequency").notNull(),
+  requestedFrequency: varchar("requested_frequency").notNull(),
+  
+  // Scheduled changes (for titration)
+  scheduledChangeDate: timestamp("scheduled_change_date"), // When to apply the change
+  
+  // Patient's reasoning
+  requestReason: text("request_reason").notNull(), // Why patient is requesting change
+  additionalNotes: text("additional_notes"),
+  
+  // Doctor review
+  status: varchar("status").notNull().default("pending"), // 'pending', 'approved', 'rejected'
+  reviewedByDoctorId: varchar("reviewed_by_doctor_id").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  doctorNotes: text("doctor_notes"), // Doctor's notes on approval/rejection
+  
+  // Notification tracking
+  doctorNotifiedAt: timestamp("doctor_notified_at"),
+  patientNotifiedAt: timestamp("patient_notified_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDosageChangeRequestSchema = createInsertSchema(dosageChangeRequests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDosageChangeRequest = z.infer<typeof insertDosageChangeRequestSchema>;
+export type DosageChangeRequest = typeof dosageChangeRequests.$inferSelect;
 
 // Medication-Drug matching audit table
 // Tracks how medications are mapped to standardized drugs with confidence scores
