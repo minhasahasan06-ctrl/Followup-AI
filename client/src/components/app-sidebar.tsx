@@ -88,14 +88,8 @@ const patientItems = [
     badge: "AI",
   },
   {
-    title: "Medication Effects",
-    url: "/medication-effects",
-    icon: Pill,
-    badge: "AI",
-  },
-  {
-    title: "Medication Adherence",
-    url: "/medication-adherence",
+    title: "Medications",
+    url: "/medications",
     icon: Pill,
     badge: "AI",
   },
@@ -146,12 +140,6 @@ const patientItems = [
     url: "/environmental-risk",
     icon: MapPin,
     badge: "LIVE",
-  },
-  {
-    title: "Drug Interactions",
-    url: "/drug-interactions",
-    icon: AlertTriangle,
-    badge: "AI",
   },
   {
     title: "Referrals",

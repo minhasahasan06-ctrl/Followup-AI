@@ -50,7 +50,6 @@ import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
 import TwoFactorAuth from "@/pages/TwoFactorAuth";
 import MedicalFiles from "@/pages/MedicalFiles";
-import DrugInteractions from "@/pages/DrugInteractions";
 import ImmuneMonitoring from "@/pages/ImmuneMonitoring";
 import EnvironmentalRiskMap from "@/pages/EnvironmentalRiskMap";
 import CorrelationInsights from "@/pages/CorrelationInsights";
@@ -63,8 +62,7 @@ import DoctorProfile from "@/pages/DoctorProfile";
 import MyDoctors from "@/pages/MyDoctors";
 import ConsultationRequests from "@/pages/ConsultationRequests";
 import PainDetection from "@/pages/PainDetection";
-import MedicationEffects from "@/pages/MedicationEffects";
-import MedicationAdherence from "@/pages/MedicationAdherence";
+import Medications from "@/pages/Medications";
 import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
 import DeteriorationDashboard from "@/pages/DeteriorationDashboard";
 import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
@@ -84,8 +82,7 @@ function PatientRouter() {
       <Route path="/daily-followup" component={DailyFollowup} />
       <Route path="/chat" component={Chat} />
       <Route path="/pain-detection" component={PainDetection} />
-      <Route path="/medication-effects" component={MedicationEffects} />
-      <Route path="/medication-adherence" component={MedicationAdherence} />
+      <Route path="/medications" component={Medications} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/ai-video" component={AIVideoDashboard} />
@@ -111,7 +108,6 @@ function PatientRouter() {
       <Route path="/nutrition-insights" component={NutritionInsights} />
       <Route path="/health-companion" component={HealthCompanion} />
       <Route path="/voice-followups" component={VoiceFollowups} />
-      <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/security/2fa" component={TwoFactorAuth} />
