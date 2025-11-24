@@ -44,13 +44,12 @@ import ResearchCenter from "@/pages/ResearchCenter";
 import Counseling from "@/pages/Counseling";
 import ConsentManagement from "@/pages/ConsentManagement";
 import PreviousSessions from "@/pages/PreviousSessions";
-import EHRIntegrations from "@/pages/EHRIntegrations";
 import WearableDevices from "@/pages/WearableDevices";
 import Referrals from "@/pages/Referrals";
 import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
 import TwoFactorAuth from "@/pages/TwoFactorAuth";
-import MedicalDocuments from "@/pages/MedicalDocuments";
+import MedicalFiles from "@/pages/MedicalFiles";
 import DrugInteractions from "@/pages/DrugInteractions";
 import ImmuneMonitoring from "@/pages/ImmuneMonitoring";
 import EnvironmentalRiskMap from "@/pages/EnvironmentalRiskMap";
@@ -104,7 +103,7 @@ function PatientRouter() {
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/counseling" component={Counseling} />
       <Route path="/consents" component={ConsentManagement} />
-      <Route path="/ehr-integrations" component={EHRIntegrations} />
+      <Route path="/medical-files" component={MedicalFiles} />
       <Route path="/wearables" component={WearableDevices} />
       <Route path="/immune-monitoring" component={ImmuneMonitoring} />
       <Route path="/environmental-risk" component={EnvironmentalRiskMap} />
@@ -112,11 +111,9 @@ function PatientRouter() {
       <Route path="/nutrition-insights" component={NutritionInsights} />
       <Route path="/health-companion" component={HealthCompanion} />
       <Route path="/voice-followups" component={VoiceFollowups} />
-      <Route path="/medical-documents" component={MedicalDocuments} />
       <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
-      <Route path="/files" component={Files} />
       <Route path="/security/2fa" component={TwoFactorAuth} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
