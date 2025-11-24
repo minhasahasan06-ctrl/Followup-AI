@@ -110,11 +110,6 @@ const patientItems = [
     icon: UserPlus,
   },
   {
-    title: "Consultation Requests",
-    url: "/consultation-requests",
-    icon: Calendar,
-  },
-  {
     title: "Wellness",
     url: "/wellness",
     icon: Wind,
