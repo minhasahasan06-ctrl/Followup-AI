@@ -3820,6 +3820,56 @@ export const insertChatSymptomSchema = createInsertSchema(chatSymptoms).omit({
 export type InsertChatSymptom = z.infer<typeof insertChatSymptomSchema>;
 export type ChatSymptom = typeof chatSymptoms.$inferSelect;
 
+// Mental Health Red Flags - AI-detected mental health concerns from Agent Clona conversations
+export const mentalHealthRedFlags = pgTable("mental_health_red_flags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id),
+  messageId: varchar("message_id").references(() => chatMessages.id),
+  
+  // Raw conversation data
+  rawText: text("raw_text").notNull(), // Original message text that triggered detection
+  
+  // AI-extracted structured data
+  extractedJson: jsonb("extracted_json").$type<{
+    redFlagTypes?: string[]; // Types: 'suicidal_ideation', 'self_harm', 'severe_depression', 'severe_anxiety', 'crisis_language', 'substance_abuse', 'hopelessness'
+    severityLevel?: 'low' | 'moderate' | 'high' | 'critical'; // Severity assessment
+    specificConcerns?: string[]; // Specific phrases or concerns identified
+    emotionalTone?: string; // Overall emotional tone (despair, panic, hopelessness, etc.)
+    recommendedAction?: string; // Recommended clinical action
+    crisisIndicators?: boolean; // Whether immediate crisis intervention may be needed
+  }>().notNull(),
+  
+  // Extraction metadata
+  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0.0-1.0 confidence score
+  extractionModel: varchar("extraction_model").default("gpt-4o"), // AI model used
+  
+  // Clinical metadata
+  severityScore: integer("severity_score"), // 0-100 numerical severity
+  requiresImmediateAttention: boolean("requires_immediate_attention").default(false), // Crisis flag
+  clinicianNotified: boolean("clinician_notified").default(false), // Whether doctor was alerted
+  clinicianNotifiedAt: timestamp("clinician_notified_at"),
+  
+  // Audit trail
+  reviewedBy: varchar("reviewed_by").references(() => users.id), // Clinician who reviewed
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("mental_health_red_flags_user_id_idx").on(table.userId),
+  sessionIdIdx: index("mental_health_red_flags_session_id_idx").on(table.sessionId),
+  createdAtIdx: index("mental_health_red_flags_created_at_idx").on(table.createdAt),
+}));
+
+export const insertMentalHealthRedFlagSchema = createInsertSchema(mentalHealthRedFlags).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMentalHealthRedFlag = z.infer<typeof insertMentalHealthRedFlagSchema>;
+export type MentalHealthRedFlag = typeof mentalHealthRedFlags.$inferSelect;
+
 // Passive metrics - Device-collected health data (wearables, phone sensors)
 export const passiveMetrics = pgTable("passive_metrics", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
