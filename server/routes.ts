@@ -4564,7 +4564,45 @@ Please ask the doctor which date they want to check.`;
         ...req.body,
       });
       
-      // TODO: Send notification to doctor
+      // Send notification to doctor
+      try {
+        const patient = await storage.getUser(userId);
+        const doctor = await storage.getUserById(req.body.doctorId);
+        
+        if (doctor && doctor.phoneNumber) {
+          // Send SMS notification using Twilio
+          const { twilioClient } = await import('./twilioService');
+          await twilioClient.messages.create({
+            to: doctor.phoneNumber,
+            from: process.env.TWILIO_PHONE_NUMBER,
+            body: `New dosage change request from patient ${patient?.name || userId}. Please review in your dashboard.`
+          });
+        }
+        
+        // Send email notification if doctor has email
+        if (doctor && doctor.email) {
+          const { sesClient } = await import('./aws');
+          const { SendEmailCommand } = await import('@aws-sdk/client-ses');
+          
+          await sesClient.send(new SendEmailCommand({
+            Source: 'noreply@followupai.com',
+            Destination: { ToAddresses: [doctor.email] },
+            Message: {
+              Subject: { Data: 'New Medication Dosage Change Request' },
+              Body: {
+                Text: {
+                  Data: `A patient has requested a dosage change:\n\nPatient: ${patient?.name || userId}\nMedication: ${req.body.medicationId}\nCurrent: ${req.body.currentDosage}\nRequested: ${req.body.requestedDosage}\nReason: ${req.body.requestReason}\n\nPlease review and approve/reject in your dashboard.`
+                }
+              }
+            }
+          }));
+        }
+        
+        console.log('Dosage change request notification sent to doctor:', doctor?.id);
+      } catch (notifError) {
+        // Don't fail the request if notification fails
+        console.error('Failed to send notification to doctor:', notifError);
+      }
       
       res.json(request);
     } catch (error) {
@@ -4619,12 +4657,116 @@ Please ask the doctor which date they want to check.`;
       
       const request = await storage.rejectDosageChangeRequest(id, doctorId, notes);
       
-      // TODO: Send notification to patient
+      // Send notification to patient
+      if (request) {
+        try {
+          const patient = await storage.getUserById(request.patientId);
+          const doctor = await storage.getUser(doctorId);
+          
+          if (patient && patient.phoneNumber) {
+            // Send SMS notification using Twilio
+            const { twilioClient } = await import('./twilioService');
+            await twilioClient.messages.create({
+              to: patient.phoneNumber,
+              from: process.env.TWILIO_PHONE_NUMBER,
+              body: `Your dosage change request has been reviewed by Dr. ${doctor?.name || 'your doctor'}. Status: Rejected. Reason: ${notes || 'See dashboard for details'}.`
+            });
+          }
+          
+          // Send email notification if patient has email
+          if (patient && patient.email) {
+            const { sesClient } = await import('./aws');
+            const { SendEmailCommand } = await import('@aws-sdk/client-ses');
+            
+            await sesClient.send(new SendEmailCommand({
+              Source: 'noreply@followupai.com',
+              Destination: { ToAddresses: [patient.email] },
+              Message: {
+                Subject: { Data: 'Dosage Change Request - Rejected' },
+                Body: {
+                  Text: {
+                    Data: `Your dosage change request has been reviewed by Dr. ${doctor?.name || 'your doctor'}.\n\nStatus: Rejected\n\nDoctor's notes: ${notes || 'No additional notes provided'}\n\nPlease contact your doctor if you have questions.`
+                  }
+                }
+              }
+            }));
+          }
+          
+          console.log('Rejection notification sent to patient:', patient.id);
+        } catch (notifError) {
+          console.error('Failed to send notification to patient:', notifError);
+        }
+      }
       
       res.json(request);
     } catch (error) {
       console.error('Error rejecting dosage change:', error);
       res.status(500).json({ message: 'Failed to reject request' });
+    }
+  });
+
+  // Medication sync from medical files
+  app.post('/api/medications/sync-from-document/:documentId', isAuthenticated, async (req: any, res) => {
+    try {
+      const { documentId } = req.params;
+      const userId = req.user!.id;
+      
+      // Get the medical file
+      const document = await storage.getMedicalFileById(documentId);
+      if (!document || document.patientId !== userId) {
+        return res.status(404).json({ message: 'Document not found' });
+      }
+      
+      // Extract medications from the document's AI analysis
+      const medications = document.extractedData?.medications || [];
+      
+      if (medications.length === 0) {
+        return res.json({ message: 'No medications found in this document', count: 0 });
+      }
+      
+      const createdMedications = [];
+      
+      for (const medData of medications) {
+        // Check for duplicates
+        const existing = await storage.getMedicationByNameAndPatient(medData.name || medData.text, userId);
+        
+        if (!existing) {
+          // Create pending medication linked to source document
+          const medication = await storage.createMedication({
+            patientId: userId,
+            name: medData.name || medData.text,
+            dosage: medData.dosage || medData.strength || 'Not specified',
+            frequency: medData.frequency || medData.routeOrMode || 'Not specified',
+            source: 'document',
+            sourceDocumentId: documentId,
+            addedBy: 'system',
+            status: 'pending_confirmation',
+            autoDetected: true,
+          });
+          
+          createdMedications.push(medication);
+          
+          // Log the change
+          await storage.createMedicationChangeLog({
+            medicationId: medication.id,
+            patientId: userId,
+            changeType: 'added',
+            changedBy: 'system',
+            changedByUserId: userId,
+            changeReason: 'Auto-detected from medical file',
+            notes: `Source: ${document.fileName}`,
+          });
+        }
+      }
+      
+      res.json({
+        message: `Synced ${createdMedications.length} new medications from document`,
+        count: createdMedications.length,
+        medications: createdMedications,
+      });
+    } catch (error) {
+      console.error('Error syncing medications from document:', error);
+      res.status(500).json({ message: 'Failed to sync medications' });
     }
   });
 
