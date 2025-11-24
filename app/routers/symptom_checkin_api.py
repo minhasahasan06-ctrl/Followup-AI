@@ -102,6 +102,56 @@ class TrendReportResponse(BaseModel):
     generatedAt: datetime
 
 
+class ChatSymptomFeedItem(BaseModel):
+    """AI-extracted symptom for unified feed display"""
+    id: str
+    userId: str
+    timestamp: datetime
+    sessionId: str
+    messageId: Optional[str]
+    extractedData: dict
+    confidence: float
+    symptomTypes: List[str]
+    locations: List[str]
+    intensityMentions: List[str]
+    temporalInfo: Optional[str]
+    observationalLabel: str  # Always "AI-observed via Clona"
+    createdAt: datetime
+
+
+class UnifiedSymptomFeedItem(BaseModel):
+    """Unified feed item combining patient-reported and AI-extracted data"""
+    id: str
+    userId: str
+    timestamp: datetime
+    dataSource: str  # "patient-reported" or "ai-extracted"
+    observationalLabel: str  # "Patient-reported" or "AI-observed via Clona"
+    
+    # Patient-reported fields (only present if dataSource == "patient-reported")
+    painLevel: Optional[int] = None
+    fatigueLevel: Optional[int] = None
+    breathlessnessLevel: Optional[int] = None
+    sleepQuality: Optional[int] = None
+    mood: Optional[str] = None
+    mobilityScore: Optional[int] = None
+    medicationsTaken: Optional[bool] = None
+    triggers: Optional[List[str]] = None
+    symptoms: Optional[List[str]] = None
+    note: Optional[str] = None
+    
+    # AI-extracted fields (only present if dataSource == "ai-extracted")
+    sessionId: Optional[str] = None
+    messageId: Optional[str] = None
+    extractedData: Optional[dict] = None
+    confidence: Optional[float] = None
+    symptomTypes: Optional[List[str]] = None
+    locations: Optional[List[str]] = None
+    intensityMentions: Optional[List[str]] = None
+    temporalInfo: Optional[str] = None
+    
+    createdAt: datetime
+
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -267,6 +317,122 @@ def get_recent_checkins(
             user_agent=request.headers.get("user-agent")
         )
         raise HTTPException(status_code=500, detail=f"Failed to fetch recent check-ins: {str(e)}")
+
+
+@router.get("/feed/unified", response_model=List[UnifiedSymptomFeedItem])
+def get_unified_symptom_feed(
+    request: Request,
+    days: int = 7,
+    current_user: User = Depends(require_role("patient")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get unified symptom feed combining patient-reported check-ins and AI-extracted chat symptoms.
+    Returns merged timeline sorted by timestamp (most recent first).
+    
+    This is the canonical endpoint for Dashboard → Daily Follow-up → Symptoms tab.
+    """
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        # Fetch patient-reported check-ins
+        patient_checkins = db.query(SymptomCheckin).filter(
+            and_(
+                SymptomCheckin.user_id == current_user.id,
+                SymptomCheckin.timestamp >= cutoff_date
+            )
+        ).all()
+        
+        # Fetch AI-extracted chat symptoms
+        ai_symptoms = db.query(ChatSymptom).filter(
+            and_(
+                ChatSymptom.user_id == current_user.id,
+                ChatSymptom.timestamp >= cutoff_date
+            )
+        ).all()
+        
+        # Build unified feed items with proper serialization
+        feed_items = []
+        
+        # Add patient-reported check-ins
+        for checkin in patient_checkins:
+            item = UnifiedSymptomFeedItem(
+                id=str(checkin.id),
+                userId=str(checkin.user_id),
+                timestamp=checkin.timestamp,
+                dataSource="patient-reported",
+                observationalLabel="Patient-reported",
+                painLevel=checkin.pain_level,
+                fatigueLevel=checkin.fatigue_level,
+                breathlessnessLevel=checkin.breathlessness_level,
+                sleepQuality=checkin.sleep_quality,
+                mood=checkin.mood,
+                mobilityScore=checkin.mobility_score,
+                medicationsTaken=checkin.medications_taken,
+                triggers=checkin.triggers or [],
+                symptoms=checkin.symptoms or [],
+                note=checkin.note,
+                createdAt=checkin.created_at
+            )
+            feed_items.append(item)
+        
+        # Add AI-extracted symptoms
+        for symptom in ai_symptoms:
+            item = UnifiedSymptomFeedItem(
+                id=str(symptom.id),
+                userId=str(symptom.user_id),
+                timestamp=symptom.timestamp,
+                dataSource="ai-extracted",
+                observationalLabel="AI-observed via Clona",
+                sessionId=symptom.session_id,
+                messageId=symptom.message_id,
+                extractedData=symptom.extracted_json or {},
+                confidence=float(symptom.confidence) if symptom.confidence else 0.0,
+                symptomTypes=symptom.symptom_types or [],
+                locations=symptom.locations or [],
+                intensityMentions=symptom.intensity_mentions or [],
+                temporalInfo=symptom.temporal_info,
+                createdAt=symptom.created_at
+            )
+            feed_items.append(item)
+        
+        # Sort by timestamp (most recent first)
+        feed_items.sort(key=lambda x: x.timestamp, reverse=True)
+        
+        # HIPAA Audit Log
+        AuditLogger.log_event(
+            event_type="unified_symptom_feed_viewed",
+            user_id=current_user.id,
+            resource_type="symptom_feed",
+            resource_id=None,
+            action="view",
+            status="success",
+            metadata={
+                "patient_reported_count": len(patient_checkins),
+                "ai_extracted_count": len(ai_symptoms),
+                "total_count": len(feed_items),
+                "days": days
+            },
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        
+        return feed_items
+        
+    except Exception as e:
+        # HIPAA Audit Log (failure)
+        AuditLogger.log_event(
+            event_type="unified_symptom_feed_viewed",
+            user_id=current_user.id,
+            resource_type="symptom_feed",
+            resource_id=None,
+            action="view",
+            status="failure",
+            metadata={"error": str(e)},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to fetch unified feed: {str(e)}")
 
 
 @router.get("/history", response_model=List[SymptomCheckinResponse])
