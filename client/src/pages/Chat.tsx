@@ -6,11 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, AlertTriangle, Shield, MapPin, X } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Send, Bot, AlertTriangle, Shield, MapPin, X, MessageSquare, Clock, Heart, PanelLeftClose, PanelLeft, Plus, Calendar, ChevronRight } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ChatMessage as ChatMessageType } from "@shared/schema";
+import { format } from "date-fns";
 
 interface RiskAlert {
   id: number;
@@ -20,16 +22,43 @@ interface RiskAlert {
   status: string;
 }
 
+interface ChatSession {
+  id: string;
+  patientId: string;
+  agentType: string;
+  sessionTitle: string | null;
+  startedAt: Date;
+  endedAt: Date | null;
+  messageCount: number | null;
+  symptomsDiscussed: string[] | null;
+  recommendations: string[] | null;
+  healthInsights: any;
+  aiSummary: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  doctorNotes: string | null;
+}
+
 export default function Chat() {
   const [message, setMessage] = useState("");
   const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const { user } = useAuth();
   const isDoctor = user?.role === "doctor";
   const agentType = isDoctor ? "lysa" : "clona";
   const agentName = isDoctor ? "Assistant Lysa" : "Agent Clona";
 
+  // Fetch all sessions
+  const { data: sessions, isLoading: sessionsLoading } = useQuery<ChatSession[]>({
+    queryKey: ['/api/chat/sessions'],
+  });
+
+  // Fetch current chat messages (either selected session or current active session)
   const { data: chatMessages, isLoading } = useQuery<ChatMessageType[]>({
-    queryKey: ["/api/chat/messages", { agent: agentType }],
+    queryKey: selectedSessionId 
+      ? [`/api/chat/sessions/${selectedSessionId}/messages`]
+      : ["/api/chat/messages", { agent: agentType }],
   });
 
   const { data: riskAlerts } = useQuery<RiskAlert[]>({
@@ -43,6 +72,7 @@ export default function Chat() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
+      queryClient.invalidateQueries({ queryKey: ['/api/chat/sessions'] });
       setMessage("");
     },
   });
@@ -69,6 +99,15 @@ export default function Chat() {
     }
   };
 
+  const handleNewChat = () => {
+    setSelectedSessionId(null);
+    queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
+  };
+
+  const handleSessionClick = (sessionId: string) => {
+    setSelectedSessionId(sessionId);
+  };
+
   const activeAlerts = riskAlerts?.filter(
     (alert) => alert.status === "active" && !dismissedAlerts.includes(alert.id)
   ) || [];
@@ -85,25 +124,143 @@ export default function Chat() {
     return "#";
   };
 
+  const getAgentIcon = (agentType: string) => {
+    return agentType === 'clona' ? <Heart className="h-4 w-4" /> : <Bot className="h-4 w-4" />;
+  };
+
+  const formatDate = (date: Date | string) => {
+    const d = new Date(date);
+    return format(d, 'MMM d, h:mm a');
+  };
+
+  const selectedSession = sessions?.find(s => s.id === selectedSessionId);
+
   return (
-    <div className="h-full flex flex-col max-w-4xl mx-auto">
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
-            isDoctor ? "bg-accent" : "bg-primary"
-          } text-primary-foreground`} data-testid="avatar-ai-agent">
-            <Bot className="h-5 w-5" />
+    <div className="h-full flex gap-6">
+      {/* Sessions Sidebar */}
+      {sidebarOpen && (
+        <div className="w-80 flex-shrink-0 flex flex-col gap-4">
+          {/* Sidebar Header */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              Chat History
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(false)}
+              data-testid="button-close-sidebar"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
           </div>
-          <div>
-            <h1 className="text-2xl font-semibold" data-testid="text-agent-name">{agentName}</h1>
-            <p className="text-sm text-muted-foreground" data-testid="text-agent-description">
-              Powered by GPT-4 {isDoctor ? "- Clinical Insights" : "- Your Health Companion"}
-            </p>
-          </div>
+
+          {/* New Chat Button */}
+          <Button
+            onClick={handleNewChat}
+            className="w-full gap-2"
+            variant={selectedSessionId ? "outline" : "default"}
+            data-testid="button-new-chat"
+          >
+            <Plus className="h-4 w-4" />
+            New Chat
+          </Button>
+
+          {/* Sessions List */}
+          <Card className="flex-1 flex flex-col min-h-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                Previous Sessions
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 min-h-0">
+              <ScrollArea className="h-full">
+                <div className="space-y-2 p-4">
+                  {sessionsLoading ? (
+                    <div className="space-y-2">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="h-20 bg-muted rounded animate-pulse" />
+                      ))}
+                    </div>
+                  ) : sessions && sessions.length > 0 ? (
+                    sessions.map((session) => (
+                      <button
+                        key={session.id}
+                        onClick={() => handleSessionClick(session.id)}
+                        className={`w-full text-left p-3 rounded-md border transition-colors hover-elevate ${
+                          selectedSessionId === session.id
+                            ? 'bg-accent border-accent-foreground/20'
+                            : 'bg-card border-border'
+                        }`}
+                        data-testid={`button-session-${session.id}`}
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="flex items-center gap-2">
+                            {getAgentIcon(session.agentType)}
+                            <span className="text-xs font-medium">
+                              {session.agentType === 'clona' ? 'Agent Clona' : 'Assistant Lysa'}
+                            </span>
+                          </div>
+                          <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-1 line-clamp-2">
+                          {session.sessionTitle || 'No title'}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          {formatDate(session.startedAt)}
+                        </div>
+                        {session.messageCount && (
+                          <Badge variant="secondary" className="text-xs mt-1">
+                            {session.messageCount} msgs
+                          </Badge>
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <MessageSquare className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                      <p className="text-xs">No previous sessions</p>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
         </div>
-        {/* Legal Disclaimer */}
-        {!isDoctor && <LegalDisclaimer variant="wellness" className="mt-4" />}
-      </div>
+      )}
+
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Chat Header */}
+        <div className="mb-4">
+          <div className="flex items-center gap-3 mb-2">
+            {!sidebarOpen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(true)}
+                data-testid="button-open-sidebar"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </Button>
+            )}
+            <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
+              isDoctor ? "bg-accent" : "bg-primary"
+            } text-primary-foreground`} data-testid="avatar-ai-agent">
+              {isDoctor ? <Bot className="h-5 w-5" /> : <Heart className="h-5 w-5" />}
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold" data-testid="text-agent-name">{agentName}</h1>
+              <p className="text-xs text-muted-foreground" data-testid="text-agent-description">
+                Powered by GPT-4 {isDoctor ? "- Clinical Insights" : "- Your Health Companion"}
+              </p>
+            </div>
+          </div>
+          {!isDoctor && <LegalDisclaimer variant="wellness" className="mt-3" />}
+        </div>
 
       {!isDoctor && activeAlerts.length > 0 && (
         <div className="mb-4 space-y-2" data-testid="section-active-alerts">
@@ -233,6 +390,7 @@ export default function Chat() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }
