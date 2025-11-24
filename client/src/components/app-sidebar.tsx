@@ -105,11 +105,6 @@ const patientItems = [
     icon: History,
   },
   {
-    title: "Find Doctors",
-    url: "/doctor-search",
-    icon: Search,
-  },
-  {
     title: "My Doctors",
     url: "/my-doctors",
     icon: UserPlus,
