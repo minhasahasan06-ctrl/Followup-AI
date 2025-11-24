@@ -4357,6 +4357,301 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // Medication lifecycle routes
+  app.get('/api/medications/all', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const medications = await storage.getAllMedications(userId);
+      res.json(medications);
+    } catch (error) {
+      console.error('Error fetching all medications:', error);
+      res.status(500).json({ message: 'Failed to fetch medications' });
+    }
+  });
+
+  app.get('/api/medications/pending-confirmation', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const medications = await storage.getPendingConfirmationMedications(userId);
+      res.json(medications);
+    } catch (error) {
+      console.error('Error fetching pending medications:', error);
+      res.status(500).json({ message: 'Failed to fetch pending medications' });
+    }
+  });
+
+  app.get('/api/medications/inactive', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const medications = await storage.getInactiveMedications(userId);
+      res.json(medications);
+    } catch (error) {
+      console.error('Error fetching inactive medications:', error);
+      res.status(500).json({ message: 'Failed to fetch inactive medications' });
+    }
+  });
+
+  app.post('/api/medications/:id/confirm', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      const medication = await storage.confirmMedication(id, userId);
+      
+      if (medication) {
+        await storage.createMedicationChangeLog({
+          medicationId: id,
+          patientId: medication.patientId,
+          changeType: 'added',
+          changedBy: 'patient',
+          changedByUserId: userId,
+          changeReason: 'Patient confirmed auto-detected medication',
+        });
+      }
+      
+      res.json(medication);
+    } catch (error) {
+      console.error('Error confirming medication:', error);
+      res.status(500).json({ message: 'Failed to confirm medication' });
+    }
+  });
+
+  app.post('/api/medications/:id/discontinue', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      const { reason, replacementMedicationId } = req.body;
+      
+      const medication = await storage.discontinueMedication(id, userId, reason, replacementMedicationId);
+      
+      if (medication) {
+        await storage.createMedicationChangeLog({
+          medicationId: id,
+          patientId: medication.patientId,
+          changeType: 'discontinued',
+          changedBy: req.user!.role === 'doctor' ? 'doctor' : 'patient',
+          changedByUserId: userId,
+          discontinuationReason: reason,
+          replacementMedicationId: replacementMedicationId || null,
+          changeReason: reason,
+        });
+      }
+      
+      res.json(medication);
+    } catch (error) {
+      console.error('Error discontinuing medication:', error);
+      res.status(500).json({ message: 'Failed to discontinue medication' });
+    }
+  });
+
+  app.post('/api/medications/:id/reactivate', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      
+      const medication = await storage.reactivateMedication(id, userId);
+      
+      if (medication) {
+        await storage.createMedicationChangeLog({
+          medicationId: id,
+          patientId: medication.patientId,
+          changeType: 'reactivated',
+          changedBy: req.user!.role === 'doctor' ? 'doctor' : 'patient',
+          changedByUserId: userId,
+          changeReason: 'Medication reactivated',
+        });
+      }
+      
+      res.json(medication);
+    } catch (error) {
+      console.error('Error reactivating medication:', error);
+      res.status(500).json({ message: 'Failed to reactivate medication' });
+    }
+  });
+
+  // Prescription routes
+  app.get('/api/prescriptions', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const prescriptions = await storage.getPrescriptions(userId);
+      res.json(prescriptions);
+    } catch (error) {
+      console.error('Error fetching prescriptions:', error);
+      res.status(500).json({ message: 'Failed to fetch prescriptions' });
+    }
+  });
+
+  app.post('/api/prescriptions', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const prescription = await storage.createPrescription({
+        doctorId,
+        ...req.body,
+      });
+      
+      // Create medication for patient
+      const medication = await storage.createMedication({
+        patientId: req.body.patientId,
+        name: req.body.medicationName,
+        dosage: req.body.dosage,
+        frequency: req.body.frequency,
+        source: 'prescription',
+        sourcePrescriptionId: prescription.id,
+        addedBy: 'doctor',
+        status: 'active',
+      });
+      
+      // Update prescription with medication ID
+      await storage.updatePrescription(prescription.id, { medicationId: medication.id });
+      
+      // Log the change
+      await storage.createMedicationChangeLog({
+        medicationId: medication.id,
+        patientId: req.body.patientId,
+        changeType: 'added',
+        changedBy: 'doctor',
+        changedByUserId: doctorId,
+        changeReason: `Prescription created by doctor`,
+        notes: req.body.notes,
+      });
+      
+      res.json({ prescription, medication });
+    } catch (error) {
+      console.error('Error creating prescription:', error);
+      res.status(500).json({ message: 'Failed to create prescription' });
+    }
+  });
+
+  app.post('/api/prescriptions/:id/acknowledge', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      const prescription = await storage.acknowledgePrescription(id, userId);
+      res.json(prescription);
+    } catch (error) {
+      console.error('Error acknowledging prescription:', error);
+      res.status(500).json({ message: 'Failed to acknowledge prescription' });
+    }
+  });
+
+  // Dosage change request routes
+  app.get('/api/dosage-change-requests', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const requests = await storage.getDosageChangeRequests(userId);
+      res.json(requests);
+    } catch (error) {
+      console.error('Error fetching dosage change requests:', error);
+      res.status(500).json({ message: 'Failed to fetch requests' });
+    }
+  });
+
+  app.get('/api/dosage-change-requests/pending', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const requests = await storage.getPendingDosageChangeRequests(doctorId);
+      res.json(requests);
+    } catch (error) {
+      console.error('Error fetching pending dosage change requests:', error);
+      res.status(500).json({ message: 'Failed to fetch pending requests' });
+    }
+  });
+
+  app.post('/api/dosage-change-requests', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const request = await storage.createDosageChangeRequest({
+        patientId: userId,
+        ...req.body,
+      });
+      
+      // TODO: Send notification to doctor
+      
+      res.json(request);
+    } catch (error) {
+      console.error('Error creating dosage change request:', error);
+      res.status(500).json({ message: 'Failed to create request' });
+    }
+  });
+
+  app.post('/api/dosage-change-requests/:id/approve', isDoctor, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const doctorId = req.user!.id;
+      const { notes } = req.body;
+      
+      const request = await storage.approveDosageChangeRequest(id, doctorId, notes);
+      
+      if (request) {
+        // Apply the dosage change
+        await storage.updateMedication(request.medicationId, {
+          dosage: request.requestedDosage,
+          frequency: request.requestedFrequency,
+        });
+        
+        // Log the change
+        await storage.createMedicationChangeLog({
+          medicationId: request.medicationId,
+          patientId: request.patientId,
+          changeType: 'dosage_changed',
+          changedBy: 'doctor',
+          changedByUserId: doctorId,
+          oldDosage: request.currentDosage,
+          newDosage: request.requestedDosage,
+          oldFrequency: request.currentFrequency,
+          newFrequency: request.requestedFrequency,
+          changeReason: `Doctor approved patient request: ${request.requestReason}`,
+          notes,
+        });
+      }
+      
+      res.json(request);
+    } catch (error) {
+      console.error('Error approving dosage change:', error);
+      res.status(500).json({ message: 'Failed to approve request' });
+    }
+  });
+
+  app.post('/api/dosage-change-requests/:id/reject', isDoctor, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const doctorId = req.user!.id;
+      const { notes } = req.body;
+      
+      const request = await storage.rejectDosageChangeRequest(id, doctorId, notes);
+      
+      // TODO: Send notification to patient
+      
+      res.json(request);
+    } catch (error) {
+      console.error('Error rejecting dosage change:', error);
+      res.status(500).json({ message: 'Failed to reject request' });
+    }
+  });
+
+  // Medication changelog routes
+  app.get('/api/medications/:id/changelog', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const logs = await storage.getMedicationChangelog(id);
+      res.json(logs);
+    } catch (error) {
+      console.error('Error fetching medication changelog:', error);
+      res.status(500).json({ message: 'Failed to fetch changelog' });
+    }
+  });
+
+  app.get('/api/medications/changelog/all', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { limit } = req.query;
+      const logs = await storage.getPatientMedicationChangelog(userId, limit ? parseInt(limit as string) : undefined);
+      res.json(logs);
+    } catch (error) {
+      console.error('Error fetching patient medication changelog:', error);
+      res.status(500).json({ message: 'Failed to fetch changelog' });
+    }
+  });
+
   // ==================== HEALTH COMPANION MODE ROUTES ====================
 
   // Companion check-ins

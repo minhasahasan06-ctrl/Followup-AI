@@ -360,10 +360,14 @@ export default function Medications() {
         </div>
 
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full max-w-3xl grid-cols-4">
+          <TabsList className="grid w-full max-w-4xl grid-cols-6">
             <TabsTrigger value="overview" data-testid="tab-overview">
               <Pill className="h-4 w-4 mr-2" />
               Overview
+            </TabsTrigger>
+            <TabsTrigger value="timeline" data-testid="tab-timeline">
+              <Clock className="h-4 w-4 mr-2" />
+              Timeline
             </TabsTrigger>
             <TabsTrigger value="adherence" data-testid="tab-adherence">
               <Calendar className="h-4 w-4 mr-2" />
@@ -376,6 +380,10 @@ export default function Medications() {
             <TabsTrigger value="interactions" data-testid="tab-interactions">
               <Shield className="h-4 w-4 mr-2" />
               Interactions
+            </TabsTrigger>
+            <TabsTrigger value="requests" data-testid="tab-requests">
+              <FileText className="h-4 w-4 mr-2" />
+              Requests
             </TabsTrigger>
           </TabsList>
 
@@ -810,8 +818,645 @@ export default function Medications() {
               </Card>
             </div>
           </TabsContent>
+
+          {/* Timeline Tab */}
+          <TabsContent value="timeline" className="space-y-6">
+            <MedicationTimeline />
+          </TabsContent>
+
+          {/* Requests Tab */}
+          <TabsContent value="requests" className="space-y-6">
+            <DosageChangeRequests />
+          </TabsContent>
         </Tabs>
       </div>
+    </div>
+  );
+}
+
+// Medication Timeline Component
+function MedicationTimeline() {
+  const { toast } = useToast();
+  const { data: changelog, isLoading } = useQuery<any[]>({
+    queryKey: ['/api/medications/changelog/all'],
+  });
+
+  const { data: pendingMeds } = useQuery<any[]>({
+    queryKey: ['/api/medications/pending-confirmation'],
+  });
+
+  const { data: inactiveMeds } = useQuery<any[]>({
+    queryKey: ['/api/medications/inactive'],
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest('POST', `/api/medications/${id}/confirm`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/medications'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/medications/pending-confirmation'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/medications/changelog/all'] });
+      toast({
+        title: "Medication confirmed",
+        description: "The medication has been added to your active list.",
+      });
+    },
+  });
+
+  const discontinueMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      return apiRequest('POST', `/api/medications/${id}/discontinue`, { reason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/medications'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/medications/inactive'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/medications/changelog/all'] });
+      toast({
+        title: "Medication discontinued",
+        description: "The medication has been marked as inactive.",
+      });
+    },
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest('POST', `/api/medications/${id}/reactivate`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/medications'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/medications/inactive'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/medications/changelog/all'] });
+      toast({
+        title: "Medication reactivated",
+        description: "The medication has been added back to your active list.",
+      });
+    },
+  });
+
+  const getChangeTypeIcon = (changeType: string) => {
+    switch (changeType) {
+      case 'added':
+        return <Plus className="h-4 w-4 text-green-500" />;
+      case 'discontinued':
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case 'reactivated':
+        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      case 'dosage_changed':
+        return <Sliders className="h-4 w-4 text-blue-500" />;
+      default:
+        return <Activity className="h-4 w-4" />;
+    }
+  };
+
+  const getChangeTypeBadge = (changeType: string) => {
+    switch (changeType) {
+      case 'added':
+        return <Badge variant="secondary">Added</Badge>;
+      case 'discontinued':
+        return <Badge variant="destructive">Discontinued</Badge>;
+      case 'reactivated':
+        return <Badge variant="secondary">Reactivated</Badge>;
+      case 'dosage_changed':
+        return <Badge>Dosage Changed</Badge>;
+      default:
+        return <Badge variant="outline">{changeType}</Badge>;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Pending Confirmation */}
+      {pendingMeds && pendingMeds.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+              Pending Confirmation
+            </CardTitle>
+            <CardDescription>
+              These medications were auto-detected from your medical files and need confirmation
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {pendingMeds.map((med) => (
+                <Card key={med.id} className="hover-elevate" data-testid={`card-pending-${med.id}`}>
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h4 className="font-semibold">{med.name}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {med.dosage} • {med.frequency}
+                        </p>
+                        {med.sourceDocumentId && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Detected from medical file
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => confirmMutation.mutate(med.id)}
+                          disabled={confirmMutation.isPending}
+                          data-testid={`button-confirm-${med.id}`}
+                        >
+                          <Check className="h-4 w-4 mr-1" />
+                          Confirm
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Inactive Medications */}
+      {inactiveMeds && inactiveMeds.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-muted-foreground" />
+              Inactive Medications
+            </CardTitle>
+            <CardDescription>
+              Previously discontinued medications
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {inactiveMeds.map((med) => (
+                <Card key={med.id} className="opacity-60 hover-elevate" data-testid={`card-inactive-${med.id}`}>
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h4 className="font-semibold">{med.name}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {med.dosage} • {med.frequency}
+                        </p>
+                        {med.discontinuationReason && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Reason: {med.discontinuationReason}
+                          </p>
+                        )}
+                        {med.discontinuedAt && (
+                          <p className="text-xs text-muted-foreground">
+                            Discontinued: {format(new Date(med.discontinuedAt), 'MMM d, yyyy')}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => reactivateMutation.mutate(med.id)}
+                        disabled={reactivateMutation.isPending}
+                        data-testid={`button-reactivate-${med.id}`}
+                      >
+                        <RefreshCw className="h-4 w-4 mr-1" />
+                        Reactivate
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Change History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Medication History
+          </CardTitle>
+          <CardDescription>
+            Complete timeline of all medication changes (HIPAA audit trail)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full" />)}
+            </div>
+          ) : changelog && changelog.length > 0 ? (
+            <ScrollArea className="h-[500px]">
+              <div className="space-y-4">
+                {changelog.map((log, idx) => (
+                  <div key={log.id} className="flex gap-4" data-testid={`log-entry-${idx}`}>
+                    <div className="flex flex-col items-center">
+                      <div className="rounded-full bg-muted p-2">
+                        {getChangeTypeIcon(log.changeType)}
+                      </div>
+                      {idx < changelog.length - 1 && (
+                        <div className="h-full w-px bg-border mt-2" />
+                      )}
+                    </div>
+                    <div className="flex-1 pb-4">
+                      <div className="flex items-start justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          {getChangeTypeBadge(log.changeType)}
+                          <span className="text-sm text-muted-foreground">
+                            {format(new Date(log.changedAt), 'MMM d, yyyy h:mm a')}
+                          </span>
+                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          by {log.changedBy}
+                        </Badge>
+                      </div>
+                      <p className="text-sm font-medium">{log.changeReason}</p>
+                      {log.changeType === 'dosage_changed' && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {log.oldDosage} → {log.newDosage}
+                          {log.oldFrequency !== log.newFrequency && ` • ${log.oldFrequency} → ${log.newFrequency}`}
+                        </p>
+                      )}
+                      {log.notes && (
+                        <p className="text-sm text-muted-foreground mt-1 italic">
+                          Note: {log.notes}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <Clock className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>No medication history yet</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Dosage Change Requests Component
+function DosageChangeRequests() {
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const [showRequestDialog, setShowRequestDialog] = useState(false);
+  const [selectedMed, setSelectedMed] = useState<any>(null);
+  const [requestReason, setRequestReason] = useState("");
+  const [newDosage, setNewDosage] = useState("");
+  const [newFrequency, setNewFrequency] = useState("");
+
+  const { data: activeMeds } = useQuery<any[]>({
+    queryKey: ['/api/medications'],
+  });
+
+  const { data: myRequests, isLoading } = useQuery<any[]>({
+    queryKey: ['/api/dosage-change-requests'],
+  });
+
+  const { data: pendingRequests, isLoading: loadingPending } = useQuery<any[]>({
+    queryKey: ['/api/dosage-change-requests/pending'],
+    enabled: user?.role === 'doctor',
+  });
+
+  const createRequestMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return apiRequest('POST', '/api/dosage-change-requests', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/dosage-change-requests'] });
+      setShowRequestDialog(false);
+      setSelectedMed(null);
+      setRequestReason("");
+      setNewDosage("");
+      setNewFrequency("");
+      toast({
+        title: "Request submitted",
+        description: "Your dosage change request has been sent to your doctor for approval.",
+      });
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async ({ id, notes }: { id: string; notes?: string }) => {
+      return apiRequest('POST', `/api/dosage-change-requests/${id}/approve`, { notes });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/dosage-change-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dosage-change-requests/pending'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/medications'] });
+      toast({
+        title: "Request approved",
+        description: "The dosage change has been applied to the patient's medication.",
+      });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
+      return apiRequest('POST', `/api/dosage-change-requests/${id}/reject`, { notes });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/dosage-change-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dosage-change-requests/pending'] });
+      toast({
+        title: "Request rejected",
+        description: "The dosage change request has been declined.",
+      });
+    },
+  });
+
+  const handleSubmitRequest = () => {
+    if (!selectedMed || !newDosage || !requestReason.trim()) {
+      toast({
+        title: "Missing information",
+        description: "Please provide dosage, frequency, and reason for the change.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    createRequestMutation.mutate({
+      medicationId: selectedMed.id,
+      currentDosage: selectedMed.dosage,
+      currentFrequency: selectedMed.frequency,
+      requestedDosage: newDosage,
+      requestedFrequency: newFrequency || selectedMed.frequency,
+      requestReason,
+      requestType: 'dosage_change',
+    });
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return <Badge variant="secondary">Pending</Badge>;
+      case 'approved':
+        return <Badge className="bg-green-500 hover:bg-green-600">Approved</Badge>;
+      case 'rejected':
+        return <Badge variant="destructive">Rejected</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Create Request Button */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Dosage Change Requests</CardTitle>
+              <CardDescription>
+                Request changes to your medication dosages (requires doctor approval)
+              </CardDescription>
+            </div>
+            <Button onClick={() => setShowRequestDialog(true)} data-testid="button-new-request">
+              <Plus className="h-4 w-4 mr-2" />
+              New Request
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
+
+      {/* My Requests */}
+      <Card>
+        <CardHeader>
+          <CardTitle>My Requests</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-3">
+              {[1, 2].map(i => <Skeleton key={i} className="h-20 w-full" />)}
+            </div>
+          ) : myRequests && myRequests.length > 0 ? (
+            <div className="space-y-3">
+              {myRequests.map((req) => (
+                <Card key={req.id} className="hover-elevate" data-testid={`request-${req.id}`}>
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-semibold">Medication ID: {req.medicationId}</h4>
+                          {getStatusBadge(req.status)}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {req.currentDosage} → {req.requestedDosage}
+                          {req.currentFrequency !== req.requestedFrequency && 
+                            ` • ${req.currentFrequency} → ${req.requestedFrequency}`}
+                        </p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(req.requestedAt), 'MMM d, yyyy')}
+                      </span>
+                    </div>
+                    <p className="text-sm mt-2">
+                      <span className="font-medium">Reason: </span>
+                      {req.requestReason}
+                    </p>
+                    {req.status === 'rejected' && req.reviewNotes && (
+                      <Alert variant="destructive" className="mt-3">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          <span className="font-medium">Doctor's response: </span>
+                          {req.reviewNotes}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {req.status === 'approved' && req.reviewNotes && (
+                      <Alert className="mt-3">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <AlertDescription>
+                          <span className="font-medium">Doctor's note: </span>
+                          {req.reviewNotes}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>No requests yet</p>
+              <p className="text-sm mt-1">Create a request to change your medication dosage</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Pending Requests for Doctors */}
+      {user?.role === 'doctor' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+              Pending Approvals
+            </CardTitle>
+            <CardDescription>
+              Patient dosage change requests awaiting your review
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingPending ? (
+              <div className="space-y-3">
+                {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+              </div>
+            ) : pendingRequests && pendingRequests.length > 0 ? (
+              <div className="space-y-3">
+                {pendingRequests.map((req) => (
+                  <Card key={req.id} className="hover-elevate" data-testid={`pending-request-${req.id}`}>
+                    <CardContent className="pt-6">
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h4 className="font-semibold">Patient: {req.patientId}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Medication ID: {req.medicationId}
+                            </p>
+                            <p className="text-sm mt-1">
+                              {req.currentDosage} → {req.requestedDosage}
+                              {req.currentFrequency !== req.requestedFrequency && 
+                                ` • ${req.currentFrequency} → ${req.requestedFrequency}`}
+                            </p>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(req.requestedAt), 'MMM d, yyyy')}
+                          </span>
+                        </div>
+                        <p className="text-sm">
+                          <span className="font-medium">Patient's reason: </span>
+                          {req.requestReason}
+                        </p>
+                        <div className="flex gap-2 pt-2">
+                          <Button
+                            size="sm"
+                            onClick={() => approveMutation.mutate({ id: req.id })}
+                            disabled={approveMutation.isPending}
+                            data-testid={`button-approve-${req.id}`}
+                          >
+                            <Check className="h-4 w-4 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              const notes = prompt("Rejection reason (optional):");
+                              if (notes !== null) {
+                                rejectMutation.mutate({ id: req.id, notes: notes || "No reason provided" });
+                              }
+                            }}
+                            disabled={rejectMutation.isPending}
+                            data-testid={`button-reject-${req.id}`}
+                          >
+                            <XCircle className="h-4 w-4 mr-1" />
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-green-500 opacity-50" />
+                <p>No pending requests</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Request Dialog */}
+      <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
+        <DialogContent data-testid="dialog-dosage-change">
+          <DialogHeader>
+            <DialogTitle>Request Dosage Change</DialogTitle>
+            <DialogDescription>
+              Submit a request to change your medication dosage. Your doctor will review and approve or reject the request.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Select Medication</Label>
+              <select
+                className="w-full mt-1 p-2 border rounded-md"
+                value={selectedMed?.id || ''}
+                onChange={(e) => {
+                  const med = activeMeds?.find(m => m.id === e.target.value);
+                  setSelectedMed(med);
+                  setNewDosage(med?.dosage || '');
+                  setNewFrequency(med?.frequency || '');
+                }}
+                data-testid="select-medication"
+              >
+                <option value="">-- Select medication --</option>
+                {activeMeds?.map((med) => (
+                  <option key={med.id} value={med.id}>
+                    {med.name} ({med.dosage})
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedMed && (
+              <>
+                <div>
+                  <Label>Current Dosage</Label>
+                  <Input value={selectedMed.dosage} disabled />
+                </div>
+                <div>
+                  <Label>New Dosage</Label>
+                  <Input
+                    value={newDosage}
+                    onChange={(e) => setNewDosage(e.target.value)}
+                    placeholder="e.g., 20mg"
+                    data-testid="input-new-dosage"
+                  />
+                </div>
+                <div>
+                  <Label>New Frequency (optional)</Label>
+                  <Input
+                    value={newFrequency}
+                    onChange={(e) => setNewFrequency(e.target.value)}
+                    placeholder={`Current: ${selectedMed.frequency}`}
+                    data-testid="input-new-frequency"
+                  />
+                </div>
+                <div>
+                  <Label>Reason for Change</Label>
+                  <textarea
+                    className="w-full mt-1 p-2 border rounded-md"
+                    rows={3}
+                    value={requestReason}
+                    onChange={(e) => setRequestReason(e.target.value)}
+                    placeholder="Explain why you want to change the dosage..."
+                    data-testid="textarea-reason"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRequestDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitRequest}
+              disabled={createRequestMutation.isPending || !selectedMed}
+              data-testid="button-submit-request"
+            >
+              {createRequestMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Submit Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
