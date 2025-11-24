@@ -75,12 +75,6 @@ const patientItems = [
     badge: "AI",
   },
   {
-    title: "Pain Detection",
-    url: "/pain-detection",
-    icon: Camera,
-    badge: "AI",
-  },
-  {
     title: "Health Alerts",
     url: "/ai-alerts",
     icon: Bell,
