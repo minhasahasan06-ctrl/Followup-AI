@@ -63,22 +63,22 @@ async function extractMentalHealthIndicators(
       return;
     }
 
-    const extractionPrompt = `You are a clinical assistant analyzing patient messages for potential mental health concerns. Your role is to INDICATE possible red flags, not diagnose.
+    const extractionPrompt = `You are a clinical assistant analyzing patient messages for mental health red flag SYMPTOMS. Your role is to INDICATE observable symptoms that may warrant clinical attention, not diagnose.
 
-Analyze this patient message and identify any potential mental health indicators:
+Analyze this patient message and identify any mental health red flag symptoms:
 
 "${messageText}"
 
-Look for indicators of:
-1. Suicidal ideation (thoughts of death, wanting to die, self-harm plans)
-2. Self-harm mentions (cutting, burning, hurting oneself)
-3. Severe depression indicators (hopelessness, worthlessness, inability to function)
-4. Severe anxiety indicators (panic, overwhelming fear, constant worry affecting life)
-5. Crisis language (can't go on, can't take it anymore, want it to end)
-6. Substance abuse mentions (excessive drinking, drug use as coping)
-7. Hopelessness themes (no future, no point, giving up)
+Look for symptom indicators of:
+1. **Suicidal ideation symptoms**: Expressed thoughts of death, wanting to die, self-harm plans, saying goodbye
+2. **Self-harm symptoms**: Mentions of cutting, burning, hurting oneself, urges to self-injure
+3. **Severe depression symptoms**: Persistent sadness, hopelessness, worthlessness, inability to function, loss of interest, persistent crying, sleep disturbances with mood impact
+4. **Severe anxiety symptoms**: Panic attacks, overwhelming fear, constant worry affecting daily life, physical anxiety symptoms (racing heart, can't breathe)
+5. **Crisis language symptoms**: "Can't go on", "can't take it anymore", "want it to end", giving away possessions
+6. **Substance abuse symptoms**: Excessive drinking, drug use as coping mechanism, increased substance use to manage emotions
+7. **Hopelessness symptoms**: No future, no point, giving up, isolation, withdrawal from loved ones
 
-CRITICAL: Be sensitive but thorough. We need to catch serious concerns while avoiding false alarms from casual language.
+CRITICAL: Focus on OBSERVABLE SYMPTOMS the patient is describing, not your interpretations. Be thorough but avoid false alarms from casual language like "I'm dying to see that movie".
 
 If you find ANY concerning indicators, respond with a JSON object:
 {
@@ -1903,6 +1903,13 @@ Please ask the doctor which date they want to check.`;
         agentType,
         medicalEntities: assistantEntities,
       });
+
+      // For Agent Clona only: Analyze user message for mental health red flag symptoms
+      // This runs asynchronously without blocking the chat response
+      if (agentType === 'clona') {
+        extractMentalHealthIndicators(content, userId, session.id, savedMessage.id)
+          .catch(err => console.error('[ERROR] Mental health symptom indicator extraction failed:', err));
+      }
 
       res.json(savedMessage);
     } catch (error) {
@@ -6731,6 +6738,59 @@ Please ask the doctor which date they want to check.`;
     } catch (error) {
       console.error('Error connecting to Python backend (guided-audio-exam):', error);
       res.status(502).json({ error: 'Failed to connect to AI audio service' });
+    }
+  });
+
+  // Mental Health Red Flag Symptoms endpoint - Fetches AI-observed mental health symptom indicators from Agent Clona
+  app.get('/api/mental-health/red-flag-symptoms', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const days = parseInt(req.query.days as string) || 30;
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+
+      // Fetch mental health red flag symptoms from Agent Clona conversations
+      const redFlags = await db
+        .select()
+        .from(schema.mentalHealthRedFlags)
+        .where(
+          and(
+            eq(schema.mentalHealthRedFlags.userId, userId),
+            gte(schema.mentalHealthRedFlags.createdAt, cutoffDate)
+          )
+        )
+        .orderBy(desc(schema.mentalHealthRedFlags.createdAt))
+        .limit(50);
+
+      // Transform for frontend display
+      const formattedRedFlags = redFlags.map((flag: any) => ({
+        id: flag.id,
+        timestamp: flag.createdAt,
+        sessionId: flag.sessionId,
+        messageId: flag.messageId,
+        rawText: flag.rawText,
+        redFlagTypes: flag.extractedJson.redFlagTypes || [],
+        severityLevel: flag.extractedJson.severityLevel || 'moderate',
+        specificConcerns: flag.extractedJson.specificConcerns || [],
+        emotionalTone: flag.extractedJson.emotionalTone || '',
+        recommendedAction: flag.extractedJson.recommendedAction || 'Clinical review recommended',
+        crisisIndicators: flag.extractedJson.crisisIndicators || false,
+        confidence: parseFloat(flag.confidence || '0'),
+        severityScore: flag.severityScore || 50,
+        requiresImmediateAttention: flag.requiresImmediateAttention || false,
+        clinicianNotified: flag.clinicianNotified || false,
+        // HIPAA-compliant labeling
+        dataSource: 'ai-observed',
+        observationalLabel: 'AI-observed via Clona'
+      }));
+
+      // HIPAA audit log
+      console.log(`[AUDIT] Mental health red flag symptoms fetched - User: ${userId}, Count: ${formattedRedFlags.length}`);
+
+      res.json(formattedRedFlags);
+    } catch (error) {
+      console.error('Error fetching mental health red flag symptoms:', error);
+      res.status(500).json({ message: 'Failed to fetch mental health indicators' });
     }
   });
 
