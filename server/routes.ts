@@ -48,6 +48,124 @@ import {
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
 
+// Mental Health Red Flag Indication Service (GPT-4o)
+// IMPORTANT: This is an INDICATOR system, not a diagnostic tool
+// Provides observational insights requiring professional clinical interpretation
+async function extractMentalHealthIndicators(
+  messageText: string,
+  userId: string,
+  sessionId: string,
+  messageId?: string
+): Promise<void> {
+  try {
+    // Skip if message is too short or doesn't contain concerning language
+    if (messageText.length < 20) {
+      return;
+    }
+
+    const extractionPrompt = `You are a clinical assistant analyzing patient messages for potential mental health concerns. Your role is to INDICATE possible red flags, not diagnose.
+
+Analyze this patient message and identify any potential mental health indicators:
+
+"${messageText}"
+
+Look for indicators of:
+1. Suicidal ideation (thoughts of death, wanting to die, self-harm plans)
+2. Self-harm mentions (cutting, burning, hurting oneself)
+3. Severe depression indicators (hopelessness, worthlessness, inability to function)
+4. Severe anxiety indicators (panic, overwhelming fear, constant worry affecting life)
+5. Crisis language (can't go on, can't take it anymore, want it to end)
+6. Substance abuse mentions (excessive drinking, drug use as coping)
+7. Hopelessness themes (no future, no point, giving up)
+
+CRITICAL: Be sensitive but thorough. We need to catch serious concerns while avoiding false alarms from casual language.
+
+If you find ANY concerning indicators, respond with a JSON object:
+{
+  "hasRedFlags": true,
+  "redFlagTypes": ["suicidal_ideation", "severe_depression", etc.],
+  "severityLevel": "low" | "moderate" | "high" | "critical",
+  "specificConcerns": ["exact phrases that raised concern"],
+  "emotionalTone": "brief description of overall emotional tone",
+  "recommendedAction": "suggested clinical action",
+  "crisisIndicators": true/false (true if immediate intervention may be needed),
+  "confidence": 0.0-1.0
+}
+
+If NO concerning indicators are found, respond with:
+{
+  "hasRedFlags": false
+}
+
+Be conservative with "critical" severity - reserve for immediate danger (active suicide plans, immediate self-harm intent).`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are a clinical mental health analysis assistant. You identify indicators of mental health concerns in patient messages. You provide observational insights, not diagnoses. Respond only with valid JSON."
+        },
+        {
+          role: "user",
+          content: extractionPrompt
+        }
+      ],
+      temperature: 0.3, // Lower temperature for more consistent analysis
+      max_tokens: 500,
+      response_format: { type: "json_object" }
+    });
+
+    const responseText = completion.choices[0].message.content || '{"hasRedFlags": false}';
+    const analysis = JSON.parse(responseText);
+
+    // If red flags are indicated, log to database
+    if (analysis.hasRedFlags && analysis.redFlagTypes && analysis.redFlagTypes.length > 0) {
+      // Calculate severity score (0-100)
+      let severityScore = 0;
+      switch (analysis.severityLevel) {
+        case 'critical': severityScore = 90; break;
+        case 'high': severityScore = 70; break;
+        case 'moderate': severityScore = 50; break;
+        case 'low': severityScore = 30; break;
+        default: severityScore = 40;
+      }
+
+      // Insert into mental_health_red_flags table
+      await db.insert(schema.mentalHealthRedFlags).values({
+        userId,
+        sessionId,
+        messageId: messageId || null,
+        rawText: messageText,
+        extractedJson: {
+          redFlagTypes: analysis.redFlagTypes,
+          severityLevel: analysis.severityLevel,
+          specificConcerns: analysis.specificConcerns || [],
+          emotionalTone: analysis.emotionalTone || '',
+          recommendedAction: analysis.recommendedAction || 'Clinical review recommended',
+          crisisIndicators: analysis.crisisIndicators || false
+        },
+        confidence: analysis.confidence ? String(analysis.confidence) : '0.85',
+        extractionModel: 'gpt-4o',
+        severityScore,
+        requiresImmediateAttention: analysis.crisisIndicators || false,
+        clinicianNotified: false
+      });
+
+      // HIPAA audit log
+      console.log(`[AUDIT] Mental health indicator logged - User: ${userId}, Session: ${sessionId}, Severity: ${analysis.severityLevel}, Crisis: ${analysis.crisisIndicators || false}`);
+
+      // If critical, log additional alert
+      if (analysis.crisisIndicators) {
+        console.log(`[ALERT] CRITICAL mental health indicator - Immediate clinical review recommended for User: ${userId}`);
+      }
+    }
+  } catch (error) {
+    // Silent fail - don't disrupt chat flow if indicator extraction fails
+    console.error('[ERROR] Mental health indicator extraction failed:', error);
+  }
+}
+
 // Configure multer for file uploads (KYC photos)
 const upload = multer({
   storage: multer.diskStorage({
