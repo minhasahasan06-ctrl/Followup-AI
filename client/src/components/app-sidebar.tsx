@@ -125,9 +125,10 @@ const patientItems = [
     icon: LinkIcon,
   },
   {
-    title: "EHR Integrations",
-    url: "/ehr-integrations",
+    title: "Medical Files",
+    url: "/medical-files",
     icon: FileText,
+    badge: "OCR",
   },
   {
     title: "Wearable Devices",
@@ -147,12 +148,6 @@ const patientItems = [
     badge: "LIVE",
   },
   {
-    title: "Medical Documents",
-    url: "/medical-documents",
-    icon: ScanText,
-    badge: "OCR",
-  },
-  {
     title: "Drug Interactions",
     url: "/drug-interactions",
     icon: AlertTriangle,
@@ -167,11 +162,6 @@ const patientItems = [
     title: "Wallet",
     url: "/wallet",
     icon: WalletIcon,
-  },
-  {
-    title: "Medical Files",
-    url: "/files",
-    icon: FileText,
   },
   {
     title: "Profile",
