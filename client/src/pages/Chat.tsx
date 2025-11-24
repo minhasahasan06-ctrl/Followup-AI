@@ -55,10 +55,24 @@ export default function Chat() {
   });
 
   // Fetch current chat messages (either selected session or current active session)
-  const { data: chatMessages, isLoading } = useQuery<ChatMessageType[]>({
+  // The default queryFn joins string parts: ['/api/chat/sessions', id, 'messages'] -> '/api/chat/sessions/{id}/messages'
+  // For active chat, need custom queryFn to append agent query parameter
+  const { data: chatMessages, isLoading, isFetching, error: messagesError } = useQuery<ChatMessageType[]>({
     queryKey: selectedSessionId 
-      ? [`/api/chat/sessions/${selectedSessionId}/messages`]
+      ? ['/api/chat/sessions', selectedSessionId, 'messages']
       : ["/api/chat/messages", { agent: agentType }],
+    queryFn: selectedSessionId 
+      ? undefined // Use default queryFn for session messages
+      : async () => {
+          // For active chat, manually append agent parameter
+          const response = await fetch(`/api/chat/messages?agent=${agentType}`, {
+            credentials: "include",
+          });
+          if (!response.ok) {
+            throw new Error(`${response.status}: ${response.statusText}`);
+          }
+          return response.json();
+        },
   });
 
   const { data: riskAlerts } = useQuery<RiskAlert[]>({
@@ -68,10 +82,20 @@ export default function Chat() {
 
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
-      return await apiRequest("POST", "/api/chat/send", { content, agentType });
+      const response = await apiRequest("/api/chat/send", { 
+        method: "POST", 
+        json: { content, agentType } 
+      });
+      return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
+      // Invalidate current session messages
+      if (selectedSessionId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/chat/sessions', selectedSessionId, 'messages'] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
+      }
+      // Invalidate sessions list to update message counts
       queryClient.invalidateQueries({ queryKey: ['/api/chat/sessions'] });
       setMessage("");
     },
@@ -79,7 +103,8 @@ export default function Chat() {
 
   const dismissAlertMutation = useMutation({
     mutationFn: async (alertId: number) => {
-      return await apiRequest("POST", `/api/risk/alerts/${alertId}/dismiss`);
+      const response = await apiRequest(`/api/risk/alerts/${alertId}/dismiss`, { method: "POST" });
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/risk/alerts"] });
@@ -100,11 +125,26 @@ export default function Chat() {
   };
 
   const handleNewChat = () => {
+    // Clear the currently selected session's data if any
+    if (selectedSessionId) {
+      const sessionQueryKey = ['/api/chat/sessions', selectedSessionId, 'messages'];
+      queryClient.cancelQueries({ queryKey: sessionQueryKey });
+      queryClient.setQueryData(sessionQueryKey, undefined);
+    }
     setSelectedSessionId(null);
     queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
   };
 
   const handleSessionClick = (sessionId: string) => {
+    if (sessionId === selectedSessionId) return; // Already selected
+    
+    // Cancel and clear the previous session's query if it exists
+    if (selectedSessionId) {
+      const prevSessionQueryKey = ['/api/chat/sessions', selectedSessionId, 'messages'];
+      queryClient.cancelQueries({ queryKey: prevSessionQueryKey });
+      queryClient.setQueryData(prevSessionQueryKey, undefined);
+    }
+    
     setSelectedSessionId(sessionId);
   };
 
@@ -323,9 +363,31 @@ export default function Chat() {
         </CardHeader>
         <CardContent className="flex-1 flex flex-col p-0 min-h-0">
           <ScrollArea className="flex-1 p-4" data-testid="scroll-messages">
-            {isLoading ? (
+            {messagesError ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-4" data-testid="error-messages">
+                <AlertTriangle className="h-12 w-12 text-destructive" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-destructive mb-1">Failed to load messages</p>
+                  <p className="text-xs text-muted-foreground mb-3">{messagesError.message || 'An error occurred'}</p>
+                  <Button 
+                    size="sm" 
+                    onClick={() => queryClient.invalidateQueries({ 
+                      queryKey: selectedSessionId 
+                        ? ['/api/chat/sessions', selectedSessionId, 'messages']
+                        : ["/api/chat/messages"]
+                    })}
+                    data-testid="button-retry-messages"
+                  >
+                    Try Again
+                  </Button>
+                </div>
+              </div>
+            ) : isLoading || isFetching ? (
               <div className="flex items-center justify-center py-8" data-testid="loading-messages">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                <span className="ml-2 text-sm text-muted-foreground">
+                  {isFetching && !isLoading ? 'Loading session...' : 'Loading messages...'}
+                </span>
               </div>
             ) : (
               <div className="space-y-4">
