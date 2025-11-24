@@ -503,16 +503,16 @@ export default function Medications() {
                     <div className="text-5xl font-bold" data-testid="text-adherence-rate">
                       {formatAdherenceRate(adherenceData?.currentAdherenceRate ?? null)}
                     </div>
-                    {adherenceData?.currentAdherenceRate !== null && (
+                    {adherenceData?.currentAdherenceRate !== null && adherenceData?.currentAdherenceRate !== undefined && (
                       <Progress
-                        value={(adherenceData.currentAdherenceRate ?? 0) * 100}
+                        value={(adherenceData?.currentAdherenceRate ?? 0) * 100}
                         className="h-3"
                       />
                     )}
                     <p className="text-sm text-muted-foreground">
-                      {adherenceData?.currentAdherenceRate && adherenceData.currentAdherenceRate >= 0.9
+                      {adherenceData?.currentAdherenceRate && adherenceData?.currentAdherenceRate >= 0.9
                         ? "Excellent adherence! Keep it up."
-                        : adherenceData?.currentAdherenceRate && adherenceData.currentAdherenceRate >= 0.7
+                        : adherenceData?.currentAdherenceRate && adherenceData?.currentAdherenceRate >= 0.7
                         ? "Good adherence, but there's room for improvement."
                         : "Low adherence detected. Consider setting medication reminders."}
                     </p>
