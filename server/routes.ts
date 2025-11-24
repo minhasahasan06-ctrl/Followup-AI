@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { isAuthenticated, isDoctor, isPatient, getSession } from "./auth";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, gte, sql as drizzleSql } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { z } from "zod";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
@@ -6613,6 +6613,70 @@ Please ask the doctor which date they want to check.`;
     } catch (error) {
       console.error('Error connecting to Python backend (guided-audio-exam):', error);
       res.status(502).json({ error: 'Failed to connect to AI audio service' });
+    }
+  });
+
+  // TEMPORARY: Unified symptom feed endpoint (Express fallback while Python backend loads)
+  // This endpoint merges patient-reported symptom check-ins with AI-extracted symptoms from Agent Clona
+  app.get('/api/symptom-checkin/feed/unified', async (req: any, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+
+      // Fetch patient-reported check-ins
+      const patientCheckins = await db
+        .select()
+        .from(schema.symptomCheckins);
+
+      // Fetch AI-extracted symptoms from Agent Clona
+      const aiSymptoms = await db
+        .select()
+        .from(schema.chatSymptoms);
+
+      // Build unified feed
+      const feed = [
+        ...patientCheckins.map((c: any) => ({
+          id: c.id,
+          userId: c.userId,
+          timestamp: c.timestamp,
+          dataSource: 'patient-reported',
+          observationalLabel: 'Patient-reported',
+          painLevel: c.painLevel,
+          fatigueLevel: c.fatigueLevel,
+          breathlessnessLevel: c.breathlessnessLevel,
+          sleepQuality: c.sleepQuality,
+          mood: c.mood,
+          mobilityScore: c.mobilityScore,
+          medicationsTaken: c.medicationsTaken,
+          triggers: c.triggers || [],
+          symptoms: c.symptoms || [],
+          note: c.note,
+          createdAt: c.createdAt
+        })),
+        ...aiSymptoms.map((s: any) => ({
+          id: s.id,
+          userId: s.userId,
+          timestamp: s.timestamp,
+          dataSource: 'ai-extracted',
+          observationalLabel: 'AI-observed via Clona',
+          sessionId: s.sessionId,
+          messageId: s.messageId,
+          extractedData: s.extractedJson || {},
+          confidence: parseFloat(s.confidence) || 0,
+          symptomTypes: s.symptomTypes || [],
+          locations: s.locations || [],
+          intensityMentions: s.intensityMentions || [],
+          temporalInfo: s.temporalInfo,
+          createdAt: s.createdAt
+        }))
+      ];
+
+      // Sort by timestamp (most recent first)
+      feed.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      res.json(feed);
+    } catch (error: any) {
+      console.error('Error fetching unified symptom feed:', error);
+      res.status(500).json({ message: 'Failed to fetch symptom feed', error: error.message });
     }
   });
 
