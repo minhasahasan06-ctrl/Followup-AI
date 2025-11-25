@@ -7178,6 +7178,36 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // Proxy all guided-video-exam endpoints to Python backend
+  app.all('/api/v1/guided-video-exam/*', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const path = req.path;
+      const url = `${pythonBackendUrl}${path}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
+      
+      const response = await fetch(url, {
+        method: req.method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': req.headers.authorization || '',
+        },
+        body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (guided-video-exam): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (guided-video-exam):', error);
+      res.status(502).json({ error: 'Failed to connect to AI video service' });
+    }
+  });
+
   // Mental Health Red Flag Symptoms endpoint - Fetches AI-observed mental health symptom indicators from Agent Clona
   app.get('/api/mental-health/red-flag-symptoms', isAuthenticated, async (req: any, res) => {
     try {
