@@ -1692,3 +1692,984 @@ async def get_patient_overview(
     except Exception as e:
         logger.error(f"Error fetching patient overview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# ENHANCED ALERT ENGINE ENDPOINTS - V2
+# Includes: Metrics Ingest, Organ Scoring, DPI, Rule-Based Alerts, Notifications
+# =============================================================================
+
+try:
+    from app.services.alert_engine import (
+        MetricsIngestService,
+        OrganScoringService,
+        DPIComputationService,
+        RuleBasedAlertEngine,
+        NotificationService,
+        EscalationService,
+        MLRankingService,
+        AlertConfigService
+    )
+    ALERT_ENGINE_V2_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Alert Engine V2 services not available: {e}")
+    ALERT_ENGINE_V2_AVAILABLE = False
+
+
+class MetricIngestPayload(BaseModel):
+    """Payload for metric ingestion"""
+    patient_id: str
+    metric_name: str
+    metric_value: float
+    unit: str = ""
+    timestamp: Optional[datetime] = None
+    confidence: float = 1.0
+    source: str = "app"
+    capture_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class BatchMetricIngestPayload(BaseModel):
+    """Payload for batch metric ingestion"""
+    metrics: List[MetricIngestPayload]
+
+
+class OrganScoresResponse(BaseModel):
+    """Response for organ scores"""
+    patient_id: str
+    respiratory: Dict[str, Any]
+    cardio_fluid: Dict[str, Any]
+    hepatic: Dict[str, Any]
+    mobility: Dict[str, Any]
+    cognitive: Dict[str, Any]
+    total_metrics: int
+    computed_at: str
+
+
+class DPIResponse(BaseModel):
+    """Response for DPI"""
+    patient_id: str
+    dpi_raw: float
+    dpi_normalized: float
+    dpi_bucket: str
+    bucket_color: str
+    bucket_description: str
+    components: List[Dict[str, Any]]
+    previous_dpi: Optional[float] = None
+    previous_bucket: Optional[str] = None
+    bucket_changed: bool = False
+    dpi_delta_24h: Optional[float] = None
+    jump_detected: bool = False
+    computed_at: str
+
+
+class AlertConfigUpdate(BaseModel):
+    """Payload for updating alert config"""
+    baseline_window_days: Optional[int] = None
+    z_yellow_threshold: Optional[float] = None
+    z_red_threshold: Optional[float] = None
+    dpi_green_max: Optional[float] = None
+    dpi_yellow_max: Optional[float] = None
+    dpi_orange_max: Optional[float] = None
+    suppression_window_hours: Optional[int] = None
+    max_alerts_per_patient_per_day: Optional[int] = None
+    escalation_timeout_critical_hours: Optional[float] = None
+    escalation_timeout_high_hours: Optional[float] = None
+    sms_enabled: Optional[bool] = None
+    email_enabled: Optional[bool] = None
+    ml_ranking_enabled: Optional[bool] = None
+
+
+class EscalationRequest(BaseModel):
+    """Request for manual escalation"""
+    escalate_to: str
+    reason: str
+
+
+@router.post("/v2/metrics/ingest")
+async def ingest_metric(
+    payload: MetricIngestPayload,
+    db: Session = Depends(get_db)
+):
+    """
+    Ingest a single health metric for real-time processing.
+    
+    The metric will be validated, stored, and queued for Alert Engine processing.
+    Quality flags will be applied based on confidence and capture age.
+    """
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        from app.services.alert_engine.metrics_ingest import MetricIngestRequest
+        
+        service = MetricsIngestService(db)
+        await service.initialize()
+        
+        request = MetricIngestRequest(
+            patient_id=payload.patient_id,
+            timestamp=payload.timestamp or datetime.utcnow(),
+            metric_name=payload.metric_name,
+            metric_value=payload.metric_value,
+            unit=payload.unit,
+            confidence=payload.confidence,
+            source=payload.source,
+            capture_id=payload.capture_id,
+            metadata=payload.metadata
+        )
+        
+        result = await service.ingest_metric(request)
+        
+        return {
+            "success": result.success,
+            "metric_id": result.metric_id,
+            "processed_at": result.processed_at.isoformat(),
+            "queued_for_processing": result.queued_for_processing,
+            "quality_flags": result.quality_flags,
+            "message": result.message
+        }
+        
+    except Exception as e:
+        logger.error(f"Error ingesting metric: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/v2/metrics/ingest/batch")
+async def ingest_metrics_batch(
+    payload: BatchMetricIngestPayload,
+    db: Session = Depends(get_db)
+):
+    """Ingest multiple metrics in a single batch request."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        from app.services.alert_engine.metrics_ingest import MetricIngestRequest
+        
+        service = MetricsIngestService(db)
+        await service.initialize()
+        
+        requests = [
+            MetricIngestRequest(
+                patient_id=m.patient_id,
+                timestamp=m.timestamp or datetime.utcnow(),
+                metric_name=m.metric_name,
+                metric_value=m.metric_value,
+                unit=m.unit,
+                confidence=m.confidence,
+                source=m.source,
+                capture_id=m.capture_id,
+                metadata=m.metadata
+            )
+            for m in payload.metrics
+        ]
+        
+        result = await service.ingest_batch(requests)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error ingesting batch metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/metrics/recent/{patient_id}")
+async def get_recent_metrics(
+    patient_id: str,
+    metric_name: Optional[str] = None,
+    hours: int = Query(default=24, le=168),
+    db: Session = Depends(get_db)
+):
+    """Get recently ingested metrics for a patient."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        service = MetricsIngestService(db)
+        await service.initialize()
+        
+        metrics = await service.get_recent_metrics(patient_id, metric_name, hours)
+        return {"patient_id": patient_id, "hours": hours, "metrics": metrics}
+        
+    except Exception as e:
+        logger.error(f"Error fetching recent metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/organ-scores/{patient_id}")
+async def get_organ_scores(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get current organ-level health scores for a patient.
+    
+    Returns scores for 5 organ groups:
+    - Respiratory
+    - Cardio/Fluid
+    - Hepatic/Hematologic
+    - Mobility
+    - Cognitive/Behavioral
+    """
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        service = OrganScoringService(db)
+        
+        # Get latest from history
+        history = await service.get_organ_scores_history(patient_id, days=1)
+        
+        if history:
+            latest = history[0]
+            return OrganScoresResponse(
+                patient_id=patient_id,
+                respiratory=latest["respiratory"],
+                cardio_fluid=latest["cardio_fluid"],
+                hepatic=latest["hepatic"],
+                mobility=latest["mobility"],
+                cognitive=latest["cognitive"],
+                total_metrics=latest["total_metrics"],
+                computed_at=latest["computed_at"]
+            )
+        
+        # Compute fresh scores
+        result = await service.compute_from_recent_data(patient_id)
+        await service.store_organ_scores(result)
+        
+        return OrganScoresResponse(
+            patient_id=patient_id,
+            respiratory={
+                "score": result.organ_scores.get("respiratory", {}).normalized_score if result.organ_scores.get("respiratory") else 50,
+                "severity": result.organ_scores.get("respiratory", {}).severity if result.organ_scores.get("respiratory") else "normal"
+            },
+            cardio_fluid={
+                "score": result.organ_scores.get("cardio_fluid", {}).normalized_score if result.organ_scores.get("cardio_fluid") else 50,
+                "severity": result.organ_scores.get("cardio_fluid", {}).severity if result.organ_scores.get("cardio_fluid") else "normal"
+            },
+            hepatic={
+                "score": result.organ_scores.get("hepatic_hematologic", {}).normalized_score if result.organ_scores.get("hepatic_hematologic") else 50,
+                "severity": result.organ_scores.get("hepatic_hematologic", {}).severity if result.organ_scores.get("hepatic_hematologic") else "normal"
+            },
+            mobility={
+                "score": result.organ_scores.get("mobility", {}).normalized_score if result.organ_scores.get("mobility") else 50,
+                "severity": result.organ_scores.get("mobility", {}).severity if result.organ_scores.get("mobility") else "normal"
+            },
+            cognitive={
+                "score": result.organ_scores.get("cognitive_behavioral", {}).normalized_score if result.organ_scores.get("cognitive_behavioral") else 50,
+                "severity": result.organ_scores.get("cognitive_behavioral", {}).severity if result.organ_scores.get("cognitive_behavioral") else "normal"
+            },
+            total_metrics=result.total_metrics,
+            computed_at=result.computed_at.isoformat()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error fetching organ scores: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/v2/organ-scores/compute/{patient_id}")
+async def compute_organ_scores(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """Compute and store organ scores for a patient."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        service = OrganScoringService(db)
+        result = await service.compute_from_recent_data(patient_id)
+        await service.store_organ_scores(result)
+        
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "organ_scores": {
+                name: {
+                    "score": score.normalized_score,
+                    "severity": score.severity,
+                    "num_metrics": score.num_metrics
+                }
+                for name, score in result.organ_scores.items()
+            },
+            "total_metrics": result.total_metrics,
+            "computed_at": result.computed_at.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error computing organ scores: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/organ-scores/history/{patient_id}")
+async def get_organ_scores_history(
+    patient_id: str,
+    days: int = Query(default=30, le=90),
+    db: Session = Depends(get_db)
+):
+    """Get historical organ scores for a patient."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        service = OrganScoringService(db)
+        history = await service.get_organ_scores_history(patient_id, days)
+        return {"patient_id": patient_id, "days": days, "history": history}
+        
+    except Exception as e:
+        logger.error(f"Error fetching organ scores history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/dpi/{patient_id}")
+async def get_dpi(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get current Composite Deterioration Index (DPI) for a patient.
+    
+    DPI Color Buckets:
+    - Green (< 25): Stable
+    - Yellow (25-50): Elevated
+    - Orange (50-75): Concerning
+    - Red (>= 75): Critical
+    """
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        dpi_service = DPIComputationService(db)
+        current_dpi = await dpi_service.get_current_dpi(patient_id)
+        
+        if current_dpi:
+            return DPIResponse(
+                patient_id=patient_id,
+                dpi_raw=current_dpi["dpi_raw"],
+                dpi_normalized=current_dpi["dpi_normalized"],
+                dpi_bucket=current_dpi["dpi_bucket"],
+                bucket_color=dpi_service.get_bucket_color(current_dpi["dpi_bucket"]),
+                bucket_description=dpi_service.get_bucket_description(current_dpi["dpi_bucket"]),
+                components=current_dpi["components"] or [],
+                previous_dpi=current_dpi.get("previous_dpi"),
+                previous_bucket=current_dpi.get("previous_bucket"),
+                bucket_changed=current_dpi.get("bucket_changed", False),
+                dpi_delta_24h=current_dpi.get("dpi_delta_24h"),
+                jump_detected=current_dpi.get("jump_detected", False),
+                computed_at=current_dpi["computed_at"]
+            )
+        
+        # No DPI found - compute fresh
+        organ_service = OrganScoringService(db)
+        organ_result = await organ_service.compute_from_recent_data(patient_id)
+        dpi_result = dpi_service.compute_dpi(patient_id, organ_result)
+        await dpi_service.store_dpi(dpi_result)
+        
+        return DPIResponse(
+            patient_id=patient_id,
+            dpi_raw=dpi_result.dpi_raw,
+            dpi_normalized=dpi_result.dpi_normalized,
+            dpi_bucket=dpi_result.dpi_bucket,
+            bucket_color=dpi_service.get_bucket_color(dpi_result.dpi_bucket),
+            bucket_description=dpi_service.get_bucket_description(dpi_result.dpi_bucket),
+            components=[
+                {
+                    "organ_name": c.organ_name,
+                    "organ_score": c.organ_score,
+                    "weight": c.weight,
+                    "contribution": c.contribution,
+                    "percentage": c.percentage
+                }
+                for c in dpi_result.components
+            ],
+            previous_dpi=dpi_result.previous_dpi,
+            previous_bucket=dpi_result.previous_bucket,
+            bucket_changed=dpi_result.bucket_changed,
+            dpi_delta_24h=dpi_result.dpi_delta_24h,
+            jump_detected=dpi_result.jump_detected,
+            computed_at=dpi_result.computed_at.isoformat()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error fetching DPI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/v2/dpi/compute/{patient_id}")
+async def compute_dpi(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """Compute and store DPI for a patient."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        organ_service = OrganScoringService(db)
+        dpi_service = DPIComputationService(db)
+        
+        # Compute organ scores first
+        organ_result = await organ_service.compute_from_recent_data(patient_id)
+        await organ_service.store_organ_scores(organ_result)
+        
+        # Then compute DPI
+        dpi_result = dpi_service.compute_dpi(patient_id, organ_result)
+        await dpi_service.store_dpi(dpi_result)
+        
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "dpi_normalized": dpi_result.dpi_normalized,
+            "dpi_bucket": dpi_result.dpi_bucket,
+            "bucket_color": dpi_service.get_bucket_color(dpi_result.dpi_bucket),
+            "bucket_changed": dpi_result.bucket_changed,
+            "jump_detected": dpi_result.jump_detected,
+            "computed_at": dpi_result.computed_at.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error computing DPI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/dpi/history/{patient_id}")
+async def get_dpi_history(
+    patient_id: str,
+    days: int = Query(default=30, le=90),
+    db: Session = Depends(get_db)
+):
+    """Get historical DPI values for a patient."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        service = DPIComputationService(db)
+        history = await service.get_dpi_history(patient_id, days)
+        return {"patient_id": patient_id, "days": days, "history": history}
+        
+    except Exception as e:
+        logger.error(f"Error fetching DPI history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/v2/alerts/generate/{patient_id}")
+async def generate_v2_alerts(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate alerts using the V2 rule-based engine.
+    
+    Evaluates 7 clinical rules:
+    1. Risk Jump (Green → Yellow)
+    2. Persistent Yellow (>48h)
+    3. Any Red
+    4. Respiratory Spike
+    5. Daily Check-in Deviation
+    6. Composite Sudden Increase
+    7. Multi-Signal Corroboration
+    """
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        # Compute organ scores and DPI first
+        organ_service = OrganScoringService(db)
+        dpi_service = DPIComputationService(db)
+        rule_engine = RuleBasedAlertEngine(db)
+        
+        organ_result = await organ_service.compute_from_recent_data(patient_id)
+        await organ_service.store_organ_scores(organ_result)
+        
+        dpi_result = dpi_service.compute_dpi(patient_id, organ_result)
+        await dpi_service.store_dpi(dpi_result)
+        
+        # Get metric z-scores
+        metric_z_scores = {}
+        for group_name, organ_score in organ_result.organ_scores.items():
+            for metric in organ_score.contributing_metrics:
+                metric_z_scores[metric.metric_name] = metric.z_score
+        
+        # Evaluate all rules
+        triggered_alerts = await rule_engine.evaluate_all_rules(
+            patient_id=patient_id,
+            dpi_result=dpi_result,
+            organ_result=organ_result,
+            metric_z_scores=metric_z_scores
+        )
+        
+        # Create alert records
+        created_alerts = []
+        for trigger in triggered_alerts:
+            record = await rule_engine.create_alert_record(patient_id, trigger)
+            created_alerts.append({
+                "id": record.id,
+                "rule": record.trigger_rule,
+                "severity": record.severity,
+                "priority": record.priority,
+                "title": record.title,
+                "corroborated": record.corroborated
+            })
+        
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "dpi": {
+                "score": dpi_result.dpi_normalized,
+                "bucket": dpi_result.dpi_bucket,
+                "bucket_changed": dpi_result.bucket_changed
+            },
+            "alerts_generated": len(created_alerts),
+            "alerts": created_alerts
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating V2 alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/v2/alerts/{alert_id}/escalate")
+async def escalate_alert(
+    alert_id: str,
+    request: EscalationRequest,
+    clinician_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Manually escalate an alert to another clinician."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        escalation_service = EscalationService(db)
+        
+        success = await escalation_service.manual_escalate(
+            alert_id=alert_id,
+            escalated_by=clinician_id,
+            escalate_to=request.escalate_to,
+            reason=request.reason
+        )
+        
+        if success:
+            return {"success": True, "alert_id": alert_id, "escalated_to": request.escalate_to}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to escalate alert")
+        
+    except Exception as e:
+        logger.error(f"Error escalating alert: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/alerts/{alert_id}/escalation-history")
+async def get_alert_escalation_history(
+    alert_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get escalation history for an alert."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        escalation_service = EscalationService(db)
+        history = await escalation_service.get_escalation_history(alert_id)
+        return {"alert_id": alert_id, "history": history}
+        
+    except Exception as e:
+        logger.error(f"Error fetching escalation history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/notifications/unread/{user_id}")
+async def get_unread_notifications(
+    user_id: str,
+    limit: int = Query(default=50, le=100),
+    db: Session = Depends(get_db)
+):
+    """Get unread dashboard notifications for a clinician."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        notification_service = NotificationService(db)
+        notifications = await notification_service.get_unread_notifications(user_id, limit)
+        return {"user_id": user_id, "unread_count": len(notifications), "notifications": notifications}
+        
+    except Exception as e:
+        logger.error(f"Error fetching notifications: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/v2/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: str,
+    user_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Mark a notification as read."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        notification_service = NotificationService(db)
+        success = await notification_service.mark_notification_read(notification_id, user_id)
+        return {"success": success, "notification_id": notification_id}
+        
+    except Exception as e:
+        logger.error(f"Error marking notification read: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/notifications/stats")
+async def get_notification_stats(
+    days: int = Query(default=7, le=30),
+    db: Session = Depends(get_db)
+):
+    """Get notification delivery statistics."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        notification_service = NotificationService(db)
+        stats = await notification_service.get_delivery_stats(days)
+        return {"days": days, "stats": stats}
+        
+    except Exception as e:
+        logger.error(f"Error fetching notification stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/alerts/ranked/{patient_id}")
+async def get_ranked_alerts(
+    patient_id: str,
+    limit: int = Query(default=20, le=50),
+    db: Session = Depends(get_db)
+):
+    """Get ML-ranked alerts for a patient."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        # Get active alerts
+        query = text("""
+            SELECT id, patient_id, alert_type, alert_category, severity, priority,
+                   title, message, trigger_rule, contributing_metrics,
+                   dpi_at_trigger, organ_scores, corroborated, status, created_at
+            FROM ai_health_alerts
+            WHERE patient_id = :patient_id
+            AND status NOT IN ('dismissed', 'closed')
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """)
+        
+        results = db.execute(query, {"patient_id": patient_id, "limit": limit}).fetchall()
+        
+        alerts = [
+            {
+                "id": str(row[0]),
+                "patient_id": row[1],
+                "alert_type": row[2],
+                "alert_category": row[3],
+                "severity": row[4],
+                "priority": row[5],
+                "title": row[6],
+                "message": row[7],
+                "trigger_rule": row[8],
+                "trigger_metrics": row[9] or [],
+                "dpi_at_trigger": float(row[10]) if row[10] else None,
+                "organ_scores": row[11],
+                "corroborated": row[12] or False,
+                "status": row[13],
+                "created_at": row[14].isoformat() if row[14] else None
+            }
+            for row in results
+        ]
+        
+        # Apply ML ranking
+        ml_service = MLRankingService(db)
+        await ml_service.initialize()
+        
+        ranked_results = await ml_service.rank_alerts(alerts)
+        
+        # Combine alerts with rankings
+        ranked_alerts = []
+        for result in ranked_results:
+            alert = next((a for a in alerts if a["id"] == result.alert_id), None)
+            if alert:
+                alert["ml_priority_score"] = result.priority_score
+                alert["ml_confidence"] = result.confidence
+                alert["ml_explanation"] = result.explanation
+                ranked_alerts.append(alert)
+        
+        return {
+            "patient_id": patient_id,
+            "total_alerts": len(ranked_alerts),
+            "alerts": ranked_alerts
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching ranked alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/config")
+async def get_alert_config():
+    """Get current Alert Engine configuration."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        config_service = AlertConfigService()
+        return config_service.config.to_dict()
+        
+    except Exception as e:
+        logger.error(f"Error fetching config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/v2/config")
+async def update_alert_config(
+    updates: AlertConfigUpdate
+):
+    """Update Alert Engine configuration."""
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        config_service = AlertConfigService()
+        update_dict = {k: v for k, v in updates.dict().items() if v is not None}
+        
+        if update_dict:
+            config_service.update_config(update_dict)
+        
+        return {"success": True, "updated_fields": list(update_dict.keys())}
+        
+    except Exception as e:
+        logger.error(f"Error updating config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/v2/compute-all/{patient_id}")
+async def compute_all_v2(
+    patient_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Complete V2 Alert Engine pipeline:
+    1. Compute organ scores
+    2. Compute DPI
+    3. Evaluate all 7 alert rules
+    4. Apply ML ranking
+    5. Return comprehensive result
+    """
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Alert Engine V2 not available")
+    
+    try:
+        # Initialize services
+        organ_service = OrganScoringService(db)
+        dpi_service = DPIComputationService(db)
+        rule_engine = RuleBasedAlertEngine(db)
+        ml_service = MLRankingService(db)
+        await ml_service.initialize()
+        
+        # Step 1: Compute organ scores
+        organ_result = await organ_service.compute_from_recent_data(patient_id)
+        await organ_service.store_organ_scores(organ_result)
+        
+        # Step 2: Compute DPI
+        dpi_result = dpi_service.compute_dpi(patient_id, organ_result)
+        await dpi_service.store_dpi(dpi_result)
+        
+        # Step 3: Get metric z-scores
+        metric_z_scores = {}
+        for group_name, organ_score in organ_result.organ_scores.items():
+            for metric in organ_score.contributing_metrics:
+                metric_z_scores[metric.metric_name] = metric.z_score
+        
+        # Step 4: Evaluate rules and create alerts
+        triggered_alerts = await rule_engine.evaluate_all_rules(
+            patient_id=patient_id,
+            dpi_result=dpi_result,
+            organ_result=organ_result,
+            metric_z_scores=metric_z_scores
+        )
+        
+        created_alerts = []
+        for trigger in triggered_alerts:
+            record = await rule_engine.create_alert_record(patient_id, trigger)
+            created_alerts.append({
+                "id": record.id,
+                "rule": record.trigger_rule,
+                "severity": record.severity,
+                "priority": record.priority,
+                "title": record.title
+            })
+        
+        # Step 5: Apply ML ranking to existing alerts
+        query = text("""
+            SELECT id, patient_id, alert_type, severity, priority, trigger_rule,
+                   dpi_at_trigger, organ_scores, corroborated, contributing_metrics
+            FROM ai_health_alerts
+            WHERE patient_id = :patient_id
+            AND status NOT IN ('dismissed', 'closed')
+            ORDER BY created_at DESC
+            LIMIT 20
+        """)
+        
+        alert_rows = db.execute(query, {"patient_id": patient_id}).fetchall()
+        alerts_for_ranking = [
+            {
+                "id": str(row[0]),
+                "patient_id": row[1],
+                "alert_type": row[2],
+                "severity": row[3],
+                "priority": row[4],
+                "trigger_rule": row[5],
+                "dpi_at_trigger": float(row[6]) if row[6] else None,
+                "organ_scores": row[7],
+                "corroborated": row[8] or False,
+                "trigger_metrics": row[9] or []
+            }
+            for row in alert_rows
+        ]
+        
+        ranked = await ml_service.rank_alerts(alerts_for_ranking) if alerts_for_ranking else []
+        
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "organ_scores": {
+                name: {
+                    "score": score.normalized_score,
+                    "severity": score.severity,
+                    "num_metrics": score.num_metrics
+                }
+                for name, score in organ_result.organ_scores.items()
+            },
+            "dpi": {
+                "score": dpi_result.dpi_normalized,
+                "bucket": dpi_result.dpi_bucket,
+                "bucket_color": dpi_service.get_bucket_color(dpi_result.dpi_bucket),
+                "bucket_changed": dpi_result.bucket_changed,
+                "jump_detected": dpi_result.jump_detected
+            },
+            "alerts_generated": len(created_alerts),
+            "new_alerts": created_alerts,
+            "total_active_alerts": len(ranked),
+            "top_ranked_alerts": [
+                {
+                    "id": r.alert_id,
+                    "priority_score": r.priority_score,
+                    "confidence": r.confidence
+                }
+                for r in ranked[:5]
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in V2 compute-all: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/patient-overview/{patient_id}")
+async def get_v2_patient_overview(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get comprehensive V2 patient overview including:
+    - Current organ scores
+    - Current DPI with bucket
+    - Active alerts (ML-ranked)
+    - Historical trends
+    """
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        # Fall back to V1 overview
+        return await get_patient_overview(patient_id, db)
+    
+    try:
+        organ_service = OrganScoringService(db)
+        dpi_service = DPIComputationService(db)
+        ml_service = MLRankingService(db)
+        await ml_service.initialize()
+        
+        # Get organ scores
+        organ_history = await organ_service.get_organ_scores_history(patient_id, days=1)
+        current_organs = organ_history[0] if organ_history else None
+        
+        # Get DPI
+        current_dpi = await dpi_service.get_current_dpi(patient_id)
+        
+        # Get DPI history for trend
+        dpi_history = await dpi_service.get_dpi_history(patient_id, days=7)
+        
+        # Get active alerts
+        alerts_query = text("""
+            SELECT id, alert_type, alert_category, severity, priority, title, message,
+                   trigger_rule, dpi_at_trigger, organ_scores, corroborated,
+                   status, created_at
+            FROM ai_health_alerts
+            WHERE patient_id = :patient_id
+            AND status NOT IN ('dismissed', 'closed')
+            ORDER BY priority DESC, created_at DESC
+            LIMIT 20
+        """)
+        
+        alert_rows = db.execute(alerts_query, {"patient_id": patient_id}).fetchall()
+        
+        alerts = [
+            {
+                "id": str(row[0]),
+                "alert_type": row[1],
+                "alert_category": row[2],
+                "severity": row[3],
+                "priority": row[4],
+                "title": row[5],
+                "message": row[6],
+                "trigger_rule": row[7],
+                "dpi_at_trigger": float(row[8]) if row[8] else None,
+                "organ_scores": row[9],
+                "corroborated": row[10] or False,
+                "status": row[11],
+                "created_at": row[12].isoformat() if row[12] else None
+            }
+            for row in alert_rows
+        ]
+        
+        # Apply ML ranking
+        ranked = await ml_service.rank_alerts(alerts) if alerts else []
+        
+        for i, result in enumerate(ranked):
+            for alert in alerts:
+                if alert["id"] == result.alert_id:
+                    alert["ml_priority_score"] = result.priority_score
+                    alert["ml_rank"] = i + 1
+        
+        # Sort alerts by ML rank
+        alerts.sort(key=lambda x: x.get("ml_priority_score", 0), reverse=True)
+        
+        return {
+            "patient_id": patient_id,
+            "organ_scores": current_organs,
+            "dpi": {
+                "current": current_dpi,
+                "bucket_color": dpi_service.get_bucket_color(current_dpi["dpi_bucket"]) if current_dpi else "#6b7280",
+                "bucket_description": dpi_service.get_bucket_description(current_dpi["dpi_bucket"]) if current_dpi else "No data",
+                "trend": [
+                    {"date": h["computed_at"], "score": h["dpi_normalized"], "bucket": h["dpi_bucket"]}
+                    for h in dpi_history[:7]
+                ]
+            } if current_dpi else None,
+            "active_alerts": alerts,
+            "total_active_alerts": len(alerts),
+            "alert_summary": {
+                "critical": len([a for a in alerts if a["severity"] == "critical"]),
+                "high": len([a for a in alerts if a["severity"] == "high"]),
+                "moderate": len([a for a in alerts if a["severity"] == "moderate"]),
+                "low": len([a for a in alerts if a["severity"] == "low"])
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching V2 patient overview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
