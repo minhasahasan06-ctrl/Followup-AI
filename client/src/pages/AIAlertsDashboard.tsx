@@ -33,7 +33,11 @@ import {
   Shield,
   Sparkles,
   Target,
-  Calendar
+  Calendar,
+  Wind,
+  Droplets,
+  Footprints,
+  Gauge
 } from "lucide-react";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -164,6 +168,43 @@ interface PatientOverview {
   } | null;
   active_alerts: any[];
   total_active_alerts: number;
+}
+
+interface OrganScore {
+  organ_group: string;
+  organ_name: string;
+  normalized_score: number;
+  color_bucket: string;
+  contributing_metrics: Array<{
+    metric_name: string;
+    z_score: number;
+    weight: number;
+    contribution: number;
+  }>;
+  confidence: number;
+}
+
+interface OrganScoreResult {
+  patient_id: string;
+  computed_at: string;
+  organ_scores: Record<string, OrganScore>;
+  overall_status: string;
+}
+
+interface DPIResult {
+  patient_id: string;
+  computed_at: string;
+  dpi_raw: number;
+  dpi_normalized: number;
+  dpi_bucket: string;
+  bucket_changed: boolean;
+  previous_bucket: string | null;
+  organ_contributions: Record<string, number>;
+  explainability: {
+    top_contributors: string[];
+    trend_direction: string;
+    confidence: number;
+  };
 }
 
 const CHART_COLORS = {
@@ -538,6 +579,161 @@ function EngagementChart({ engagementMetrics }: { engagementMetrics: EngagementM
   );
 }
 
+function DPIGauge({ dpi }: { dpi: DPIResult | null }) {
+  const getBucketColor = (bucket: string) => {
+    switch (bucket) {
+      case 'green': return 'text-green-500 bg-green-100 dark:bg-green-900/30';
+      case 'yellow': return 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30';
+      case 'orange': return 'text-orange-500 bg-orange-100 dark:bg-orange-900/30';
+      case 'red': return 'text-red-500 bg-red-100 dark:bg-red-900/30';
+      default: return 'text-muted-foreground bg-muted';
+    }
+  };
+
+  const getBucketLabel = (bucket: string) => {
+    switch (bucket) {
+      case 'green': return 'Stable';
+      case 'yellow': return 'Elevated';
+      case 'orange': return 'Warning';
+      case 'red': return 'Critical';
+      default: return 'Unknown';
+    }
+  };
+
+  if (!dpi) {
+    return (
+      <div className="text-center py-8">
+        <Gauge className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-2" />
+        <p className="text-sm text-muted-foreground">No DPI data available</p>
+        <p className="text-xs text-muted-foreground mt-1">Complete check-ins to generate your health index</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-center">
+        <div className={`relative w-32 h-32 rounded-full flex items-center justify-center ${getBucketColor(dpi.dpi_bucket)}`}>
+          <div className="text-center">
+            <p className="text-3xl font-bold">{dpi.dpi_normalized.toFixed(0)}</p>
+            <p className="text-xs font-medium">{getBucketLabel(dpi.dpi_bucket)}</p>
+          </div>
+        </div>
+      </div>
+      
+      {dpi.bucket_changed && dpi.previous_bucket && (
+        <Alert className="bg-amber-50 dark:bg-amber-900/20 border-amber-200">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertDescription className="text-sm">
+            Status changed from <span className="font-medium capitalize">{dpi.previous_bucket}</span> to{' '}
+            <span className="font-medium capitalize">{dpi.dpi_bucket}</span>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {dpi.explainability?.top_contributors?.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Top Contributing Factors:</p>
+          <div className="flex flex-wrap gap-1">
+            {dpi.explainability.top_contributors.slice(0, 3).map((contributor, i) => (
+              <Badge key={i} variant="outline" className="text-xs capitalize">
+                {contributor.replace(/_/g, ' ')}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground text-center italic">
+        Deterioration Prediction Index - observational indicator only
+      </p>
+    </div>
+  );
+}
+
+function OrganScoresPanel({ organScores }: { organScores: OrganScoreResult | null }) {
+  const getOrganIcon = (organ: string) => {
+    switch (organ) {
+      case 'respiratory': return Wind;
+      case 'cardio_fluid': return Droplets;
+      case 'hepatic_hematologic': return Heart;
+      case 'mobility': return Footprints;
+      case 'cognitive_behavioral': return Brain;
+      default: return Activity;
+    }
+  };
+
+  const getBucketStyles = (bucket: string) => {
+    switch (bucket) {
+      case 'green': return 'border-green-500 bg-green-50 dark:bg-green-900/20';
+      case 'yellow': return 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20';
+      case 'orange': return 'border-orange-500 bg-orange-50 dark:bg-orange-900/20';
+      case 'red': return 'border-red-500 bg-red-50 dark:bg-red-900/20';
+      default: return 'border-muted bg-muted/50';
+    }
+  };
+
+  const getProgressColor = (bucket: string) => {
+    switch (bucket) {
+      case 'green': return 'bg-green-500';
+      case 'yellow': return 'bg-yellow-500';
+      case 'orange': return 'bg-orange-500';
+      case 'red': return 'bg-red-500';
+      default: return 'bg-muted';
+    }
+  };
+
+  if (!organScores?.organ_scores) {
+    return (
+      <div className="text-center py-8">
+        <Activity className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-2" />
+        <p className="text-sm text-muted-foreground">No organ system data available</p>
+        <p className="text-xs text-muted-foreground mt-1">Complete check-ins to see organ-level insights</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {Object.entries(organScores.organ_scores).map(([key, score]) => {
+        const Icon = getOrganIcon(key);
+        return (
+          <div 
+            key={key} 
+            className={`p-3 rounded-lg border-l-4 ${getBucketStyles(score.color_bucket)}`}
+            data-testid={`organ-score-${key}`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Icon className="h-4 w-4" />
+                <span className="font-medium text-sm">{score.organ_name}</span>
+              </div>
+              <Badge variant="outline" className="text-xs capitalize">
+                {score.color_bucket}
+              </Badge>
+            </div>
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Score</span>
+                <span>{score.normalized_score.toFixed(0)}/100</span>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div 
+                  className={`h-full ${getProgressColor(score.color_bucket)} transition-all`}
+                  style={{ width: `${Math.min(score.normalized_score, 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      <p className="text-xs text-muted-foreground text-center italic mt-4">
+        Organ-level observational indicators - NOT diagnostic assessments
+      </p>
+    </div>
+  );
+}
+
 export default function AIAlertsDashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -552,6 +748,32 @@ export default function AIAlertsDashboard() {
       if (!response.ok) {
         if (response.status === 404) return null;
         throw new Error('Failed to fetch overview');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const { data: dpiData, isLoading: loadingDpi, refetch: refetchDpi } = useQuery<DPIResult>({
+    queryKey: ['/api/ai-health-alerts/v2/dpi', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/ai-health-alerts/v2/dpi/${patientId}`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return null;
+        throw new Error('Failed to fetch DPI');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const { data: organScores, isLoading: loadingOrgans, refetch: refetchOrgans } = useQuery<OrganScoreResult>({
+    queryKey: ['/api/ai-health-alerts/v2/organ-scores', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/ai-health-alerts/v2/organ-scores/${patientId}`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return null;
+        throw new Error('Failed to fetch organ scores');
       }
       return response.json();
     },
@@ -657,18 +879,20 @@ export default function AIAlertsDashboard() {
   const handleComputeMetrics = async () => {
     setIsComputing(true);
     try {
-      const response = await fetch(`/api/ai-health-alerts/compute-all/${patientId}`, {
+      const response = await fetch(`/api/ai-health-alerts/v2/compute-all/${patientId}`, {
         method: "POST",
       });
       if (!response.ok) throw new Error('Failed to compute metrics');
       
       toast({
         title: "Metrics Computed",
-        description: "All health metrics have been recalculated.",
+        description: "All health metrics including DPI and organ scores have been recalculated.",
       });
       
       refetchOverview();
       refetchAlerts();
+      refetchDpi();
+      refetchOrgans();
       queryClient.invalidateQueries({ queryKey: ['/api/ai-health-alerts'] });
     } catch (error) {
       toast({
@@ -695,7 +919,7 @@ export default function AIAlertsDashboard() {
   const latestEngagement = engagementMetrics?.[0];
   const latestQol = qolMetrics?.[0];
 
-  const isLoading = loadingOverview || loadingAlerts || loadingTrends || loadingEngagement || loadingQol;
+  const isLoading = loadingOverview || loadingAlerts || loadingTrends || loadingEngagement || loadingQol || loadingDpi || loadingOrgans;
 
   if (isLoading) {
     return (
@@ -736,7 +960,16 @@ export default function AIAlertsDashboard() {
 
       <LegalDisclaimer />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatCard
+          title="Health Index"
+          value={dpiData?.dpi_normalized?.toFixed(0) || "—"}
+          subtitle={dpiData?.dpi_bucket ? `Status: ${dpiData.dpi_bucket}` : "No data"}
+          trend={dpiData?.explainability?.trend_direction === "improving" ? 'up' : dpiData?.explainability?.trend_direction === "declining" ? 'down' : 'stable'}
+          icon={Gauge}
+          color={dpiData?.dpi_bucket === "red" ? "text-red-500" : dpiData?.dpi_bucket === "orange" ? "text-orange-500" : dpiData?.dpi_bucket === "yellow" ? "text-yellow-500" : "text-green-500"}
+          testId="stat-dpi"
+        />
         <StatCard
           title="Active Alerts"
           value={activeAlerts.length}
@@ -806,39 +1039,71 @@ export default function AIAlertsDashboard() {
             </Alert>
           )}
 
-          <Card data-testid="card-pending-alerts">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="h-5 w-5 text-primary" />
-                Active Alerts
-                {activeAlerts.length > 0 && (
-                  <Badge variant="destructive">{activeAlerts.length}</Badge>
-                )}
-              </CardTitle>
-              <CardDescription>Alerts requiring review or acknowledgment</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {activeAlerts.length > 0 ? (
-                <div className="space-y-3">
-                  {activeAlerts.map((alert) => (
-                    <AlertCard
-                      key={alert.id}
-                      alert={alert}
-                      onAcknowledge={(id) => acknowledgeMutation.mutate(id)}
-                      onDismiss={(id, reason, notes) => dismissMutation.mutate({ alertId: id, reason, notes })}
-                      isUpdating={acknowledgeMutation.isPending || dismissMutation.isPending}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12" data-testid="empty-alerts">
-                  <CheckCircle2 className="h-16 w-16 mx-auto text-green-500 opacity-50 mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">All Clear!</h3>
-                  <p className="text-muted-foreground">No active alerts at this time. Your health patterns are stable.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 space-y-4">
+              <Card data-testid="card-pending-alerts">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Bell className="h-5 w-5 text-primary" />
+                    Active Alerts
+                    {activeAlerts.length > 0 && (
+                      <Badge variant="destructive">{activeAlerts.length}</Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>Alerts requiring review or acknowledgment</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {activeAlerts.length > 0 ? (
+                    <div className="space-y-3">
+                      {activeAlerts.map((alert) => (
+                        <AlertCard
+                          key={alert.id}
+                          alert={alert}
+                          onAcknowledge={(id) => acknowledgeMutation.mutate(id)}
+                          onDismiss={(id, reason, notes) => dismissMutation.mutate({ alertId: id, reason, notes })}
+                          isUpdating={acknowledgeMutation.isPending || dismissMutation.isPending}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12" data-testid="empty-alerts">
+                      <CheckCircle2 className="h-16 w-16 mx-auto text-green-500 opacity-50 mb-4" />
+                      <h3 className="text-lg font-semibold mb-2">All Clear!</h3>
+                      <p className="text-muted-foreground">No active alerts at this time. Your health patterns are stable.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              <Card data-testid="card-dpi">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Gauge className="h-4 w-4 text-primary" />
+                    Deterioration Index
+                  </CardTitle>
+                  <CardDescription className="text-xs">Composite health status indicator</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <DPIGauge dpi={dpiData || null} />
+                </CardContent>
+              </Card>
+
+              <Card data-testid="card-organ-scores">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Activity className="h-4 w-4 text-primary" />
+                    System Scores
+                  </CardTitle>
+                  <CardDescription className="text-xs">Organ-level health indicators</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <OrganScoresPanel organScores={organScores || null} />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
 
           {dismissedAlerts.length > 0 && (
             <Card data-testid="card-dismissed-alerts">
@@ -1156,10 +1421,11 @@ export default function AIAlertsDashboard() {
             This system analyzes your health data patterns using statistical methods including:
           </p>
           <ul className="list-disc list-inside ml-4 space-y-1 text-sm">
+            <li><strong>Deterioration Index (DPI):</strong> Composite score combining all organ system indicators</li>
+            <li><strong>Organ System Scoring:</strong> Individual scores for Respiratory, Cardio/Fluid, Hepatic, Mobility, and Cognitive systems</li>
             <li><strong>Z-Score Analysis:</strong> Detects deviations from your personal 14-day baseline</li>
             <li><strong>Rolling Slopes:</strong> Identifies trends over 3, 7, and 14-day windows</li>
-            <li><strong>Volatility Index:</strong> Measures consistency in your tracked metrics</li>
-            <li><strong>Composite Risk Score:</strong> Combines multiple factors for overall assessment</li>
+            <li><strong>Color-Coded Buckets:</strong> Green (stable), Yellow (elevated), Orange (warning), Red (critical)</li>
           </ul>
           <p className="mt-3 text-sm font-semibold">
             All alerts are observational pattern notifications — NOT medical diagnoses or emergency alerts.
