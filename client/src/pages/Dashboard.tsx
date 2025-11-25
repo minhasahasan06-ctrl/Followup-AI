@@ -1758,18 +1758,24 @@ export default function Dashboard() {
                   {latestSymptomCheckin && (
                     <div className="p-3 rounded-md border bg-muted/30 space-y-2">
                       <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div className="flex items-center justify-between p-2 rounded-md bg-background">
-                          <span className="text-muted-foreground">Pain</span>
-                          <span className="font-bold">{latestSymptomCheckin.painLevel}/10</span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 rounded-md bg-background">
-                          <span className="text-muted-foreground">Fatigue</span>
-                          <span className="font-bold">{latestSymptomCheckin.fatigueLevel}/10</span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 rounded-md bg-background">
-                          <span className="text-muted-foreground">Mood</span>
-                          <span className="font-bold capitalize">{latestSymptomCheckin.mood?.replace('_', ' ')}</span>
-                        </div>
+                        {latestSymptomCheckin.painLevel !== undefined && latestSymptomCheckin.painLevel !== null && (
+                          <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                            <span className="text-muted-foreground">Pain</span>
+                            <span className="font-bold">{latestSymptomCheckin.painLevel}/10</span>
+                          </div>
+                        )}
+                        {latestSymptomCheckin.fatigueLevel !== undefined && latestSymptomCheckin.fatigueLevel !== null && (
+                          <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                            <span className="text-muted-foreground">Fatigue</span>
+                            <span className="font-bold">{latestSymptomCheckin.fatigueLevel}/10</span>
+                          </div>
+                        )}
+                        {latestSymptomCheckin.mood && (
+                          <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                            <span className="text-muted-foreground">Mood</span>
+                            <span className="font-bold capitalize">{latestSymptomCheckin.mood.replace('_', ' ')}</span>
+                          </div>
+                        )}
                       </div>
                       
                       {latestSymptomCheckin.symptoms && latestSymptomCheckin.symptoms.length > 0 && (
