@@ -2235,6 +2235,11 @@ export default function Dashboard() {
                           </>
                         )}
                       </Button>
+                      {!user && (
+                        <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">
+                          Please log in to start an audio examination
+                        </p>
+                      )}
                     </div>
                   ) : (
                     /* Not Started State */
@@ -2263,6 +2268,12 @@ export default function Dashboard() {
                           </>
                         )}
                       </Button>
+                      
+                      {!user && (
+                        <p className="text-xs text-orange-600 dark:text-orange-400">
+                          Please log in to start an audio examination
+                        </p>
+                      )}
                       
                       <p className="text-xs text-muted-foreground">
                         ~2-3 minutes • Microphone required • Find a quiet space
