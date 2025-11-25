@@ -1,0 +1,182 @@
+Build an Alert Engine microservice for SymptomTrack that implements ingestion, baseline computation, z-score normalization, organ-level scoring, a Composite Deterioration Index (DPI), rule-based alerting, deduplication/suppression, notifications (dashboard/email/SMS/push), clinician dashboard with acknowledge/escalate, audit logs, and optional ML-assisted alert ranking.
+Implement the endpoints: POST /api/v1/metrics/ingest, POST /api/v1/checkin (already exists), worker POST /api/v1/process-queue that computes baselines, z-scores, organ_scores, DPI, and fires alerts per rules: (1) Green→Yellow jump, (2) Yellow persists >48h, (3) Any Red, (4) Respiratory spike, (5) Daily check-in deviation. Store alerts in alerts table and ensure suppression/dedup rules. Build Notification Service (SendGrid/Twilio/Firebase) and Clinician Dashboard with alert list and detail view. Log all actions in audit_logs. Provide admin UI to tune thresholds and suppression. Add unit/integration tests that simulate the 5 core alert cases. Ensure all messages are labeled “Observational: requires clinician review. Not a diagnosis.” Don’t implement any automated clinical instructions. For ML ranking, add optional XGBoost service that ranks alerts (used only for ordering). Use Postgres + Redis; workers via RQ/Bull. Use S3 for media and ensure HIPAA-ready storage in prod. 1) Architecture overview (microservices)
+* Ingest API (FastAPI) — receives metrics/events
+* Feature Store (Postgres + Redis for hot metrics) — stores raw metrics, baselines, aggregates
+* Rules Engine Worker (worker queue: Redis/Bull or RQ) — computes z-scores, DPI, organ-scores, applies alert rules
+* Alert Store (Postgres alerts table) — persists alerts with status (new/acknowledged/escalated/closed)
+* Notification Service — sends email/SMS/push; uses Twilio/SendGrid/Firebase
+* Clinician Dashboard (React) — lists alerts, shows timelines and metrics, view video/media, acknowledge/escalate
+* ML Triage Service (optional) — ranks alerts to reduce false positives (returns priority score; only used to order alerts, not to declare clinical state)
+* Audit & Logging — every read/write/view/ack action logged
+
+2) Data ingestion & storage
+Endpoint: POST /api/v1/metrics/ingest
+Request body:
+
+{
+  "patient_id":"uuid",
+  "timestamp":"ISO",
+  "metric_name":"string",   // e.g., "rr", "edema_pct", "sclera_b_ratio", "step_count"
+  "metric_value": number,
+  "unit":"string",
+  "confidence": 0.0-1.0,
+  "source":"app|agent|device|video_pipeline",
+  "capture_id":"uuid"  // optional link to video/photo/capture
+}
+Action:
+* Validate auth & patient access
+* Write to metrics table (Postgres), and push to Redis stream for real-time processing.
+DB: metrics table (simplified) id, patient_id, metric_name, metric_value, unit, confidence, source, capture_id, timestamp, created_at
+
+3) Baseline & normalization (how to compute per-metric baseline)
+For each patient & metric:
+* Maintain a rolling baseline window W_baseline = 14 days (configurable; min 7 days).
+* Compute:
+    * mean_baseline = mean(metric_values over W_baseline)
+    * std_baseline = std(metric_values over W_baseline) (use EWMA if sparse)
+* Z-score:    z = (current_value - mean_baseline) / max(std_baseline, epsilon)
+*    (use epsilon = 1e-6 to avoid division by zero)
+* For metrics with bounded ranges (0–10 etc.), also compute relative delta:    delta_pct = (current_value - mean_baseline) / max(abs(mean_baseline), 1e-3)
+*   
+Store baseline records in metric_baselines table keyed by (patient_id, metric_name).
+
+4) Per-metric anomaly detection & quality gating
+For each ingested metric:
+1. Compute z relative to baseline.
+2. Apply quality filters:
+    * if confidence < 0.4 then mark low-confidence (no alert unless corroborated).
+    * if capture_age > 48h, skip or mark stale.
+    * if metric flagged as low-quality in QC, suppress.
+3. Per-metric anomaly thresholds (example defaults — configurable):
+    * Yellow anomaly: |z| >= 2.0
+    * Red anomaly: |z| >= 3.0
+    * For directional metrics (e.g., RR spike/higher is worse): use one-sided z (z >= 2 or >=3)
+4. Publish anomaly events to rules engine.
+NOTE: These numbers are defaults only — clinical partners must tune thresholds per cohort.
+
+5) Organ-specific scores & composite DPI (how to compute)
+We compute organ-level z-sums and a Composite Deterioration Index (DPI).
+Organ groups (examples)
+* Respiratory group: RR, Thoracoabdominal asynchrony, cough_freq, wheeze_prob, audio_RR
+* Cardio/Fluid group: Edema_pct, weight_delta, perfusion_index
+* Hepatic/Hematologic group: Sclera_jaundice_index, palmar_pallor_index, conjunctiva_pallor
+* Mobility group: gait_speed, step_count_trend, gait_variability
+* Cognitive/Behavioral group: mood_sentiment, reaction_time, checkin_compliance
+Per-organ score:
+
+organ_score = Σ_i (w_i * z_i)   where z_i are metric z-scores in that organ group
+normalize to organ_score_norm = organ_score / sqrt(N) or to 0-100 scale
+Use weights w_i set in config file (default equal weights).
+Composite DPI example:
+Compute per-organ normalized scores O_j. Then:
+
+DPI_raw = Σ_j (Wj * O_j)    // Wj organ weights (tunable per cohort)
+DPI = (DPI_raw - DPI_min) / (DPI_max - DPI_min) * 100
+Map DPI to color buckets:
+* Green: DPI < 25
+* Yellow: 25 ≤ DPI < 50
+* Orange: 50 ≤ DPI < 75
+* Red: DPI ≥ 75
+Important: Store DPI_components for explainability (which organ contributed how much).
+
+6) Rule-based alerting (real rules to implement)
+These are must-have rules. Implement them in the Rules Engine Worker.
+Core rules:
+1. Risk jump: If DPI bucket moves from Green → Yellow within a 24-hour window → create yellow_alert(observational).
+    * Payload includes: old_bucket, new_bucket, contributed_metrics, top 3 contributing features.
+2. Persistent Yellow: If patient has been in Yellow bucket for > 48 hours continuously → create escalation_alert(observational).
+3. Any Red: If DPI enters Red OR any organ_score_norm >= organ_red_threshold → create red_alert immediately.
+4. Respiratory spike: If RR_z >= 3 OR RR absolute value over an absolute rule (e.g., RR >= 30 bpm with confidence>0.8) → create respiratory_alert.
+5. Daily check-in deviation: If patient self-reported pain/fatigue deviates from baseline by z>=2 → create self_report_alert.
+6. Composite sudden increase: If DPI increases by > X points in 24h (e.g., >8 points) → create jump_alert.
+7. Multi-signal corroboration: If at least 2 independent signals cross Yellow at same time (e.g., RR_z >=2 AND edema_z>=2) → prioritize alert and flag as corroborated.
+Alert object fields:
+alert_id, patient_id, alert_type, severity, trigger_metrics[], DPI_at_trigger, organ_scores, timestamp, status={new, sent, acknowledged, escalated, closed}, assigned_clinician_id, suppression_key, created_by
+
+7) Deduplication, suppression & rate-limiting
+* Suppression key: generate patient_id + alert_type + time_window hash. If there's an open alert with same suppression_key, do not create duplicate alerts; instead update existing alert (append evidence).
+* Rate-limiting: per patient: max 4 alerts/day by rule-based logic (configurable). Overlimit alerts are queued for clinician review at end-of-day.
+* Noise reduction: require confidence >= 0.5 OR corroboration by 2+ metrics to create high-severity alerts.
+* Acknowledgement window: once clinician acknowledges alert, suppress further alerts of same type for ack_snooze_minutes (configurable).
+* Escalation: if alert unacknowledged after T_ack (e.g., 4 hours for red), escalate to supervisor/backup clinician via SMS.
+
+8) Notification & delivery channels
+Implement Notification Service with pluggable providers.
+* Dashboard: real-time via WebSocket / server-sent events; clinician sees new alert with patient summary.
+* Email: SendGrid templates; include link to patient timeline & evidence.
+* SMS: Twilio for urgent red_alert / respiratory_alert. Keep SMS minimal (PHI caution) — include link requiring auth.
+* Push notifications: Firebase/OneSignal for mobile clinician app.
+* Pager / escalation: optional integration with PagerDuty for high-priority workflows.
+Notification content must include:
+* brief observational statement: e.g., “Observational Alert — Resp spike for John Doe: RR z=3.4; DPI moved Green→Yellow. Requires clinician review. [View details]”
+* top 3 contributing metrics with values and z-scores
+* timestamp and capture links
+* audit trail will record delivery
+
+9) Clinician workflow & UI behaviors
+* Alert list: sortable by severity, time, patient. Group by patient.
+* Alert detail view: shows timeline of metrics (last 7/30 days), raw captures (videos), DPI components, corroborating signals, and patient self-report.
+* Acknowledge / Add note / Escalate buttons. Each action logged in audit_logs.
+* Batch actions: allow clinicians to acknowledge multiple alerts.
+* Escalation policy UI: configure on per-org level (who to notify, after what delay).
+
+10) ML-assisted ranking (optional, non-diagnostic)
+Purpose: reduce false positives and prioritize alerts for clinician attention. Do not use ML to claim diagnosis or predict hospitalization.
+* Train an XGBoost/LightGBM ranking model that uses:
+    * per-metric z-scores
+    * DPI and organ scores
+    * patient adherence & baseline volatility
+    * time-of-day, recent alerts count
+* Label training data from historic clinician actions: high_priority if clinician acknowledged within X min and escalated vs low_priority if dismissed.
+* Output: priority_score (0–1) used to order alerts and suggest triage. Always show model features & SHAP explanation for transparency.
+* Guardrail: model outputs are used only for ordering; UI shows observational wording and requires clinician decision.
+
+11) Audit, Logging & Compliance
+* Every alert creation, delivery, view, acknowledgement, escalation must be logged in audit_logs with user_id, action, timestamp, ip.
+* All notifications that contain PHI should be minimal and link to secure portal. SMS should avoid PHI where possible.
+* Provide CSV/PDF export of alert history for audits.
+* Data retention policy and deletion endpoints.
+
+12) Testing & Validation (developer QA checklist)
+Unit tests
+* Baseline calculation correctness
+* Z-score math edge cases (std=0)
+* Rule triggers for sample metric sequences
+Integration tests
+* Ingest synthetic data that should produce:
+    * a Green→Yellow jump alert
+    * a persistent yellow >48h alert
+    * a red alert on single metric spike
+    * a respiratory spike alert
+    * a self-report deviation alert
+Include test inputs with timestamps for deterministic behavior.
+E2E tests
+* Simulate user ingest -> rule worker -> alert created -> notification sent -> clinician acknowledges; ensure audit log entries exist.
+
+13) Metrics & monitoring for the Alert Engine
+Operational metrics to collect:
+* Alerts created / day (by severity)
+* False positive ratio (clinician-dismissed / total alerts)
+* Mean time-to-acknowledge (MTTA)
+* Alerts per patient per month
+* Notification delivery success rate
+* CPU/memory for worker queues
+* ML model performance metrics (AUC, PR) for ranking model (if used)
+
+14) Deployment & infra notes
+* Dev on Replit for frontend & prototyping; run workers on small containers. For production, deploy:
+    * Backend + worker on AWS ECS / EKS
+    * Postgres (RDS) + Redis (ElastiCache)
+    * S3 (with SSE + BAA if PHI)
+    * Twilio / SendGrid / Firebase for notifications
+    * Vault or Secrets Manager for keys
+* Autoscale rules: workers scale based on Redis queue length.
+
+15) Configurable parameters (admin UI)
+* Baseline window length (days)
+* z thresholds for yellow/red
+* DPI bucket thresholds
+* Alert suppression windows
+* Rate-limit per patient/day
+* Clinician escalation timing
+* ML ranking toggle on/off
