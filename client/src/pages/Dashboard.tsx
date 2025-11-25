@@ -777,6 +777,7 @@ export default function Dashboard() {
 
   // PainTrack state
   const [paintrackStep, setPaintrackStep] = useState<'select-module' | 'select-joint' | 'instructions' | 'recording' | 'pain-report' | 'complete'>('select-module');
+  const [showNewPainAssessment, setShowNewPainAssessment] = useState(false);
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
   const [selectedJoint, setSelectedJoint] = useState<string | null>(null);
   const [selectedLaterality, setSelectedLaterality] = useState<'left' | 'right' | 'bilateral' | null>(null);
@@ -823,9 +824,20 @@ export default function Dashboard() {
     enabled: !!user,
   });
 
-  // Check if metrics are from today (12am-12am)
+  // Fetch latest audio AI metrics via Python backend proxy
+  const { data: latestAudioMetrics } = useQuery<any>({
+    queryKey: ["/api/v1/audio-ai/metrics/latest/me"],
+    enabled: !!user,
+  });
+
+  // Check if video metrics are from today (12am-12am)
   const isMetricsFromToday = latestVideoMetrics?.created_at 
     ? new Date(latestVideoMetrics.created_at).toDateString() === new Date().toDateString()
+    : false;
+
+  // Check if audio metrics are from today (12am-12am)
+  const isAudioMetricsFromToday = latestAudioMetrics?.timestamp 
+    ? new Date(latestAudioMetrics.timestamp).toDateString() === new Date().toDateString()
     : false;
 
   // Check if device data exists for today
@@ -857,6 +869,7 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/paintrack/sessions"] });
+      setShowNewPainAssessment(false);
       toast({
         title: "Session Saved!",
         description: `Pain level ${painVAS}/10 recorded for ${selectedJoint}`,
@@ -1670,24 +1683,46 @@ export default function Dashboard() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="device" className="space-y-3">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div data-testid="data-heart-rate">
-                  <span className="text-muted-foreground">Heart Rate: </span>
-                  <span className="font-medium" data-testid="value-heart-rate">{todayFollowup?.heartRate || "--"} bpm</span>
+              {hasDeviceDataToday ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Today's Device Data</p>
+                    <Badge variant="secondary" className="text-xs" data-testid="badge-device-today">
+                      Synced Today
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div data-testid="data-heart-rate">
+                      <span className="text-muted-foreground">Heart Rate: </span>
+                      <span className="font-medium" data-testid="value-heart-rate">{todayFollowup?.heartRate || "--"} bpm</span>
+                    </div>
+                    <div data-testid="data-spo2">
+                      <span className="text-muted-foreground">SpO2: </span>
+                      <span className="font-medium" data-testid="value-spo2">{todayFollowup?.oxygenSaturation || "--"}%</span>
+                    </div>
+                    <div data-testid="data-temperature">
+                      <span className="text-muted-foreground">Temp: </span>
+                      <span className="font-medium" data-testid="value-temperature">{todayFollowup?.temperature || "--"}°F</span>
+                    </div>
+                    <div data-testid="data-steps">
+                      <span className="text-muted-foreground">Steps: </span>
+                      <span className="font-medium" data-testid="value-steps">{todayFollowup?.stepsCount || "--"}</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-6 space-y-3" data-testid="device-sync-prompt">
+                  <div className="p-3 rounded-full bg-muted/50 inline-block">
+                    <Activity className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">No device data for today</p>
+                    <p className="text-xs text-muted-foreground">
+                      Sync your wearable device to see today's health metrics
+                    </p>
+                  </div>
                 </div>
-                <div data-testid="data-spo2">
-                  <span className="text-muted-foreground">SpO2: </span>
-                  <span className="font-medium" data-testid="value-spo2">{todayFollowup?.oxygenSaturation || "--"}%</span>
-                </div>
-                <div data-testid="data-temperature">
-                  <span className="text-muted-foreground">Temp: </span>
-                  <span className="font-medium" data-testid="value-temperature">{todayFollowup?.temperature || "--"}°F</span>
-                </div>
-                <div data-testid="data-steps">
-                  <span className="text-muted-foreground">Steps: </span>
-                  <span className="font-medium" data-testid="value-steps">{todayFollowup?.stepsCount || "--"}</span>
-                </div>
-              </div>
+              )}
             </TabsContent>
             <TabsContent value="symptom-journal" className="space-y-3">
               {/* Daily Symptom Check-In */}
@@ -1997,80 +2032,165 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
+                  ) : isAudioMetricsFromToday && latestAudioMetrics ? (
+                    /* Today's Saved Audio Results */
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                          <p className="font-medium text-sm">Today's Audio Analysis</p>
+                        </div>
+                        <Badge variant="secondary" className="text-xs" data-testid="badge-audio-today">
+                          {new Date(latestAudioMetrics.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Breath Rate</div>
+                          <div className="text-lg font-bold">{latestAudioMetrics.breath_cycles_per_min?.toFixed(0) || "N/A"} /min</div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Speech Pace</div>
+                          <div className="text-lg font-bold">{latestAudioMetrics.speech_pace_wpm?.toFixed(0) || "N/A"} wpm</div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Voice Hoarseness</div>
+                          <div className="text-lg font-bold">{latestAudioMetrics.voice_hoarseness_score?.toFixed(1) || "N/A"}/100</div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Analysis Quality</div>
+                          <div className="text-lg font-bold">{latestAudioMetrics.quality_score?.toFixed(0) || "N/A"}/100</div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                        <p className="text-xs font-medium">Detection Results</p>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">Cough Detected:</span>
+                            <Badge variant={latestAudioMetrics.cough_detected ? "destructive" : "secondary"} className="text-xs">
+                              {latestAudioMetrics.cough_detected ? "Yes" : "No"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">Wheeze Detected:</span>
+                            <Badge variant={latestAudioMetrics.wheeze_detected ? "destructive" : "secondary"} className="text-xs">
+                              {latestAudioMetrics.wheeze_detected ? "Yes" : "No"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">Confidence:</span>
+                            <span className="font-semibold">{(latestAudioMetrics.confidence * 100).toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Button 
+                        onClick={handleStartAudioExam}
+                        disabled={createAudioSessionMutation.isPending || !user}
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-2"
+                        data-testid="button-start-new-audio-exam"
+                      >
+                        {createAudioSessionMutation.isPending ? "Creating Session..." : (
+                          <>
+                            <Play className="h-3 w-3" />
+                            Start New Examination
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   ) : (
                     /* Not Started State */
-                    <div className="space-y-3">
-                      <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="rounded-full bg-primary/10 p-2">
-                            <Mic className="h-4 w-4 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-sm">AI Audio Examination</p>
-                            <p className="text-xs text-muted-foreground">4-stage guided examination</p>
-                          </div>
-                        </div>
-
-                        <div className="bg-background/50 p-3 rounded space-y-2">
-                          <p className="text-xs font-medium">What to Expect:</p>
-                          <ul className="text-xs space-y-1 text-muted-foreground">
-                            <li className="flex items-start gap-2">
-                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                              <span>Breathing, Coughing, Speaking, Reading</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                              <span>30-second prep before each stage</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                              <span>YAMNet ML + neurological metrics</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                              <span>~2-3 minutes total</span>
-                            </li>
-                          </ul>
-                        </div>
-                        
-                        <Button 
-                          onClick={handleStartAudioExam}
-                          disabled={createAudioSessionMutation.isPending || !user}
-                          size="sm"
-                          className="w-full gap-2"
-                          data-testid="button-start-audio-exam"
-                        >
-                          {createAudioSessionMutation.isPending ? "Creating Session..." : (
-                            <>
-                              <Play className="h-3 w-3" />
-                              Start Audio Examination
-                            </>
-                          )}
-                        </Button>
-                        
-                        <p className="text-xs text-center text-muted-foreground">
-                          Microphone access required • Find a quiet space
+                    <div className="text-center py-6 space-y-3" data-testid="audio-exam-prompt">
+                      <div className="p-3 rounded-full bg-muted/50 inline-block">
+                        <Mic className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">No audio analysis for today</p>
+                        <p className="text-xs text-muted-foreground">
+                          Complete a 4-stage audio examination to analyze your voice and breathing
                         </p>
                       </div>
+
+                      <Button 
+                        onClick={handleStartAudioExam}
+                        disabled={createAudioSessionMutation.isPending || !user}
+                        size="sm"
+                        className="gap-2"
+                        data-testid="button-start-audio-exam"
+                      >
+                        {createAudioSessionMutation.isPending ? "Creating Session..." : (
+                          <>
+                            <Play className="h-3 w-3" />
+                            Start Audio Examination
+                          </>
+                        )}
+                      </Button>
                       
-                      <div className="text-xs text-muted-foreground">
-                        <p className="font-medium mb-1">AI tracks:</p>
-                        <ul className="space-y-0.5 ml-4 list-disc">
-                          <li>Breath cycles & respiratory rate</li>
-                          <li>Speech pace & fluency</li>
-                          <li>Cough & wheeze detection</li>
-                          <li>Voice hoarseness & fatigue</li>
-                          <li>Pause patterns & neurological markers</li>
-                        </ul>
-                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        ~2-3 minutes • Microphone required • Find a quiet space
+                      </p>
                     </div>
                   )}
                 </TabsContent>
 
                 {/* PainTrack Tab */}
                 <TabsContent value="paintrack" className="space-y-3">
-                  {/* Recent Sessions History */}
-                  {paintrackSessions && Array.isArray(paintrackSessions) && paintrackSessions.length > 0 && paintrackStep === 'select-module' && (
+                  {/* Today's PainTrack Summary */}
+                  {hasPaintrackToday && todaysPaintrackSession && paintrackStep === 'select-module' && !showNewPainAssessment && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                          <p className="font-medium text-sm">Today's Pain Assessment</p>
+                        </div>
+                        <Badge variant="secondary" className="text-xs" data-testid="badge-paintrack-today">
+                          {new Date(todaysPaintrackSession.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Badge>
+                      </div>
+
+                      <div className="p-3 rounded-md border bg-muted/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-primary" />
+                            <span className="font-medium text-sm capitalize">{todaysPaintrackSession.laterality || ''} {todaysPaintrackSession.joint}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl font-bold">{todaysPaintrackSession.patientVas}</span>
+                            <span className="text-sm text-muted-foreground">/10</span>
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          <span className="font-medium">{todaysPaintrackSession.module}</span>
+                          {todaysPaintrackSession.medicationTaken && (
+                            <span className="ml-2">• Medication taken</span>
+                          )}
+                        </div>
+                        {todaysPaintrackSession.patientNotes && (
+                          <p className="text-xs text-muted-foreground mt-2 italic">
+                            "{todaysPaintrackSession.patientNotes}"
+                          </p>
+                        )}
+                      </div>
+
+                      <Button
+                        onClick={() => setShowNewPainAssessment(true)}
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-2"
+                        data-testid="button-record-new-pain"
+                      >
+                        <Activity className="h-3 w-3" />
+                        Record New Assessment
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Recent Sessions History - only shown if no today session and not adding new */}
+                  {!hasPaintrackToday && !showNewPainAssessment && paintrackSessions && Array.isArray(paintrackSessions) && paintrackSessions.length > 0 && paintrackStep === 'select-module' && (
                     <div className="p-3 rounded-md border bg-muted/30" data-testid="paintrack-session-history">
                       <h3 className="font-semibold text-xs mb-2">Recent Sessions</h3>
                       {paintrackSessionsLoading ? (
@@ -2098,7 +2218,22 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {paintrackStep === 'select-module' && (
+                  {/* No PainTrack Today Prompt */}
+                  {!hasPaintrackToday && !showNewPainAssessment && (!paintrackSessions || paintrackSessions.length === 0) && paintrackStep === 'select-module' && (
+                    <div className="text-center py-6 space-y-3" data-testid="paintrack-prompt">
+                      <div className="p-3 rounded-full bg-muted/50 inline-block">
+                        <Activity className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">No pain assessment for today</p>
+                        <p className="text-xs text-muted-foreground">
+                          Track your chronic pain with video-based assessment
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {paintrackStep === 'select-module' && (!hasPaintrackToday || showNewPainAssessment) && (
                     <div className="space-y-4" data-testid="paintrack-module-selection">
                       <div>
                         <h3 className="font-semibold text-sm mb-1">PainTrack - Select Module</h3>
@@ -2585,8 +2720,66 @@ export default function Dashboard() {
 
                 {/* Mental Health AI Tab */}
                 <TabsContent value="mental-health" className="space-y-3">
+                  {/* Today's Mental Health Assessment Summary */}
+                  {hasMentalHealthToday && todaysMentalHealthResponse && !showDailyWellness && !selectedQuestionnaire && !completedMentalHealthResponse && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                          <p className="font-medium text-sm">Today's Mental Health Assessment</p>
+                        </div>
+                        <Badge variant="secondary" className="text-xs" data-testid="badge-mental-health-today">
+                          {new Date(todaysMentalHealthResponse.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Badge>
+                      </div>
+
+                      <div className="p-3 rounded-md border bg-muted/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Brain className="h-4 w-4 text-primary" />
+                            <span className="font-medium text-sm">{todaysMentalHealthResponse.questionnaire_type}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl font-bold">{todaysMentalHealthResponse.total_score}</span>
+                            <span className="text-sm text-muted-foreground">/{todaysMentalHealthResponse.max_score}</span>
+                          </div>
+                        </div>
+                        <Badge className={getSeverityColor(todaysMentalHealthResponse.severity_level)}>
+                          {todaysMentalHealthResponse.severity_level?.replace(/_/g, ' ') || 'N/A'}
+                        </Badge>
+                      </div>
+
+                      <Link href="/mental-health">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-2"
+                          data-testid="button-view-mental-health-details"
+                        >
+                          <Brain className="h-3 w-3" />
+                          View Full Analysis
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
+
+                  {/* No Mental Health Today Prompt */}
+                  {!hasMentalHealthToday && !showDailyWellness && !selectedQuestionnaire && !completedMentalHealthResponse && (
+                    <div className="text-center py-6 space-y-3" data-testid="mental-health-prompt">
+                      <div className="p-3 rounded-full bg-muted/50 inline-block">
+                        <Brain className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">No mental health assessment for today</p>
+                        <p className="text-xs text-muted-foreground">
+                          Complete a wellness check or standardized questionnaire
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Daily Wellness Check */}
-                  {!showDailyWellness && !selectedQuestionnaire && !completedMentalHealthResponse && (
+                  {!hasMentalHealthToday && !showDailyWellness && !selectedQuestionnaire && !completedMentalHealthResponse && (
                     <div className="p-4 rounded-md border bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 hover-elevate" data-testid="card-daily-wellness">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
