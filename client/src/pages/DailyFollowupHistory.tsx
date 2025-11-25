@@ -298,6 +298,44 @@ export default function DailyFollowupHistory() {
       }));
   }, [filteredMentalHealth]);
 
+  const audioChartData = useMemo(() => {
+    if (!filteredVoice?.length) return [];
+    return filteredVoice
+      .slice()
+      .reverse()
+      .map((v: any) => ({
+        date: format(new Date(v.createdAt), 'MMM d'),
+        empathy: v.empathyLevel || 0,
+        symptoms: v.extractedSymptoms?.length || 0,
+        needsFollowup: v.needsFollowup ? 1 : 0,
+      }));
+  }, [filteredVoice]);
+
+  const calculateTrendFromValues = (values: number[]): 'up' | 'down' | 'stable' => {
+    if (!values?.length || values.length < 2) return 'stable';
+    const recentCount = Math.max(1, Math.min(7, Math.ceil(values.length / 2)));
+    const olderCount = Math.max(1, values.length - recentCount);
+    const recentAvg = values.slice(-recentCount).reduce((a, b) => a + b, 0) / recentCount;
+    const olderAvg = values.slice(0, olderCount).reduce((a, b) => a + b, 0) / olderCount;
+    if (olderAvg === 0) return recentAvg > 0 ? 'up' : 'stable';
+    return recentAvg > olderAvg * 1.05 ? 'up' : recentAvg < olderAvg * 0.95 ? 'down' : 'stable';
+  };
+
+  const videoCompletionTrend = useMemo(() => {
+    const values = (filteredVideoSessions || []).map((s: any) => s.completed_segments).filter((v: any) => v != null);
+    return calculateTrendFromValues(values);
+  }, [filteredVideoSessions]);
+  
+  const audioEmpathyTrend = useMemo(() => {
+    const values = (filteredVoice || []).map((v: any) => v.empathyLevel).filter((v: any) => v != null && !isNaN(v));
+    return calculateTrendFromValues(values);
+  }, [filteredVoice]);
+  
+  const mentalHealthTrendCalc = useMemo(() => {
+    const values = (filteredMentalHealth || []).map((m: any) => m.total_score).filter((v: any) => v != null);
+    return calculateTrendFromValues(values);
+  }, [filteredMentalHealth]);
+
   const getSeverityColor = (severity: string) => {
     switch (severity?.toLowerCase()) {
       case 'none':
@@ -679,6 +717,7 @@ export default function DailyFollowupHistory() {
                   } 
                   unit="/7"
                   icon={Camera}
+                  trend={videoCompletionTrend}
                   color="text-blue-500"
                 />
                 <StatCard 
@@ -904,6 +943,7 @@ export default function DailyFollowupHistory() {
                   })()} 
                   unit="/10"
                   icon={Heart}
+                  trend={audioEmpathyTrend}
                   color="text-rose-500"
                 />
                 <StatCard 
@@ -914,14 +954,49 @@ export default function DailyFollowupHistory() {
                 />
               </div>
 
+              {audioChartData.length > 1 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5" />
+                      Voice Analysis Trends
+                    </CardTitle>
+                    <CardDescription>
+                      Empathy levels and symptoms extracted over {selectedRange.label.toLowerCase()}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={audioChartData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="date" className="text-xs" />
+                          <YAxis className="text-xs" />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: 'hsl(var(--card))', 
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px'
+                            }} 
+                          />
+                          <Legend />
+                          <Area type="monotone" dataKey="empathy" name="Empathy Level" stroke="hsl(var(--chart-4))" fill="hsl(var(--chart-4) / 0.2)" />
+                          <Area type="monotone" dataKey="symptoms" name="Symptoms Extracted" stroke="hsl(var(--chart-2))" fill="hsl(var(--chart-2) / 0.2)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               <Card>
                 <CardHeader>
                   <CardTitle>Voice Follow-up History</CardTitle>
-                  <CardDescription>AI analysis of your voice recordings</CardDescription>
+                  <CardDescription>{filteredVoice.length} recordings over {selectedRange.label.toLowerCase()}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ScrollArea className="h-[350px]">
-                    <div className="space-y-4">
+                  <ScrollArea className="h-[300px]">
+                    <div className="space-y-3">
                       {filteredVoice.map((voice: any, idx: number) => (
                         <div key={idx} className="p-4 rounded-lg border bg-card">
                           <div className="flex items-center justify-between mb-3">
@@ -1097,6 +1172,7 @@ export default function DailyFollowupHistory() {
                   label="Avg Score" 
                   value={calculateStats(filteredMentalHealth, 'total_score').avg} 
                   icon={BarChart3}
+                  trend={mentalHealthTrendCalc}
                   color="text-primary"
                 />
                 <StatCard 
