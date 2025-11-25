@@ -7249,6 +7249,279 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // ============================================================================
+  // AI Health Alert Engine - Proxy routes to Python backend
+  // Provides trend analysis, engagement metrics, QoL tracking, and alert management
+  // ============================================================================
+
+  // Get patient overview (all metrics combined)
+  app.get('/api/ai-health-alerts/patient-overview/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/dashboard/summary/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (ai-health-alerts dashboard): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (ai-health-alerts):', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // Get trend metrics for a patient
+  app.get('/api/ai-health-alerts/trend-metrics/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const days = req.query.days || 30;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/trends/${patientId}?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (ai-health-alerts trends): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (ai-health-alerts trends):', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // Get engagement metrics for a patient
+  app.get('/api/ai-health-alerts/engagement-metrics/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const days = req.query.days || 30;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/engagement/${patientId}?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (ai-health-alerts engagement): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (ai-health-alerts engagement):', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // Get QoL metrics for a patient
+  app.get('/api/ai-health-alerts/qol-metrics/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const days = req.query.days || 30;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/qol/${patientId}?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (ai-health-alerts qol): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (ai-health-alerts qol):', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // Get alerts for a patient
+  app.get('/api/ai-health-alerts/alerts/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const status = req.query.status || 'active';
+      const limit = req.query.limit || 50;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/alerts/${patientId}?status=${status}&limit=${limit}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (ai-health-alerts alerts): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (ai-health-alerts alerts):', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // Update alert status (acknowledge or dismiss)
+  app.patch('/api/ai-health-alerts/alerts/:alertId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { alertId } = req.params;
+      const clinicianId = req.query.clinician_id || req.user?.id || 'unknown';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/alerts/${alertId}?clinician_id=${clinicianId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (ai-health-alerts update): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (ai-health-alerts update):', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // Trigger metrics computation for a patient
+  app.post('/api/ai-health-alerts/compute-all/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/compute/${patientId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (ai-health-alerts compute): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (ai-health-alerts compute):', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
   // Mental Health Red Flag Symptoms endpoint - Fetches AI-observed mental health symptom indicators from Agent Clona
   app.get('/api/mental-health/red-flag-symptoms', isAuthenticated, async (req: any, res) => {
     try {
