@@ -11,10 +11,18 @@ Color Buckets:
 - Orange: 50 ≤ DPI < 75
 - Red: DPI ≥ 75
 
+Ensemble Approach (V2):
+- Statistical DPI: Rule-based organ scoring with z-scores
+- ML DPI: LSTM prediction-based deterioration probability
+- Final DPI = (α × Statistical_DPI) + (β × ML_DPI) where α + β = 1
+- Weights adjusted by ML confidence
+
 Includes:
 - DPI computation with explainability (which organ contributed how much)
 - Trend tracking (previous DPI, bucket changes)
 - Jump detection (>X points in 24h)
+- ML prediction integration with horizon-specific forecasts
+- Ensemble scoring with confidence weighting
 """
 
 import os
@@ -22,7 +30,7 @@ import logging
 import json
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -44,8 +52,20 @@ class DPIComponent:
 
 
 @dataclass
+class MLPredictionSummary:
+    """Summary of ML predictions for DPI ensemble"""
+    ml_available: bool
+    ensemble_score: float
+    confidence: float
+    horizons: Dict[str, float]  # horizon -> probability
+    trend_direction: str
+    risk_trajectory: str
+    model_version: str
+
+
+@dataclass
 class DPIResult:
-    """Complete DPI computation result"""
+    """Complete DPI computation result with ML ensemble"""
     patient_id: str
     dpi_raw: float
     dpi_normalized: float  # 0-100 scale
@@ -57,14 +77,119 @@ class DPIResult:
     dpi_delta_24h: Optional[float]
     jump_detected: bool
     computed_at: datetime
+    # Ensemble fields (V2)
+    statistical_dpi: Optional[float] = None
+    ml_dpi: Optional[float] = None
+    ensemble_weight_statistical: float = 0.5
+    ensemble_weight_ml: float = 0.5
+    ml_prediction: Optional[MLPredictionSummary] = None
+    ensemble_confidence: float = 0.7
 
 
 class DPIComputationService:
-    """Service for computing Composite Deterioration Index"""
+    """Service for computing Composite Deterioration Index with ML Ensemble"""
+    
+    DEFAULT_ML_WEIGHT = 0.4  # 40% ML, 60% statistical by default
+    MIN_ML_CONFIDENCE_FOR_WEIGHTING = 0.5  # Minimum confidence to use ML in ensemble
     
     def __init__(self, db: Session):
         self.db = db
         self.config_service = AlertConfigService()
+    
+    async def compute_ensemble_dpi(
+        self,
+        patient_id: str,
+        organ_result: OrganScoringResult,
+        ml_prediction: Optional[Dict[str, Any]] = None
+    ) -> DPIResult:
+        """
+        Compute DPI using ensemble approach combining statistical and ML signals.
+        
+        Ensemble Formula:
+        DPI_final = (α × Statistical_DPI) + (β × ML_DPI)
+        where α + β = 1, and weights are adjusted by ML confidence
+        """
+        # First compute statistical DPI
+        statistical_result = self.compute_dpi(patient_id, organ_result)
+        statistical_dpi = statistical_result.dpi_normalized
+        
+        # Default ensemble weights
+        ml_weight = 0.0
+        statistical_weight = 1.0
+        ml_dpi = None
+        ml_summary = None
+        ensemble_confidence = 0.7  # Base confidence for statistical-only
+        
+        # Integrate ML prediction if available
+        if ml_prediction and ml_prediction.get("ensemble_score") is not None:
+            ml_confidence = ml_prediction.get("ensemble_confidence", 0)
+            
+            if ml_confidence >= self.MIN_ML_CONFIDENCE_FOR_WEIGHTING:
+                # Scale ML weight by confidence (0.5 confidence -> 0.2 weight, 1.0 confidence -> 0.4 weight)
+                confidence_factor = (ml_confidence - 0.5) / 0.5  # 0-1 range
+                ml_weight = self.DEFAULT_ML_WEIGHT * (0.5 + 0.5 * confidence_factor)
+                statistical_weight = 1.0 - ml_weight
+                
+                # Convert ML ensemble score (0-1) to DPI scale (0-100)
+                ml_dpi = ml_prediction["ensemble_score"] * 100
+                
+                # Compute ensemble DPI
+                ensemble_dpi = (statistical_weight * statistical_dpi) + (ml_weight * ml_dpi)
+                
+                # Overall ensemble confidence
+                ensemble_confidence = (statistical_weight * 0.7) + (ml_weight * ml_confidence)
+                
+                # Build ML summary
+                horizons = {}
+                if ml_prediction.get("predictions"):
+                    for horizon, pred in ml_prediction["predictions"].items():
+                        if isinstance(pred, dict):
+                            horizons[horizon] = pred.get("deterioration_probability", 0)
+                
+                ml_summary = MLPredictionSummary(
+                    ml_available=True,
+                    ensemble_score=ml_prediction.get("ensemble_score", 0),
+                    confidence=ml_confidence,
+                    horizons=horizons,
+                    trend_direction=ml_prediction.get("trend_direction", "stable"),
+                    risk_trajectory=ml_prediction.get("risk_trajectory", "low"),
+                    model_version=ml_prediction.get("model_version", "unknown")
+                )
+            else:
+                ensemble_dpi = statistical_dpi
+        else:
+            ensemble_dpi = statistical_dpi
+        
+        # Normalize and determine bucket for ensemble DPI
+        ensemble_dpi_normalized = round(min(max(ensemble_dpi, 0), 100), 2)
+        config = self.config_service.config
+        ensemble_bucket = config.get_dpi_bucket(ensemble_dpi_normalized)
+        
+        # Check for bucket change based on ensemble
+        bucket_changed = (
+            statistical_result.previous_bucket is not None and 
+            statistical_result.previous_bucket != ensemble_bucket
+        )
+        
+        return DPIResult(
+            patient_id=patient_id,
+            dpi_raw=statistical_result.dpi_raw,
+            dpi_normalized=ensemble_dpi_normalized,
+            dpi_bucket=ensemble_bucket,
+            components=statistical_result.components,
+            previous_dpi=statistical_result.previous_dpi,
+            previous_bucket=statistical_result.previous_bucket,
+            bucket_changed=bucket_changed,
+            dpi_delta_24h=statistical_result.dpi_delta_24h,
+            jump_detected=statistical_result.jump_detected,
+            computed_at=datetime.utcnow(),
+            statistical_dpi=statistical_dpi,
+            ml_dpi=ml_dpi,
+            ensemble_weight_statistical=statistical_weight,
+            ensemble_weight_ml=ml_weight,
+            ml_prediction=ml_summary,
+            ensemble_confidence=ensemble_confidence
+        )
     
     def compute_dpi(
         self,

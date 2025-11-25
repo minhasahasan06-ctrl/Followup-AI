@@ -2673,3 +2673,412 @@ async def get_v2_patient_overview(
     except Exception as e:
         logger.error(f"Error fetching V2 patient overview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# ML PREDICTION ENDPOINTS (V2)
+# ============================================================================
+
+class PredictionRequest(BaseModel):
+    patient_id: str
+    horizon_hours: Optional[List[int]] = Field(default=[3, 6, 12, 24], description="Prediction horizons in hours")
+    include_feature_importance: bool = Field(default=True)
+
+
+class PredictionHorizonResponse(BaseModel):
+    horizon: str
+    deterioration_probability: float
+    confidence: float
+    risk_level: str
+    feature_importance: Optional[Dict[str, float]] = None
+
+
+class PredictionResponse(BaseModel):
+    patient_id: str
+    ensemble_score: float
+    ensemble_confidence: float
+    statistical_weight: float
+    ml_weight: float
+    trend_direction: str
+    risk_trajectory: str
+    predictions: Dict[str, PredictionHorizonResponse]
+    computed_at: datetime
+    model_version: str
+    disclaimer: str
+
+
+@router.post("/v2/predictions/compute")
+async def compute_predictions(
+    request: PredictionRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Compute ML deterioration predictions for a patient across multiple time horizons.
+    Uses LSTM-based deep learning models for time-series vital sign analysis.
+    """
+    try:
+        from app.services.alert_engine.prediction_service import PredictionService
+        
+        prediction_service = PredictionService(db)
+        await prediction_service.initialize()
+        
+        # Get vital signs data for the patient
+        vital_query = text("""
+            SELECT recorded_at, 
+                   heart_rate, respiratory_rate, blood_pressure_systolic, blood_pressure_diastolic,
+                   temperature, spo2, weight
+            FROM health_metrics
+            WHERE user_id = :patient_id
+            AND recorded_at >= NOW() - INTERVAL '7 days'
+            ORDER BY recorded_at ASC
+        """)
+        
+        vital_rows = db.execute(vital_query, {"patient_id": request.patient_id}).fetchall()
+        
+        if not vital_rows:
+            return {
+                "patient_id": request.patient_id,
+                "status": "insufficient_data",
+                "message": "Insufficient vital signs data for prediction. Need at least 7 days of data.",
+                "disclaimer": COMPLIANCE_DISCLAIMER
+            }
+        
+        # Convert to vital signs dict
+        vital_signs_history = {
+            "timestamps": [],
+            "heart_rate": [],
+            "respiratory_rate": [],
+            "bp_systolic": [],
+            "bp_diastolic": [],
+            "temperature": [],
+            "spo2": [],
+            "weight": []
+        }
+        
+        for row in vital_rows:
+            vital_signs_history["timestamps"].append(row[0])
+            vital_signs_history["heart_rate"].append(float(row[1]) if row[1] else None)
+            vital_signs_history["respiratory_rate"].append(float(row[2]) if row[2] else None)
+            vital_signs_history["bp_systolic"].append(float(row[3]) if row[3] else None)
+            vital_signs_history["bp_diastolic"].append(float(row[4]) if row[4] else None)
+            vital_signs_history["temperature"].append(float(row[5]) if row[5] else None)
+            vital_signs_history["spo2"].append(float(row[6]) if row[6] else None)
+            vital_signs_history["weight"].append(float(row[7]) if row[7] else None)
+        
+        # Compute predictions
+        result = await prediction_service.predict_deterioration(
+            patient_id=request.patient_id,
+            vital_signs_history=vital_signs_history,
+            horizon_hours=request.horizon_hours
+        )
+        
+        # Store prediction in background
+        background_tasks.add_task(prediction_service.store_prediction, result)
+        
+        # Format response
+        predictions_response = {}
+        for horizon, pred in result.predictions.items():
+            predictions_response[horizon] = {
+                "horizon": pred.horizon,
+                "deterioration_probability": pred.deterioration_probability,
+                "confidence": pred.confidence,
+                "risk_level": pred.risk_level,
+                "feature_importance": pred.feature_importance if request.include_feature_importance else None
+            }
+        
+        return {
+            "patient_id": result.patient_id,
+            "ensemble_score": result.ensemble_score,
+            "ensemble_confidence": result.ensemble_confidence,
+            "statistical_weight": result.statistical_weight,
+            "ml_weight": result.ml_weight,
+            "trend_direction": result.trend_direction,
+            "risk_trajectory": result.risk_trajectory,
+            "predictions": predictions_response,
+            "computed_at": result.computed_at.isoformat(),
+            "model_version": result.model_version,
+            "disclaimer": COMPLIANCE_DISCLAIMER
+        }
+        
+    except Exception as e:
+        logger.error(f"Error computing predictions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/predictions/{patient_id}")
+async def get_latest_prediction(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get the most recent ML prediction for a patient.
+    """
+    try:
+        from app.services.alert_engine.prediction_service import PredictionService
+        
+        prediction_service = PredictionService(db)
+        result = await prediction_service.get_latest_prediction(patient_id)
+        
+        if not result:
+            return {
+                "patient_id": patient_id,
+                "status": "no_predictions",
+                "message": "No predictions available for this patient.",
+                "disclaimer": COMPLIANCE_DISCLAIMER
+            }
+        
+        return {
+            **result,
+            "disclaimer": COMPLIANCE_DISCLAIMER
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching prediction: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/v2/predictions/{patient_id}/history")
+async def get_prediction_history(
+    patient_id: str,
+    days: int = Query(default=7, ge=1, le=30),
+    db: Session = Depends(get_db)
+):
+    """
+    Get ML prediction history for a patient.
+    """
+    try:
+        from app.services.alert_engine.prediction_service import PredictionService
+        
+        prediction_service = PredictionService(db)
+        history = await prediction_service.get_prediction_history(patient_id, days=days)
+        
+        return {
+            "patient_id": patient_id,
+            "days": days,
+            "predictions": history,
+            "total": len(history),
+            "disclaimer": COMPLIANCE_DISCLAIMER
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching prediction history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/v2/compute-all-with-ml/{patient_id}")
+async def compute_all_with_ml_predictions(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Full V2 computation pipeline with ML predictions integrated:
+    1. Compute organ scores
+    2. Get/compute ML predictions
+    3. Compute ensemble DPI (statistical + ML)
+    4. Evaluate all 10 rules (7 statistical + 3 ML-based)
+    5. Store alerts and apply ML ranking
+    """
+    if not ALERT_ENGINE_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=501,
+            detail="Alert Engine V2 not available. Check dependencies."
+        )
+    
+    try:
+        from app.services.alert_engine.prediction_service import PredictionService
+        
+        organ_service = OrganScoringService(db)
+        dpi_service = DPIComputationService(db)
+        rule_engine = RuleBasedAlertEngine(db)
+        ml_service = MLRankingService(db)
+        prediction_service = PredictionService(db)
+        
+        await ml_service.initialize()
+        await prediction_service.initialize()
+        
+        # Step 1: Compute organ scores
+        organ_result = await organ_service.compute_from_recent_data(patient_id)
+        await organ_service.store_organ_scores(organ_result)
+        
+        # Step 2: Get/compute ML predictions
+        ml_prediction = await prediction_service.get_latest_prediction(patient_id)
+        
+        # If no recent prediction, compute one
+        if not ml_prediction or _prediction_is_stale(ml_prediction):
+            # Fetch vital signs
+            vital_query = text("""
+                SELECT recorded_at, heart_rate, respiratory_rate, 
+                       blood_pressure_systolic, blood_pressure_diastolic,
+                       temperature, spo2
+                FROM health_metrics
+                WHERE user_id = :patient_id
+                AND recorded_at >= NOW() - INTERVAL '7 days'
+                ORDER BY recorded_at ASC
+            """)
+            
+            vital_rows = db.execute(vital_query, {"patient_id": patient_id}).fetchall()
+            
+            if vital_rows and len(vital_rows) >= 10:
+                vital_signs_history = {
+                    "timestamps": [row[0] for row in vital_rows],
+                    "heart_rate": [float(row[1]) if row[1] else None for row in vital_rows],
+                    "respiratory_rate": [float(row[2]) if row[2] else None for row in vital_rows],
+                    "bp_systolic": [float(row[3]) if row[3] else None for row in vital_rows],
+                    "bp_diastolic": [float(row[4]) if row[4] else None for row in vital_rows],
+                    "temperature": [float(row[5]) if row[5] else None for row in vital_rows],
+                    "spo2": [float(row[6]) if row[6] else None for row in vital_rows]
+                }
+                
+                try:
+                    pred_result = await prediction_service.predict_deterioration(
+                        patient_id=patient_id,
+                        vital_signs_history=vital_signs_history
+                    )
+                    
+                    ml_prediction = {
+                        "ensemble_score": pred_result.ensemble_score,
+                        "ensemble_confidence": pred_result.ensemble_confidence,
+                        "predictions": {
+                            horizon: {
+                                "deterioration_probability": pred.deterioration_probability,
+                                "confidence": pred.confidence,
+                                "risk_level": pred.risk_level
+                            }
+                            for horizon, pred in pred_result.predictions.items()
+                        },
+                        "trend_direction": pred_result.trend_direction,
+                        "risk_trajectory": pred_result.risk_trajectory,
+                        "model_version": pred_result.model_version
+                    }
+                    
+                    await prediction_service.store_prediction(pred_result)
+                except Exception as pred_error:
+                    logger.warning(f"ML prediction failed: {pred_error}")
+                    ml_prediction = None
+        
+        # Step 3: Compute ensemble DPI
+        dpi_result = await dpi_service.compute_ensemble_dpi(
+            patient_id, organ_result, ml_prediction
+        )
+        await dpi_service.store_dpi(dpi_result)
+        
+        # Step 4: Get metric z-scores
+        metric_z_scores = {}
+        for group_name, organ_score in organ_result.organ_scores.items():
+            for metric in organ_score.contributing_metrics:
+                metric_z_scores[metric.metric_name] = metric.z_score
+        
+        # Step 5: Evaluate all 10 rules (including ML-based)
+        triggered_alerts = await rule_engine.evaluate_all_rules(
+            patient_id=patient_id,
+            dpi_result=dpi_result,
+            organ_result=organ_result,
+            metric_z_scores=metric_z_scores,
+            ml_prediction=ml_prediction
+        )
+        
+        created_alerts = []
+        for trigger in triggered_alerts:
+            record = await rule_engine.create_alert_record(patient_id, trigger)
+            created_alerts.append({
+                "id": record.id,
+                "rule": record.trigger_rule,
+                "severity": record.severity,
+                "priority": record.priority,
+                "title": record.title,
+                "is_ml_based": record.trigger_rule.startswith("ml_")
+            })
+        
+        # Step 6: Apply ML ranking to existing alerts
+        query = text("""
+            SELECT id, patient_id, alert_type, severity, priority, trigger_rule,
+                   dpi_at_trigger, organ_scores, corroborated, contributing_metrics
+            FROM ai_health_alerts
+            WHERE patient_id = :patient_id
+            AND status NOT IN ('dismissed', 'closed')
+            ORDER BY created_at DESC
+            LIMIT 20
+        """)
+        
+        alert_rows = db.execute(query, {"patient_id": patient_id}).fetchall()
+        alerts_for_ranking = [
+            {
+                "id": str(row[0]),
+                "patient_id": row[1],
+                "alert_type": row[2],
+                "severity": row[3],
+                "priority": row[4],
+                "trigger_rule": row[5],
+                "dpi_at_trigger": float(row[6]) if row[6] else None,
+                "organ_scores": row[7],
+                "corroborated": row[8] or False,
+                "trigger_metrics": row[9] or []
+            }
+            for row in alert_rows
+        ]
+        
+        ranked = await ml_service.rank_alerts(alerts_for_ranking) if alerts_for_ranking else []
+        
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "organ_scores": {
+                name: {
+                    "score": score.normalized_score,
+                    "severity": score.severity,
+                    "num_metrics": score.num_metrics
+                }
+                for name, score in organ_result.organ_scores.items()
+            },
+            "dpi": {
+                "score": dpi_result.dpi_normalized,
+                "bucket": dpi_result.dpi_bucket,
+                "bucket_color": dpi_service.get_bucket_color(dpi_result.dpi_bucket),
+                "bucket_changed": dpi_result.bucket_changed,
+                "jump_detected": dpi_result.jump_detected,
+                "statistical_dpi": dpi_result.statistical_dpi,
+                "ml_dpi": dpi_result.ml_dpi,
+                "ensemble_weights": {
+                    "statistical": dpi_result.ensemble_weight_statistical,
+                    "ml": dpi_result.ensemble_weight_ml
+                },
+                "ensemble_confidence": dpi_result.ensemble_confidence
+            },
+            "ml_prediction": {
+                "available": ml_prediction is not None,
+                "ensemble_score": ml_prediction.get("ensemble_score") if ml_prediction else None,
+                "confidence": ml_prediction.get("ensemble_confidence") if ml_prediction else None,
+                "trend": ml_prediction.get("trend_direction") if ml_prediction else None,
+                "trajectory": ml_prediction.get("risk_trajectory") if ml_prediction else None
+            },
+            "alerts_generated": len(created_alerts),
+            "new_alerts": created_alerts,
+            "ml_based_alerts": len([a for a in created_alerts if a.get("is_ml_based")]),
+            "total_active_alerts": len(ranked),
+            "top_ranked_alerts": [
+                {
+                    "id": r.alert_id,
+                    "priority_score": r.priority_score,
+                    "confidence": r.confidence
+                }
+                for r in ranked[:5]
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in V2 compute-all-with-ml: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _prediction_is_stale(prediction: Dict[str, Any], max_age_hours: int = 6) -> bool:
+    """Check if a prediction is too old to use"""
+    computed_at = prediction.get("computed_at")
+    if not computed_at:
+        return True
+    
+    if isinstance(computed_at, str):
+        computed_at = datetime.fromisoformat(computed_at.replace("Z", "+00:00"))
+    
+    age = datetime.utcnow() - computed_at.replace(tzinfo=None)
+    return age.total_seconds() > max_age_hours * 3600
