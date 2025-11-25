@@ -46,6 +46,20 @@ The backend comprises two services:
 - **PainTrack Platform:** Chronic pain tracking system with dual-camera video capture, self-reported VAS pain slider, medication tracking, and patient notes.
 - **Mental Health AI Dashboard Integration:** Integrated questionnaire system (PHQ-9, GAD-7, PSS-10) with AI-powered GPT-4o analysis, crisis detection, severity scoring, and cluster analysis.
 - **Agent Clona Symptom Extraction System:** AI-powered symptom extraction from patient conversations with Agent Clona (GPT-4o). Automatically identifies symptoms, body locations, intensity mentions, and temporal information from natural language chat, storing them in the `ChatSymptom` table with confidence scores. Unified symptom feed (`/api/symptom-checkin/feed/unified`) merges AI-extracted symptoms with patient-reported check-ins, displaying both data sources in Dashboard → Daily Follow-up → Symptoms tab with distinct HIPAA-compliant labeling ("Patient-reported" vs "AI-observed via Clona"). Includes comprehensive audit logging and observational disclaimers.
+- **AI-Powered Habit Tracker (13 Features):** Comprehensive habit management system with:
+  1. **Habit Creation & CRUD** - Create/update/delete habits with categories (health, medication, exercise, wellness, nutrition, sleep)
+  2. **Daily Routines with Micro-Steps** - Break down habits into manageable sub-tasks
+  3. **Streaks & Calendar View** - Visual calendar showing completion history and current streaks
+  4. **Smart Reminders** - Configurable notifications with snooze functionality
+  5. **AI Habit Coach** - GPT-4o powered conversational coaching with motivational support, CBT techniques, and personalized advice
+  6. **Trigger Detection** - AI pattern analysis identifying habit triggers and correlations
+  7. **Addiction-Mode Quit Plans** - Specialized tracking for breaking bad habits with cravings log, relapse tracking, and money-saved calculations
+  8. **Mood Tracking** - Mood score logging (1-10) with energy/stress levels and sentiment analysis
+  9. **Dynamic AI Recommendations** - Personalized habit suggestions based on user patterns
+  10. **Social Accountability/Buddy System** - Connect with accountability partners, share progress, send nudges
+  11. **Guided CBT Sessions** - Interactive cognitive behavioral therapy exercises (urge surfing, thought reframing, grounding, breathing)
+  12. **Gamification & Visual Rewards** - Growth visualization (seed→sprout→blooming), points system, badges, and leaderboards
+  13. **Smart Journals with AI Insights** - Journal entries with AI-powered summaries, weekly insights, sentiment trends, and risk detection
 
 ### Daily Follow-up Dashboard 24-Hour Pattern
 All tabs in the Daily Follow-up dashboard section enforce a 24-hour gating pattern:

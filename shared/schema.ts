@@ -2284,6 +2284,615 @@ export const insertHabitCompletionSchema = createInsertSchema(habitCompletions).
 export type InsertHabitCompletion = z.infer<typeof insertHabitCompletionSchema>;
 export type HabitCompletion = typeof habitCompletions.$inferSelect;
 
+// ============================================
+// COMPREHENSIVE HABIT TRACKER SYSTEM
+// Features: Routines, Triggers, Quit Plans, Mood Tracking, 
+// Social Accountability, CBT Flows, Gamification, AI Insights
+// ============================================
+
+// Habit Routines - Daily routine builder with time, location, micro-steps
+export const habitRoutines = pgTable("habit_routines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  habitId: varchar("habit_id").notNull().references(() => habits.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Time configuration
+  scheduledTime: varchar("scheduled_time"), // "08:00", "14:30"
+  duration: integer("duration"), // expected duration in minutes
+  timeFlexibility: varchar("time_flexibility"), // 'strict', 'flexible', 'anytime'
+  
+  // Location
+  location: varchar("location"), // "home", "gym", "office", "outdoors"
+  locationDetails: text("location_details"),
+  
+  // Triggers and cues
+  triggerCue: varchar("trigger_cue"), // What triggers starting this habit
+  stackedAfter: varchar("stacked_after").references(() => habits.id), // Habit stacking
+  
+  // Context
+  dayOfWeek: jsonb("day_of_week").$type<string[]>(), // ['monday', 'tuesday', ...]
+  isWeekendOnly: boolean("is_weekend_only").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHabitRoutineSchema = createInsertSchema(habitRoutines).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHabitRoutine = z.infer<typeof insertHabitRoutineSchema>;
+export type HabitRoutine = typeof habitRoutines.$inferSelect;
+
+// Habit Micro-Steps - Break down habits into small achievable steps
+export const habitMicroSteps = pgTable("habit_micro_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  habitId: varchar("habit_id").notNull().references(() => habits.id, { onDelete: "cascade" }),
+  
+  stepOrder: integer("step_order").notNull(),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  estimatedMinutes: integer("estimated_minutes"),
+  
+  // Progress tracking
+  isRequired: boolean("is_required").default(true),
+  completionCount: integer("completion_count").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitMicroStepSchema = createInsertSchema(habitMicroSteps).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitMicroStep = z.infer<typeof insertHabitMicroStepSchema>;
+export type HabitMicroStep = typeof habitMicroSteps.$inferSelect;
+
+// Habit Reminders - Smart notification scheduling
+export const habitReminders = pgTable("habit_reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  habitId: varchar("habit_id").notNull().references(() => habits.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Reminder configuration
+  reminderType: varchar("reminder_type").notNull(), // 'push', 'email', 'in_app', 'sms'
+  scheduledTime: varchar("scheduled_time").notNull(), // "08:00"
+  message: text("message"),
+  
+  // Smart timing
+  adaptiveEnabled: boolean("adaptive_enabled").default(true),
+  learnedBestTime: varchar("learned_best_time"), // ML-learned optimal time
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  snoozeUntil: timestamp("snooze_until"),
+  lastSentAt: timestamp("last_sent_at"),
+  
+  // Effectiveness tracking
+  timesDelivered: integer("times_delivered").default(0),
+  timesActedOn: integer("times_acted_on").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHabitReminderSchema = createInsertSchema(habitReminders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHabitReminder = z.infer<typeof insertHabitReminderSchema>;
+export type HabitReminder = typeof habitReminders.$inferSelect;
+
+// Habit AI Triggers - Pattern detection for skipped habits
+export const habitAiTriggers = pgTable("habit_ai_triggers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  habitId: varchar("habit_id").references(() => habits.id),
+  
+  // Detected pattern
+  triggerType: varchar("trigger_type").notNull(), // 'sleep', 'mood', 'time', 'weather', 'workload', 'social'
+  pattern: text("pattern").notNull(), // "You skip morning habit when sleep < 6 hrs"
+  
+  // Pattern details
+  correlatedFactor: varchar("correlated_factor"), // 'sleep_hours', 'mood_score', 'day_of_week'
+  correlationStrength: decimal("correlation_strength", { precision: 3, scale: 2 }), // -1 to 1
+  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0 to 1
+  
+  // Supporting data
+  dataPoints: integer("data_points").default(0),
+  samplePeriodDays: integer("sample_period_days"),
+  
+  // User interaction
+  acknowledged: boolean("acknowledged").default(false),
+  helpful: boolean("helpful"),
+  userNotes: text("user_notes"),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  lastDetectedAt: timestamp("last_detected_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHabitAiTriggerSchema = createInsertSchema(habitAiTriggers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHabitAiTrigger = z.infer<typeof insertHabitAiTriggerSchema>;
+export type HabitAiTrigger = typeof habitAiTriggers.$inferSelect;
+
+// Quit Plans - Addiction-mode for bad habit control
+export const habitQuitPlans = pgTable("habit_quit_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Target behavior to quit
+  habitName: varchar("habit_name").notNull(), // "smoking", "excessive social media", etc.
+  category: varchar("category"), // 'substance', 'behavioral', 'food', 'other'
+  
+  // Quit strategy
+  quitMethod: varchar("quit_method"), // 'cold_turkey', 'gradual_reduction', 'replacement'
+  targetQuitDate: timestamp("target_quit_date"),
+  dailyLimit: integer("daily_limit"), // For gradual reduction
+  
+  // Harm reduction steps
+  harmReductionSteps: jsonb("harm_reduction_steps").$type<Array<{
+    step: string;
+    order: number;
+    completed: boolean;
+  }>>(),
+  
+  // Motivation
+  reasonsToQuit: jsonb("reasons_to_quit").$type<string[]>(),
+  moneySavedPerDay: decimal("money_saved_per_day", { precision: 10, scale: 2 }),
+  
+  // Progress
+  startDate: timestamp("start_date"),
+  daysClean: integer("days_clean").default(0),
+  longestStreak: integer("longest_streak").default(0),
+  totalRelapses: integer("total_relapses").default(0),
+  
+  // Status
+  status: varchar("status").default("active"), // 'active', 'paused', 'completed', 'abandoned'
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHabitQuitPlanSchema = createInsertSchema(habitQuitPlans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHabitQuitPlan = z.infer<typeof insertHabitQuitPlanSchema>;
+export type HabitQuitPlan = typeof habitQuitPlans.$inferSelect;
+
+// Cravings Log - Track cravings and urges
+export const habitCravingsLog = pgTable("habit_cravings_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quitPlanId: varchar("quit_plan_id").notNull().references(() => habitQuitPlans.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Craving details
+  intensity: integer("intensity").notNull(), // 1-10 scale
+  duration: integer("duration"), // minutes
+  trigger: varchar("trigger"), // 'stress', 'boredom', 'social', 'habit_cue', 'emotional'
+  triggerDetails: text("trigger_details"),
+  
+  // Response
+  copingStrategyUsed: varchar("coping_strategy_used"),
+  overcame: boolean("overcame").default(false),
+  notes: text("notes"),
+  
+  // Context
+  location: varchar("location"),
+  timeOfDay: varchar("time_of_day"),
+  mood: varchar("mood"),
+  
+  occurredAt: timestamp("occurred_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitCravingsLogSchema = createInsertSchema(habitCravingsLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitCravingsLog = z.infer<typeof insertHabitCravingsLogSchema>;
+export type HabitCravingsLog = typeof habitCravingsLog.$inferSelect;
+
+// Relapse Log - Track setbacks for quit plans
+export const habitRelapseLog = pgTable("habit_relapse_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quitPlanId: varchar("quit_plan_id").notNull().references(() => habitQuitPlans.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Relapse details
+  severity: varchar("severity"), // 'minor_slip', 'moderate', 'full_relapse'
+  quantity: varchar("quantity"), // "2 cigarettes", "1 hour social media"
+  trigger: varchar("trigger"),
+  emotionalState: varchar("emotional_state"),
+  
+  // Reflection
+  whatHappened: text("what_happened"),
+  whatLearnedFromThis: text("what_learned"),
+  planToPrevent: text("plan_to_prevent"),
+  
+  // Reset tracking
+  streakDaysLost: integer("streak_days_lost"),
+  
+  occurredAt: timestamp("occurred_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitRelapseLogSchema = createInsertSchema(habitRelapseLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitRelapseLog = z.infer<typeof insertHabitRelapseLogSchema>;
+export type HabitRelapseLog = typeof habitRelapseLog.$inferSelect;
+
+// Habit Mood Entries - Emotion tracking with sentiment analysis
+export const habitMoodEntries = pgTable("habit_mood_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Mood data
+  moodScore: integer("mood_score").notNull(), // 1-10 scale
+  moodLabel: varchar("mood_label"), // 'happy', 'anxious', 'angry', 'neutral', 'sad', 'excited'
+  energyLevel: integer("energy_level"), // 1-10
+  stressLevel: integer("stress_level"), // 1-10
+  
+  // Journal entry
+  journalText: text("journal_text"),
+  
+  // AI-extracted insights
+  sentimentScore: decimal("sentiment_score", { precision: 3, scale: 2 }), // -1 to 1
+  extractedEmotions: jsonb("extracted_emotions").$type<string[]>(),
+  extractedThemes: jsonb("extracted_themes").$type<string[]>(),
+  
+  // Context
+  associatedHabitId: varchar("associated_habit_id").references(() => habits.id),
+  contextTags: jsonb("context_tags").$type<string[]>(), // 'work', 'family', 'health', etc.
+  
+  recordedAt: timestamp("recorded_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitMoodEntrySchema = createInsertSchema(habitMoodEntries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitMoodEntry = z.infer<typeof insertHabitMoodEntrySchema>;
+export type HabitMoodEntry = typeof habitMoodEntries.$inferSelect;
+
+// Smart Journals - Weekly AI-summarized journal entries
+export const habitJournals = pgTable("habit_journals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Entry details
+  title: varchar("title"),
+  content: text("content").notNull(),
+  entryType: varchar("entry_type"), // 'daily', 'reflection', 'gratitude', 'goal_setting'
+  
+  // AI analysis
+  aiSummary: text("ai_summary"),
+  highlights: jsonb("highlights").$type<string[]>(), // 3 key highlights
+  risks: jsonb("risks").$type<string[]>(), // 2 identified risks
+  recommendations: jsonb("recommendations").$type<string[]>(), // 2 recommendations
+  sentimentTrend: varchar("sentiment_trend"), // 'improving', 'stable', 'declining'
+  
+  // Tags and categories
+  tags: jsonb("tags").$type<string[]>(),
+  mood: varchar("mood"),
+  
+  // Weekly summary flag
+  isWeeklySummary: boolean("is_weekly_summary").default(false),
+  weekStartDate: timestamp("week_start_date"),
+  
+  recordedAt: timestamp("recorded_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitJournalSchema = createInsertSchema(habitJournals).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitJournal = z.infer<typeof insertHabitJournalSchema>;
+export type HabitJournal = typeof habitJournals.$inferSelect;
+
+// Social Accountability - Buddy system
+export const habitBuddies = pgTable("habit_buddies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  buddyUserId: varchar("buddy_user_id").notNull().references(() => users.id),
+  
+  // Relationship status
+  status: varchar("status").default("pending"), // 'pending', 'active', 'blocked', 'removed'
+  initiatedBy: varchar("initiated_by").references(() => users.id),
+  
+  // Visibility settings
+  shareStreak: boolean("share_streak").default(true),
+  shareCompletions: boolean("share_completions").default(true),
+  shareMood: boolean("share_mood").default(false),
+  
+  // Shared habits
+  sharedHabitIds: jsonb("shared_habit_ids").$type<string[]>(),
+  
+  // Engagement
+  encouragementsSent: integer("encouragements_sent").default(0),
+  encouragementsReceived: integer("encouragements_received").default(0),
+  lastInteraction: timestamp("last_interaction"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHabitBuddySchema = createInsertSchema(habitBuddies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHabitBuddy = z.infer<typeof insertHabitBuddySchema>;
+export type HabitBuddy = typeof habitBuddies.$inferSelect;
+
+// Encouragement Messages between buddies
+export const habitEncouragements = pgTable("habit_encouragements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fromUserId: varchar("from_user_id").notNull().references(() => users.id),
+  toUserId: varchar("to_user_id").notNull().references(() => users.id),
+  
+  // Message
+  messageType: varchar("message_type"), // 'congrats', 'support', 'challenge', 'reminder'
+  message: text("message").notNull(),
+  prebuiltMessageId: varchar("prebuilt_message_id"), // For pre-built messages
+  
+  // Context
+  relatedHabitId: varchar("related_habit_id").references(() => habits.id),
+  relatedAchievement: varchar("related_achievement"),
+  
+  // Status
+  read: boolean("read").default(false),
+  readAt: timestamp("read_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitEncouragementSchema = createInsertSchema(habitEncouragements).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitEncouragement = z.infer<typeof insertHabitEncouragementSchema>;
+export type HabitEncouragement = typeof habitEncouragements.$inferSelect;
+
+// CBT Sessions - Guided interventions
+export const habitCbtSessions = pgTable("habit_cbt_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Session type
+  sessionType: varchar("session_type").notNull(), // 'urge_surfing', 'reframe_thought', 'grounding', 'breathing'
+  title: varchar("title").notNull(),
+  
+  // Progress through steps
+  currentStep: integer("current_step").default(1),
+  totalSteps: integer("total_steps").notNull(),
+  stepResponses: jsonb("step_responses").$type<Array<{
+    step: number;
+    prompt: string;
+    response: string;
+    timestamp: string;
+  }>>(),
+  
+  // Completion
+  completed: boolean("completed").default(false),
+  completedAt: timestamp("completed_at"),
+  
+  // Effectiveness
+  preSessionMood: integer("pre_session_mood"),
+  postSessionMood: integer("post_session_mood"),
+  helpfulRating: integer("helpful_rating"), // 1-5
+  notes: text("notes"),
+  
+  // Related context
+  relatedHabitId: varchar("related_habit_id").references(() => habits.id),
+  relatedQuitPlanId: varchar("related_quit_plan_id").references(() => habitQuitPlans.id),
+  
+  startedAt: timestamp("started_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitCbtSessionSchema = createInsertSchema(habitCbtSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitCbtSession = z.infer<typeof insertHabitCbtSessionSchema>;
+export type HabitCbtSession = typeof habitCbtSessions.$inferSelect;
+
+// Visual Rewards - Gamification with growth visualization
+export const habitRewards = pgTable("habit_rewards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Reward visualization
+  rewardType: varchar("reward_type").default("sunflower"), // 'sunflower', 'tree', 'garden', 'galaxy'
+  currentLevel: integer("current_level").default(1),
+  growthStage: varchar("growth_stage").default("seed"), // 'seed', 'sprout', 'growing', 'blooming', 'flourishing'
+  
+  // Progress metrics
+  totalPoints: integer("total_points").default(0),
+  streakBonus: integer("streak_bonus").default(0),
+  completionPoints: integer("completion_points").default(0),
+  
+  // Visual state
+  visualState: jsonb("visual_state").$type<{
+    petals?: number;
+    leaves?: number;
+    flowers?: number;
+    height?: number;
+    color?: string;
+    accessories?: string[];
+  }>(),
+  
+  // Achievements unlocked
+  unlockedBadges: jsonb("unlocked_badges").$type<string[]>(),
+  unlockedThemes: jsonb("unlocked_themes").$type<string[]>(),
+  
+  // Stats
+  daysActive: integer("days_active").default(0),
+  perfectDays: integer("perfect_days").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHabitRewardSchema = createInsertSchema(habitRewards).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHabitReward = z.infer<typeof insertHabitRewardSchema>;
+export type HabitReward = typeof habitRewards.$inferSelect;
+
+// AI Coach Conversations - Chat history with habit coach
+export const habitCoachChats = pgTable("habit_coach_chats", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Conversation
+  sessionId: varchar("session_id").notNull(),
+  role: varchar("role").notNull(), // 'user', 'assistant'
+  content: text("content").notNull(),
+  
+  // Context
+  relatedHabitId: varchar("related_habit_id").references(() => habits.id),
+  relatedQuitPlanId: varchar("related_quit_plan_id").references(() => habitQuitPlans.id),
+  
+  // AI metadata
+  coachPersonality: varchar("coach_personality"), // 'supportive', 'challenging', 'analytical'
+  responseType: varchar("response_type"), // 'encouragement', 'tip', 'cbt_technique', 'reflection'
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitCoachChatSchema = createInsertSchema(habitCoachChats).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitCoachChat = z.infer<typeof insertHabitCoachChatSchema>;
+export type HabitCoachChat = typeof habitCoachChats.$inferSelect;
+
+// Risk Alerts - Preventive alerts for high-risk days
+export const habitRiskAlerts = pgTable("habit_risk_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Alert details
+  alertType: varchar("alert_type").notNull(), // 'high_risk_day', 'streak_at_risk', 'pattern_detected', 'relapse_warning'
+  severity: varchar("severity").notNull(), // 'low', 'medium', 'high', 'critical'
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  
+  // Risk factors
+  riskScore: decimal("risk_score", { precision: 3, scale: 2 }), // 0-1
+  contributingFactors: jsonb("contributing_factors").$type<Array<{
+    factor: string;
+    weight: number;
+    value: string;
+  }>>(),
+  
+  // Related context
+  relatedHabitIds: jsonb("related_habit_ids").$type<string[]>(),
+  relatedQuitPlanId: varchar("related_quit_plan_id").references(() => habitQuitPlans.id),
+  
+  // Recommended actions
+  suggestedActions: jsonb("suggested_actions").$type<string[]>(),
+  
+  // Status
+  status: varchar("status").default("active"), // 'active', 'acknowledged', 'dismissed', 'resolved'
+  acknowledgedAt: timestamp("acknowledged_at"),
+  
+  // Timing
+  predictedFor: timestamp("predicted_for"), // When the risk is predicted for
+  expiresAt: timestamp("expires_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitRiskAlertSchema = createInsertSchema(habitRiskAlerts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitRiskAlert = z.infer<typeof insertHabitRiskAlertSchema>;
+export type HabitRiskAlert = typeof habitRiskAlerts.$inferSelect;
+
+// Dynamic AI Recommendations for habits
+export const habitAiRecommendations = pgTable("habit_ai_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  habitId: varchar("habit_id").references(() => habits.id),
+  
+  // Recommendation type
+  recommendationType: varchar("recommendation_type").notNull(), // 'difficulty_adjustment', 'time_change', 'micro_step', 'pause', 'celebrate'
+  title: varchar("title").notNull(),
+  description: text("description").notNull(),
+  
+  // Analysis basis
+  basedOnCompletionRate: decimal("based_on_completion_rate", { precision: 3, scale: 2 }),
+  basedOnStreak: integer("based_on_streak"),
+  basedOnMoodTrend: varchar("based_on_mood_trend"),
+  
+  // Specific suggestion
+  suggestedChange: jsonb("suggested_change").$type<{
+    type: string;
+    from?: string | number;
+    to?: string | number;
+    reason: string;
+  }>(),
+  
+  // Confidence and priority
+  confidence: decimal("confidence", { precision: 3, scale: 2 }),
+  priority: varchar("priority"), // 'high', 'medium', 'low'
+  
+  // Status
+  status: varchar("status").default("pending"), // 'pending', 'accepted', 'declined', 'expired'
+  userResponse: text("user_response"),
+  
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHabitAiRecommendationSchema = createInsertSchema(habitAiRecommendations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHabitAiRecommendation = z.infer<typeof insertHabitAiRecommendationSchema>;
+export type HabitAiRecommendation = typeof habitAiRecommendations.$inferSelect;
+
+// ============================================
+// END COMPREHENSIVE HABIT TRACKER SYSTEM
+// ============================================
+
 // Milestones & Achievements (Positive Reinforcement)
 export const milestones = pgTable("milestones", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
