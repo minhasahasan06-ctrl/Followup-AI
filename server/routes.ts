@@ -7639,6 +7639,681 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // =============================================================================
+  // ALERT ENGINE V2 PROXY ROUTES
+  // Routes to new V2 Alert Engine endpoints in Python backend
+  // =============================================================================
+
+  // V2 Metrics Ingest - Single metric
+  app.post('/api/ai-health-alerts/v2/metrics/ingest', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/ingest`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (v2 metrics ingest): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (v2 metrics ingest):', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Metrics Ingest - Batch
+  app.post('/api/ai-health-alerts/v2/metrics/ingest/batch', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/ingest/batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (v2 batch ingest): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (v2 batch ingest):', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Get Recent Metrics
+  app.get('/api/ai-health-alerts/v2/metrics/recent/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const { metric_name, hours } = req.query;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const queryParams = new URLSearchParams();
+      if (metric_name) queryParams.append('metric_name', metric_name as string);
+      if (hours) queryParams.append('hours', hours as string);
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/recent/${patientId}?${queryParams}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching v2 recent metrics:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Organ Scores
+  app.get('/api/ai-health-alerts/v2/organ-scores/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/organ-scores/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching v2 organ scores:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Compute Organ Scores
+  app.post('/api/ai-health-alerts/v2/organ-scores/compute/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/organ-scores/compute/${patientId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error computing v2 organ scores:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Organ Scores History
+  app.get('/api/ai-health-alerts/v2/organ-scores/history/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const days = req.query.days || 30;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/organ-scores/history/${patientId}?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching v2 organ scores history:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 DPI (Deterioration Index)
+  app.get('/api/ai-health-alerts/v2/dpi/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/dpi/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching v2 DPI:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Compute DPI
+  app.post('/api/ai-health-alerts/v2/dpi/compute/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/dpi/compute/${patientId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error computing v2 DPI:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 DPI History
+  app.get('/api/ai-health-alerts/v2/dpi/history/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const days = req.query.days || 30;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/dpi/history/${patientId}?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching v2 DPI history:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Generate Alerts (rule-based engine)
+  app.post('/api/ai-health-alerts/v2/alerts/generate/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/alerts/generate/${patientId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error generating v2 alerts:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Get Ranked Alerts (ML-assisted)
+  app.get('/api/ai-health-alerts/v2/alerts/ranked/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const limit = req.query.limit || 20;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/alerts/ranked/${patientId}?limit=${limit}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching v2 ranked alerts:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Escalate Alert
+  app.post('/api/ai-health-alerts/v2/alerts/:alertId/escalate', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { alertId } = req.params;
+      const clinicianId = req.query.clinician_id || req.user?.id;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/alerts/${alertId}/escalate?clinician_id=${clinicianId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error escalating v2 alert:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Notifications - Unread
+  app.get('/api/ai-health-alerts/v2/notifications/unread/:userId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { userId } = req.params;
+      const limit = req.query.limit || 50;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/notifications/unread/${userId}?limit=${limit}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching v2 notifications:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Mark Notification Read
+  app.post('/api/ai-health-alerts/v2/notifications/:notificationId/read', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { notificationId } = req.params;
+      const userId = req.query.user_id || req.user?.id;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/notifications/${notificationId}/read?user_id=${userId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error marking v2 notification read:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Get Alert Config
+  app.get('/api/ai-health-alerts/v2/config', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/config`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching v2 config:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Update Alert Config
+  app.patch('/api/ai-health-alerts/v2/config', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/config`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error updating v2 config:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Compute All (full pipeline)
+  app.post('/api/ai-health-alerts/v2/compute-all/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/compute-all/${patientId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error in v2 compute-all:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
+  // V2 Patient Overview (enhanced)
+  app.get('/api/ai-health-alerts/v2/patient-overview/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/patient-overview/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching v2 patient overview:', error);
+      res.status(502).json({ error: 'Failed to connect to AI health alerts service' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
