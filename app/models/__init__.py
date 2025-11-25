@@ -50,6 +50,24 @@ from app.models.symptom_checkin_models import (
     PassiveMetric,
     TrendReport
 )
+from app.models.habit_models import (
+    HabitHabit,
+    HabitCompletion,
+    HabitRoutine,
+    HabitMicroStep,
+    HabitReminder,
+    HabitTrigger,
+    HabitMoodEntry,
+    HabitQuitPlan,
+    HabitCraving,
+    HabitCoachMessage,
+    HabitCbtSession,
+    HabitReward,
+    HabitBuddy,
+    HabitJournal,
+    HabitRecommendation,
+    HabitRiskAlert
+)
 
 __all__ = [
     "User",
@@ -94,4 +112,20 @@ __all__ = [
     "ChatSymptom",
     "PassiveMetric",
     "TrendReport",
+    "HabitHabit",
+    "HabitCompletion",
+    "HabitRoutine",
+    "HabitMicroStep",
+    "HabitReminder",
+    "HabitTrigger",
+    "HabitMoodEntry",
+    "HabitQuitPlan",
+    "HabitCraving",
+    "HabitCoachMessage",
+    "HabitCbtSession",
+    "HabitReward",
+    "HabitBuddy",
+    "HabitJournal",
+    "HabitRecommendation",
+    "HabitRiskAlert",
 ]

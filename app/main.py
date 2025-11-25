@@ -54,6 +54,7 @@ from app.routers import (
     mental_health,  # ✅ Mental Health Questionnaires - PRODUCTION READY
     drug_normalization_api,  # ✅ Drug Normalization Service - PRODUCTION READY
     ai_health_alerts,  # ✅ AI Health Alert Engine - PRODUCTION READY
+    habits,  # ✅ Comprehensive Habit Tracker - 13 Features - PRODUCTION READY
 )
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,9 @@ app.include_router(drug_normalization_api.router)
 
 # AI Health Alert Engine (Trend Detection, Engagement Monitoring, QoL Metrics) - PRODUCTION READY
 app.include_router(ai_health_alerts.router)
+
+# Comprehensive Habit Tracker (13 Features: Routines, Streaks, AI Coach, CBT, etc.) - PRODUCTION READY
+app.include_router(habits.router)
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:

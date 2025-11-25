@@ -8465,6 +8465,273 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // =============================================================================
+  // AI-POWERED HABIT TRACKER PROXY ROUTES (13 Features)
+  // =============================================================================
+
+  // Helper function for habit tracker proxy requests
+  const habitTrackerProxy = async (req: any, res: any, path: string, method: string = 'GET') => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const userId = req.user?.id || req.query.user_id || 'current';
+      
+      // Build query string
+      const queryParams = new URLSearchParams(req.query as Record<string, string>);
+      if (!queryParams.has('user_id')) {
+        queryParams.set('user_id', userId);
+      }
+      const queryString = queryParams.toString();
+      const url = `${pythonBackendUrl}${path}${queryString ? '?' + queryString : ''}`;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const fetchOptions: RequestInit = {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+          'X-User-Id': userId,
+        },
+      };
+      
+      if (method !== 'GET' && method !== 'HEAD' && req.body) {
+        fetchOptions.body = JSON.stringify(req.body);
+      }
+      
+      const response = await fetch(url, fetchOptions);
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Habit tracker proxy error (${path}):`, response.status, error);
+        return res.status(response.status).json({ message: error || 'Request failed' });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error(`Habit tracker proxy error (${path}):`, error);
+      res.status(502).json({ error: 'Habit tracker service unavailable' });
+    }
+  };
+
+  // Feature 1: Habit CRUD & Completion
+  app.get('/api/habits', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits', 'GET');
+  });
+
+  app.post('/api/habits/create', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/create', 'POST');
+  });
+
+  app.post('/api/habits/:habitId/complete', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/${req.params.habitId}/complete`, 'POST');
+  });
+
+  app.get('/api/habits/:habitId/history', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/${req.params.habitId}/history`, 'GET');
+  });
+
+  // Feature 2: Daily Routines with Micro-Steps
+  app.get('/api/habits/routines', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/routines', 'GET');
+  });
+
+  app.post('/api/habits/routines/create', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/routines/create', 'POST');
+  });
+
+  app.post('/api/habits/routines/:routineId/step/:stepId/complete', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/routines/${req.params.routineId}/step/${req.params.stepId}/complete`, 'POST');
+  });
+
+  // Feature 3: Streaks & Calendar View
+  app.get('/api/habits/streaks', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/streaks', 'GET');
+  });
+
+  app.get('/api/habits/calendar', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/calendar', 'GET');
+  });
+
+  // Feature 4: Smart Reminders
+  app.get('/api/habits/reminders', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/reminders', 'GET');
+  });
+
+  app.post('/api/habits/reminders/set', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/reminders/set', 'POST');
+  });
+
+  app.post('/api/habits/reminders/:reminderId/snooze', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/reminders/${req.params.reminderId}/snooze`, 'POST');
+  });
+
+  app.delete('/api/habits/reminders/:reminderId', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/reminders/${req.params.reminderId}`, 'DELETE');
+  });
+
+  // Feature 5: AI Habit Coach
+  app.post('/api/habits/coach/chat', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/coach/chat', 'POST');
+  });
+
+  app.get('/api/habits/coach/history', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/coach/history', 'GET');
+  });
+
+  // Feature 6: Trigger Detection
+  app.get('/api/habits/triggers', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/triggers', 'GET');
+  });
+
+  app.post('/api/habits/triggers/analyze', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/triggers/analyze', 'POST');
+  });
+
+  app.post('/api/habits/triggers/log', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/triggers/log', 'POST');
+  });
+
+  // Feature 7: Addiction-Mode Quit Plans
+  app.get('/api/habits/quit-plans', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/quit-plans', 'GET');
+  });
+
+  app.post('/api/habits/quit-plans/create', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/quit-plans/create', 'POST');
+  });
+
+  app.post('/api/habits/quit-plans/:planId/craving', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/quit-plans/${req.params.planId}/craving`, 'POST');
+  });
+
+  app.post('/api/habits/quit-plans/:planId/relapse', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/quit-plans/${req.params.planId}/relapse`, 'POST');
+  });
+
+  app.get('/api/habits/quit-plans/:planId/stats', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/quit-plans/${req.params.planId}/stats`, 'GET');
+  });
+
+  // Feature 8: Mood Tracking
+  app.get('/api/habits/mood/trends', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/mood/trends', 'GET');
+  });
+
+  app.post('/api/habits/mood/log', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/mood/log', 'POST');
+  });
+
+  app.get('/api/habits/mood/correlations', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/mood/correlations', 'GET');
+  });
+
+  // Feature 9: Dynamic AI Recommendations
+  app.get('/api/habits/recommendations', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/recommendations', 'GET');
+  });
+
+  app.post('/api/habits/recommendations/generate', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/recommendations/generate', 'POST');
+  });
+
+  app.post('/api/habits/recommendations/:recId/dismiss', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/recommendations/${req.params.recId}/dismiss`, 'POST');
+  });
+
+  app.post('/api/habits/recommendations/:recId/accept', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/recommendations/${req.params.recId}/accept`, 'POST');
+  });
+
+  // Feature 10: Social Accountability / Buddy System
+  app.get('/api/habits/buddies', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/buddies', 'GET');
+  });
+
+  app.post('/api/habits/buddies/invite', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/buddies/invite', 'POST');
+  });
+
+  app.post('/api/habits/buddies/:inviteId/accept', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/buddies/${req.params.inviteId}/accept`, 'POST');
+  });
+
+  app.get('/api/habits/buddies/:buddyId/progress', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/buddies/${req.params.buddyId}/progress`, 'GET');
+  });
+
+  app.post('/api/habits/buddies/:buddyId/nudge', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/buddies/${req.params.buddyId}/nudge`, 'POST');
+  });
+
+  // Feature 11: Guided CBT Sessions
+  app.get('/api/habits/cbt/flows', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/cbt/flows', 'GET');
+  });
+
+  app.post('/api/habits/cbt/start', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/cbt/start', 'POST');
+  });
+
+  app.post('/api/habits/cbt/respond', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/cbt/respond', 'POST');
+  });
+
+  app.get('/api/habits/cbt/sessions', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/cbt/sessions', 'GET');
+  });
+
+  // Feature 12: Gamification & Visual Rewards
+  app.get('/api/habits/rewards', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/rewards', 'GET');
+  });
+
+  app.get('/api/habits/rewards/leaderboard', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/rewards/leaderboard', 'GET');
+  });
+
+  app.post('/api/habits/rewards/claim/:rewardId', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/rewards/claim/${req.params.rewardId}`, 'POST');
+  });
+
+  // Feature 13: Smart Journals with AI Insights
+  app.get('/api/habits/journals', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/journals', 'GET');
+  });
+
+  app.post('/api/habits/journals/create', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/journals/create', 'POST');
+  });
+
+  app.get('/api/habits/journals/:journalId/insights', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/journals/${req.params.journalId}/insights`, 'GET');
+  });
+
+  app.post('/api/habits/journals/weekly-summary', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/journals/weekly-summary', 'POST');
+  });
+
+  // Preventive Alerts (Risk Detection)
+  app.get('/api/habits/alerts', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/alerts', 'GET');
+  });
+
+  app.post('/api/habits/alerts/:alertId/acknowledge', async (req: any, res) => {
+    await habitTrackerProxy(req, res, `/api/habits/alerts/${req.params.alertId}/acknowledge`, 'POST');
+  });
+
+  // =============================================================================
+  // END HABIT TRACKER PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
   return httpServer;
 }
