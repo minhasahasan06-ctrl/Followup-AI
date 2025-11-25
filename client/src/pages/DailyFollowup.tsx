@@ -531,20 +531,20 @@ export default function DailyFollowup() {
         </Card>
       )}
 
-      {/* Link to full analysis page */}
+      {/* Link to history page */}
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <h3 className="font-semibold">View Complete Analysis & History</h3>
+              <h3 className="font-semibold">View All Health History</h3>
               <p className="text-sm text-muted-foreground">
-                Access detailed AI insights, trends, and your examination history
+                Access detailed trends across all wellness categories
               </p>
             </div>
-            <Link href="/ai-video">
-              <Button variant="outline" className="gap-2" data-testid="button-full-analysis-page">
+            <Link href="/daily-followup">
+              <Button variant="outline" className="gap-2" data-testid="button-health-history">
                 <BarChart3 className="h-4 w-4" />
-                Full Analysis Page
+                Health History
                 <ExternalLink className="h-3 w-3" />
               </Button>
             </Link>

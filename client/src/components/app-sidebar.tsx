@@ -57,10 +57,10 @@ const patientItems = [
     icon: Home,
   },
   {
-    title: "Daily Followup",
+    title: "Daily Follow-up",
     url: "/daily-followup",
     icon: Activity,
-    badge: "AI",
+    badge: "History",
   },
   {
     title: "Chat with Agent Clona",

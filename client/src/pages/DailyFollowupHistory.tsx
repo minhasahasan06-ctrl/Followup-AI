@@ -183,10 +183,17 @@ export default function DailyFollowupHistory() {
     enabled: !!user,
   });
 
-  const { data: videoMetrics, isLoading: videoLoading } = useQuery<any>({
+  const { data: videoMetrics, isLoading: videoMetricsLoading } = useQuery<any>({
     queryKey: ['/api/video-ai/latest-metrics'],
     enabled: !!user,
   });
+
+  const { data: videoSessions, isLoading: videoSessionsLoading } = useQuery<any[]>({
+    queryKey: ['/api/video-ai/exam-sessions', { days: daysLimit }],
+    enabled: !!user,
+  });
+
+  const videoLoading = videoMetricsLoading || videoSessionsLoading;
 
   const filterByTimeRange = (data: any[], dateField: string = 'createdAt') => {
     if (!data || selectedRange.days === Infinity) return data || [];
@@ -208,12 +215,14 @@ export default function DailyFollowupHistory() {
     return filterByTimeRange(history, 'completed_at');
   }, [mentalHealthHistory, timeRange]);
   const filteredVoice = useMemo(() => filterByTimeRange(voiceFollowups || []), [voiceFollowups, timeRange]);
+  const filteredVideoSessions = useMemo(() => filterByTimeRange(videoSessions || [], 'started_at'), [videoSessions, timeRange]);
 
   const hasAnyData = (filteredDeviceHistory?.length > 0) || 
                      (filteredSymptoms?.length > 0) || 
                      (filteredPaintrack?.length > 0) || 
                      (filteredMentalHealth?.length > 0) ||
                      (filteredVoice?.length > 0) ||
+                     (filteredVideoSessions?.length > 0) ||
                      videoMetrics;
 
   const isNewPatient = !hasAnyData && !deviceLoading && !symptomsLoading && !paintrackLoading && !mentalHealthLoading;
@@ -262,6 +271,19 @@ export default function DailyFollowupHistory() {
         joint: p.joint,
       }));
   }, [filteredPaintrack]);
+
+  const videoSessionsChartData = useMemo(() => {
+    if (!filteredVideoSessions?.length) return [];
+    return filteredVideoSessions
+      .slice()
+      .reverse()
+      .map((s: any) => ({
+        date: format(new Date(s.started_at), 'MMM d'),
+        completed: s.completed_segments || 0,
+        total: s.total_segments || 7,
+        status: s.status,
+      }));
+  }, [filteredVideoSessions]);
 
   const mentalHealthChartData = useMemo(() => {
     if (!filteredMentalHealth?.length) return [];
@@ -634,85 +656,199 @@ export default function DailyFollowupHistory() {
         <TabsContent value="video-ai" className="space-y-4">
           {videoLoading ? (
             <Card><CardContent className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" /></CardContent></Card>
-          ) : videoMetrics ? (
+          ) : (filteredVideoSessions?.length > 0 || videoMetrics) ? (
             <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <StatCard 
+                  label="Total Examinations" 
+                  value={filteredVideoSessions?.length || 0} 
+                  icon={Video}
+                  color="text-primary"
+                />
+                <StatCard 
+                  label="Completed" 
+                  value={filteredVideoSessions?.filter((s: any) => s.status === 'completed').length || 0} 
+                  icon={CheckCircle2}
+                  color="text-chart-2"
+                />
+                <StatCard 
+                  label="Avg Segments" 
+                  value={filteredVideoSessions?.length > 0 
+                    ? (filteredVideoSessions.reduce((sum: number, s: any) => sum + (s.completed_segments || 0), 0) / filteredVideoSessions.length).toFixed(1)
+                    : '0'
+                  } 
+                  unit="/7"
+                  icon={Camera}
+                  color="text-blue-500"
+                />
+                <StatCard 
+                  label="This Week" 
+                  value={filteredVideoSessions?.filter((s: any) => {
+                    const sessionDate = new Date(s.started_at);
+                    const weekAgo = subDays(new Date(), 7);
+                    return sessionDate >= weekAgo;
+                  }).length || 0} 
+                  icon={Calendar}
+                  color="text-purple-500"
+                />
+              </div>
+
+              {filteredVideoSessions?.length > 1 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5" />
+                      Examination Completion Trends
+                    </CardTitle>
+                    <CardDescription>
+                      Segments completed per examination over {selectedRange.label.toLowerCase()}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[250px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={videoSessionsChartData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="date" className="text-xs" />
+                          <YAxis domain={[0, 7]} className="text-xs" />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: 'hsl(var(--card))', 
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px'
+                            }}
+                            formatter={(value: any, name: any) => [
+                              `${value}/7 segments`,
+                              'Completed'
+                            ]}
+                          />
+                          <Bar dataKey="completed" name="Completed Segments" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {videoMetrics && (
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          <Video className="h-5 w-5 text-primary" />
+                          Latest AI Metrics
+                        </CardTitle>
+                        <CardDescription>
+                          Last examination: {videoMetrics.created_at ? format(new Date(videoMetrics.created_at), 'MMM d, yyyy h:mm a') : 'N/A'}
+                        </CardDescription>
+                      </div>
+                      <Link href="/ai-video">
+                        <Button variant="outline" size="sm" className="gap-2" data-testid="button-view-full-video-analysis">
+                          Full Analysis
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {videoMetrics.respiratory_rate_bpm && (
+                        <div className="p-3 rounded-lg border bg-muted/30">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Wind className="h-3 w-3 text-blue-500" />
+                            <span className="text-xs text-muted-foreground">Respiratory</span>
+                          </div>
+                          <div className="text-lg font-bold">{videoMetrics.respiratory_rate_bpm.toFixed(1)} bpm</div>
+                        </div>
+                      )}
+                      {videoMetrics.skin_pallor_score != null && (
+                        <div className="p-3 rounded-lg border bg-muted/30">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Palette className="h-3 w-3 text-amber-500" />
+                            <span className="text-xs text-muted-foreground">Pallor</span>
+                          </div>
+                          <div className="text-lg font-bold">{videoMetrics.skin_pallor_score.toFixed(1)}/100</div>
+                        </div>
+                      )}
+                      {videoMetrics.jaundice_risk_level && (
+                        <div className="p-3 rounded-lg border bg-muted/30">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Eye className="h-3 w-3 text-yellow-500" />
+                            <span className="text-xs text-muted-foreground">Jaundice</span>
+                          </div>
+                          <div className="text-lg font-bold capitalize">{videoMetrics.jaundice_risk_level}</div>
+                        </div>
+                      )}
+                      {videoMetrics.facial_swelling_score != null && (
+                        <div className="p-3 rounded-lg border bg-muted/30">
+                          <div className="flex items-center gap-2 mb-1">
+                            <User className="h-3 w-3 text-rose-500" />
+                            <span className="text-xs text-muted-foreground">Swelling</span>
+                          </div>
+                          <div className="text-lg font-bold">{videoMetrics.facial_swelling_score.toFixed(1)}/100</div>
+                        </div>
+                      )}
+                      {videoMetrics.tremor_detected !== undefined && (
+                        <div className="p-3 rounded-lg border bg-muted/30">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Hand className="h-3 w-3 text-purple-500" />
+                            <span className="text-xs text-muted-foreground">Tremor</span>
+                          </div>
+                          <div className="text-lg font-bold">{videoMetrics.tremor_detected ? 'Detected' : 'None'}</div>
+                        </div>
+                      )}
+                      {videoMetrics.tongue_coating_detected !== undefined && (
+                        <div className="p-3 rounded-lg border bg-muted/30">
+                          <div className="flex items-center gap-2 mb-1">
+                            <MessageSquare className="h-3 w-3 text-pink-500" />
+                            <span className="text-xs text-muted-foreground">Tongue</span>
+                          </div>
+                          <div className="text-lg font-bold">{videoMetrics.tongue_coating_detected ? 'Coating' : 'Normal'}</div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Video className="h-5 w-5 text-primary" />
-                        Latest Video AI Analysis
-                      </CardTitle>
-                      <CardDescription>
-                        Last examination: {videoMetrics.created_at ? format(new Date(videoMetrics.created_at), 'MMM d, yyyy h:mm a') : 'N/A'}
-                      </CardDescription>
-                    </div>
-                    <Link href="/ai-video">
-                      <Button variant="outline" size="sm" className="gap-2" data-testid="button-view-full-video-analysis">
-                        View Full Analysis
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                  </div>
+                  <CardTitle>Examination History</CardTitle>
+                  <CardDescription>{filteredVideoSessions?.length || 0} examinations in {selectedRange.label.toLowerCase()}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {videoMetrics.respiratory_rate_bpm && (
-                      <div className="p-4 rounded-lg border bg-muted/30">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Wind className="h-4 w-4 text-blue-500" />
-                          <span className="text-sm text-muted-foreground">Respiratory Rate</span>
+                  <ScrollArea className="h-[200px]">
+                    <div className="space-y-2">
+                      {filteredVideoSessions?.map((session: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-full ${session.status === 'completed' ? 'bg-chart-2/20' : 'bg-muted'}`}>
+                              {session.status === 'completed' ? (
+                                <CheckCircle2 className="h-4 w-4 text-chart-2" />
+                              ) : (
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium">{format(new Date(session.started_at), 'MMM d, yyyy h:mm a')}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {session.completed_segments}/{session.total_segments} segments
+                              </div>
+                            </div>
+                          </div>
+                          <Badge variant={session.status === 'completed' ? 'default' : 'secondary'} className="text-xs capitalize">
+                            {session.status}
+                          </Badge>
                         </div>
-                        <div className="text-2xl font-bold">{videoMetrics.respiratory_rate_bpm.toFixed(1)} <span className="text-sm font-normal">bpm</span></div>
-                      </div>
-                    )}
-                    {videoMetrics.skin_pallor_score != null && (
-                      <div className="p-4 rounded-lg border bg-muted/30">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Palette className="h-4 w-4 text-amber-500" />
-                          <span className="text-sm text-muted-foreground">Skin Pallor</span>
+                      ))}
+                      {(!filteredVideoSessions || filteredVideoSessions.length === 0) && (
+                        <div className="text-center py-4 text-muted-foreground text-sm">
+                          No examination sessions in selected time range
                         </div>
-                        <div className="text-2xl font-bold">{videoMetrics.skin_pallor_score.toFixed(1)}<span className="text-sm font-normal">/100</span></div>
-                      </div>
-                    )}
-                    {videoMetrics.jaundice_risk_level && (
-                      <div className="p-4 rounded-lg border bg-muted/30">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Eye className="h-4 w-4 text-yellow-500" />
-                          <span className="text-sm text-muted-foreground">Jaundice Risk</span>
-                        </div>
-                        <div className="text-2xl font-bold capitalize">{videoMetrics.jaundice_risk_level}</div>
-                      </div>
-                    )}
-                    {videoMetrics.facial_swelling_score != null && (
-                      <div className="p-4 rounded-lg border bg-muted/30">
-                        <div className="flex items-center gap-2 mb-2">
-                          <User className="h-4 w-4 text-rose-500" />
-                          <span className="text-sm text-muted-foreground">Facial Swelling</span>
-                        </div>
-                        <div className="text-2xl font-bold">{videoMetrics.facial_swelling_score.toFixed(1)}<span className="text-sm font-normal">/100</span></div>
-                      </div>
-                    )}
-                    {videoMetrics.tremor_detected !== undefined && (
-                      <div className="p-4 rounded-lg border bg-muted/30">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Hand className="h-4 w-4 text-purple-500" />
-                          <span className="text-sm text-muted-foreground">Tremor</span>
-                        </div>
-                        <div className="text-2xl font-bold">{videoMetrics.tremor_detected ? 'Detected' : 'None'}</div>
-                      </div>
-                    )}
-                    {videoMetrics.tongue_coating_detected !== undefined && (
-                      <div className="p-4 rounded-lg border bg-muted/30">
-                        <div className="flex items-center gap-2 mb-2">
-                          <MessageSquare className="h-4 w-4 text-pink-500" />
-                          <span className="text-sm text-muted-foreground">Tongue Analysis</span>
-                        </div>
-                        <div className="text-2xl font-bold">{videoMetrics.tongue_coating_detected ? 'Coating' : 'Normal'}</div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  </ScrollArea>
                 </CardContent>
               </Card>
 
@@ -722,7 +858,7 @@ export default function DailyFollowupHistory() {
                   <CardDescription>Record a 7-stage AI-guided video examination to track changes</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Link href="/daily-followup">
+                  <Link href="/daily-followup/video-exam">
                     <Button className="w-full gap-2" data-testid="button-start-video-exam">
                       <Camera className="h-4 w-4" />
                       Start Video Examination
@@ -737,7 +873,7 @@ export default function DailyFollowupHistory() {
               title="No Video AI Analysis Yet"
               description="Complete a guided video examination to get AI-powered analysis of respiratory rate, skin pallor, jaundice indicators, and more."
               actionLabel="Start Video Examination"
-              actionHref="/daily-followup"
+              actionHref="/daily-followup/video-exam"
             />
           )}
         </TabsContent>
