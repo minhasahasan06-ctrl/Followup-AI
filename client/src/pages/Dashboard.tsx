@@ -828,6 +828,14 @@ export default function Dashboard() {
     ? new Date(latestVideoMetrics.created_at).toDateString() === new Date().toDateString()
     : false;
 
+  // Check if device data exists for today
+  const hasDeviceDataToday = todayFollowup && (
+    todayFollowup.heartRate !== null || 
+    todayFollowup.oxygenSaturation !== null || 
+    todayFollowup.temperature !== null || 
+    todayFollowup.stepsCount !== null
+  );
+
   // PainTrack mutations
   const createPaintrackSessionMutation = useMutation({
     mutationFn: async (sessionData: {
@@ -913,6 +921,18 @@ export default function Dashboard() {
   const { data: mentalHealthHistoryData, refetch: refetchMentalHealthHistory } = useQuery({
     queryKey: ["/api/v1/mental-health/history"],
   });
+
+  // Check if PainTrack session exists from today
+  const todaysPaintrackSession = paintrackSessions?.find(session => 
+    new Date(session.createdAt).toDateString() === new Date().toDateString()
+  );
+  const hasPaintrackToday = !!todaysPaintrackSession;
+
+  // Check if mental health assessment completed today
+  const todaysMentalHealthResponse = (mentalHealthHistoryData as any)?.history?.find((item: MentalHealthHistoryItem) =>
+    new Date(item.completed_at).toDateString() === new Date().toDateString()
+  );
+  const hasMentalHealthToday = !!todaysMentalHealthResponse;
 
   // Audio examination mutations
   const createAudioSessionMutation = useMutation({
