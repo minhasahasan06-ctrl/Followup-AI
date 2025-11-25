@@ -10,6 +10,8 @@ Components:
 6. EscalationService - Unacknowledged alert escalation
 7. MLRankingService - XGBoost-based alert prioritization
 8. AlertConfigService - Admin-configurable thresholds and policies
+9. AlertEngineWorker - Background worker that orchestrates the complete pipeline
+10. AlertEngineCronJob - Cron-style periodic pipeline execution
 """
 
 from .metrics_ingest import MetricsIngestService
@@ -20,6 +22,7 @@ from .notification_service import NotificationService
 from .escalation_service import EscalationService
 from .ml_ranking import MLRankingService
 from .config_service import AlertConfigService
+from .background_worker import AlertEngineWorker, AlertEngineCronJob, start_worker_in_thread
 
 __all__ = [
     'MetricsIngestService',
@@ -29,5 +32,8 @@ __all__ = [
     'NotificationService',
     'EscalationService',
     'MLRankingService',
-    'AlertConfigService'
+    'AlertConfigService',
+    'AlertEngineWorker',
+    'AlertEngineCronJob',
+    'start_worker_in_thread'
 ]
