@@ -317,12 +317,19 @@ async def create_routine(
 @router.post("/micro-steps/create")
 async def create_micro_steps(
     steps: List[MicroStepCreate],
+    user_id: str = Depends(get_user_id_from_auth_or_query),
     db: Session = Depends(get_db)
 ):
     """Create micro-steps for breaking down a habit"""
     try:
         created = []
         for step in steps:
+            # Verify habit ownership before creating micro-step
+            ownership_check = text("SELECT id FROM habit_habits WHERE id = :habit_id AND user_id = :user_id")
+            habit_exists = db.execute(ownership_check, {"habit_id": step.habit_id, "user_id": user_id}).fetchone()
+            if not habit_exists:
+                raise HTTPException(status_code=403, detail="Not authorized to add micro-steps to this habit")
+            
             insert_query = text("""
                 INSERT INTO habit_micro_steps (id, habit_id, step_order, title, 
                                                description, estimated_minutes, is_required)
@@ -352,10 +359,17 @@ async def create_micro_steps(
 @router.get("/micro-steps/{habit_id}")
 async def get_micro_steps(
     habit_id: str,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
     db: Session = Depends(get_db)
 ):
     """Get all micro-steps for a habit"""
     try:
+        # Verify habit ownership
+        ownership_check = text("SELECT id FROM habit_habits WHERE id = :habit_id AND user_id = :user_id")
+        habit_exists = db.execute(ownership_check, {"habit_id": habit_id, "user_id": user_id}).fetchone()
+        if not habit_exists:
+            raise HTTPException(status_code=403, detail="Not authorized to view this habit's micro-steps")
+        
         query = text("""
             SELECT id, step_order, title, description, estimated_minutes, 
                    is_required, completion_count
@@ -614,18 +628,25 @@ async def create_reminder(
 async def snooze_reminder(
     reminder_id: str,
     minutes: int = 30,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
     db: Session = Depends(get_db)
 ):
     """Snooze a reminder for specified minutes"""
     try:
+        # Verify reminder ownership
+        ownership_check = text("SELECT id FROM habit_reminders WHERE id = :reminder_id AND user_id = :user_id")
+        reminder_exists = db.execute(ownership_check, {"reminder_id": reminder_id, "user_id": user_id}).fetchone()
+        if not reminder_exists:
+            raise HTTPException(status_code=403, detail="Not authorized to snooze this reminder")
+        
         update_query = text("""
             UPDATE habit_reminders
             SET snooze_until = NOW() + :minutes * INTERVAL '1 minute'
-            WHERE id = :reminder_id
+            WHERE id = :reminder_id AND user_id = :user_id
             RETURNING id
         """)
         
-        result = db.execute(update_query, {"reminder_id": reminder_id, "minutes": minutes})
+        result = db.execute(update_query, {"reminder_id": reminder_id, "minutes": minutes, "user_id": user_id})
         db.commit()
         
         return {"success": True, "snoozed_for_minutes": minutes}
@@ -1530,18 +1551,25 @@ async def request_buddy(
 @router.post("/buddies/{buddy_id}/accept")
 async def accept_buddy(
     buddy_id: str,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
     db: Session = Depends(get_db)
 ):
     """Accept a buddy request"""
     try:
+        # Verify buddy request is for this user (they are the buddy_user_id)
+        ownership_check = text("SELECT id FROM habit_buddies WHERE id = :buddy_id AND buddy_user_id = :user_id AND status = 'pending'")
+        buddy_exists = db.execute(ownership_check, {"buddy_id": buddy_id, "user_id": user_id}).fetchone()
+        if not buddy_exists:
+            raise HTTPException(status_code=403, detail="Not authorized to accept this buddy request")
+        
         update_query = text("""
             UPDATE habit_buddies
             SET status = 'active', updated_at = NOW()
-            WHERE id = :buddy_id
+            WHERE id = :buddy_id AND buddy_user_id = :user_id
             RETURNING id
         """)
         
-        result = db.execute(update_query, {"buddy_id": buddy_id})
+        result = db.execute(update_query, {"buddy_id": buddy_id, "user_id": user_id})
         db.commit()
         
         return {"success": True, "status": "active"}
@@ -2399,18 +2427,25 @@ async def get_alerts(
 @router.post("/alerts/{alert_id}/acknowledge")
 async def acknowledge_alert(
     alert_id: str,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
     db: Session = Depends(get_db)
 ):
     """Acknowledge a risk alert"""
     try:
+        # Verify alert ownership
+        ownership_check = text("SELECT id FROM habit_risk_alerts WHERE id = :alert_id AND user_id = :user_id")
+        alert_exists = db.execute(ownership_check, {"alert_id": alert_id, "user_id": user_id}).fetchone()
+        if not alert_exists:
+            raise HTTPException(status_code=403, detail="Not authorized to acknowledge this alert")
+        
         update_query = text("""
             UPDATE habit_risk_alerts
             SET status = 'acknowledged', acknowledged_at = NOW()
-            WHERE id = :alert_id
+            WHERE id = :alert_id AND user_id = :user_id
             RETURNING id
         """)
         
-        result = db.execute(update_query, {"alert_id": alert_id})
+        result = db.execute(update_query, {"alert_id": alert_id, "user_id": user_id})
         db.commit()
         
         return {"success": True, "status": "acknowledged"}
