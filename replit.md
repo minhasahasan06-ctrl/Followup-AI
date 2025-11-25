@@ -47,6 +47,19 @@ The backend comprises two services:
 - **Mental Health AI Dashboard Integration:** Integrated questionnaire system (PHQ-9, GAD-7, PSS-10) with AI-powered GPT-4o analysis, crisis detection, severity scoring, and cluster analysis.
 - **Agent Clona Symptom Extraction System:** AI-powered symptom extraction from patient conversations with Agent Clona (GPT-4o). Automatically identifies symptoms, body locations, intensity mentions, and temporal information from natural language chat, storing them in the `ChatSymptom` table with confidence scores. Unified symptom feed (`/api/symptom-checkin/feed/unified`) merges AI-extracted symptoms with patient-reported check-ins, displaying both data sources in Dashboard → Daily Follow-up → Symptoms tab with distinct HIPAA-compliant labeling ("Patient-reported" vs "AI-observed via Clona"). Includes comprehensive audit logging and observational disclaimers.
 
+### Daily Follow-up Dashboard 24-Hour Pattern
+All tabs in the Daily Follow-up dashboard section enforce a 24-hour gating pattern:
+- **Pattern**: Each tab shows today's summary/insights if data was completed within the current day (12am-12am), otherwise shows a prompt to complete the activity
+- **Re-entry Option**: Each tab includes a button to record additional entries even when data exists for today (e.g., "Add New Check-in", "Record New Assessment", "Start New Examination")
+- **Implementation**:
+  1. Query for the relevant data (e.g., `/api/symptom-checkin/feed/unified`, `/api/paintrack/sessions`)
+  2. Filter/check if data exists for today using `new Date(timestamp).toDateString() === new Date().toDateString()`
+  3. Create a `hasDataToday` boolean and optionally `todaysData` variable
+  4. Create a `showNewEntry` state variable to toggle between summary and form views
+  5. Conditional rendering: Summary → Prompt → Form (based on hasDataToday and showNewEntry states)
+- **Tabs using this pattern**: Device Data, Symptoms, Video AI, Audio AI, PainTrack, Mental Health
+- **For new tabs**: Follow this same pattern to maintain consistency
+
 ### Security and Compliance
 The platform is HIPAA-compliant, featuring AWS Cognito for authentication, BAA verification for all integrations, comprehensive audit logging, end-to-end encryption for video consultations, and strict PHI handling. It is positioned as a General Wellness Product.
 

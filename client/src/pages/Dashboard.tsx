@@ -775,6 +775,9 @@ export default function Dashboard() {
   const [dailyWellnessResponses, setDailyWellnessResponses] = useState<Record<string, number>>({});
   const [completedDailyWellness, setCompletedDailyWellness] = useState(false);
 
+  // Symptom Check-in state
+  const [showNewSymptomCheckin, setShowNewSymptomCheckin] = useState(false);
+
   // PainTrack state
   const [paintrackStep, setPaintrackStep] = useState<'select-module' | 'select-joint' | 'instructions' | 'recording' | 'pain-report' | 'complete'>('select-module');
   const [showNewPainAssessment, setShowNewPainAssessment] = useState(false);
@@ -840,6 +843,12 @@ export default function Dashboard() {
     ? new Date(latestAudioMetrics.timestamp).toDateString() === new Date().toDateString()
     : false;
 
+  // Fetch unified symptom feed for checking today's check-ins
+  const { data: unifiedSymptomFeed } = useQuery<any>({
+    queryKey: ["/api/symptom-checkin/feed/unified"],
+    enabled: !!user,
+  });
+
   // Check if device data exists for today
   const hasDeviceDataToday = todayFollowup && (
     todayFollowup.heartRate !== null || 
@@ -847,6 +856,14 @@ export default function Dashboard() {
     todayFollowup.temperature !== null || 
     todayFollowup.stepsCount !== null
   );
+
+  // Check if symptom check-in exists for today
+  const todaysSymptomCheckins = unifiedSymptomFeed?.feed?.filter((item: any) => 
+    item.dataSource === 'patient-reported' && 
+    new Date(item.timestamp).toDateString() === new Date().toDateString()
+  ) || [];
+  const hasSymptomCheckinToday = todaysSymptomCheckins.length > 0;
+  const latestSymptomCheckin = todaysSymptomCheckins[0]; // Most recent today's check-in
 
   // PainTrack mutations
   const createPaintrackSessionMutation = useMutation({
@@ -1725,8 +1742,119 @@ export default function Dashboard() {
               )}
             </TabsContent>
             <TabsContent value="symptom-journal" className="space-y-3">
-              {/* Daily Symptom Check-In */}
-              <DailySymptomCheckin />
+              {/* Today's Symptom Summary */}
+              {hasSymptomCheckinToday && !showNewSymptomCheckin && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-primary" />
+                      <p className="font-medium text-sm">Today's Symptom Check-in</p>
+                    </div>
+                    <Badge variant="secondary" className="text-xs" data-testid="badge-symptom-today">
+                      {latestSymptomCheckin && new Date(latestSymptomCheckin.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Badge>
+                  </div>
+
+                  {latestSymptomCheckin && (
+                    <div className="p-3 rounded-md border bg-muted/30 space-y-2">
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                          <span className="text-muted-foreground">Pain</span>
+                          <span className="font-bold">{latestSymptomCheckin.painLevel}/10</span>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                          <span className="text-muted-foreground">Fatigue</span>
+                          <span className="font-bold">{latestSymptomCheckin.fatigueLevel}/10</span>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                          <span className="text-muted-foreground">Mood</span>
+                          <span className="font-bold capitalize">{latestSymptomCheckin.mood?.replace('_', ' ')}</span>
+                        </div>
+                      </div>
+                      
+                      {latestSymptomCheckin.symptoms && latestSymptomCheckin.symptoms.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {latestSymptomCheckin.symptoms.slice(0, 5).map((symptom: string, idx: number) => (
+                            <Badge key={idx} variant="outline" className="text-xs capitalize">
+                              {symptom}
+                            </Badge>
+                          ))}
+                          {latestSymptomCheckin.symptoms.length > 5 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{latestSymptomCheckin.symptoms.length - 5} more
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                      
+                      {latestSymptomCheckin.note && (
+                        <p className="text-xs text-muted-foreground italic pt-1">
+                          "{latestSymptomCheckin.note.slice(0, 100)}{latestSymptomCheckin.note.length > 100 ? '...' : ''}"
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {todaysSymptomCheckins.length > 1 && (
+                    <p className="text-xs text-muted-foreground">
+                      {todaysSymptomCheckins.length} check-ins recorded today
+                    </p>
+                  )}
+
+                  <Button
+                    onClick={() => setShowNewSymptomCheckin(true)}
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2"
+                    data-testid="button-add-symptom-checkin"
+                  >
+                    <ClipboardList className="h-3 w-3" />
+                    Add New Check-in
+                  </Button>
+                </div>
+              )}
+
+              {/* No Symptom Check-in Today Prompt */}
+              {!hasSymptomCheckinToday && !showNewSymptomCheckin && (
+                <div className="text-center py-6 space-y-3" data-testid="symptom-checkin-prompt">
+                  <div className="p-3 rounded-full bg-muted/50 inline-block">
+                    <ClipboardList className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">No symptom check-in for today</p>
+                    <p className="text-xs text-muted-foreground">
+                      Track your symptoms, pain levels, and overall wellness
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => setShowNewSymptomCheckin(true)}
+                    size="sm"
+                    className="gap-2"
+                    data-testid="button-start-symptom-checkin"
+                  >
+                    <ClipboardList className="h-3 w-3" />
+                    Start Symptom Check-in
+                  </Button>
+                </div>
+              )}
+
+              {/* Symptom Check-in Form */}
+              {showNewSymptomCheckin && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-sm">New Symptom Check-in</p>
+                    <Button
+                      onClick={() => setShowNewSymptomCheckin(false)}
+                      variant="ghost"
+                      size="sm"
+                      data-testid="button-cancel-symptom-checkin"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                  <DailySymptomCheckin onComplete={() => setShowNewSymptomCheckin(false)} />
+                </div>
+              )}
             </TabsContent>
                 <TabsContent value="video-ai" className="space-y-3">
                   {isMetricsFromToday && latestVideoMetrics ? (

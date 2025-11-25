@@ -18,7 +18,11 @@ import type { z } from "zod";
 
 type FormValues = z.infer<typeof dailyCheckinFormSchema>;
 
-export function DailySymptomCheckin() {
+interface DailySymptomCheckinProps {
+  onComplete?: () => void;
+}
+
+export function DailySymptomCheckin({ onComplete }: DailySymptomCheckinProps) {
   const { toast } = useToast();
   
   // Fetch unified symptom feed (patient-reported + AI-extracted from Agent Clona)
@@ -80,6 +84,10 @@ export function DailySymptomCheckin() {
       form.reset();
       // Invalidate unified feed to refresh UI
       queryClient.invalidateQueries({ queryKey: ["/api/symptom-checkin/feed/unified"] });
+      // Call onComplete callback if provided
+      if (onComplete) {
+        onComplete();
+      }
     },
     onError: (error: any) => {
       toast({
