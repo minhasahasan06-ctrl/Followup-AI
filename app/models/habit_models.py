@@ -1,140 +1,22 @@
 """
 SQLAlchemy models for the AI-Powered Habit Tracker (13 Features)
 HIPAA-compliant with proper audit logging and encryption considerations
+
+These models are aligned with the raw SQL queries in app/routers/habits.py
 """
 
 from sqlalchemy import (
     Column, String, Integer, Boolean, DateTime, Float, Text, 
-    ForeignKey, Enum, JSON, Date, UniqueConstraint
+    ForeignKey, JSON, Date, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
 import uuid
-import enum
 
 
 def generate_uuid():
     return str(uuid.uuid4())
-
-
-class HabitCategory(enum.Enum):
-    health = "health"
-    medication = "medication"
-    exercise = "exercise"
-    wellness = "wellness"
-    nutrition = "nutrition"
-    sleep = "sleep"
-    other = "other"
-
-
-class HabitFrequency(enum.Enum):
-    daily = "daily"
-    weekly = "weekly"
-    custom = "custom"
-
-
-class HabitStatus(enum.Enum):
-    active = "active"
-    paused = "paused"
-    completed = "completed"
-    archived = "archived"
-
-
-class CompletionStatus(enum.Enum):
-    completed = "completed"
-    skipped = "skipped"
-    partial = "partial"
-
-
-class QuitPlanCategory(enum.Enum):
-    substance = "substance"
-    behavioral = "behavioral"
-    food = "food"
-    other = "other"
-
-
-class QuitMethod(enum.Enum):
-    cold_turkey = "cold_turkey"
-    gradual_reduction = "gradual_reduction"
-    replacement = "replacement"
-
-
-class QuitPlanStatus(enum.Enum):
-    active = "active"
-    completed = "completed"
-    relapsed = "relapsed"
-    paused = "paused"
-
-
-class ReminderStatus(enum.Enum):
-    active = "active"
-    snoozed = "snoozed"
-    dismissed = "dismissed"
-    completed = "completed"
-
-
-class TriggerType(enum.Enum):
-    time_based = "time_based"
-    location_based = "location_based"
-    mood_based = "mood_based"
-    activity_based = "activity_based"
-    social_based = "social_based"
-
-
-class RewardType(enum.Enum):
-    plant_growth = "plant_growth"
-    badge = "badge"
-    points = "points"
-    streak_bonus = "streak_bonus"
-
-
-class CbtSessionType(enum.Enum):
-    urge_surfing = "urge_surfing"
-    reframe_thought = "reframe_thought"
-    grounding = "grounding"
-    breathing = "breathing"
-
-
-class CbtSessionStatus(enum.Enum):
-    in_progress = "in_progress"
-    completed = "completed"
-    abandoned = "abandoned"
-
-
-class BuddyStatus(enum.Enum):
-    pending = "pending"
-    accepted = "accepted"
-    declined = "declined"
-    removed = "removed"
-
-
-class JournalEntryType(enum.Enum):
-    daily = "daily"
-    reflection = "reflection"
-    gratitude = "gratitude"
-    goal_setting = "goal_setting"
-
-
-class RecommendationStatus(enum.Enum):
-    pending = "pending"
-    accepted = "accepted"
-    dismissed = "dismissed"
-    completed = "completed"
-
-
-class AlertStatus(enum.Enum):
-    active = "active"
-    acknowledged = "acknowledged"
-    resolved = "resolved"
-    dismissed = "dismissed"
-
-
-class AlertSeverity(enum.Enum):
-    low = "low"
-    medium = "medium"
-    high = "high"
-    critical = "critical"
 
 
 # Core Habit Model
@@ -153,98 +35,106 @@ class HabitHabit(Base):
     total_completions = Column(Integer, default=0)
     status = Column(String(50), default="active")
     reminder_enabled = Column(Boolean, default=True)
-    reminder_time = Column(String(10))  # HH:MM format
+    reminder_time = Column(String(10))
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    # Relationships
     completions = relationship("HabitCompletion", back_populates="habit", cascade="all, delete-orphan")
     routines = relationship("HabitRoutine", back_populates="habit", cascade="all, delete-orphan")
     reminders = relationship("HabitReminder", back_populates="habit", cascade="all, delete-orphan")
 
 
-# Habit Completion Tracking
+# Habit Completion Tracking - matches SQL in complete_habit endpoint
 class HabitCompletion(Base):
     __tablename__ = "habit_completions"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     habit_id = Column(String, ForeignKey("habit_habits.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(String, nullable=False, index=True)
-    completion_date = Column(Date, nullable=False)
-    status = Column(String(50), default="completed")
+    completion_date = Column(DateTime, server_default=func.now())
+    completed = Column(Boolean, default=True)
     mood = Column(String(50))
     notes = Column(Text)
-    difficulty_level = Column(Integer)  # 1-5
-    completed_at = Column(DateTime, server_default=func.now())
+    difficulty_level = Column(Integer)
 
-    # Relationships
     habit = relationship("HabitHabit", back_populates="completions")
 
-    __table_args__ = (
-        UniqueConstraint('habit_id', 'completion_date', name='uq_habit_completion_date'),
-    )
 
-
-# Daily Routines with Micro-Steps
+# Daily Routines - matches SQL in create_routine endpoint
 class HabitRoutine(Base):
     __tablename__ = "habit_routines"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     habit_id = Column(String, ForeignKey("habit_habits.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, nullable=False, index=True)
-    name = Column(String(200), nullable=False)
-    description = Column(Text)
-    order_index = Column(Integer, default=0)
-    time_of_day = Column(String(50))  # morning, afternoon, evening, night
-    is_active = Column(Boolean, default=True)
+    scheduled_time = Column(String(10))
+    duration = Column(Integer)
+    time_flexibility = Column(String(50), default="flexible")
+    location = Column(String(200))
+    location_details = Column(Text)
+    trigger_cue = Column(String(200))
+    stacked_after = Column(String(200))
+    day_of_week = Column(JSON)
+    is_weekend_only = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
 
-    # Relationships
     habit = relationship("HabitHabit", back_populates="routines")
-    micro_steps = relationship("HabitMicroStep", back_populates="routine", cascade="all, delete-orphan")
 
 
+# Micro-Steps - matches SQL in create_micro_steps endpoint
 class HabitMicroStep(Base):
     __tablename__ = "habit_micro_steps"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    routine_id = Column(String, ForeignKey("habit_routines.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(String, nullable=False, index=True)
-    name = Column(String(200), nullable=False)
+    habit_id = Column(String, ForeignKey("habit_habits.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_order = Column(Integer, nullable=False)
+    title = Column(String(200), nullable=False)
     description = Column(Text)
-    order_index = Column(Integer, default=0)
-    duration_minutes = Column(Integer)
-    is_completed = Column(Boolean, default=False)
-    completed_at = Column(DateTime)
+    estimated_minutes = Column(Integer)
+    is_required = Column(Boolean, default=True)
+    completion_count = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
 
-    # Relationships
-    routine = relationship("HabitRoutine", back_populates="micro_steps")
 
-
-# Smart Reminders
+# Smart Reminders - matches SQL in create_reminder endpoint
 class HabitReminder(Base):
     __tablename__ = "habit_reminders"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     habit_id = Column(String, ForeignKey("habit_habits.id", ondelete="CASCADE"))
     user_id = Column(String, nullable=False, index=True)
-    reminder_time = Column(String(10), nullable=False)  # HH:MM format
-    days_of_week = Column(JSON)  # [0,1,2,3,4,5,6] for days
+    reminder_type = Column(String(50), default="in_app")
+    scheduled_time = Column(String(10), nullable=False)
     message = Column(Text)
-    status = Column(String(50), default="active")
+    adaptive_enabled = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True)
     snooze_until = Column(DateTime)
-    last_triggered = Column(DateTime)
+    last_sent_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())
 
-    # Relationships
     habit = relationship("HabitHabit", back_populates="reminders")
 
 
-# AI Trigger Detection
-class HabitTrigger(Base):
-    __tablename__ = "habit_triggers"
+# AI Habit Coach Chat Messages - matches SQL in coach/chat endpoint
+class HabitCoachChat(Base):
+    __tablename__ = "habit_coach_chats"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, nullable=False, index=True)
+    session_id = Column(String, nullable=False, index=True)
+    role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    coach_personality = Column(String(50))
+    response_type = Column(String(50))
+    related_habit_id = Column(String, ForeignKey("habit_habits.id", ondelete="SET NULL"))
+    related_quit_plan_id = Column(String)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+# AI Trigger Detection - matches SQL in triggers/analyze endpoint
+class HabitAiTrigger(Base):
+    __tablename__ = "habit_ai_triggers"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, nullable=False, index=True)
@@ -254,27 +144,34 @@ class HabitTrigger(Base):
     correlated_factor = Column(String(200))
     confidence = Column(Float, default=0.0)
     data_points = Column(Integer, default=0)
-    is_verified = Column(Boolean, default=False)
+    sample_period_days = Column(Integer, default=30)
+    is_active = Column(Boolean, default=True)
+    acknowledged = Column(Boolean, default=False)
+    helpful = Column(Boolean)
+    last_detected_at = Column(DateTime, server_default=func.now())
     created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
-# Mood Tracking
+# Mood Tracking - matches SQL in mood/log endpoint
 class HabitMoodEntry(Base):
     __tablename__ = "habit_mood_entries"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, nullable=False, index=True)
-    mood_score = Column(Integer, nullable=False)  # 1-10
-    mood_label = Column(String(50))  # great, good, okay, struggling
-    energy_level = Column(Integer)  # 1-10
-    stress_level = Column(Integer)  # 1-10
+    mood_score = Column(Integer, nullable=False)
+    mood_label = Column(String(50))
+    energy_level = Column(Integer)
+    stress_level = Column(Integer)
     journal_text = Column(Text)
-    sentiment_score = Column(Float)  # -1 to 1
+    sentiment_score = Column(Float)
+    extracted_emotions = Column(JSON)
+    extracted_themes = Column(JSON)
+    associated_habit_id = Column(String, ForeignKey("habit_habits.id", ondelete="SET NULL"))
+    context_tags = Column(JSON)
     recorded_at = Column(DateTime, server_default=func.now())
 
 
-# Addiction-Mode Quit Plans
+# Addiction-Mode Quit Plans - matches SQL in quit-plans/create endpoint
 class HabitQuitPlan(Base):
     __tablename__ = "habit_quit_plans"
 
@@ -283,87 +180,76 @@ class HabitQuitPlan(Base):
     habit_name = Column(String(200), nullable=False)
     category = Column(String(50), default="behavioral")
     quit_method = Column(String(50), default="gradual_reduction")
+    target_quit_date = Column(Date)
+    daily_limit = Column(Integer)
+    harm_reduction_steps = Column(JSON)
+    reasons_to_quit = Column(JSON)
+    money_saved_per_day = Column(Float, default=0.0)
     start_date = Column(Date, server_default=func.current_date())
     days_clean = Column(Integer, default=0)
     longest_streak = Column(Integer, default=0)
     total_relapses = Column(Integer, default=0)
-    daily_limit = Column(Integer)
-    reasons_to_quit = Column(JSON)  # Array of strings
-    money_saved_per_day = Column(Float, default=0.0)
     status = Column(String(50), default="active")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    # Relationships
-    cravings = relationship("HabitCraving", back_populates="quit_plan", cascade="all, delete-orphan")
 
-
-class HabitCraving(Base):
-    __tablename__ = "habit_cravings"
+# Cravings Log - matches SQL in quit-plans/craving endpoint
+class HabitCravingsLog(Base):
+    __tablename__ = "habit_cravings_log"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     quit_plan_id = Column(String, ForeignKey("habit_quit_plans.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, nullable=False, index=True)
-    intensity = Column(Integer)  # 1-10
+    intensity = Column(Integer)
+    duration = Column(Integer)
     trigger = Column(Text)
-    coping_strategy = Column(Text)
-    was_resisted = Column(Boolean, default=True)
-    recorded_at = Column(DateTime, server_default=func.now())
+    trigger_details = Column(Text)
+    coping_strategy_used = Column(Text)
+    overcame = Column(Boolean, default=False)
+    notes = Column(Text)
+    location = Column(String(200))
+    mood = Column(String(50))
+    occurred_at = Column(DateTime, server_default=func.now())
 
-    # Relationships
-    quit_plan = relationship("HabitQuitPlan", back_populates="cravings")
+
+# Relapse Log - matches SQL in quit-plans/relapse endpoint
+class HabitRelapseLog(Base):
+    __tablename__ = "habit_relapse_log"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    quit_plan_id = Column(String, ForeignKey("habit_quit_plans.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, nullable=False, index=True)
+    severity = Column(String(50), default="minor_slip")
+    quantity = Column(String(100))
+    trigger = Column(Text)
+    emotional_state = Column(String(100))
+    what_happened = Column(Text)
+    what_learned = Column(Text)
+    plan_to_prevent = Column(Text)
+    streak_days_lost = Column(Integer, default=0)
+    occurred_at = Column(DateTime, server_default=func.now())
 
 
-# AI Habit Coach Messages
-class HabitCoachMessage(Base):
-    __tablename__ = "habit_coach_messages"
+# AI Recommendations - matches SQL in recommendations/generate endpoint
+class HabitAiRecommendation(Base):
+    __tablename__ = "habit_ai_recommendations"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, nullable=False, index=True)
-    role = Column(String(20), nullable=False)  # user or assistant
-    content = Column(Text, nullable=False)
-    response_type = Column(String(50))  # motivation, cbt_technique, advice, reflection
-    context_data = Column(JSON)  # Additional context for personalization
+    habit_id = Column(String, ForeignKey("habit_habits.id", ondelete="SET NULL"))
+    recommendation_type = Column(String(50), nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    based_on_completion_rate = Column(Float)
+    based_on_streak = Column(Integer)
+    confidence = Column(Float, default=0.0)
+    priority = Column(String(20), default="medium")
+    status = Column(String(50), default="pending")
     created_at = Column(DateTime, server_default=func.now())
 
 
-# CBT Sessions
-class HabitCbtSession(Base):
-    __tablename__ = "habit_cbt_sessions"
-
-    id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, nullable=False, index=True)
-    session_type = Column(String(50), nullable=False)
-    title = Column(String(200))
-    total_steps = Column(Integer, default=0)
-    current_step = Column(Integer, default=1)
-    status = Column(String(50), default="in_progress")
-    responses = Column(JSON)  # Array of step responses
-    started_at = Column(DateTime, server_default=func.now())
-    completed_at = Column(DateTime)
-
-
-# Gamification & Rewards
-class HabitReward(Base):
-    __tablename__ = "habit_rewards"
-
-    id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, nullable=False, index=True, unique=True)
-    reward_type = Column(String(50), default="plant_growth")
-    current_level = Column(Integer, default=1)
-    growth_stage = Column(String(50), default="seed")  # seed, sprout, growing, blooming, flourishing
-    total_points = Column(Integer, default=0)
-    streak_bonus = Column(Integer, default=0)
-    completion_points = Column(Integer, default=0)
-    visual_state = Column(JSON)  # Custom visual state data
-    unlocked_badges = Column(JSON)  # Array of badge IDs
-    days_active = Column(Integer, default=0)
-    perfect_days = Column(Integer, default=0)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
-# Social Accountability / Buddy System
+# Social Accountability / Buddy System - matches SQL in buddies endpoints
 class HabitBuddy(Base):
     __tablename__ = "habit_buddies"
 
@@ -371,9 +257,14 @@ class HabitBuddy(Base):
     user_id = Column(String, nullable=False, index=True)
     buddy_user_id = Column(String, nullable=False, index=True)
     status = Column(String(50), default="pending")
-    connected_at = Column(DateTime)
-    last_nudge_at = Column(DateTime)
-    shared_habits = Column(JSON)  # Array of habit IDs they share
+    initiated_by = Column(String)
+    share_streak = Column(Boolean, default=True)
+    share_completions = Column(Boolean, default=True)
+    share_mood = Column(Boolean, default=False)
+    encouragements_sent = Column(Integer, default=0)
+    encouragements_received = Column(Integer, default=0)
+    last_interaction = Column(DateTime)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime, server_default=func.now())
 
     __table_args__ = (
@@ -381,7 +272,61 @@ class HabitBuddy(Base):
     )
 
 
-# Smart Journals with AI Insights
+# Encouragement Messages - matches SQL in buddies/encourage endpoint
+class HabitEncouragement(Base):
+    __tablename__ = "habit_encouragements"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    from_user_id = Column(String, nullable=False, index=True)
+    to_user_id = Column(String, nullable=False, index=True)
+    message_type = Column(String(50), default="support")
+    message = Column(Text, nullable=False)
+    related_habit_id = Column(String, ForeignKey("habit_habits.id", ondelete="SET NULL"))
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+# CBT Sessions - matches SQL in cbt/start endpoint
+class HabitCbtSession(Base):
+    __tablename__ = "habit_cbt_sessions"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, nullable=False, index=True)
+    session_type = Column(String(50), nullable=False)
+    title = Column(String(200))
+    current_step = Column(Integer, default=1)
+    total_steps = Column(Integer, default=0)
+    step_responses = Column(JSON)
+    pre_session_mood = Column(Integer)
+    post_session_mood = Column(Integer)
+    completed = Column(Boolean, default=False)
+    related_habit_id = Column(String, ForeignKey("habit_habits.id", ondelete="SET NULL"))
+    related_quit_plan_id = Column(String)
+    started_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime)
+
+
+# Gamification & Rewards - matches SQL in rewards endpoint
+class HabitReward(Base):
+    __tablename__ = "habit_rewards"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, nullable=False, index=True, unique=True)
+    reward_type = Column(String(50), default="plant_growth")
+    current_level = Column(Integer, default=1)
+    growth_stage = Column(String(50), default="seed")
+    total_points = Column(Integer, default=0)
+    streak_bonus = Column(Integer, default=0)
+    completion_points = Column(Integer, default=0)
+    visual_state = Column(JSON)
+    unlocked_badges = Column(JSON)
+    days_active = Column(Integer, default=0)
+    perfect_days = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# Smart Journals with AI Insights - matches SQL in journals endpoints
 class HabitJournal(Base):
     __tablename__ = "habit_journals"
 
@@ -391,34 +336,17 @@ class HabitJournal(Base):
     content = Column(Text, nullable=False)
     entry_type = Column(String(50), default="daily")
     mood = Column(String(50))
+    tags = Column(JSON)
     ai_summary = Column(Text)
-    highlights = Column(JSON)  # Array of key insights
-    risks = Column(JSON)  # Array of detected risks
-    recommendations = Column(JSON)  # Array of AI recommendations
+    highlights = Column(JSON)
+    risks = Column(JSON)
+    recommendations = Column(JSON)
     sentiment_trend = Column(String(50))
     is_weekly_summary = Column(Boolean, default=False)
     recorded_at = Column(DateTime, server_default=func.now())
 
 
-# AI Recommendations
-class HabitRecommendation(Base):
-    __tablename__ = "habit_recommendations"
-
-    id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, nullable=False, index=True)
-    recommendation_type = Column(String(50), nullable=False)
-    category = Column(String(50))
-    title = Column(String(200), nullable=False)
-    description = Column(Text)
-    reasoning = Column(Text)
-    confidence_score = Column(Float, default=0.0)
-    priority = Column(String(20), default="medium")
-    status = Column(String(50), default="pending")
-    created_at = Column(DateTime, server_default=func.now())
-    expires_at = Column(DateTime)
-
-
-# Risk Alerts
+# Risk Alerts - matches SQL in alerts endpoints
 class HabitRiskAlert(Base):
     __tablename__ = "habit_risk_alerts"
 
@@ -429,8 +357,8 @@ class HabitRiskAlert(Base):
     title = Column(String(200), nullable=False)
     message = Column(Text, nullable=False)
     risk_score = Column(Float, default=0.0)
-    contributing_factors = Column(JSON)  # Array of factor objects
-    suggested_actions = Column(JSON)  # Array of action strings
+    contributing_factors = Column(JSON)
+    suggested_actions = Column(JSON)
     status = Column(String(50), default="active")
     acknowledged_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())

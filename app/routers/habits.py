@@ -42,9 +42,10 @@ from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.habit_models import (
     HabitHabit, HabitCompletion, HabitRoutine, HabitMicroStep,
-    HabitReminder, HabitTrigger, HabitMoodEntry, HabitQuitPlan,
-    HabitCraving, HabitCoachMessage, HabitCbtSession, HabitReward,
-    HabitBuddy, HabitJournal, HabitRecommendation, HabitRiskAlert
+    HabitReminder, HabitCoachChat, HabitAiTrigger, HabitMoodEntry, 
+    HabitQuitPlan, HabitCravingsLog, HabitRelapseLog, HabitAiRecommendation,
+    HabitBuddy, HabitEncouragement, HabitCbtSession, HabitReward,
+    HabitJournal, HabitRiskAlert
 )
 
 logger = logging.getLogger(__name__)
