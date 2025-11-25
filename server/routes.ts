@@ -7080,6 +7080,47 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // Proxy endpoint to fetch Video AI exam sessions history from Python backend
+  app.get('/api/video-ai/exam-sessions', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const days = req.query.days || 365;
+      
+      // Generate dev mode JWT token for Python backend authentication
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/video-ai/exam-sessions?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.json([]); // No sessions yet
+        }
+        const error = await response.text();
+        console.error('Python backend error (video-ai sessions):', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching video AI exam sessions:', error);
+      res.status(500).json({ message: 'Failed to fetch video AI exam sessions' });
+    }
+  });
+
   // Proxy questionnaire templates endpoint (public - these are public domain instruments)
   app.all('/api/v1/mental-health/questionnaires*', async (req: any, res) => {
     try {
