@@ -207,6 +207,27 @@ interface DPIResult {
   };
 }
 
+interface MLPrediction {
+  patient_id: string;
+  ensemble_score: number;
+  ensemble_confidence: number;
+  statistical_weight: number;
+  ml_weight: number;
+  trend_direction: string;
+  risk_trajectory: string;
+  predictions: Record<string, {
+    horizon: string;
+    deterioration_probability: number;
+    confidence: number;
+    risk_level: string;
+    feature_importance?: Record<string, number>;
+  }>;
+  computed_at: string;
+  model_version: string;
+  disclaimer: string;
+  status?: string;
+}
+
 const CHART_COLORS = {
   primary: 'hsl(var(--primary))',
   secondary: 'hsl(var(--chart-2))',
@@ -734,6 +755,124 @@ function OrganScoresPanel({ organScores }: { organScores: OrganScoreResult | nul
   );
 }
 
+function MLPredictionsPanel({ prediction }: { prediction: MLPrediction | null }) {
+  const getRiskColor = (riskLevel: string) => {
+    switch (riskLevel.toLowerCase()) {
+      case 'low': return 'text-green-500 bg-green-100 dark:bg-green-900/30';
+      case 'moderate': return 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30';
+      case 'high': return 'text-orange-500 bg-orange-100 dark:bg-orange-900/30';
+      case 'critical': return 'text-red-500 bg-red-100 dark:bg-red-900/30';
+      default: return 'text-muted-foreground bg-muted';
+    }
+  };
+
+  const getConfidenceColor = (confidence: number) => {
+    if (confidence >= 0.8) return 'text-green-500';
+    if (confidence >= 0.6) return 'text-yellow-500';
+    if (confidence >= 0.4) return 'text-orange-500';
+    return 'text-red-500';
+  };
+
+  const getTrendIcon = (trend: string) => {
+    switch (trend.toLowerCase()) {
+      case 'improving': return TrendingDown;
+      case 'deteriorating': return TrendingUp;
+      case 'stable': return Minus;
+      default: return Activity;
+    }
+  };
+
+  const formatHorizon = (horizon: string) => {
+    const hours = horizon.replace('h', '').replace('_hours', '');
+    return `${hours}h`;
+  };
+
+  if (!prediction || prediction.status === 'no_predictions' || prediction.status === 'insufficient_data') {
+    return (
+      <div className="text-center py-8">
+        <Sparkles className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-2" />
+        <p className="text-sm text-muted-foreground">No ML predictions available</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          {prediction?.status === 'insufficient_data' 
+            ? 'Insufficient vital signs data for prediction'
+            : 'Complete more check-ins to enable predictive analysis'}
+        </p>
+      </div>
+    );
+  }
+
+  const TrendIconComponent = getTrendIcon(prediction.trend_direction);
+  const horizonEntries = Object.entries(prediction.predictions || {}).sort((a, b) => {
+    const aHours = parseInt(a[0].replace('h', '').replace('_hours', ''));
+    const bHours = parseInt(b[0].replace('h', '').replace('_hours', ''));
+    return aHours - bHours;
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium">ML Deterioration Prediction</span>
+        </div>
+        <Badge variant="outline" className="text-xs">
+          v{prediction.model_version || '1.0'}
+        </Badge>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className={`p-3 rounded-lg ${getRiskColor(prediction.risk_trajectory)}`}>
+          <p className="text-xs text-muted-foreground mb-1">Ensemble Risk Score</p>
+          <p className="text-2xl font-bold">{(prediction.ensemble_score * 100).toFixed(0)}%</p>
+          <div className="flex items-center gap-1 mt-1">
+            <TrendIconComponent className="h-3 w-3" />
+            <span className="text-xs capitalize">{prediction.trend_direction}</span>
+          </div>
+        </div>
+        <div className="p-3 rounded-lg bg-muted/50">
+          <p className="text-xs text-muted-foreground mb-1">Confidence</p>
+          <p className={`text-2xl font-bold ${getConfidenceColor(prediction.ensemble_confidence)}`}>
+            {(prediction.ensemble_confidence * 100).toFixed(0)}%
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            ML: {(prediction.ml_weight * 100).toFixed(0)}% | Stat: {(prediction.statistical_weight * 100).toFixed(0)}%
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Prediction Horizons</p>
+        <div className="grid grid-cols-4 gap-2">
+          {horizonEntries.map(([horizon, pred]) => (
+            <div 
+              key={horizon}
+              className={`p-2 rounded-lg text-center ${getRiskColor(pred.risk_level)}`}
+              data-testid={`prediction-${horizon}`}
+            >
+              <p className="text-xs font-medium">{formatHorizon(horizon)}</p>
+              <p className="text-lg font-bold">{(pred.deterioration_probability * 100).toFixed(0)}%</p>
+              <p className={`text-xs ${getConfidenceColor(pred.confidence)}`}>
+                ±{((1 - pred.confidence) * 100).toFixed(0)}%
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+        <Info className="h-4 w-4 text-blue-500" />
+        <AlertDescription className="text-xs">
+          {prediction.disclaimer || 'ML predictions are observational indicators only. Not a diagnosis.'}
+        </AlertDescription>
+      </Alert>
+
+      <p className="text-xs text-muted-foreground text-center italic">
+        Last computed: {prediction.computed_at ? format(new Date(prediction.computed_at), 'MMM d, h:mm a') : 'Unknown'}
+      </p>
+    </div>
+  );
+}
+
 export default function AIAlertsDashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -826,6 +965,19 @@ export default function AIAlertsDashboard() {
       if (!response.ok) {
         if (response.status === 404) return [];
         throw new Error('Failed to fetch QoL');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const { data: mlPrediction, isLoading: loadingPrediction, refetch: refetchPrediction } = useQuery<MLPrediction>({
+    queryKey: ['/api/ai-health-alerts/v2/predictions', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/ai-health-alerts/v2/predictions/${patientId}`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return null;
+        throw new Error('Failed to fetch ML predictions');
       }
       return response.json();
     },
@@ -1100,6 +1252,26 @@ export default function AIAlertsDashboard() {
                 </CardHeader>
                 <CardContent>
                   <OrganScoresPanel organScores={organScores || null} />
+                </CardContent>
+              </Card>
+
+              <Card data-testid="card-ml-predictions">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    AI Predictions
+                  </CardTitle>
+                  <CardDescription className="text-xs">Deep learning deterioration forecasts</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadingPrediction ? (
+                    <div className="space-y-3">
+                      <Skeleton className="h-24 w-full" />
+                      <Skeleton className="h-16 w-full" />
+                    </div>
+                  ) : (
+                    <MLPredictionsPanel prediction={mlPrediction || null} />
+                  )}
                 </CardContent>
               </Card>
             </div>

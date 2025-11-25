@@ -42,6 +42,10 @@ class AlertRule(Enum):
     CHECKIN_DEVIATION = "checkin_deviation"
     COMPOSITE_JUMP = "composite_jump"
     MULTI_SIGNAL_CORROBORATION = "multi_signal_corroboration"
+    # ML-based triggers (V2)
+    ML_HIGH_RISK_PREDICTION = "ml_high_risk_prediction"
+    ML_TRAJECTORY_DETERIORATING = "ml_trajectory_deteriorating"
+    ML_CONFIDENCE_SPIKE = "ml_confidence_spike"
 
 
 class AlertSeverity(Enum):
@@ -106,10 +110,11 @@ class RuleBasedAlertEngine:
         patient_id: str,
         dpi_result: DPIResult,
         organ_result: OrganScoringResult,
-        metric_z_scores: Dict[str, float] = None
+        metric_z_scores: Dict[str, float] = None,
+        ml_prediction: Optional[Dict[str, Any]] = None
     ) -> List[AlertTrigger]:
         """
-        Evaluate all 7 alert rules and return triggered alerts.
+        Evaluate all 10 alert rules (7 statistical + 3 ML-based) and return triggered alerts.
         Applies deduplication and rate limiting.
         """
         config = self.config_service.config
@@ -117,6 +122,8 @@ class RuleBasedAlertEngine:
         
         # Get current patient data for context
         checkin_data = await self._get_recent_checkin_data(patient_id)
+        
+        # === STATISTICAL RULES (1-7) ===
         
         # Rule 1: Risk Jump (Green → Yellow)
         alert = self._check_risk_jump(patient_id, dpi_result)
@@ -151,6 +158,24 @@ class RuleBasedAlertEngine:
         alert = self._check_multi_signal_corroboration(patient_id, organ_result, metric_z_scores or {})
         if alert:
             triggered_alerts.append(alert)
+        
+        # === ML-BASED RULES (8-10) ===
+        
+        if ml_prediction:
+            # Rule 8: ML High Risk Prediction
+            alert = self._check_ml_high_risk_prediction(patient_id, ml_prediction, dpi_result)
+            if alert:
+                triggered_alerts.append(alert)
+            
+            # Rule 9: ML Trajectory Deteriorating
+            alert = self._check_ml_trajectory_deteriorating(patient_id, ml_prediction, dpi_result)
+            if alert:
+                triggered_alerts.append(alert)
+            
+            # Rule 10: ML Confidence Spike
+            alert = self._check_ml_confidence_spike(patient_id, ml_prediction, dpi_result)
+            if alert:
+                triggered_alerts.append(alert)
         
         # Apply deduplication and rate limiting
         filtered_alerts = await self._apply_suppression_rules(patient_id, triggered_alerts)
@@ -529,6 +554,170 @@ class RuleBasedAlertEngine:
                 organ_scores={s.organ_name: s.normalized_score for s in organ_result.organ_scores.values()},
                 suppression_key=suppression_key,
                 corroborated=True
+            )
+        
+        return None
+    
+    # === ML-BASED RULE METHODS (V2) ===
+    
+    def _check_ml_high_risk_prediction(
+        self,
+        patient_id: str,
+        ml_prediction: Dict[str, Any],
+        dpi_result: DPIResult
+    ) -> Optional[AlertTrigger]:
+        """
+        Rule 8: ML model predicts high deterioration risk (>=0.7) 
+        with sufficient confidence (>=0.6)
+        """
+        HIGH_RISK_THRESHOLD = 0.7
+        MIN_CONFIDENCE = 0.6
+        
+        ensemble_score = ml_prediction.get("ensemble_score", 0)
+        confidence = ml_prediction.get("ensemble_confidence", 0)
+        
+        if ensemble_score >= HIGH_RISK_THRESHOLD and confidence >= MIN_CONFIDENCE:
+            suppression_key = self._generate_suppression_key(
+                patient_id, "ml_high_risk", datetime.utcnow()
+            )
+            
+            # Get horizon-specific risks
+            horizons = ml_prediction.get("predictions", {})
+            horizon_alerts = []
+            for horizon, pred in horizons.items():
+                if isinstance(pred, dict):
+                    prob = pred.get("deterioration_probability", 0)
+                    if prob >= HIGH_RISK_THRESHOLD:
+                        horizon_alerts.append(f"{horizon}: {prob:.0%}")
+            
+            horizon_summary = ", ".join(horizon_alerts) if horizon_alerts else "multiple horizons"
+            
+            return AlertTrigger(
+                rule=AlertRule.ML_HIGH_RISK_PREDICTION,
+                severity=AlertSeverity.CRITICAL if ensemble_score >= 0.85 else AlertSeverity.HIGH,
+                priority=9 if ensemble_score >= 0.85 else 8,
+                title="Predictive Risk Alert",
+                message=f"AI analysis indicates elevated deterioration risk ({ensemble_score:.0%}) across {horizon_summary}. "
+                        f"Confidence level: {confidence:.0%}. This predictive signal warrants proactive clinical review.",
+                trigger_metrics=[{
+                    "name": "ml_ensemble_score",
+                    "value": ensemble_score,
+                    "confidence": confidence,
+                    "threshold": HIGH_RISK_THRESHOLD,
+                    "horizons": horizons
+                }],
+                dpi_at_trigger=dpi_result.dpi_normalized if dpi_result else None,
+                organ_scores={c.organ_name: c.organ_score for c in dpi_result.components} if dpi_result else None,
+                suppression_key=suppression_key,
+                confidence=confidence
+            )
+        
+        return None
+    
+    def _check_ml_trajectory_deteriorating(
+        self,
+        patient_id: str,
+        ml_prediction: Dict[str, Any],
+        dpi_result: DPIResult
+    ) -> Optional[AlertTrigger]:
+        """
+        Rule 9: ML predicts worsening trajectory across time horizons
+        (short-term risk increasing to long-term risk)
+        """
+        MIN_TRAJECTORY_INCREASE = 0.2  # 20% increase from short to long term
+        MIN_CONFIDENCE = 0.5
+        
+        confidence = ml_prediction.get("ensemble_confidence", 0)
+        if confidence < MIN_CONFIDENCE:
+            return None
+        
+        trend_direction = ml_prediction.get("trend_direction", "stable")
+        risk_trajectory = ml_prediction.get("risk_trajectory", "low")
+        
+        # Check if trajectory shows deterioration pattern
+        if trend_direction == "deteriorating" or risk_trajectory in ["high", "critical"]:
+            # Analyze horizon progression
+            horizons = ml_prediction.get("predictions", {})
+            if len(horizons) >= 2:
+                sorted_horizons = sorted(
+                    [(k, v) for k, v in horizons.items() if isinstance(v, dict)],
+                    key=lambda x: int(x[0].replace("h", "").replace("_hours", ""))
+                )
+                
+                if len(sorted_horizons) >= 2:
+                    short_term_prob = sorted_horizons[0][1].get("deterioration_probability", 0)
+                    long_term_prob = sorted_horizons[-1][1].get("deterioration_probability", 0)
+                    
+                    trajectory_increase = long_term_prob - short_term_prob
+                    
+                    if trajectory_increase >= MIN_TRAJECTORY_INCREASE:
+                        suppression_key = self._generate_suppression_key(
+                            patient_id, "ml_trajectory", datetime.utcnow()
+                        )
+                        
+                        return AlertTrigger(
+                            rule=AlertRule.ML_TRAJECTORY_DETERIORATING,
+                            severity=AlertSeverity.HIGH,
+                            priority=7,
+                            title="Deteriorating Trajectory Predicted",
+                            message=f"AI analysis indicates worsening trajectory over time. "
+                                    f"Short-term risk: {short_term_prob:.0%} → Long-term risk: {long_term_prob:.0%}. "
+                                    f"This escalating pattern suggests attention may be needed.",
+                            trigger_metrics=[{
+                                "name": "ml_trajectory",
+                                "short_term": short_term_prob,
+                                "long_term": long_term_prob,
+                                "increase": trajectory_increase,
+                                "trend": trend_direction
+                            }],
+                            dpi_at_trigger=dpi_result.dpi_normalized if dpi_result else None,
+                            organ_scores={c.organ_name: c.organ_score for c in dpi_result.components} if dpi_result else None,
+                            suppression_key=suppression_key,
+                            confidence=confidence
+                        )
+        
+        return None
+    
+    def _check_ml_confidence_spike(
+        self,
+        patient_id: str,
+        ml_prediction: Dict[str, Any],
+        dpi_result: DPIResult
+    ) -> Optional[AlertTrigger]:
+        """
+        Rule 10: ML confidence suddenly increases while risk is moderate-high
+        (model becoming more certain of deterioration)
+        """
+        CONFIDENCE_SPIKE_THRESHOLD = 0.8  # Very high confidence
+        MIN_RISK_FOR_SPIKE = 0.5  # At least moderate risk
+        
+        ensemble_score = ml_prediction.get("ensemble_score", 0)
+        confidence = ml_prediction.get("ensemble_confidence", 0)
+        
+        # High confidence about moderate+ risk is concerning
+        if confidence >= CONFIDENCE_SPIKE_THRESHOLD and ensemble_score >= MIN_RISK_FOR_SPIKE:
+            # This rule is less severe - it's about certainty increasing
+            suppression_key = self._generate_suppression_key(
+                patient_id, "ml_confidence_spike", datetime.utcnow()
+            )
+            
+            return AlertTrigger(
+                rule=AlertRule.ML_CONFIDENCE_SPIKE,
+                severity=AlertSeverity.MODERATE,
+                priority=6,
+                title="Increased Prediction Certainty",
+                message=f"AI analysis shows high certainty ({confidence:.0%}) about elevated risk ({ensemble_score:.0%}). "
+                        f"The model has strong confidence in this assessment based on current data patterns.",
+                trigger_metrics=[{
+                    "name": "ml_confidence",
+                    "confidence": confidence,
+                    "ensemble_score": ensemble_score,
+                    "confidence_threshold": CONFIDENCE_SPIKE_THRESHOLD
+                }],
+                dpi_at_trigger=dpi_result.dpi_normalized if dpi_result else None,
+                organ_scores={c.organ_name: c.organ_score for c in dpi_result.components} if dpi_result else None,
+                suppression_key=suppression_key,
+                confidence=confidence
             )
         
         return None
