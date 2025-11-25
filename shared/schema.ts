@@ -4161,3 +4161,296 @@ export const insertTrendReportSchema = createInsertSchema(trendReports).omit({
 
 export type InsertTrendReport = z.infer<typeof insertTrendReportSchema>;
 export type TrendReport = typeof trendReports.$inferSelect;
+
+// ============================================
+// AI HEALTH ALERT ENGINE TABLES
+// ============================================
+
+// Trend Metrics - Z-scores, slopes, volatility for each tracked metric
+export const aiTrendMetrics = pgTable("ai_trend_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Metric identification
+  metricName: varchar("metric_name").notNull(), // 'heart_rate', 'pain_level', 'fatigue', 'mobility', etc.
+  metricCategory: varchar("metric_category").notNull(), // 'vital', 'symptom', 'activity', 'behavioral'
+  
+  // Raw and baseline values
+  rawValue: decimal("raw_value", { precision: 10, scale: 4 }).notNull(),
+  baseline14dMean: decimal("baseline_14d_mean", { precision: 10, scale: 4 }),
+  baseline14dStd: decimal("baseline_14d_std", { precision: 10, scale: 4 }),
+  
+  // Z-score deviation (current - mean_14d) / std_14d
+  zScore: decimal("z_score", { precision: 6, scale: 3 }),
+  zScoreSeverity: varchar("z_score_severity"), // 'normal', 'elevated', 'high', 'critical'
+  
+  // Rolling slopes (linear regression on rolling windows)
+  slope3d: decimal("slope_3d", { precision: 8, scale: 5 }), // 3-day slope
+  slope7d: decimal("slope_7d", { precision: 8, scale: 5 }), // 7-day slope
+  slope14d: decimal("slope_14d", { precision: 8, scale: 5 }), // 14-day slope
+  slopeDirection: varchar("slope_direction"), // 'increasing', 'stable', 'decreasing'
+  
+  // Volatility Index = std(14-day values)
+  volatilityIndex: decimal("volatility_index", { precision: 8, scale: 4 }),
+  volatilityLevel: varchar("volatility_level"), // 'stable', 'moderate', 'high', 'extreme'
+  
+  // Composite Trend Risk Index (0-100)
+  compositeTrendScore: decimal("composite_trend_score", { precision: 5, scale: 2 }),
+  
+  recordedAt: timestamp("recorded_at").notNull(),
+  computedAt: timestamp("computed_at").defaultNow(),
+}, (table) => ({
+  patientMetricIdx: index("ai_trend_metrics_patient_metric_idx").on(table.patientId, table.metricName),
+  recordedAtIdx: index("ai_trend_metrics_recorded_at_idx").on(table.recordedAt),
+  zScoreIdx: index("ai_trend_metrics_zscore_idx").on(table.zScore),
+}));
+
+export const insertAiTrendMetricSchema = createInsertSchema(aiTrendMetrics).omit({
+  id: true,
+  computedAt: true,
+});
+
+export type InsertAiTrendMetric = z.infer<typeof insertAiTrendMetricSchema>;
+export type AiTrendMetric = typeof aiTrendMetrics.$inferSelect;
+
+// Engagement Metrics - Adherence, check-ins, engagement scores
+export const aiEngagementMetrics = pgTable("ai_engagement_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Date range for metrics
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  
+  // Adherence Score = (completed_actions / expected_actions) * 100
+  adherenceScore: decimal("adherence_score", { precision: 5, scale: 2 }),
+  checkinsCompleted: integer("checkins_completed").default(0),
+  checkinsExpected: integer("checkins_expected").default(0),
+  capturesCompleted: integer("captures_completed").default(0), // Video/audio exams
+  surveysCompleted: integer("surveys_completed").default(0),
+  
+  // Engagement Score (composite)
+  engagementScore: decimal("engagement_score", { precision: 5, scale: 2 }),
+  engagementTrend: varchar("engagement_trend"), // 'improving', 'stable', 'declining'
+  engagementDrop14d: decimal("engagement_drop_14d", { precision: 5, scale: 2 }), // % drop vs 14-day baseline
+  
+  // Time-to-Alert metrics
+  avgTimeToAlert: integer("avg_time_to_alert"), // seconds from anomaly to alert
+  alertsGenerated: integer("alerts_generated").default(0),
+  alertsAcknowledged: integer("alerts_acknowledged").default(0),
+  alertsDismissed: integer("alerts_dismissed").default(0), // False positive proxy
+  
+  // Streak tracking
+  currentStreak: integer("current_streak").default(0), // consecutive days of check-ins
+  longestStreak: integer("longest_streak").default(0),
+  
+  computedAt: timestamp("computed_at").defaultNow(),
+}, (table) => ({
+  patientPeriodIdx: index("ai_engagement_metrics_patient_period_idx").on(table.patientId, table.periodStart),
+}));
+
+export const insertAiEngagementMetricSchema = createInsertSchema(aiEngagementMetrics).omit({
+  id: true,
+  computedAt: true,
+});
+
+export type InsertAiEngagementMetric = z.infer<typeof insertAiEngagementMetricSchema>;
+export type AiEngagementMetric = typeof aiEngagementMetrics.$inferSelect;
+
+// Quality of Life Metrics - Wellness index, functional status, self-care
+export const aiQolMetrics = pgTable("ai_qol_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Daily Wellness Index (0-100)
+  wellnessIndex: decimal("wellness_index", { precision: 5, scale: 2 }),
+  wellnessComponents: jsonb("wellness_components").$type<{
+    moodScore: number;
+    energyScore: number;
+    mobilityTrend: number;
+    adherenceContribution: number;
+  }>(),
+  wellnessTrend: varchar("wellness_trend"), // 'improving', 'stable', 'declining'
+  
+  // Functional Status Proxy (0-100)
+  functionalStatus: decimal("functional_status", { precision: 5, scale: 2 }),
+  functionalComponents: jsonb("functional_components").$type<{
+    activityLevel: number;
+    gaitSpeed: number | null;
+    engagementFactor: number;
+  }>(),
+  
+  // Self-care Consistency Score (0-100)
+  selfcareScore: decimal("selfcare_score", { precision: 5, scale: 2 }),
+  selfcareComponents: jsonb("selfcare_components").$type<{
+    medicationAdherence: number;
+    hydrationLogs: number;
+    checkinStreak: number;
+  }>(),
+  
+  // Daily Stability Score = 100 - volatility - negative_slopes - missed_checkins_penalty
+  stabilityScore: decimal("stability_score", { precision: 5, scale: 2 }),
+  
+  // Organ-System Behavior Scores (statistical patterns, NOT medical)
+  behaviorPatterns: jsonb("behavior_patterns").$type<{
+    respiratoryLikePattern: number; // 0-100 based on activity, breath patterns
+    fluidLikePattern: number; // 0-100 based on weight + activity trends
+    moodNeuroPattern: number; // 0-100 based on mood + consistency
+    behavioralStabilityPattern: number; // 0-100 based on interactions + check-ins
+  }>(),
+  
+  recordedAt: timestamp("recorded_at").notNull(),
+  computedAt: timestamp("computed_at").defaultNow(),
+}, (table) => ({
+  patientDateIdx: index("ai_qol_metrics_patient_date_idx").on(table.patientId, table.recordedAt),
+  wellnessIdx: index("ai_qol_metrics_wellness_idx").on(table.wellnessIndex),
+}));
+
+export const insertAiQolMetricSchema = createInsertSchema(aiQolMetrics).omit({
+  id: true,
+  computedAt: true,
+});
+
+export type InsertAiQolMetric = z.infer<typeof insertAiQolMetricSchema>;
+export type AiQolMetric = typeof aiQolMetrics.$inferSelect;
+
+// AI Health Alerts - Comprehensive alert system with compliance guardrails
+export const aiHealthAlerts = pgTable("ai_health_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Alert classification
+  alertType: varchar("alert_type").notNull(), // 'trend', 'engagement', 'qol'
+  alertCategory: varchar("alert_category").notNull(), // 'zscore_deviation', 'slope_negative', 'volatility_high', 'missed_checkins', 'wellness_drop', etc.
+  severity: varchar("severity").notNull(), // 'low', 'moderate', 'high', 'critical'
+  priority: integer("priority").notNull(), // 1-10 (10 = most urgent)
+  
+  // Escalation Probability (ML ranking 0-1, NOT a diagnosis)
+  escalationProbability: decimal("escalation_probability", { precision: 4, scale: 3 }),
+  
+  // Alert content
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  
+  // COMPLIANCE: Mandatory disclaimer
+  disclaimer: text("disclaimer").notNull().default("This is an observational pattern alert. Not a diagnosis or medical opinion."),
+  
+  // Contributing metrics (JSON for flexibility)
+  contributingMetrics: jsonb("contributing_metrics").$type<Array<{
+    metricName: string;
+    value: number;
+    zScore?: number;
+    slope?: number;
+    threshold: number;
+    contribution: string; // 'primary', 'secondary'
+  }>>(),
+  
+  // Trigger details
+  triggerRule: varchar("trigger_rule"), // Which rule triggered this alert
+  triggerThreshold: decimal("trigger_threshold", { precision: 10, scale: 4 }),
+  triggerValue: decimal("trigger_value", { precision: 10, scale: 4 }),
+  
+  // Status workflow
+  status: varchar("status").notNull().default("new"), // 'new', 'acknowledged', 'dismissed', 'escalated', 'resolved'
+  acknowledgedBy: varchar("acknowledged_by").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  dismissedBy: varchar("dismissed_by").references(() => users.id),
+  dismissedAt: timestamp("dismissed_at"),
+  dismissReason: text("dismiss_reason"),
+  
+  // Notification tracking
+  notifiedPatient: boolean("notified_patient").default(false),
+  notifiedClinician: boolean("notified_clinician").default(false),
+  smsAlertSent: boolean("sms_alert_sent").default(false),
+  emailAlertSent: boolean("email_alert_sent").default(false),
+  
+  // Audit trail
+  clinicianNotes: text("clinician_notes"),
+  clinicianId: varchar("clinician_id").references(() => users.id),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientStatusIdx: index("ai_health_alerts_patient_status_idx").on(table.patientId, table.status),
+  severityIdx: index("ai_health_alerts_severity_idx").on(table.severity),
+  typeIdx: index("ai_health_alerts_type_idx").on(table.alertType),
+  createdAtIdx: index("ai_health_alerts_created_at_idx").on(table.createdAt),
+}));
+
+export const insertAiHealthAlertSchema = createInsertSchema(aiHealthAlerts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAiHealthAlert = z.infer<typeof insertAiHealthAlertSchema>;
+export type AiHealthAlert = typeof aiHealthAlerts.$inferSelect;
+
+// Alert Rules Configuration - Configurable thresholds
+export const aiAlertRules = pgTable("ai_alert_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  ruleName: varchar("rule_name").notNull().unique(),
+  ruleCategory: varchar("rule_category").notNull(), // 'trend', 'engagement', 'qol'
+  description: text("description"),
+  
+  // Thresholds
+  thresholds: jsonb("thresholds").$type<{
+    zScoreThreshold?: number; // Default 2.5
+    slopeThreshold?: number;
+    volatilityThreshold?: number;
+    compositeScoreThreshold?: number;
+    engagementDropThreshold?: number; // Default 30%
+    wellnessDropThreshold?: number; // Default 20 points
+    missedCheckinsThreshold?: number; // Default 3 in 48 hours
+    adherenceMinimum?: number; // Default 60%
+  }>(),
+  
+  severity: varchar("severity").notNull(), // Default severity for this rule
+  enabled: boolean("enabled").default(true),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAiAlertRuleSchema = createInsertSchema(aiAlertRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAiAlertRule = z.infer<typeof insertAiAlertRuleSchema>;
+export type AiAlertRule = typeof aiAlertRules.$inferSelect;
+
+// Clinician Workload Metrics - Track alert handling efficiency
+export const clinicianWorkloadMetrics = pgTable("clinician_workload_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clinicianId: varchar("clinician_id").notNull().references(() => users.id),
+  
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  
+  // Workload metrics
+  alertsReceived: integer("alerts_received").default(0),
+  alertsAcknowledged: integer("alerts_acknowledged").default(0),
+  alertsDismissed: integer("alerts_dismissed").default(0),
+  alertsEscalated: integer("alerts_escalated").default(0),
+  avgResponseTimeSeconds: integer("avg_response_time_seconds"),
+  
+  // Workload reduction calculation
+  manualChecksAvoided: integer("manual_checks_avoided").default(0),
+  baselineManualChecks: integer("baseline_manual_checks").default(0),
+  workloadReductionPercent: decimal("workload_reduction_percent", { precision: 5, scale: 2 }),
+  
+  computedAt: timestamp("computed_at").defaultNow(),
+}, (table) => ({
+  clinicianPeriodIdx: index("clinician_workload_clinician_period_idx").on(table.clinicianId, table.periodStart),
+}));
+
+export const insertClinicianWorkloadMetricSchema = createInsertSchema(clinicianWorkloadMetrics).omit({
+  id: true,
+  computedAt: true,
+});
+
+export type InsertClinicianWorkloadMetric = z.infer<typeof insertClinicianWorkloadMetricSchema>;
+export type ClinicianWorkloadMetric = typeof clinicianWorkloadMetrics.$inferSelect;

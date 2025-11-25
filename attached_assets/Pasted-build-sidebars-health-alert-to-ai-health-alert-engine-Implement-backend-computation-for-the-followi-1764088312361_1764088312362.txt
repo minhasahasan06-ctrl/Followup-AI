@@ -1,0 +1,150 @@
+build sidebars health alert to ai health alert engine-
+Implement backend computation for the following trend features:
+1. Z-score deviation for each metric
+Compare today’s value vs user’s 14-day baseline
+Formula:z = (current - mean_14d) / std_14d
+2. Rolling slopes
+For every tracked metric compute:
+3-day slope
+7-day slope
+14-day slope
+Use simple linear regression on rolling windows.
+3. Volatility Index
+volatility = std(14-day values)
+ 4. Composite Trend Risk Index
+Weighted sum of:
+* z-score magnitude
+* volatility
+* slope
+* engagement score drop
+Scale output 0–100.
+5. Organ-System Behavior Scores
+(Behavioral clusters, NOT medical)
+* “Respiratory-like pattern” (based on activity, rate-of-breath audio pattern if available, pacing)
+* “Fluid-like pattern” (weight trend + activity trend)
+* “Mood/Neuro pattern” (mood + consistency + stability)
+* “Behavioral stability pattern” (consistency + interactions + check-ins)
+These are statistical pattern groups only.
+6. Daily Stability Score
+Single front-facing score for patient:
+
+stability = 100 - composite_volatility - negative_slopes - missed_checkins * penalty
+7. Escalation Probability (ML ranking only)
+XGBoost model that outputs a priority score (0–1) for how unusual the combined metrics are.
+NOT a diagnosis — ONLY alert sorting.
+
+B. ENGAGEMENT & WORKFLOW METRICS (Part 11)
+8. Adherence Score
+
+adherence = (completed_actions / expected_actions) * 100
+Actions = check-ins, captures, surveys.
+9. Time-to-Alert
+Time from anomaly → alert creation. Log automatically.
+10. Alert Frequency
+Track number of alerts generated per user per week.
+11. False-positive proxy measurement
+If clinician dismisses alert → mark as “low relevance".
+12. Care-Team Workload Score
+Simple computation:
+
+workload_reduction = (manual_checks_avoided / baseline_manual_checks)
+
+C. QUALITY OF LIFE METRICS (Part 12)
+13. Daily Wellness Index
+Combine:
+* mood
+* energy
+* mobility trend
+* adherence Output scaled 0–100.
+14. Functional Status Proxy
+
+functional_status = weighted(activity_level, gait_speed, engagement)
+15. Self-care Consistency
+Medication + hydration intake logs + check-in streaks.
+
+2️⃣ ALERT TYPES TO BUILD
+A. TREND ALERTS
+Triggered when ANY of these happen:
+1. z-score >= 2.5
+2. 7-day slope strongly negative
+3. volatility index > system threshold (configurable)
+4. composite trend score crosses user baseline by >20%
+B. ENGAGEMENT ALERTS
+1. missed 3 check-ins in 48 hours
+2. adherence < 60%
+3. engagement drop > 30% vs 14-day baseline
+C. QUALITY-OF-LIFE ALERTS
+1. wellness index drops by >20 points
+2. functional status drops >30% in 3 days
+3. self-care consistency drops below threshold
+All alerts must be:
+“Observational behavioral alert — requires human review. NOT a medical diagnosis.”
+
+3️⃣ DATABASE REQUIREMENTS
+Create tables:
+trend_metrics
+* id
+* patient_id
+* metric_name
+* raw_value
+* z_score
+* slope_3d
+* slope_7d
+* slope_14d
+* volatility
+* timestamp
+engagement_metrics
+* patient_id
+* adherence
+* checkins_completed
+* checkins_expected
+* engagement_score
+* timestamp
+qol_metrics
+* patient_id
+* wellness_index
+* functional_status
+* selfcare_score
+* timestamp
+alerts
+* alert_id
+* patient_id
+* type
+* severity
+* contributing_metrics (json)
+* created_at
+* status (new, acknowledged, dismissed)
+* clinician_id
+
+4️⃣ WORKER LOGIC (IMPORTANT)
+Create a background worker that:
+1. Pulls new metric entries
+2. Computes all Part 10–12 metrics
+3. Calculates trend + engagement + QOL scores
+4. Runs alert rules
+5. Writes alerts to DB
+6. Sends notifications to clinician dashboard
+
+5️⃣ CLINICIAN DASHBOARD REQUIREMENTS
+Build dashboard with:
+* Active alerts list
+* Trend timeline graphs (z-scores, slopes)
+* Engagement history
+* Wellness history
+* “Acknowledge / Dismiss” workflow
+* Full audit trail
+
+6️⃣ NOTIFICATION RULES
+Send notifications ONLY for:
+* high-severity trend anomalies
+* engagement failure
+* QOL deterioration
+No medical language. No clinical claims. Observational only.
+
+7️⃣ COMPLIANCE GUARDRAILS
+The system must automatically add this text to all alerts:
+“This is an observational pattern alert. Not a diagnosis or medical opinion.”
+No decision support. No prediction of disease. No “diagnosis words.” No symptom labeling.
+
+
+
