@@ -73,6 +73,8 @@ import GuidedAudioExam from "@/pages/guided-audio-exam";
 import DailyFollowup from "@/pages/DailyFollowup";
 import DailyFollowupHistory from "@/pages/DailyFollowupHistory";
 import MentalHealth from "@/pages/MentalHealth";
+import Prescriptions from "@/pages/Prescriptions";
+import DrugInteractions from "@/pages/DrugInteractions";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
@@ -120,6 +122,9 @@ function DoctorRouter() {
   return (
     <Switch>
       <Route path="/" component={DoctorDashboard} />
+      <Route path="/ai-alerts" component={AIAlertsDashboard} />
+      <Route path="/prescriptions" component={Prescriptions} />
+      <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/receptionist" component={ReceptionistDashboard} />
       <Route path="/doctor-wellness" component={DoctorWellness} />
       <Route path="/doctor/patient/:id" component={PatientReview} />
