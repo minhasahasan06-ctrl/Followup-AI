@@ -230,19 +230,19 @@ export default function CalendarSync() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="bidirectional">
+                        <SelectItem value="bidirectional" data-testid="option-bidirectional">
                           <span className="flex items-center gap-2">
                             <ArrowLeftRight className="h-4 w-4" />
                             Bidirectional
                           </span>
                         </SelectItem>
-                        <SelectItem value="to_google">
+                        <SelectItem value="to_google" data-testid="option-to-google">
                           <span className="flex items-center gap-2">
                             <ExternalLink className="h-4 w-4" />
                             To Google Only
                           </span>
                         </SelectItem>
-                        <SelectItem value="from_google">
+                        <SelectItem value="from_google" data-testid="option-from-google">
                           <span className="flex items-center gap-2">
                             <Calendar className="h-4 w-4" />
                             From Google Only
@@ -262,9 +262,9 @@ export default function CalendarSync() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="google_wins">Google Calendar wins</SelectItem>
-                        <SelectItem value="local_wins">Local appointments win</SelectItem>
-                        <SelectItem value="newest_wins">Most recent wins</SelectItem>
+                        <SelectItem value="google_wins" data-testid="option-google-wins">Google Calendar wins</SelectItem>
+                        <SelectItem value="local_wins" data-testid="option-local-wins">Local appointments win</SelectItem>
+                        <SelectItem value="newest_wins" data-testid="option-newest-wins">Most recent wins</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -473,6 +473,7 @@ export default function CalendarSync() {
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="text-primary"
+                          data-testid={`link-event-meet-${event.id}`}
                         >
                           <ExternalLink className="h-4 w-4" />
                         </a>
