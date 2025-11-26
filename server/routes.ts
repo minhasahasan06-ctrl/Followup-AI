@@ -7631,6 +7631,328 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // =====================================================
+  // ML INFERENCE ENDPOINTS - Proxy to Python backend
+  // Clinical-BERT NER, deterioration prediction, model management
+  // =====================================================
+
+  // Get ML system statistics
+  app.get('/api/v1/ml/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/stats`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        // Return default stats if Python backend unavailable
+        return res.json({
+          total_predictions: 0,
+          predictions_today: 0,
+          cache_hit_rate_percent: 0,
+          active_models: 0,
+          avg_inference_time_ms: 0,
+          redis_enabled: false,
+          backend_status: 'unavailable'
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching ML stats:', error);
+      res.json({
+        total_predictions: 0,
+        predictions_today: 0,
+        cache_hit_rate_percent: 0,
+        active_models: 0,
+        avg_inference_time_ms: 0,
+        redis_enabled: false,
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
+  // Get available ML models
+  app.get('/api/v1/ml/models', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/models`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        return res.json({ models: [] });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching ML models:', error);
+      res.json({ models: [] });
+    }
+  });
+
+  // Get model performance metrics
+  app.get('/api/v1/ml/models/:modelName/performance', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { modelName } = req.params;
+      const hours = req.query.hours || 24;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/models/${modelName}/performance?hours=${hours}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        return res.json({
+          model_name: modelName,
+          model_version: '1.0',
+          time_window_hours: hours,
+          metrics: {}
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching model performance:', error);
+      res.json({
+        model_name: req.params.modelName,
+        model_version: '1.0',
+        time_window_hours: 24,
+        metrics: {}
+      });
+    }
+  });
+
+  // Get prediction history
+  app.get('/api/v1/ml/predictions/history', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const limit = req.query.limit || 50;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/predictions/history?limit=${limit}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        return res.json({ predictions: [], total: 0 });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching prediction history:', error);
+      res.json({ predictions: [], total: 0 });
+    }
+  });
+
+  // Generic ML prediction endpoint
+  app.post('/api/v1/ml/predict', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/predict`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify({
+          ...req.body,
+          user_id: req.user.id
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('ML prediction error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Prediction failed', 
+          detail: error,
+          backend_status: 'error'
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error making ML prediction:', error);
+      res.status(502).json({ 
+        error: 'ML service unavailable',
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
+  // Symptom analysis endpoint (Clinical-BERT NER)
+  app.post('/api/v1/ml/predict/symptom-analysis', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { text, include_context } = req.body;
+      
+      if (!text || typeof text !== 'string') {
+        return res.status(400).json({ error: 'Text input is required' });
+      }
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/predict/symptom-analysis`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify({
+          text,
+          include_context: include_context || false,
+          user_id: req.user.id
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Symptom analysis error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Symptom analysis failed', 
+          detail: error 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error in symptom analysis:', error);
+      res.status(502).json({ 
+        error: 'ML service unavailable for symptom analysis',
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
+  // Deterioration prediction endpoint
+  app.post('/api/v1/ml/predict/deterioration', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patient_id, metrics, time_window_days } = req.body;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/predict/deterioration`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify({
+          patient_id: patient_id || req.user.id,
+          metrics: metrics || {},
+          time_window_days: time_window_days || 7,
+          user_id: req.user.id
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Deterioration prediction error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Deterioration prediction failed', 
+          detail: error 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error in deterioration prediction:', error);
+      res.status(502).json({ 
+        error: 'ML service unavailable for deterioration prediction',
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
   // Proxy questionnaire templates endpoint (public - these are public domain instruments)
   app.all('/api/v1/mental-health/questionnaires*', async (req: any, res) => {
     try {
