@@ -11,6 +11,76 @@ interface GoogleCalendarConfig {
   redirectUri?: string;
 }
 
+// Replit Google Calendar Connector - Integration Reference: connection:conn_google-calendar_01K9BV2Y4BKVD2BBGRWBYMVKPG
+let connectionSettings: any;
+
+async function getReplitAccessToken(): Promise<string | null> {
+  try {
+    if (connectionSettings && connectionSettings.settings?.expires_at && 
+        new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
+      return connectionSettings.settings.access_token;
+    }
+    
+    const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
+    const xReplitToken = process.env.REPL_IDENTITY 
+      ? 'repl ' + process.env.REPL_IDENTITY 
+      : process.env.WEB_REPL_RENEWAL 
+      ? 'depl ' + process.env.WEB_REPL_RENEWAL 
+      : null;
+
+    if (!xReplitToken || !hostname) {
+      console.log('[GoogleCalendarSync] Replit connector not available');
+      return null;
+    }
+
+    connectionSettings = await fetch(
+      'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-calendar',
+      {
+        headers: {
+          'Accept': 'application/json',
+          'X_REPLIT_TOKEN': xReplitToken
+        }
+      }
+    ).then(res => res.json()).then(data => data.items?.[0]);
+
+    const accessToken = connectionSettings?.settings?.access_token || 
+                       connectionSettings?.settings?.oauth?.credentials?.access_token;
+
+    if (!connectionSettings || !accessToken) {
+      console.log('[GoogleCalendarSync] Google Calendar not connected via Replit');
+      return null;
+    }
+    return accessToken;
+  } catch (error) {
+    console.error('[GoogleCalendarSync] Error getting Replit access token:', error);
+    return null;
+  }
+}
+
+// Get Google Calendar client using Replit connector (for platform-level operations)
+export async function getUncachableGoogleCalendarClient(): Promise<calendar_v3.Calendar | null> {
+  try {
+    const accessToken = await getReplitAccessToken();
+    if (!accessToken) return null;
+
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({
+      access_token: accessToken
+    });
+
+    return google.calendar({ version: 'v3', auth: oauth2Client });
+  } catch (error) {
+    console.error('[GoogleCalendarSync] Error creating calendar client:', error);
+    return null;
+  }
+}
+
+// Check if Replit connector is available
+export async function isReplitConnectorAvailable(): Promise<boolean> {
+  const token = await getReplitAccessToken();
+  return token !== null;
+}
+
 /**
  * Google Calendar Sync Service
  * Provides bidirectional sync between Followup AI appointments and Google Calendar
