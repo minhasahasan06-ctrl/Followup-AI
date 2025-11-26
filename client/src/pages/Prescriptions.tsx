@@ -44,9 +44,11 @@ import {
   Package,
   Activity,
   X,
+  Edit3,
+  MessageSquare,
 } from "lucide-react";
 import { format } from "date-fns";
-import type { User as UserType, Prescription, Drug } from "@shared/schema";
+import type { User as UserType, Prescription, Drug, DosageChangeRequest } from "@shared/schema";
 
 interface DrugInteractionCheck {
   hasInteractions: boolean;
@@ -71,12 +73,21 @@ interface PatientMedication {
 export default function Prescriptions() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("write");
+  const isDoctor = user?.role === "doctor";
+  
+  const [activeTab, setActiveTab] = useState(isDoctor ? "write" : "active");
   const [selectedPatient, setSelectedPatient] = useState<string>("");
   const [drugSearchQuery, setDrugSearchQuery] = useState("");
   const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null);
   const [showInteractionDialog, setShowInteractionDialog] = useState(false);
   const [interactionResult, setInteractionResult] = useState<DrugInteractionCheck | null>(null);
+  const [showDosageRequestDialog, setShowDosageRequestDialog] = useState(false);
+  const [selectedMedicationForChange, setSelectedMedicationForChange] = useState<any>(null);
+  const [dosageChangeForm, setDosageChangeForm] = useState({
+    requestedDosage: "",
+    requestedFrequency: "",
+    reason: "",
+  });
   
   const [prescriptionForm, setPrescriptionForm] = useState({
     medicationName: "",
@@ -91,15 +102,27 @@ export default function Prescriptions() {
 
   const { data: patients, isLoading: patientsLoading } = useQuery<UserType[]>({
     queryKey: ["/api/doctor/patients"],
+    enabled: isDoctor,
   });
 
-  const { data: prescriptions, isLoading: prescriptionsLoading } = useQuery<Prescription[]>({
+  const { data: doctorPrescriptions, isLoading: doctorPrescriptionsLoading } = useQuery<Prescription[]>({
     queryKey: ["/api/prescriptions/doctor"],
     queryFn: async () => {
       const res = await fetch("/api/prescriptions/doctor");
       if (!res.ok) throw new Error("Failed to fetch prescriptions");
       return res.json();
     },
+    enabled: isDoctor,
+  });
+
+  const { data: patientPrescriptions, isLoading: patientPrescriptionsLoading } = useQuery<Prescription[]>({
+    queryKey: ["/api/prescriptions"],
+    enabled: !isDoctor,
+  });
+
+  const { data: myDosageRequests } = useQuery<DosageChangeRequest[]>({
+    queryKey: ["/api/dosage-change-requests"],
+    enabled: !isDoctor,
   });
 
   const { data: drugSearchResults, isLoading: drugsLoading } = useQuery<Drug[]>({
@@ -110,7 +133,7 @@ export default function Prescriptions() {
       if (!res.ok) throw new Error("Failed to search drugs");
       return res.json();
     },
-    enabled: drugSearchQuery.length >= 2,
+    enabled: drugSearchQuery.length >= 2 && isDoctor,
   });
 
   const { data: patientMedications } = useQuery<PatientMedication[]>({
@@ -121,7 +144,12 @@ export default function Prescriptions() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!selectedPatient,
+    enabled: isDoctor && !!selectedPatient,
+  });
+
+  const { data: myMedications } = useQuery<PatientMedication[]>({
+    queryKey: ["/api/medications"],
+    enabled: !isDoctor,
   });
 
   const checkInteractionsMutation = useMutation({
@@ -182,6 +210,57 @@ export default function Prescriptions() {
     },
   });
 
+  const acknowledgePrescriptionMutation = useMutation({
+    mutationFn: async (prescriptionId: string) => {
+      const res = await apiRequest("POST", `/api/prescriptions/${prescriptionId}/acknowledge`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Prescription Acknowledged",
+        description: "You have acknowledged receiving this prescription",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/prescriptions"] });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to acknowledge prescription",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createDosageRequestMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/dosage-change-requests", {
+        medicationId: selectedMedicationForChange?.id,
+        currentDosage: selectedMedicationForChange?.dosage,
+        currentFrequency: selectedMedicationForChange?.frequency,
+        requestedDosage: dosageChangeForm.requestedDosage,
+        requestedFrequency: dosageChangeForm.requestedFrequency,
+        requestReason: dosageChangeForm.reason,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Request Submitted",
+        description: "Your dosage change request has been sent to your doctor for review",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/dosage-change-requests"] });
+      setShowDosageRequestDialog(false);
+      resetDosageForm();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to submit dosage change request",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setSelectedPatient("");
     setSelectedDrug(null);
@@ -197,6 +276,15 @@ export default function Prescriptions() {
       startDate: format(new Date(), "yyyy-MM-dd"),
     });
     setInteractionResult(null);
+  };
+
+  const resetDosageForm = () => {
+    setSelectedMedicationForChange(null);
+    setDosageChangeForm({
+      requestedDosage: "",
+      requestedFrequency: "",
+      reason: "",
+    });
   };
 
   const handleDrugSelect = (drug: Drug) => {
@@ -224,6 +312,16 @@ export default function Prescriptions() {
     createPrescriptionMutation.mutate();
   };
 
+  const handleRequestDosageChange = (medication: any) => {
+    setSelectedMedicationForChange(medication);
+    setDosageChangeForm({
+      requestedDosage: medication.dosage,
+      requestedFrequency: medication.frequency,
+      reason: "",
+    });
+    setShowDosageRequestDialog(true);
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "sent":
@@ -239,7 +337,404 @@ export default function Prescriptions() {
     }
   };
 
+  const getRequestStatusBadge = (status: string) => {
+    switch (status) {
+      case "pending":
+        return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+      case "approved":
+        return <Badge className="bg-teal-500"><CheckCircle2 className="h-3 w-3 mr-1" />Approved</Badge>;
+      case "rejected":
+        return <Badge variant="destructive"><X className="h-3 w-3 mr-1" />Rejected</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
   const selectedPatientData = patients?.find(p => p.id === selectedPatient);
+  const pendingPrescriptions = patientPrescriptions?.filter(p => p.status === "sent") || [];
+  const acknowledgedPrescriptions = patientPrescriptions?.filter(p => p.status !== "sent") || [];
+
+  if (!isDoctor) {
+    return (
+      <div className="container mx-auto p-6 max-w-6xl space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold" data-testid="text-page-title">My Prescriptions</h1>
+            <p className="text-muted-foreground mt-1">
+              View and manage your prescriptions from your healthcare providers
+            </p>
+          </div>
+          {pendingPrescriptions.length > 0 && (
+            <Badge variant="destructive">
+              <Clock className="h-3 w-3 mr-1" />
+              {pendingPrescriptions.length} New
+            </Badge>
+          )}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active Prescriptions</CardTitle>
+              <Pill className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold" data-testid="count-active">
+                {patientPrescriptions?.filter(p => p.status === "acknowledged" || p.status === "filled").length || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">Currently taking</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending Review</CardTitle>
+              <Clock className="h-4 w-4 text-amber-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-600" data-testid="count-pending">
+                {pendingPrescriptions.length}
+              </div>
+              <p className="text-xs text-muted-foreground">Requires acknowledgment</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Dosage Requests</CardTitle>
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold" data-testid="count-requests">
+                {myDosageRequests?.filter(r => r.status === "pending").length || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">Awaiting doctor approval</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="active" data-testid="tab-active">
+              <Pill className="h-4 w-4 mr-2" />
+              Prescriptions
+              {pendingPrescriptions.length > 0 && (
+                <Badge variant="destructive" className="ml-2">{pendingPrescriptions.length}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="medications" data-testid="tab-medications">
+              <Activity className="h-4 w-4 mr-2" />
+              My Medications
+            </TabsTrigger>
+            <TabsTrigger value="requests" data-testid="tab-requests">
+              <Edit3 className="h-4 w-4 mr-2" />
+              Change Requests
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="active" className="space-y-6 mt-6">
+            {pendingPrescriptions.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                  New Prescriptions Requiring Acknowledgment
+                </h3>
+                {pendingPrescriptions.map((rx) => (
+                  <Card key={rx.id} className="border-amber-200 dark:border-amber-800" data-testid={`pending-rx-${rx.id}`}>
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-semibold">{rx.medicationName}</span>
+                            {getStatusBadge(rx.status)}
+                          </div>
+                          <div className="text-muted-foreground">
+                            {rx.dosage} • {rx.frequency}
+                          </div>
+                          {rx.dosageInstructions && (
+                            <div className="text-sm text-muted-foreground">
+                              <span className="font-medium">Instructions:</span> {rx.dosageInstructions}
+                            </div>
+                          )}
+                          <div className="text-sm text-muted-foreground">
+                            Prescribed: {format(new Date(rx.createdAt!), "MMMM d, yyyy")}
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => acknowledgePrescriptionMutation.mutate(rx.id)}
+                          disabled={acknowledgePrescriptionMutation.isPending}
+                          data-testid={`button-acknowledge-${rx.id}`}
+                        >
+                          {acknowledgePrescriptionMutation.isPending ? (
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                          )}
+                          Acknowledge
+                        </Button>
+                      </div>
+                      {rx.notes && (
+                        <Alert className="mt-4">
+                          <MessageSquare className="h-4 w-4" />
+                          <AlertTitle>Doctor's Note</AlertTitle>
+                          <AlertDescription>{rx.notes}</AlertDescription>
+                        </Alert>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Prescription History</h3>
+              {patientPrescriptionsLoading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 w-full" />)}
+                </div>
+              ) : acknowledgedPrescriptions.length > 0 ? (
+                acknowledgedPrescriptions.map((rx) => (
+                  <Card key={rx.id} data-testid={`rx-${rx.id}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{rx.medicationName}</span>
+                            {getStatusBadge(rx.status)}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {rx.dosage} • {rx.frequency}
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {format(new Date(rx.createdAt!), "MMM d, yyyy")}
+                            </span>
+                            {rx.quantity && <span>Qty: {rx.quantity}</span>}
+                            {rx.refills !== null && rx.refills > 0 && (
+                              <span>{rx.refills} refill(s) remaining</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              ) : (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <FileText className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+                    <h3 className="text-lg font-medium mb-1">No Prescription History</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Your prescription history will appear here
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="medications" className="space-y-6 mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  Current Medications
+                </CardTitle>
+                <CardDescription>
+                  Your active medications. Request dosage changes if needed.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {myMedications && myMedications.length > 0 ? (
+                  <div className="space-y-3">
+                    {myMedications.map((med) => (
+                      <div
+                        key={med.id}
+                        className="p-4 border rounded-lg flex items-center justify-between gap-4"
+                        data-testid={`medication-${med.id}`}
+                      >
+                        <div className="space-y-1">
+                          <div className="font-medium">{med.name}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {med.dosage} • {med.frequency}
+                          </div>
+                          <Badge variant={med.status === "active" ? "default" : "secondary"}>
+                            {med.status}
+                          </Badge>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRequestDosageChange(med)}
+                          data-testid={`button-request-change-${med.id}`}
+                        >
+                          <Edit3 className="h-4 w-4 mr-2" />
+                          Request Change
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Pill className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+                    <p className="text-muted-foreground">No active medications</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="requests" className="space-y-6 mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="h-5 w-5" />
+                  Your Dosage Change Requests
+                </CardTitle>
+                <CardDescription>
+                  Track the status of your dosage change requests
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {myDosageRequests && myDosageRequests.length > 0 ? (
+                  <div className="space-y-4">
+                    {myDosageRequests.map((request) => (
+                      <Card key={request.id} data-testid={`request-${request.id}`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="space-y-2 flex-1">
+                              <div className="flex items-center gap-2">
+                                {getRequestStatusBadge(request.status)}
+                                <span className="text-sm text-muted-foreground">
+                                  {format(new Date(request.createdAt!), "MMM d, yyyy")}
+                                </span>
+                              </div>
+                              <div className="grid gap-2 md:grid-cols-2 mt-2">
+                                <div className="p-2 bg-muted rounded">
+                                  <div className="text-xs text-muted-foreground">Current</div>
+                                  <div className="font-medium">{request.currentDosage} - {request.currentFrequency}</div>
+                                </div>
+                                <div className="p-2 bg-primary/10 rounded">
+                                  <div className="text-xs text-muted-foreground">Requested</div>
+                                  <div className="font-medium text-primary">
+                                    {request.requestedDosage} - {request.requestedFrequency}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-sm">
+                                <span className="font-medium">Your reason:</span> {request.requestReason}
+                              </div>
+                              {request.doctorNotes && (
+                                <Alert>
+                                  <MessageSquare className="h-4 w-4" />
+                                  <AlertTitle>Doctor's Response</AlertTitle>
+                                  <AlertDescription>{request.doctorNotes}</AlertDescription>
+                                </Alert>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Edit3 className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+                    <h3 className="text-lg font-medium mb-1">No Dosage Change Requests</h3>
+                    <p className="text-sm text-muted-foreground">
+                      When you request a dosage change, it will appear here
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        <Dialog open={showDosageRequestDialog} onOpenChange={setShowDosageRequestDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Edit3 className="h-5 w-5" />
+                Request Dosage Change
+              </DialogTitle>
+              <DialogDescription>
+                Submit a request to your doctor to change your medication dosage
+              </DialogDescription>
+            </DialogHeader>
+            {selectedMedicationForChange && (
+              <div className="space-y-4 py-4">
+                <Alert>
+                  <Pill className="h-4 w-4" />
+                  <AlertTitle>Current Medication</AlertTitle>
+                  <AlertDescription>
+                    <strong>{selectedMedicationForChange.name}</strong>
+                    <br />
+                    {selectedMedicationForChange.dosage} • {selectedMedicationForChange.frequency}
+                  </AlertDescription>
+                </Alert>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="requested-dosage">Requested Dosage</Label>
+                    <Input
+                      id="requested-dosage"
+                      value={dosageChangeForm.requestedDosage}
+                      onChange={(e) => setDosageChangeForm({ ...dosageChangeForm, requestedDosage: e.target.value })}
+                      placeholder="e.g., 20mg"
+                      data-testid="input-requested-dosage"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="requested-frequency">Requested Frequency</Label>
+                    <Select
+                      value={dosageChangeForm.requestedFrequency}
+                      onValueChange={(val) => setDosageChangeForm({ ...dosageChangeForm, requestedFrequency: val })}
+                    >
+                      <SelectTrigger data-testid="select-requested-frequency">
+                        <SelectValue placeholder="Select frequency..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="once daily">Once Daily</SelectItem>
+                        <SelectItem value="twice daily">Twice Daily</SelectItem>
+                        <SelectItem value="three times daily">Three Times Daily</SelectItem>
+                        <SelectItem value="as needed">As Needed (PRN)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="request-reason">Reason for Request *</Label>
+                  <Textarea
+                    id="request-reason"
+                    value={dosageChangeForm.reason}
+                    onChange={(e) => setDosageChangeForm({ ...dosageChangeForm, reason: e.target.value })}
+                    placeholder="Explain why you're requesting this change (e.g., side effects, medication not effective enough)..."
+                    rows={4}
+                    data-testid="input-request-reason"
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDosageRequestDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => createDosageRequestMutation.mutate()}
+                disabled={!dosageChangeForm.reason.trim() || createDosageRequestMutation.isPending}
+              >
+                {createDosageRequestMutation.isPending ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                Submit Request
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-6 max-w-7xl space-y-6">
@@ -254,7 +749,7 @@ export default function Prescriptions() {
         </div>
         <Badge variant="outline" className="text-sm">
           <FileText className="h-3 w-3 mr-1" />
-          {prescriptions?.length || 0} Total Prescriptions
+          {doctorPrescriptions?.length || 0} Total Prescriptions
         </Badge>
       </div>
 
@@ -620,15 +1115,15 @@ export default function Prescriptions() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {prescriptionsLoading ? (
+              {doctorPrescriptionsLoading ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
                     <Skeleton key={i} className="h-24 w-full" />
                   ))}
                 </div>
-              ) : prescriptions && prescriptions.length > 0 ? (
+              ) : doctorPrescriptions && doctorPrescriptions.length > 0 ? (
                 <div className="space-y-4">
-                  {prescriptions.map((rx) => (
+                  {doctorPrescriptions.map((rx) => (
                     <div
                       key={rx.id}
                       className="p-4 border rounded-lg hover-elevate"
