@@ -85,6 +85,8 @@ function PatientRouter() {
       <Route path="/daily-followup/video-exam" component={DailyFollowup} />
       <Route path="/chat" component={Chat} />
       <Route path="/medications" component={Medications} />
+      <Route path="/prescriptions" component={Prescriptions} />
+      <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/ai-video" component={AIVideoDashboard} />

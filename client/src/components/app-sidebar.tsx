@@ -87,6 +87,17 @@ const patientItems = [
     badge: "AI",
   },
   {
+    title: "Prescriptions",
+    url: "/prescriptions",
+    icon: FileText,
+  },
+  {
+    title: "Drug Interactions",
+    url: "/drug-interactions",
+    icon: AlertTriangle,
+    badge: "AI",
+  },
+  {
     title: "My Doctors",
     url: "/my-doctors",
     icon: UserPlus,
