@@ -37,7 +37,8 @@ import {
   Wind,
   Droplets,
   Footprints,
-  Gauge
+  Gauge,
+  History
 } from "lucide-react";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -226,6 +227,57 @@ interface MLPrediction {
   model_version: string;
   disclaimer: string;
   status?: string;
+}
+
+interface RiskFactor {
+  metric_name: string;
+  z_score: number;
+  severity_level: string;
+  points: number;
+  description: string;
+}
+
+interface RiskScoreData {
+  patient_id: string;
+  score: number;
+  level: string;
+  calculated_at: string;
+  factors: RiskFactor[];
+  total_deviations: number;
+  critical_deviations: number;
+  moderate_deviations: number;
+  recommendation: string;
+  action_items: string[];
+}
+
+interface RiskHistoryEntry {
+  date: string;
+  score: number;
+  level: string;
+  deviation_count: number;
+}
+
+interface BaselineStats {
+  mean: number | null;
+  std: number | null;
+  min_value: number | null;
+  max_value: number | null;
+}
+
+interface BaselineData {
+  id: number;
+  patient_id: string;
+  baseline_start_date: string;
+  baseline_end_date: string;
+  data_points_count: number;
+  pain_facial: BaselineStats;
+  pain_self_reported: BaselineStats;
+  respiratory_rate: BaselineStats;
+  symptom_severity: BaselineStats;
+  activity_impact_rate: number | null;
+  baseline_quality: string | null;
+  is_current: boolean;
+  created_at: string;
 }
 
 const CHART_COLORS = {
@@ -873,6 +925,461 @@ function MLPredictionsPanel({ prediction }: { prediction: MLPrediction | null })
   );
 }
 
+function RiskScoreGauge({ riskScore, isLoading }: { riskScore: RiskScoreData | null; isLoading: boolean }) {
+  const getLevelStyles = (level: string) => {
+    switch (level) {
+      case 'stable': return 'text-green-500 bg-green-100 dark:bg-green-900/30 border-green-500';
+      case 'monitoring': return 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30 border-yellow-500';
+      case 'urgent': return 'text-red-500 bg-red-100 dark:bg-red-900/30 border-red-500';
+      default: return 'text-muted-foreground bg-muted border-muted';
+    }
+  };
+
+  const getLevelLabel = (level: string) => {
+    switch (level) {
+      case 'stable': return 'Stable';
+      case 'monitoring': return 'Monitoring';
+      case 'urgent': return 'Urgent';
+      default: return 'Unknown';
+    }
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score <= 2) return 'text-green-500';
+    if (score <= 5) return 'text-yellow-500';
+    return 'text-red-500';
+  };
+
+  const getProgressColor = (score: number) => {
+    if (score <= 2) return 'bg-green-500';
+    if (score <= 5) return 'bg-yellow-500';
+    return 'bg-red-500';
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-32 w-32 rounded-full mx-auto" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+    );
+  }
+
+  if (!riskScore) {
+    return (
+      <div className="text-center py-8">
+        <Shield className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-2" />
+        <p className="text-sm text-muted-foreground">No risk score data available</p>
+        <p className="text-xs text-muted-foreground mt-1">Complete daily check-ins to calculate your risk score</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="risk-score-gauge">
+      <div className="flex items-center justify-center">
+        <div className={`relative w-36 h-36 rounded-full flex items-center justify-center border-4 ${getLevelStyles(riskScore.level)}`}>
+          <div className="text-center">
+            <p className={`text-4xl font-bold ${getScoreColor(riskScore.score)}`} data-testid="text-risk-score">
+              {riskScore.score}
+            </p>
+            <p className="text-xs font-medium">/15</p>
+            <Badge className={`mt-1 ${getLevelStyles(riskScore.level)}`} data-testid="badge-risk-level">
+              {getLevelLabel(riskScore.level)}
+            </Badge>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>Composite Risk Score</span>
+          <span>{riskScore.score}/15</span>
+        </div>
+        <div className="h-3 bg-muted rounded-full overflow-hidden">
+          <div 
+            className={`h-full ${getProgressColor(riskScore.score)} transition-all duration-500`}
+            style={{ width: `${(riskScore.score / 15) * 100}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span className="text-green-500">Stable (0-2)</span>
+          <span className="text-yellow-500">Monitoring (3-5)</span>
+          <span className="text-red-500">Urgent (6-15)</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="p-2 rounded-lg bg-muted/50">
+          <p className="text-xs text-muted-foreground">Total Deviations</p>
+          <p className="text-lg font-semibold" data-testid="text-total-deviations">{riskScore.total_deviations}</p>
+        </div>
+        <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20">
+          <p className="text-xs text-muted-foreground">Critical</p>
+          <p className="text-lg font-semibold text-red-500" data-testid="text-critical-deviations">{riskScore.critical_deviations}</p>
+        </div>
+        <div className="p-2 rounded-lg bg-yellow-50 dark:bg-yellow-900/20">
+          <p className="text-xs text-muted-foreground">Moderate</p>
+          <p className="text-lg font-semibold text-yellow-500" data-testid="text-moderate-deviations">{riskScore.moderate_deviations}</p>
+        </div>
+      </div>
+
+      {riskScore.factors.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Contributing Factors:</p>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {riskScore.factors.map((factor, idx) => (
+              <div 
+                key={idx}
+                className={`p-2 rounded-lg text-xs ${
+                  factor.severity_level === 'critical' 
+                    ? 'bg-red-50 dark:bg-red-900/20 border-l-2 border-red-500'
+                    : factor.severity_level === 'moderate'
+                    ? 'bg-yellow-50 dark:bg-yellow-900/20 border-l-2 border-yellow-500'
+                    : 'bg-muted/50'
+                }`}
+                data-testid={`risk-factor-${idx}`}
+              >
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="font-medium capitalize">{factor.metric_name.replace(/_/g, ' ')}</span>
+                  <Badge variant="outline" className="text-xs">
+                    +{factor.points} pts
+                  </Badge>
+                </div>
+                <p className="text-muted-foreground mt-1">{factor.description}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-muted-foreground">Z-Score:</span>
+                  <span className={factor.z_score > 2 ? 'text-red-500' : factor.z_score < -1.5 ? 'text-blue-500' : ''}>
+                    {factor.z_score > 0 ? '+' : ''}{factor.z_score.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {riskScore.recommendation && (
+        <Alert className={`${
+          riskScore.level === 'urgent' 
+            ? 'bg-red-50 dark:bg-red-900/20 border-red-200'
+            : riskScore.level === 'monitoring'
+            ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200'
+            : 'bg-green-50 dark:bg-green-900/20 border-green-200'
+        }`}>
+          <AlertCircle className={`h-4 w-4 ${
+            riskScore.level === 'urgent' ? 'text-red-500' : 
+            riskScore.level === 'monitoring' ? 'text-yellow-500' : 'text-green-500'
+          }`} />
+          <AlertTitle className="text-sm">Recommendation</AlertTitle>
+          <AlertDescription className="text-xs">
+            {riskScore.recommendation}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {riskScore.action_items && riskScore.action_items.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Suggested Actions:</p>
+          <ul className="text-xs space-y-1 list-disc list-inside text-muted-foreground">
+            {riskScore.action_items.map((item, idx) => (
+              <li key={idx} data-testid={`action-item-${idx}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground text-center italic">
+        Wellness monitoring indicator only - NOT a medical diagnosis. 
+        {riskScore.calculated_at && ` Last calculated: ${format(new Date(riskScore.calculated_at), 'MMM d, h:mm a')}`}
+      </p>
+    </div>
+  );
+}
+
+function RiskHistoryChart({ history, isLoading }: { history: RiskHistoryEntry[]; isLoading: boolean }) {
+  const chartData = useMemo(() => {
+    if (!history?.length) return [];
+    return history.map(h => ({
+      date: format(new Date(h.date), "MMM d"),
+      score: h.score,
+      deviations: h.deviation_count,
+      level: h.level
+    }));
+  }, [history]);
+
+  if (isLoading) {
+    return <Skeleton className="h-64 w-full" />;
+  }
+
+  if (!chartData.length) {
+    return (
+      <div className="text-center py-8">
+        <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-2" />
+        <p className="text-sm text-muted-foreground">No risk history available</p>
+        <p className="text-xs text-muted-foreground mt-1">Risk scores will be tracked over time</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="risk-history-chart">
+      <ResponsiveContainer width="100%" height={250}>
+        <AreaChart data={chartData}>
+          <defs>
+            <linearGradient id="riskGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="hsl(var(--destructive))" stopOpacity={0.3}/>
+              <stop offset="95%" stopColor="hsl(var(--destructive))" stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+          <XAxis dataKey="date" className="text-xs" />
+          <YAxis domain={[0, 15]} className="text-xs" ticks={[0, 2, 5, 10, 15]} />
+          <Tooltip 
+            contentStyle={{ 
+              backgroundColor: 'hsl(var(--card))', 
+              border: '1px solid hsl(var(--border))',
+              borderRadius: '8px'
+            }}
+            formatter={(value: number, name: string) => {
+              if (name === 'score') {
+                const level = value <= 2 ? 'Stable' : value <= 5 ? 'Monitoring' : 'Urgent';
+                return [`${value}/15 (${level})`, 'Risk Score'];
+              }
+              return [value, 'Deviations'];
+            }}
+          />
+          <Legend />
+          <Area 
+            type="monotone" 
+            dataKey="score" 
+            name="Risk Score" 
+            stroke="hsl(var(--destructive))" 
+            fill="url(#riskGradient)" 
+            strokeWidth={2}
+          />
+          <Area 
+            type="monotone" 
+            dataKey="deviations" 
+            name="Deviations" 
+            stroke={CHART_COLORS.secondary} 
+            fillOpacity={0.2}
+            fill={CHART_COLORS.secondary}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+      
+      <div className="flex items-center justify-center gap-4 text-xs">
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full bg-green-500" />
+          <span>Stable (0-2)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full bg-yellow-500" />
+          <span>Monitoring (3-5)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full bg-red-500" />
+          <span>Urgent (6-15)</span>
+        </div>
+      </div>
+
+      <p className="text-xs text-muted-foreground text-center italic">
+        7-day risk score trend - wellness monitoring indicator only
+      </p>
+    </div>
+  );
+}
+
+function BaselinePanel({ 
+  baseline, 
+  isLoading, 
+  onRecalculate, 
+  isRecalculating 
+}: { 
+  baseline: BaselineData | null; 
+  isLoading: boolean;
+  onRecalculate?: () => void;
+  isRecalculating?: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-24" />
+        <Skeleton className="h-24" />
+      </div>
+    );
+  }
+
+  if (!baseline) {
+    return (
+      <div className="text-center py-8">
+        <Target className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-2" />
+        <p className="text-sm text-muted-foreground">No baseline data available</p>
+        <p className="text-xs text-muted-foreground mt-1">Complete at least 7 days of check-ins to establish your baseline</p>
+        {onRecalculate && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRecalculate}
+            disabled={isRecalculating}
+            className="mt-4"
+            data-testid="button-create-baseline"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isRecalculating ? 'animate-spin' : ''}`} />
+            {isRecalculating ? 'Calculating...' : 'Calculate Baseline'}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  const formatStat = (stat: BaselineStats | null, unit: string = '') => {
+    if (!stat?.mean) return '—';
+    return `${stat.mean.toFixed(1)}${unit} ±${(stat.std || 0).toFixed(1)}`;
+  };
+
+  const getQualityColor = (quality: string | null) => {
+    switch (quality) {
+      case 'excellent': return 'text-green-500 bg-green-100 dark:bg-green-900/30';
+      case 'good': return 'text-blue-500 bg-blue-100 dark:bg-blue-900/30';
+      case 'fair': return 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30';
+      case 'poor': return 'text-red-500 bg-red-100 dark:bg-red-900/30';
+      default: return 'text-muted-foreground bg-muted';
+    }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="baseline-panel">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Target className="h-5 w-5 text-primary" />
+          <span className="font-medium">Your Health Baseline</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs">
+            {baseline.data_points_count} data points
+          </Badge>
+          {baseline.baseline_quality && (
+            <Badge className={`text-xs ${getQualityColor(baseline.baseline_quality)}`}>
+              {baseline.baseline_quality.toUpperCase()} quality
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        Baseline period: {format(new Date(baseline.baseline_start_date), 'MMM d')} - {format(new Date(baseline.baseline_end_date), 'MMM d, yyyy')}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="p-3 rounded-lg bg-muted/50">
+          <div className="flex items-center gap-2 mb-2">
+            <Wind className="h-4 w-4 text-blue-500" />
+            <span className="text-sm font-medium">Respiratory Rate</span>
+          </div>
+          <p className="text-lg font-bold" data-testid="baseline-respiratory">
+            {formatStat(baseline.respiratory_rate, ' bpm')}
+          </p>
+          {baseline.respiratory_rate?.min_value && baseline.respiratory_rate?.max_value && (
+            <p className="text-xs text-muted-foreground">
+              Range: {baseline.respiratory_rate.min_value.toFixed(0)}-{baseline.respiratory_rate.max_value.toFixed(0)} bpm
+            </p>
+          )}
+        </div>
+
+        <div className="p-3 rounded-lg bg-muted/50">
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="h-4 w-4 text-rose-500" />
+            <span className="text-sm font-medium">Discomfort Level</span>
+          </div>
+          <p className="text-lg font-bold" data-testid="baseline-pain">
+            {formatStat(baseline.pain_facial, '/10')}
+          </p>
+          {baseline.pain_facial?.min_value !== null && baseline.pain_facial?.max_value !== null && (
+            <p className="text-xs text-muted-foreground">
+              Range: {baseline.pain_facial.min_value?.toFixed(1)}-{baseline.pain_facial.max_value?.toFixed(1)}
+            </p>
+          )}
+        </div>
+
+        <div className="p-3 rounded-lg bg-muted/50">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle className="h-4 w-4 text-orange-500" />
+            <span className="text-sm font-medium">Symptom Severity</span>
+          </div>
+          <p className="text-lg font-bold" data-testid="baseline-symptom">
+            {formatStat(baseline.symptom_severity, '/10')}
+          </p>
+          {baseline.symptom_severity?.min_value !== null && baseline.symptom_severity?.max_value !== null && (
+            <p className="text-xs text-muted-foreground">
+              Range: {baseline.symptom_severity.min_value?.toFixed(1)}-{baseline.symptom_severity.max_value?.toFixed(1)}
+            </p>
+          )}
+        </div>
+
+        <div className="p-3 rounded-lg bg-muted/50">
+          <div className="flex items-center gap-2 mb-2">
+            <Heart className="h-4 w-4 text-purple-500" />
+            <span className="text-sm font-medium">Self-Reported Pain</span>
+          </div>
+          <p className="text-lg font-bold" data-testid="baseline-self-pain">
+            {formatStat(baseline.pain_self_reported, '/10')}
+          </p>
+          {baseline.pain_self_reported?.min_value !== null && baseline.pain_self_reported?.max_value !== null && (
+            <p className="text-xs text-muted-foreground">
+              Range: {baseline.pain_self_reported.min_value?.toFixed(1)}-{baseline.pain_self_reported.max_value?.toFixed(1)}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {baseline.activity_impact_rate !== null && (
+        <div className="p-3 rounded-lg bg-muted/50">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Footprints className="h-4 w-4 text-green-500" />
+              <span className="text-sm font-medium">Activity Impact Rate</span>
+            </div>
+            <span className="text-lg font-bold" data-testid="baseline-activity">
+              {(baseline.activity_impact_rate * 100).toFixed(0)}%
+            </span>
+          </div>
+          <Progress value={baseline.activity_impact_rate * 100} className="mt-2" />
+        </div>
+      )}
+
+      <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+        <Info className="h-4 w-4 text-blue-500" />
+        <AlertDescription className="text-xs">
+          Your baseline represents your typical health patterns over the past 7 days. 
+          Deviations from baseline help identify wellness changes early.
+        </AlertDescription>
+      </Alert>
+
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs text-muted-foreground italic">
+          Baseline established: {format(new Date(baseline.created_at), 'MMM d, yyyy h:mm a')}
+        </p>
+        {onRecalculate && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRecalculate}
+            disabled={isRecalculating}
+            data-testid="button-recalculate-baseline"
+          >
+            <RefreshCw className={`h-3 w-3 mr-1 ${isRecalculating ? 'animate-spin' : ''}`} />
+            {isRecalculating ? 'Updating...' : 'Recalculate'}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AIAlertsDashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -984,6 +1491,89 @@ export default function AIAlertsDashboard() {
     enabled: !!patientId,
   });
 
+  const { data: riskScore, isLoading: loadingRiskScore, refetch: refetchRiskScore } = useQuery<RiskScoreData>({
+    queryKey: ['/api/v1/risk/score/me', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/risk/score/me`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return null;
+        throw new Error('Failed to fetch risk score');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const { data: riskHistory, isLoading: loadingRiskHistory } = useQuery<RiskHistoryEntry[]>({
+    queryKey: ['/api/v1/risk/history/me', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/risk/history/me?days=7`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return [];
+        throw new Error('Failed to fetch risk history');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const { data: baseline, isLoading: loadingBaseline, refetch: refetchBaseline } = useQuery<BaselineData>({
+    queryKey: ['/api/v1/baseline/current/me', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/baseline/current/me`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return null;
+        throw new Error('Failed to fetch baseline');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const { data: baselineHistory, isLoading: loadingBaselineHistory, refetch: refetchBaselineHistory } = useQuery<BaselineData[]>({
+    queryKey: ['/api/v1/baseline/history/me', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/baseline/history/me?limit=10`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return [];
+        throw new Error('Failed to fetch baseline history');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const recalculateBaselineMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/v1/baseline/calculate/me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to recalculate baseline');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Baseline Recalculated",
+        description: "Your health baseline has been updated with the latest data.",
+      });
+      refetchBaseline();
+      refetchBaselineHistory();
+      refetchRiskScore();
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/baseline'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Baseline Calculation Failed",
+        description: error.message || "Unable to calculate baseline. You may need more health data.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const acknowledgeMutation = useMutation({
     mutationFn: async (alertId: string) => {
       const response = await fetch(`/api/ai-health-alerts/alerts/${alertId}?clinician_id=${patientId}`, {
@@ -1045,7 +1635,11 @@ export default function AIAlertsDashboard() {
       refetchAlerts();
       refetchDpi();
       refetchOrgans();
+      refetchRiskScore();
+      refetchBaseline();
       queryClient.invalidateQueries({ queryKey: ['/api/ai-health-alerts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/risk'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/baseline'] });
     } catch (error) {
       toast({
         title: "Computation Failed",
@@ -1161,10 +1755,17 @@ export default function AIAlertsDashboard() {
       </div>
 
       <Tabs defaultValue="alerts" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="alerts" className="flex items-center gap-2" data-testid="tab-alerts">
             <Bell className="h-4 w-4" />
             Alerts {activeAlerts.length > 0 && <Badge variant="destructive" className="ml-1">{activeAlerts.length}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="risk" className="flex items-center gap-2" data-testid="tab-risk">
+            <Shield className="h-4 w-4" />
+            Risk Score
+            {riskScore && riskScore.level === 'urgent' && (
+              <Badge variant="destructive" className="ml-1">{riskScore.score}</Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="trends" className="flex items-center gap-2" data-testid="tab-trends">
             <LineChart className="h-4 w-4" />
@@ -1308,6 +1909,166 @@ export default function AIAlertsDashboard() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="risk" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 space-y-4">
+              <Card data-testid="card-risk-score">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-primary" />
+                    Composite Risk Score
+                  </CardTitle>
+                  <CardDescription>
+                    Health change indicator based on baseline deviations (0-15 scale)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <RiskScoreGauge riskScore={riskScore || null} isLoading={loadingRiskScore} />
+                </CardContent>
+              </Card>
+
+              <Card data-testid="card-risk-history">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5 text-primary" />
+                    Risk Score History (7 Days)
+                  </CardTitle>
+                  <CardDescription>
+                    Track how your risk score has changed over time
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <RiskHistoryChart history={riskHistory || []} isLoading={loadingRiskHistory} />
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              <Card data-testid="card-baseline">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Target className="h-4 w-4 text-primary" />
+                    Your Health Baseline
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    7-day rolling average reference values
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <BaselinePanel 
+                    baseline={baseline || null} 
+                    isLoading={loadingBaseline}
+                    onRecalculate={() => recalculateBaselineMutation.mutate()}
+                    isRecalculating={recalculateBaselineMutation.isPending}
+                  />
+                </CardContent>
+              </Card>
+
+              {baselineHistory && baselineHistory.length > 1 && (
+                <Card data-testid="card-baseline-history">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <History className="h-4 w-4 text-primary" />
+                      Baseline History
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      How your baseline has evolved
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {baselineHistory.slice(0, 5).map((b, index) => (
+                        <div 
+                          key={b.id}
+                          className={`p-2 rounded-lg border text-xs ${index === 0 ? 'bg-primary/5 border-primary/20' : 'bg-muted/30'}`}
+                          data-testid={`baseline-history-item-${b.id}`}
+                        >
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">
+                                {format(new Date(b.baseline_start_date), 'MMM d')} - {format(new Date(b.baseline_end_date), 'MMM d')}
+                              </span>
+                              {index === 0 && (
+                                <Badge variant="outline" className="text-xs py-0 px-1">
+                                  Current
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">{b.data_points_count} pts</span>
+                              {b.baseline_quality && (
+                                <Badge 
+                                  variant="outline" 
+                                  className={`text-xs py-0 px-1 ${
+                                    b.baseline_quality === 'excellent' ? 'text-green-600 border-green-300' :
+                                    b.baseline_quality === 'good' ? 'text-blue-600 border-blue-300' :
+                                    b.baseline_quality === 'fair' ? 'text-yellow-600 border-yellow-300' :
+                                    'text-red-600 border-red-300'
+                                  }`}
+                                >
+                                  {b.baseline_quality}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 mt-1 text-muted-foreground">
+                            <span>RR: {b.respiratory_rate?.mean?.toFixed(1) || '—'} bpm</span>
+                            <span>Pain: {b.pain_facial?.mean?.toFixed(1) || '—'}/10</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card data-testid="card-risk-info">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Info className="h-4 w-4 text-blue-500" />
+                    How Risk Scoring Works
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <p>Your risk score is calculated based on deviations from your personal baseline:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li><strong>Z-Score Analysis:</strong> Measures how far current values deviate from your normal range</li>
+                      <li><strong>Weighted Scoring:</strong> Different metrics carry different weights based on clinical significance</li>
+                      <li><strong>24-Hour Window:</strong> Uses the most recent 24 hours of data</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Score Interpretation:</p>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="w-3 h-3 rounded-full bg-green-500" />
+                        <span><strong>0-2 (Stable):</strong> Your patterns are within normal range</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                        <span><strong>3-5 (Monitoring):</strong> Some changes detected, increased awareness recommended</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="w-3 h-3 rounded-full bg-red-500" />
+                        <span><strong>6-15 (Urgent):</strong> Significant changes, discuss with healthcare provider</span>
+                      </div>
+                    </div>
+                  </div>
+                  <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+                    <Info className="h-4 w-4 text-blue-500" />
+                    <AlertDescription className="text-xs">
+                      This is a wellness monitoring tool for change detection only. 
+                      It is NOT a medical diagnosis. Always consult your healthcare provider 
+                      for medical advice.
+                    </AlertDescription>
+                  </Alert>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="trends" className="space-y-4 mt-4">
