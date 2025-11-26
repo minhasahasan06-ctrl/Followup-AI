@@ -7133,6 +7133,265 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // =====================================================
+  // TREMOR ANALYSIS ENDPOINTS - Proxy to Python backend
+  // =====================================================
+  
+  // Get tremor dashboard data for a patient
+  app.get('/api/v1/tremor/dashboard/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      // Generate dev mode JWT token for Python backend authentication
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/tremor/dashboard/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          // Return empty dashboard structure when no data
+          return res.json({
+            patient_id: patientId,
+            latest_tremor: null,
+            trend: { status: 'insufficient_data', avg_tremor_index_7days: 0, recordings_count_7days: 0 },
+            history_7days: []
+          });
+        }
+        const error = await response.text();
+        console.error('Python backend error (tremor dashboard):', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching tremor dashboard:', error);
+      // Return empty structure on connection error
+      res.json({
+        patient_id: req.params.patientId,
+        latest_tremor: null,
+        trend: { status: 'insufficient_data', avg_tremor_index_7days: 0, recordings_count_7days: 0 },
+        history_7days: []
+      });
+    }
+  });
+
+  // Get tremor history for a patient
+  app.get('/api/v1/tremor/history/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const days = req.query.days || 30;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/tremor/history/${patientId}?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.json([]);
+        }
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching tremor history:', error);
+      res.json([]);
+    }
+  });
+
+  // =====================================================
+  // GAIT ANALYSIS ENDPOINTS - Proxy to Python backend
+  // =====================================================
+  
+  // Get gait analysis sessions for a patient
+  app.get('/api/v1/gait-analysis/sessions/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const limit = req.query.limit || 10;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/gait-analysis/sessions/${patientId}?limit=${limit}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.json({ sessions: [] });
+        }
+        const error = await response.text();
+        console.error('Python backend error (gait sessions):', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching gait sessions:', error);
+      res.json({ sessions: [] });
+    }
+  });
+
+  // Get gait metrics for a specific session
+  app.get('/api/v1/gait-analysis/metrics/:sessionId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { sessionId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/gait-analysis/metrics/${sessionId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.json(null);
+        }
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching gait metrics:', error);
+      res.json(null);
+    }
+  });
+
+  // =====================================================
+  // EDEMA ANALYSIS ENDPOINTS - Proxy to Python backend
+  // =====================================================
+  
+  // Get edema metrics for a patient
+  app.get('/api/v1/edema/metrics/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const limit = req.query.limit || 5;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/edema/metrics/${patientId}?limit=${limit}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.json([]);
+        }
+        const error = await response.text();
+        console.error('Python backend error (edema metrics):', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching edema metrics:', error);
+      res.json([]);
+    }
+  });
+
+  // Get edema baseline comparison
+  app.get('/api/v1/edema/baseline/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/edema/baseline/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.json(null);
+        }
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching edema baseline:', error);
+      res.json(null);
+    }
+  });
+
   // Proxy questionnaire templates endpoint (public - these are public domain instruments)
   app.all('/api/v1/mental-health/questionnaires*', async (req: any, res) => {
     try {
