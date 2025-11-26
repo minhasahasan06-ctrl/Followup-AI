@@ -76,6 +76,7 @@ import DailyFollowupHistory from "@/pages/DailyFollowupHistory";
 import MentalHealth from "@/pages/MentalHealth";
 import Prescriptions from "@/pages/Prescriptions";
 import DrugInteractions from "@/pages/DrugInteractions";
+import MLMonitoring from "@/pages/MLMonitoring";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
@@ -134,6 +135,7 @@ function DoctorRouter() {
       <Route path="/doctor/patient/:id" component={PatientReview} />
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
+      <Route path="/ml-monitoring" component={MLMonitoring} />
       <Route path="/chat" component={Chat} />
       <Route path="/counseling" component={Counseling} />
       <Route path="/referrals" component={Referrals} />

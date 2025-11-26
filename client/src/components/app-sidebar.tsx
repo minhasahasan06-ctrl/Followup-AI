@@ -205,6 +205,12 @@ const doctorItems = [
     icon: Beaker,
   },
   {
+    title: "ML Inference",
+    url: "/ml-monitoring",
+    icon: Brain,
+    badge: "AI",
+  },
+  {
     title: "Chat with Assistant Lysa",
     url: "/chat",
     icon: Bot,
