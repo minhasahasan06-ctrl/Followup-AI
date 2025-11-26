@@ -39,6 +39,7 @@ import Profile from "@/pages/Profile";
 import DoctorDashboard from "@/pages/DoctorDashboard";
 import DoctorWellness from "@/pages/DoctorWellness";
 import ReceptionistDashboard from "@/pages/ReceptionistDashboard";
+import CalendarSync from "@/pages/CalendarSync";
 import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
 import Counseling from "@/pages/Counseling";
@@ -128,6 +129,7 @@ function DoctorRouter() {
       <Route path="/prescriptions" component={Prescriptions} />
       <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/receptionist" component={ReceptionistDashboard} />
+      <Route path="/calendar-sync" component={CalendarSync} />
       <Route path="/doctor-wellness" component={DoctorWellness} />
       <Route path="/doctor/patient/:id" component={PatientReview} />
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />

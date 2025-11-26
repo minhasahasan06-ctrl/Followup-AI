@@ -6392,7 +6392,246 @@ Please ask the doctor which date they want to check.`;
 
   // ===== GOOGLE CALENDAR SYNC ROUTES =====
   // Import at top of file
-  const { googleCalendarSyncService } = await import('./googleCalendarSyncService');
+  const { googleCalendarSyncService, isReplitConnectorAvailable, getUncachableGoogleCalendarClient } = await import('./googleCalendarSyncService');
+
+  // Check Replit Google Calendar connector status
+  app.get('/api/v1/calendar/connector-status', isAuthenticated, async (req: any, res) => {
+    try {
+      const isAvailable = await isReplitConnectorAvailable();
+      
+      if (isAvailable) {
+        const calendar = await getUncachableGoogleCalendarClient();
+        if (calendar) {
+          // Get calendar info
+          try {
+            const calendarList = await calendar.calendarList.get({ calendarId: 'primary' });
+            return res.json({
+              connected: true,
+              calendarId: calendarList.data.id || 'primary',
+              calendarName: calendarList.data.summary || 'Primary Calendar',
+              email: calendarList.data.id,
+              source: 'replit_connector'
+            });
+          } catch (err) {
+            console.error('Error getting calendar info:', err);
+          }
+        }
+      }
+      
+      res.json({ connected: false, source: 'replit_connector' });
+    } catch (error) {
+      console.error('Error checking connector status:', error);
+      res.status(500).json({ message: 'Failed to check connector status' });
+    }
+  });
+
+  // List calendars from connected account
+  app.get('/api/v1/calendar/list', isAuthenticated, async (req: any, res) => {
+    try {
+      const calendar = await getUncachableGoogleCalendarClient();
+      
+      if (!calendar) {
+        return res.status(400).json({ message: 'Google Calendar not connected' });
+      }
+
+      const response = await calendar.calendarList.list();
+      const calendars = response.data.items?.map(cal => ({
+        id: cal.id,
+        summary: cal.summary,
+        primary: cal.primary || false,
+        accessRole: cal.accessRole,
+        backgroundColor: cal.backgroundColor
+      })) || [];
+
+      res.json({ calendars });
+    } catch (error) {
+      console.error('Error listing calendars:', error);
+      res.status(500).json({ message: 'Failed to list calendars' });
+    }
+  });
+
+  // Get upcoming events from connected calendar
+  app.get('/api/v1/calendar/events', isAuthenticated, async (req: any, res) => {
+    try {
+      const calendar = await getUncachableGoogleCalendarClient();
+      
+      if (!calendar) {
+        return res.status(400).json({ message: 'Google Calendar not connected' });
+      }
+
+      const calendarId = (req.query.calendarId as string) || 'primary';
+      const timeMin = new Date().toISOString();
+      const timeMax = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days ahead
+
+      const response = await calendar.events.list({
+        calendarId,
+        timeMin,
+        timeMax,
+        maxResults: 50,
+        singleEvents: true,
+        orderBy: 'startTime'
+      });
+
+      const events = response.data.items?.map(event => ({
+        id: event.id,
+        summary: event.summary,
+        description: event.description,
+        location: event.location,
+        start: event.start,
+        end: event.end,
+        status: event.status,
+        hangoutLink: event.hangoutLink,
+        attendees: event.attendees?.map(a => ({
+          email: a.email,
+          responseStatus: a.responseStatus,
+          displayName: a.displayName
+        }))
+      })) || [];
+
+      res.json({ events });
+    } catch (error) {
+      console.error('Error fetching calendar events:', error);
+      res.status(500).json({ message: 'Failed to fetch calendar events' });
+    }
+  });
+
+  // Create event in Google Calendar
+  app.post('/api/v1/calendar/events', isAuthenticated, async (req: any, res) => {
+    try {
+      const calendar = await getUncachableGoogleCalendarClient();
+      
+      if (!calendar) {
+        return res.status(400).json({ message: 'Google Calendar not connected' });
+      }
+
+      const { calendarId = 'primary', summary, description, location, startTime, endTime, attendees } = req.body;
+
+      const event = {
+        summary,
+        description,
+        location,
+        start: {
+          dateTime: startTime,
+          timeZone: 'UTC'
+        },
+        end: {
+          dateTime: endTime,
+          timeZone: 'UTC'
+        },
+        attendees: attendees?.map((email: string) => ({ email }))
+      };
+
+      const response = await calendar.events.insert({
+        calendarId,
+        requestBody: event,
+        sendUpdates: 'all'
+      });
+
+      res.json({ 
+        success: true, 
+        eventId: response.data.id,
+        htmlLink: response.data.htmlLink 
+      });
+    } catch (error) {
+      console.error('Error creating calendar event:', error);
+      res.status(500).json({ message: 'Failed to create calendar event' });
+    }
+  });
+
+  // Delete event from Google Calendar
+  app.delete('/api/v1/calendar/events/:eventId', isAuthenticated, async (req: any, res) => {
+    try {
+      const calendar = await getUncachableGoogleCalendarClient();
+      
+      if (!calendar) {
+        return res.status(400).json({ message: 'Google Calendar not connected' });
+      }
+
+      const { eventId } = req.params;
+      const calendarId = (req.query.calendarId as string) || 'primary';
+
+      await calendar.events.delete({
+        calendarId,
+        eventId
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting calendar event:', error);
+      res.status(500).json({ message: 'Failed to delete calendar event' });
+    }
+  });
+
+  // Sync appointments to Google Calendar
+  app.post('/api/v1/calendar/sync-appointments', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can sync appointments' });
+      }
+
+      const calendar = await getUncachableGoogleCalendarClient();
+      
+      if (!calendar) {
+        return res.status(400).json({ message: 'Google Calendar not connected' });
+      }
+
+      // Get doctor's appointments
+      const appointments = await storage.getAppointmentsByDoctor(req.user.id);
+      const calendarId = (req.body.calendarId as string) || 'primary';
+      
+      let synced = 0;
+      let failed = 0;
+
+      for (const appointment of appointments) {
+        try {
+          // Skip cancelled appointments
+          if (appointment.status === 'cancelled') continue;
+          
+          // Skip if already synced
+          if (appointment.googleCalendarEventId) continue;
+
+          const event = {
+            summary: appointment.title || `Appointment with patient`,
+            description: appointment.description || `Followup AI appointment`,
+            location: appointment.location || undefined,
+            start: {
+              dateTime: appointment.startTime.toISOString(),
+              timeZone: 'UTC'
+            },
+            end: {
+              dateTime: appointment.endTime.toISOString(),
+              timeZone: 'UTC'
+            }
+          };
+
+          const response = await calendar.events.insert({
+            calendarId,
+            requestBody: event
+          });
+
+          // Update appointment with Google Calendar event ID
+          await storage.updateAppointment(appointment.id, {
+            googleCalendarEventId: response.data.id
+          });
+
+          synced++;
+        } catch (err) {
+          console.error(`Failed to sync appointment ${appointment.id}:`, err);
+          failed++;
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        synced, 
+        failed,
+        total: appointments.length 
+      });
+    } catch (error) {
+      console.error('Error syncing appointments:', error);
+      res.status(500).json({ message: 'Failed to sync appointments' });
+    }
+  });
 
   // Get Google Calendar auth URL
   app.get('/api/v1/calendar/auth-url', isAuthenticated, async (req: any, res) => {
