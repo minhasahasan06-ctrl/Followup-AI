@@ -4480,6 +4480,18 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // Doctor-specific: Get all prescriptions written by this doctor
+  app.get('/api/prescriptions/doctor', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const prescriptions = await storage.getPrescriptionsByDoctor(doctorId);
+      res.json(prescriptions);
+    } catch (error) {
+      console.error('Error fetching doctor prescriptions:', error);
+      res.status(500).json({ message: 'Failed to fetch prescriptions' });
+    }
+  });
+
   app.post('/api/prescriptions', isDoctor, async (req: any, res) => {
     try {
       const doctorId = req.user!.id;
