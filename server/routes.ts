@@ -6593,6 +6593,642 @@ You have access to the patient's full medical context. Provide helpful, accurate
     }
   });
 
+  // Clinical Decision Support - Get recommendations for a patient
+  app.get('/api/v1/lysa/clinical-recommendations/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access clinical recommendations' });
+      }
+
+      const { patientId } = req.params;
+
+      // HIPAA: Verify doctor has access
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        console.log(`[HIPAA-AUDIT] DENIED: Doctor ${userId} attempted clinical recommendations for unassigned patient ${patientId}`);
+        return res.status(403).json({ 
+          message: 'Access denied. No active assignment with this patient.',
+          code: 'NO_PATIENT_ASSIGNMENT'
+        });
+      }
+
+      const profile = await storage.getPatientProfile(patientId);
+      const prescriptions = await storage.getPrescriptions(patientId);
+      const currentMedications = prescriptions?.map((p: any) => p.medicationName) || [];
+
+      // Generate evidence-based recommendations
+      const recommendations: any[] = [];
+
+      // Immunocompromised recommendations
+      if (profile?.immunocompromisedCondition) {
+        recommendations.push({
+          id: 'ic-monitor',
+          type: 'monitoring',
+          title: 'Enhanced Infection Surveillance',
+          description: `Due to ${profile.immunocompromisedCondition}, implement enhanced monitoring for early signs of infection including daily temperature checks and symptom screening.`,
+          evidenceLevel: 'B',
+          strength: 'strong',
+          priority: 'high',
+          source: 'IDSA Guidelines for Immunocompromised Patients',
+          guidelines: ['IDSA Fever and Neutropenia Guidelines', 'ASBMT Infection Prevention Guidelines'],
+          considerations: ['Consider prophylactic antimicrobials based on risk stratification']
+        });
+
+        recommendations.push({
+          id: 'ic-vaccines',
+          type: 'medication',
+          title: 'Vaccination Status Review',
+          description: 'Review and update vaccinations appropriate for immunocompromised patients. Avoid live vaccines.',
+          evidenceLevel: 'A',
+          strength: 'strong',
+          priority: 'high',
+          source: 'CDC Immunization Guidelines',
+          contraindications: ['Live attenuated vaccines contraindicated'],
+          considerations: ['May need higher doses or additional boosters']
+        });
+      }
+
+      // Allergy-based recommendations
+      if (profile?.allergies && profile.allergies.length > 0) {
+        const hasPenicillinAllergy = profile.allergies.some((a: string) => 
+          a.toLowerCase().includes('penicillin') || a.toLowerCase().includes('amoxicillin')
+        );
+
+        if (hasPenicillinAllergy) {
+          recommendations.push({
+            id: 'allergy-abx',
+            type: 'medication',
+            title: 'Antibiotic Selection - Penicillin Allergy',
+            description: 'Patient has documented penicillin allergy. Consider alternative antibiotics such as fluoroquinolones, macrolides, or aztreonam.',
+            evidenceLevel: 'B',
+            strength: 'strong',
+            priority: 'high',
+            source: 'Allergy Cross-Reactivity Guidelines',
+            contraindications: ['Penicillins', 'Aminopenicillins', 'Possible cephalosporin cross-reactivity'],
+            considerations: ['10% cross-reactivity risk with cephalosporins']
+          });
+        }
+      }
+
+      // Comorbidity-based recommendations
+      if (profile?.comorbidities && profile.comorbidities.length > 0) {
+        const hasDiabetes = profile.comorbidities.some((c: string) => c.toLowerCase().includes('diabetes'));
+        const hasHTN = profile.comorbidities.some((c: string) => c.toLowerCase().includes('hypertension'));
+        const hasCKD = profile.comorbidities.some((c: string) => 
+          c.toLowerCase().includes('kidney') || c.toLowerCase().includes('renal')
+        );
+
+        if (hasDiabetes) {
+          recommendations.push({
+            id: 'dm-monitor',
+            type: 'monitoring',
+            title: 'Glycemic Monitoring',
+            description: 'Regular HbA1c monitoring every 3-6 months and fasting glucose checks recommended.',
+            evidenceLevel: 'A',
+            strength: 'strong',
+            priority: 'medium',
+            source: 'ADA Standards of Care 2024',
+            guidelines: ['ADA Diabetes Care Guidelines', 'AACE Diabetes Guidelines']
+          });
+        }
+
+        if (hasHTN) {
+          recommendations.push({
+            id: 'htn-monitor',
+            type: 'monitoring',
+            title: 'Blood Pressure Management',
+            description: 'Regular BP monitoring with goal <130/80 mmHg for most patients.',
+            evidenceLevel: 'A',
+            strength: 'strong',
+            priority: 'medium',
+            source: 'ACC/AHA Hypertension Guidelines'
+          });
+        }
+
+        if (hasCKD) {
+          recommendations.push({
+            id: 'ckd-med',
+            type: 'medication',
+            title: 'Renal Dosing Adjustments',
+            description: 'All medications should be reviewed for renal dosing. Avoid nephrotoxic medications.',
+            evidenceLevel: 'A',
+            strength: 'strong',
+            priority: 'high',
+            source: 'KDIGO CKD Guidelines',
+            contraindications: ['NSAIDs', 'High-dose contrast agents']
+          });
+        }
+      }
+
+      // Polypharmacy check
+      if (currentMedications.length > 4) {
+        recommendations.push({
+          id: 'polypharmacy',
+          type: 'medication',
+          title: 'Polypharmacy Review',
+          description: `Patient is on ${currentMedications.length} medications. Consider medication reconciliation and deprescribing.`,
+          evidenceLevel: 'B',
+          strength: 'moderate',
+          priority: 'medium',
+          source: 'AGS Beers Criteria 2023'
+        });
+      }
+
+      // Default follow-up recommendation
+      recommendations.push({
+        id: 'followup',
+        type: 'monitoring',
+        title: 'Regular Follow-up Care',
+        description: 'Maintain regular follow-up appointments to monitor treatment efficacy and adverse effects.',
+        evidenceLevel: 'C',
+        strength: 'moderate',
+        priority: 'low',
+        source: 'Clinical Best Practice'
+      });
+
+      console.log(`[HIPAA-AUDIT] Doctor ${userId} accessed clinical recommendations for patient ${patientId}`);
+
+      res.json({
+        success: true,
+        recommendations,
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error fetching clinical recommendations:', error);
+      res.status(500).json({ message: 'Failed to fetch clinical recommendations' });
+    }
+  });
+
+  // Clinical Decision Support - Get relevant guidelines for a patient
+  app.get('/api/v1/lysa/clinical-guidelines/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access clinical guidelines' });
+      }
+
+      const { patientId } = req.params;
+
+      // HIPAA: Verify access
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied', code: 'NO_PATIENT_ASSIGNMENT' });
+      }
+
+      const profile = await storage.getPatientProfile(patientId);
+      const guidelines: any[] = [];
+
+      if (profile?.immunocompromisedCondition) {
+        guidelines.push({
+          id: 'idsa-fever',
+          name: 'Fever and Neutropenia in Immunocompromised Adults',
+          organization: 'IDSA',
+          year: 2023,
+          relevance: 0.95,
+          keyPoints: [
+            'Risk stratification for febrile neutropenia',
+            'Empiric antibiotic selection based on risk',
+            'Duration of antimicrobial therapy'
+          ]
+        });
+      }
+
+      guidelines.push({
+        id: 'general-prev',
+        name: 'Preventive Care and Screening Guidelines',
+        organization: 'USPSTF',
+        year: 2024,
+        relevance: 0.75,
+        keyPoints: ['Age-appropriate cancer screening', 'Cardiovascular risk assessment']
+      });
+
+      if (profile?.comorbidities?.some((c: string) => c.toLowerCase().includes('diabetes'))) {
+        guidelines.push({
+          id: 'ada-soc',
+          name: 'Standards of Care in Diabetes',
+          organization: 'ADA',
+          year: 2024,
+          relevance: 0.90,
+          keyPoints: ['Glycemic targets by population', 'Cardiovascular risk reduction']
+        });
+      }
+
+      if (profile?.comorbidities?.some((c: string) => c.toLowerCase().includes('hypertension'))) {
+        guidelines.push({
+          id: 'acc-aha-bp',
+          name: 'High Blood Pressure Clinical Practice Guideline',
+          organization: 'ACC/AHA',
+          year: 2023,
+          relevance: 0.88,
+          keyPoints: ['BP thresholds for treatment', 'First-line medication classes']
+        });
+      }
+
+      res.json({ success: true, guidelines });
+    } catch (error) {
+      console.error('Error fetching clinical guidelines:', error);
+      res.status(500).json({ message: 'Failed to fetch clinical guidelines' });
+    }
+  });
+
+  // Clinical Decision Support - Check drug interactions
+  app.get('/api/v1/lysa/drug-interactions/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can check drug interactions' });
+      }
+
+      const { patientId } = req.params;
+
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied', code: 'NO_PATIENT_ASSIGNMENT' });
+      }
+
+      const prescriptions = await storage.getPrescriptions(patientId);
+      const medications = prescriptions?.map((p: any) => p.medicationName.toLowerCase()) || [];
+      const interactions: any[] = [];
+
+      // Common interaction checks
+      const interactionRules = [
+        { drugs: ['warfarin', 'aspirin'], severity: 'major', description: 'Increased bleeding risk', recommendation: 'Monitor INR closely' },
+        { drugs: ['metformin', 'contrast'], severity: 'major', description: 'Risk of lactic acidosis', recommendation: 'Hold metformin 48h before contrast' },
+        { drugs: ['ace inhibitor', 'potassium'], severity: 'moderate', description: 'Risk of hyperkalemia', recommendation: 'Monitor potassium levels' },
+        { drugs: ['statin', 'fibrate'], severity: 'moderate', description: 'Increased myopathy risk', recommendation: 'Monitor for muscle symptoms' },
+        { drugs: ['ssri', 'maoi'], severity: 'contraindicated', description: 'Risk of serotonin syndrome', recommendation: 'Do not use together' },
+        { drugs: ['methotrexate', 'nsaid'], severity: 'major', description: 'Increased methotrexate toxicity', recommendation: 'Avoid combination' }
+      ];
+
+      for (const rule of interactionRules) {
+        const matches = rule.drugs.filter(d => 
+          medications.some(m => m.includes(d))
+        );
+        if (matches.length >= 2) {
+          interactions.push({
+            drug1: matches[0],
+            drug2: matches[1],
+            severity: rule.severity,
+            description: rule.description,
+            recommendation: rule.recommendation
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        interactions,
+        checked: medications.length
+      });
+    } catch (error) {
+      console.error('Error checking drug interactions:', error);
+      res.status(500).json({ message: 'Failed to check drug interactions' });
+    }
+  });
+
+  // Clinical Query - AI-powered clinical question answering
+  app.post('/api/v1/lysa/clinical-query', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can submit clinical queries' });
+      }
+
+      const { patientId, query, context } = req.body;
+      if (!patientId || !query) {
+        return res.status(400).json({ message: 'Patient ID and query are required' });
+      }
+
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied', code: 'NO_PATIENT_ASSIGNMENT' });
+      }
+
+      try {
+        const openai = (await import('openai')).default;
+        const openaiClient = new openai();
+
+        const systemPrompt = `You are a clinical decision support system. Provide evidence-based recommendations considering:
+- Patient allergies: ${context?.allergies?.join(', ') || 'None documented'}
+- Comorbidities: ${context?.comorbidities?.join(', ') || 'None documented'}
+- Immunocompromised: ${context?.immunocompromisedCondition || 'No'}
+- Current medications: ${context?.currentMedications?.join(', ') || 'None documented'}
+
+Guidelines:
+1. Cite evidence levels (A, B, C, D) for recommendations
+2. Note contraindications based on patient factors
+3. Suggest alternatives when primary options are contraindicated
+4. Never provide diagnoses - only clinical decision support`;
+
+        const completion = await openaiClient.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: query }
+          ],
+          temperature: 0.5,
+          max_tokens: 1000
+        });
+
+        res.json({
+          success: true,
+          response: completion.choices[0].message.content,
+          query
+        });
+      } catch (aiError) {
+        console.error('OpenAI error:', aiError);
+        res.json({
+          success: true,
+          response: `Clinical query received. Based on patient factors (${context?.comorbidities?.length || 0} comorbidities, ${context?.allergies?.length || 0} allergies), please consult current clinical guidelines and reference materials for evidence-based recommendations.`,
+          _fallback: true
+        });
+      }
+    } catch (error) {
+      console.error('Error processing clinical query:', error);
+      res.status(500).json({ message: 'Failed to process clinical query' });
+    }
+  });
+
+  // Predictive Analytics - Risk Assessment
+  app.get('/api/v1/lysa/risk-assessment/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access risk assessments' });
+      }
+
+      const { patientId } = req.params;
+
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        console.log(`[HIPAA-AUDIT] DENIED: Doctor ${userId} attempted risk assessment for unassigned patient ${patientId}`);
+        return res.status(403).json({ message: 'Access denied', code: 'NO_PATIENT_ASSIGNMENT' });
+      }
+
+      const profile = await storage.getPatientProfile(patientId);
+      const prescriptions = await storage.getPrescriptions(patientId);
+
+      // Calculate risk scores
+      let baseRisk = 20;
+      const riskScores: any[] = [];
+
+      // Immunocompromised risk
+      if (profile?.immunocompromisedCondition) {
+        baseRisk += 35;
+        riskScores.push({
+          category: 'Infection Risk',
+          score: 75,
+          trend: 'stable',
+          factors: [profile.immunocompromisedCondition],
+          lastUpdated: new Date().toISOString()
+        });
+      } else {
+        riskScores.push({
+          category: 'Infection Risk',
+          score: 25,
+          trend: 'stable',
+          factors: [],
+          lastUpdated: new Date().toISOString()
+        });
+      }
+
+      // Cardiovascular risk
+      const cvConditions = profile?.comorbidities?.filter((c: string) => 
+        c.toLowerCase().includes('hypertension') || 
+        c.toLowerCase().includes('diabetes') ||
+        c.toLowerCase().includes('heart')
+      ) || [];
+      
+      if (cvConditions.length > 0) {
+        baseRisk += cvConditions.length * 10;
+        riskScores.push({
+          category: 'Cardiovascular Risk',
+          score: Math.min(cvConditions.length * 20 + 35, 85),
+          trend: 'stable',
+          factors: cvConditions,
+          lastUpdated: new Date().toISOString()
+        });
+      } else {
+        riskScores.push({
+          category: 'Cardiovascular Risk',
+          score: 20,
+          trend: 'stable',
+          factors: [],
+          lastUpdated: new Date().toISOString()
+        });
+      }
+
+      // Medication complexity
+      const medCount = prescriptions?.length || 0;
+      riskScores.push({
+        category: 'Medication Complexity',
+        score: Math.min(medCount * 12, 80),
+        trend: 'stable',
+        factors: [`${medCount} active medications`],
+        lastUpdated: new Date().toISOString()
+      });
+
+      if (medCount > 4) {
+        baseRisk += 10;
+      }
+
+      // Care coordination
+      const comorbidCount = profile?.comorbidities?.length || 0;
+      riskScores.push({
+        category: 'Care Coordination',
+        score: comorbidCount > 2 ? 60 : 30,
+        trend: 'stable',
+        factors: [`${comorbidCount} comorbid conditions`],
+        lastUpdated: new Date().toISOString()
+      });
+
+      if (comorbidCount > 2) {
+        baseRisk += comorbidCount * 5;
+      }
+
+      const overallScore = Math.min(baseRisk, 95);
+      const overallLevel = overallScore >= 80 ? 'critical' : overallScore >= 60 ? 'high' : overallScore >= 40 ? 'medium' : 'low';
+
+      console.log(`[HIPAA-AUDIT] Doctor ${userId} accessed risk assessment for patient ${patientId}`);
+
+      res.json({
+        success: true,
+        overallRisk: {
+          score: overallScore,
+          level: overallLevel,
+          trend: 'stable'
+        },
+        riskScores,
+        deteriorationRisk: { score: profile?.immunocompromisedCondition ? 65 : 25 },
+        readmissionRisk: { score: comorbidCount * 8 + 10 },
+        adherenceScore: 85,
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error calculating risk assessment:', error);
+      res.status(500).json({ message: 'Failed to calculate risk assessment' });
+    }
+  });
+
+  // Predictive Analytics - Health Trends
+  app.get('/api/v1/lysa/health-trends/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access health trends' });
+      }
+
+      const { patientId } = req.params;
+      const days = parseInt(req.query.days as string) || 30;
+
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied', code: 'NO_PATIENT_ASSIGNMENT' });
+      }
+
+      // Generate simulated health trends (in production, this would come from device data)
+      const trends = [
+        { metric: 'Heart Rate', current: 72, baseline: 70, unit: 'bpm', status: 'normal', change: 2.9 },
+        { metric: 'Blood Pressure (Systolic)', current: 128, baseline: 120, unit: 'mmHg', status: 'elevated', change: 6.7 },
+        { metric: 'Temperature', current: 98.4, baseline: 98.6, unit: '°F', status: 'normal', change: -0.2 },
+        { metric: 'Oxygen Saturation', current: 97, baseline: 98, unit: '%', status: 'normal', change: -1.0 },
+        { metric: 'Weight', current: 165, baseline: 168, unit: 'lbs', status: 'normal', change: -1.8 },
+        { metric: 'Blood Glucose', current: 105, baseline: 95, unit: 'mg/dL', status: 'elevated', change: 10.5 }
+      ];
+
+      res.json({
+        success: true,
+        trends,
+        period: `${days} days`,
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error fetching health trends:', error);
+      res.status(500).json({ message: 'Failed to fetch health trends' });
+    }
+  });
+
+  // Predictive Analytics - Predictive Alerts
+  app.get('/api/v1/lysa/predictive-alerts/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access predictive alerts' });
+      }
+
+      const { patientId } = req.params;
+
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied', code: 'NO_PATIENT_ASSIGNMENT' });
+      }
+
+      const profile = await storage.getPatientProfile(patientId);
+      const prescriptions = await storage.getPrescriptions(patientId);
+
+      const alerts: any[] = [];
+
+      // Generate alerts based on patient risk factors
+      if (profile?.immunocompromisedCondition) {
+        alerts.push({
+          id: 'alert-ic-1',
+          type: 'deterioration',
+          severity: 'high',
+          title: 'Elevated Infection Risk',
+          description: `Due to ${profile.immunocompromisedCondition}, patient has elevated risk of opportunistic infections.`,
+          probability: 65,
+          timeframe: '30 days',
+          recommendedActions: [
+            'Enhanced infection monitoring protocol',
+            'Review prophylactic medication coverage',
+            'Update vaccination status'
+          ]
+        });
+      }
+
+      if (profile?.comorbidities && profile.comorbidities.length > 2) {
+        alerts.push({
+          id: 'alert-comorbid-1',
+          type: 'complication',
+          severity: 'medium',
+          title: 'Complex Care Management',
+          description: `Multiple comorbidities (${profile.comorbidities.length}) increase complexity of care coordination.`,
+          probability: 45,
+          timeframe: '90 days',
+          recommendedActions: [
+            'Schedule comprehensive care review',
+            'Coordinate with specialists',
+            'Review medication interactions'
+          ]
+        });
+      }
+
+      if (prescriptions && prescriptions.length > 4) {
+        alerts.push({
+          id: 'alert-poly-1',
+          type: 'adherence',
+          severity: 'medium',
+          title: 'Medication Adherence Risk',
+          description: `Patient on ${prescriptions.length} medications - polypharmacy may impact adherence.`,
+          probability: 35,
+          timeframe: '60 days',
+          recommendedActions: [
+            'Simplify medication regimen if possible',
+            'Consider pill organizers or reminders',
+            'Review for deprescribing opportunities'
+          ]
+        });
+      }
+
+      console.log(`[HIPAA-AUDIT] Doctor ${userId} accessed predictive alerts for patient ${patientId}`);
+
+      res.json({
+        success: true,
+        alerts,
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error fetching predictive alerts:', error);
+      res.status(500).json({ message: 'Failed to fetch predictive alerts' });
+    }
+  });
+
   // Create appointment with conflict detection
   app.post('/api/v1/appointments', isAuthenticated, async (req: any, res) => {
     try {
