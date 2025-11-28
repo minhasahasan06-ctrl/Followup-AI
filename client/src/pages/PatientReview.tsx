@@ -22,9 +22,13 @@ import {
   Clock,
   FileText,
   Download,
+  Bell,
+  Brain,
 } from "lucide-react";
 import { startOfWeek, endOfWeek, subWeeks, format } from "date-fns";
 import type { User, DailyFollowup, Medication, ChatMessage } from "@shared/schema";
+import { PatientAIAlerts } from "@/components/patient-ai-alerts";
+import { PatientMLTools } from "@/components/patient-ml-tools";
 
 interface ChatSession {
   id: string;
@@ -157,8 +161,16 @@ export default function PatientReview() {
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Tabs defaultValue="timeline" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-5">
+          <Tabs defaultValue="ai-alerts" className="space-y-4">
+            <TabsList className="flex flex-wrap gap-1">
+              <TabsTrigger value="ai-alerts" data-testid="tab-ai-alerts">
+                <Bell className="h-4 w-4 mr-2" />
+                AI Alerts
+              </TabsTrigger>
+              <TabsTrigger value="ml-tools" data-testid="tab-ml-tools">
+                <Brain className="h-4 w-4 mr-2" />
+                ML Tools
+              </TabsTrigger>
               <TabsTrigger value="timeline" data-testid="tab-timeline">
                 <Calendar className="h-4 w-4 mr-2" />
                 Timeline
@@ -173,13 +185,33 @@ export default function PatientReview() {
               </TabsTrigger>
               <TabsTrigger value="sessions" data-testid="tab-sessions">
                 <MessageSquare className="h-4 w-4 mr-2" />
-                Chat Sessions
+                Sessions
               </TabsTrigger>
               <TabsTrigger value="reports" data-testid="tab-reports">
                 <FileText className="h-4 w-4 mr-2" />
                 Reports
               </TabsTrigger>
             </TabsList>
+
+            {/* AI Health Alerts Tab */}
+            <TabsContent value="ai-alerts">
+              {patientId && (
+                <PatientAIAlerts 
+                  patientId={patientId} 
+                  patientName={patient ? `${patient.firstName} ${patient.lastName}` : undefined}
+                />
+              )}
+            </TabsContent>
+
+            {/* ML Prediction Tools Tab */}
+            <TabsContent value="ml-tools">
+              {patientId && (
+                <PatientMLTools 
+                  patientId={patientId} 
+                  patientName={patient ? `${patient.firstName} ${patient.lastName}` : undefined}
+                />
+              )}
+            </TabsContent>
 
             <TabsContent value="timeline">
               <Card>
