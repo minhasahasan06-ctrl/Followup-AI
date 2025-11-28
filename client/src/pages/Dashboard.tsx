@@ -7,6 +7,7 @@ import DynamicWelcome from "@/components/DynamicWelcome";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { DailySymptomCheckin } from "@/components/DailySymptomCheckin";
 import { MentalHealthRedFlags } from "@/components/MentalHealthRedFlags";
+import { PatientConsentRequests, PatientFollowupId } from "@/components/PatientConsentRequests";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1556,6 +1557,12 @@ export default function Dashboard() {
 
       {/* Legal Disclaimer */}
       <LegalDisclaimer variant="wellness" />
+
+      {/* Patient Consent Requests from Doctors */}
+      <PatientConsentRequests />
+
+      {/* Patient Followup ID Card */}
+      <PatientFollowupId />
 
       <div>
         <h2 className="text-2xl font-semibold mb-2" data-testid="text-health-summary">Today's Health Summary</h2>

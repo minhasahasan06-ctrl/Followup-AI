@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Search, TrendingUp, AlertCircle, Sparkles, Lightbulb, BookOpen, Beaker } from "lucide-react";
+import { Users, Search, TrendingUp, AlertCircle, Sparkles, Lightbulb, BookOpen, Beaker, UserPlus, Clock, CheckCircle } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import type { User } from "@shared/schema";
+import { AddPatientDialog } from "@/components/AddPatientDialog";
 
 type Recommendation = {
   id: string;
@@ -61,11 +62,12 @@ export default function DoctorDashboard() {
           <h1 className="text-4xl font-semibold mb-2" data-testid="text-dashboard-title">Doctor Dashboard</h1>
           <p className="text-muted-foreground">Clinical insights and patient overview powered by Assistant Lysa</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Badge variant="secondary" className="text-sm">
             <Users className="h-3 w-3 mr-1" />
-            {patients?.length || 0} Total Patients
+            {patients?.length || 0} Patients
           </Badge>
+          <AddPatientDialog />
         </div>
       </div>
 

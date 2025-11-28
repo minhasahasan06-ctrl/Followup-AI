@@ -2932,6 +2932,279 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // ============================================================================
+  // PATIENT SEARCH AND CONSENT REQUEST ROUTES
+  // ============================================================================
+
+  // Search for patients by email, phone, or Followup Patient ID
+  app.get('/api/doctor/patient-search', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const query = req.query.q as string;
+      
+      if (!query || query.trim().length < 3) {
+        console.log(`[HIPAA-AUDIT] Doctor ${doctorId} patient search rejected - query too short at ${new Date().toISOString()}`);
+        return res.status(400).json({ 
+          message: "Search query must be at least 3 characters" 
+        });
+      }
+      
+      const results = await storage.searchPatientsByIdentifier(query);
+      
+      // Fetch pending requests once for efficiency (O(1) instead of O(n))
+      const pendingRequests = await storage.getPendingConsentRequestsForDoctor(doctorId);
+      const pendingPatientIds = new Set(pendingRequests.map(r => r.patientId));
+      
+      // Enrich results with access and pending status
+      const enrichedResults = await Promise.all(
+        results.map(async (result) => {
+          const hasAccess = await storage.doctorHasPatientAccess(doctorId, result.user.id);
+          
+          return {
+            id: result.user.id,
+            firstName: result.user.firstName,
+            lastName: result.user.lastName,
+            email: result.user.email,
+            followupPatientId: result.profile?.followupPatientId,
+            hasAccess,
+            hasPendingRequest: pendingPatientIds.has(result.user.id),
+          };
+        })
+      );
+      
+      // HIPAA audit log - redact search query for PHI protection, log only hash
+      const queryHash = crypto.createHash('sha256').update(query).digest('hex').substring(0, 8);
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} patient search queryHash=${queryHash} resultCount=${results.length} at ${new Date().toISOString()}`);
+      res.json(enrichedResults);
+    } catch (error) {
+      console.error("Error searching patients:", error);
+      res.status(500).json({ message: "Failed to search patients" });
+    }
+  });
+
+  // Create a consent request to access a patient's data
+  const createConsentRequestSchema = z.object({
+    patientId: z.string().min(1, "Patient ID is required"),
+    requestMessage: z.string().optional(),
+    accessLevel: z.enum(['full', 'limited', 'read_only']).optional().default('full'),
+  });
+
+  app.post('/api/doctor/consent-requests', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      
+      // Validate request body
+      const validationResult = createConsentRequestSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        console.log(`[HIPAA-AUDIT] Doctor ${doctorId} consent request validation failed at ${new Date().toISOString()}`);
+        return res.status(400).json({ 
+          message: validationResult.error.errors[0]?.message || "Invalid request data" 
+        });
+      }
+      
+      const { patientId, requestMessage, accessLevel } = validationResult.data;
+      
+      // Verify patient exists
+      const patient = await storage.getUser(patientId);
+      if (!patient || patient.role !== 'patient') {
+        console.log(`[HIPAA-AUDIT] Doctor ${doctorId} consent request failed - patient ${patientId} not found at ${new Date().toISOString()}`);
+        return res.status(404).json({ message: "Patient not found" });
+      }
+      
+      // Check if doctor already has access
+      const hasAccess = await storage.doctorHasPatientAccess(doctorId, patientId);
+      if (hasAccess) {
+        console.log(`[HIPAA-AUDIT] Doctor ${doctorId} consent request rejected - already has access to patient ${patientId} at ${new Date().toISOString()}`);
+        return res.status(400).json({ message: "You already have access to this patient" });
+      }
+      
+      // Get doctor info for the request
+      const doctor = await storage.getUser(doctorId);
+      
+      const consentRequest = await storage.createPatientConsentRequest({
+        doctorId,
+        patientId,
+        requestMessage: requestMessage || `Dr. ${doctor?.lastName || 'Unknown'} is requesting access to your health records.`,
+        accessLevel,
+        status: 'pending',
+      });
+      
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} created consent request ${consentRequest.id} for patient ${patientId} accessLevel=${accessLevel} at ${new Date().toISOString()}`);
+      res.json(consentRequest);
+    } catch (error) {
+      console.error("Error creating consent request:", error);
+      res.status(500).json({ message: "Failed to create consent request" });
+    }
+  });
+
+  // Get pending consent requests sent by the doctor
+  app.get('/api/doctor/consent-requests/pending', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const pendingRequests = await storage.getPendingConsentRequestsForDoctor(doctorId);
+      
+      // Enrich with patient names
+      const enrichedRequests = await Promise.all(
+        pendingRequests.map(async (request) => {
+          const patient = await storage.getUser(request.patientId);
+          return {
+            ...request,
+            patient: patient ? {
+              id: patient.id,
+              firstName: patient.firstName,
+              lastName: patient.lastName,
+              email: patient.email,
+            } : null,
+          };
+        })
+      );
+      
+      res.json(enrichedRequests);
+    } catch (error) {
+      console.error("Error fetching pending requests:", error);
+      res.status(500).json({ message: "Failed to fetch pending requests" });
+    }
+  });
+
+  // Patient: Get pending consent requests from doctors
+  app.get('/api/patient/consent-requests/pending', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.user!.id;
+      
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ message: "Only patients can view consent requests" });
+      }
+      
+      const pendingRequests = await storage.getPendingConsentRequestsForPatient(patientId);
+      
+      // Enrich with doctor names and profiles
+      const enrichedRequests = await Promise.all(
+        pendingRequests.map(async (request) => {
+          const doctor = await storage.getUser(request.doctorId);
+          const doctorProfile = await storage.getDoctorProfile(request.doctorId);
+          return {
+            ...request,
+            doctor: doctor ? {
+              id: doctor.id,
+              firstName: doctor.firstName,
+              lastName: doctor.lastName,
+              email: doctor.email,
+            } : null,
+            doctorProfile: doctorProfile ? {
+              specialty: doctorProfile.specialty,
+              licenseNumber: doctorProfile.licenseNumber,
+              hospitalAffiliation: doctorProfile.hospitalAffiliation,
+            } : null,
+          };
+        })
+      );
+      
+      res.json(enrichedRequests);
+    } catch (error) {
+      console.error("Error fetching consent requests:", error);
+      res.status(500).json({ message: "Failed to fetch consent requests" });
+    }
+  });
+
+  // Patient: Respond to a consent request
+  const respondToConsentSchema = z.object({
+    approved: z.boolean(),
+    responseMessage: z.string().optional(),
+  });
+
+  app.post('/api/patient/consent-requests/:id/respond', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.user!.id;
+      const { id } = req.params;
+      
+      if (req.user.role !== 'patient') {
+        console.log(`[HIPAA-AUDIT] Non-patient ${patientId} attempted to respond to consent request ${id} at ${new Date().toISOString()}`);
+        return res.status(403).json({ message: "Only patients can respond to consent requests" });
+      }
+      
+      // Validate request body
+      const validationResult = respondToConsentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: validationResult.error.errors[0]?.message || "Invalid request data" 
+        });
+      }
+      
+      const { approved, responseMessage } = validationResult.data;
+      
+      // Verify the request belongs to this patient
+      const consentRequest = await storage.getConsentRequest(id);
+      if (!consentRequest) {
+        console.log(`[HIPAA-AUDIT] Patient ${patientId} attempted to respond to non-existent consent request ${id} at ${new Date().toISOString()}`);
+        return res.status(404).json({ message: "Consent request not found" });
+      }
+      
+      if (consentRequest.patientId !== patientId) {
+        console.log(`[HIPAA-AUDIT] SECURITY: Patient ${patientId} attempted to respond to consent request ${id} belonging to patient ${consentRequest.patientId} at ${new Date().toISOString()}`);
+        return res.status(403).json({ message: "You can only respond to your own consent requests" });
+      }
+      
+      if (consentRequest.status !== 'pending') {
+        console.log(`[HIPAA-AUDIT] Patient ${patientId} attempted to re-respond to consent request ${id} (status: ${consentRequest.status}) at ${new Date().toISOString()}`);
+        return res.status(400).json({ message: "This request has already been responded to" });
+      }
+      
+      // Update the consent request
+      const updatedRequest = await storage.respondToConsentRequest(id, approved, responseMessage);
+      
+      // If approved, create the doctor-patient assignment with full audit trail
+      if (approved) {
+        const assignment = await storage.createDoctorPatientAssignment({
+          doctorId: consentRequest.doctorId,
+          patientId,
+          assignmentSource: 'patient_consent',
+          assignedBy: patientId,
+          patientConsented: true,
+          consentMethod: 'in_app',
+          consentedAt: new Date(),
+          accessLevel: consentRequest.accessLevel,
+          isPrimaryProvider: false,
+        });
+        
+        console.log(`[HIPAA-AUDIT] CONSENT_APPROVED: Patient ${patientId} approved consent request ${id} from doctor ${consentRequest.doctorId}. Assignment ${assignment.id} created with accessLevel=${consentRequest.accessLevel} at ${new Date().toISOString()}`);
+      } else {
+        console.log(`[HIPAA-AUDIT] CONSENT_DENIED: Patient ${patientId} denied consent request ${id} from doctor ${consentRequest.doctorId}. Reason: ${responseMessage || 'No reason provided'} at ${new Date().toISOString()}`);
+      }
+      
+      res.json(updatedRequest);
+    } catch (error) {
+      console.error("Error responding to consent request:", error);
+      res.status(500).json({ message: "Failed to respond to consent request" });
+    }
+  });
+
+  // Get patient's Followup Patient ID (for sharing)
+  app.get('/api/patient/followup-id', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.user!.id;
+      
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ message: "Only patients have a Followup ID" });
+      }
+      
+      let profile = await storage.getPatientProfile(patientId);
+      
+      // Generate ID if not exists
+      if (!profile?.followupPatientId) {
+        const followupPatientId = await storage.generateFollowupPatientId();
+        profile = await storage.upsertPatientProfile({
+          userId: patientId,
+          followupPatientId,
+        });
+      }
+      
+      res.json({ followupPatientId: profile.followupPatientId });
+    } catch (error) {
+      console.error("Error fetching followup ID:", error);
+      res.status(500).json({ message: "Failed to fetch Followup ID" });
+    }
+  });
+
   // Educational content
   app.get('/api/education/progress', isAuthenticated, async (req: any, res) => {
     try {
