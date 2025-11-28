@@ -6932,6 +6932,174 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // ============================================================================
+  // RECEPTIONIST & ASSISTANT LYSA - WHATSAPP APPOINTMENT MANAGEMENT ROUTES
+  // ============================================================================
+
+  const { createWhatsAppService } = await import('./whatsappService');
+  const whatsappService = createWhatsAppService(storage);
+
+  // Twilio WhatsApp webhook - receives incoming messages
+  app.post('/api/v1/whatsapp/webhook', async (req: any, res) => {
+    try {
+      const { From, To, Body, MessageSid } = req.body;
+
+      if (!From || !Body) {
+        return res.status(400).send('Missing required fields');
+      }
+
+      // For now, route to the first doctor - in production, match by phone number
+      const doctors = await storage.getAllDoctors();
+      if (doctors.length === 0) {
+        return res.status(404).send('No doctors available');
+      }
+
+      const doctorId = doctors[0].id;
+
+      const response = await whatsappService.processIncomingMessage(
+        { from: From, to: To, body: Body, messageSid: MessageSid },
+        doctorId
+      );
+
+      // Send response via WhatsApp
+      await whatsappService.sendWhatsAppMessage(From, response);
+
+      // Return TwiML response
+      res.set('Content-Type', 'text/xml');
+      res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
+    } catch (error) {
+      console.error('WhatsApp webhook error:', error);
+      res.status(500).send('Error processing message');
+    }
+  });
+
+  // Send WhatsApp message (doctor-initiated)
+  app.post('/api/v1/whatsapp/send', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can send WhatsApp messages' });
+      }
+
+      const { to, message } = req.body;
+
+      if (!to || !message) {
+        return res.status(400).json({ message: 'Missing recipient or message' });
+      }
+
+      const result = await whatsappService.sendWhatsAppMessage(to, message);
+
+      if (result.success) {
+        res.json({ success: true, messageSid: result.sid });
+      } else {
+        res.status(500).json({ success: false, message: 'Failed to send message' });
+      }
+    } catch (error) {
+      console.error('Error sending WhatsApp message:', error);
+      res.status(500).json({ message: 'Failed to send message' });
+    }
+  });
+
+  // Send WhatsApp appointment confirmation
+  app.post('/api/v1/whatsapp/appointment-confirmation', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can send confirmations' });
+      }
+
+      const { patientPhone, patientName, doctorName, date, time, appointmentId } = req.body;
+
+      if (!patientPhone || !patientName || !doctorName || !date || !time || !appointmentId) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      const success = await whatsappService.sendAppointmentConfirmation(
+        patientPhone,
+        patientName,
+        doctorName,
+        date,
+        time,
+        appointmentId
+      );
+
+      res.json({ success });
+    } catch (error) {
+      console.error('Error sending appointment confirmation:', error);
+      res.status(500).json({ message: 'Failed to send confirmation' });
+    }
+  });
+
+  // Send WhatsApp appointment reminder
+  app.post('/api/v1/whatsapp/appointment-reminder', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can send reminders' });
+      }
+
+      const { patientPhone, patientName, doctorName, appointmentTime } = req.body;
+
+      if (!patientPhone || !patientName || !doctorName || !appointmentTime) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      const success = await whatsappService.sendAppointmentReminder(
+        patientPhone,
+        patientName,
+        doctorName,
+        new Date(appointmentTime)
+      );
+
+      res.json({ success });
+    } catch (error) {
+      console.error('Error sending appointment reminder:', error);
+      res.status(500).json({ message: 'Failed to send reminder' });
+    }
+  });
+
+  // Get active WhatsApp conversation
+  app.get('/api/v1/whatsapp/conversation/:phoneNumber', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view conversations' });
+      }
+
+      const { phoneNumber } = req.params;
+      const conversation = whatsappService.getActiveConversation(userId, phoneNumber);
+
+      if (!conversation) {
+        return res.status(404).json({ message: 'No active conversation found' });
+      }
+
+      res.json(conversation);
+    } catch (error) {
+      console.error('Error fetching conversation:', error);
+      res.status(500).json({ message: 'Failed to fetch conversation' });
+    }
+  });
+
   // ===== GOOGLE CALENDAR SYNC ROUTES =====
   // Import at top of file
   const { googleCalendarSyncService, isReplitConnectorAvailable, getUncachableGoogleCalendarClient } = await import('./googleCalendarSyncService');
