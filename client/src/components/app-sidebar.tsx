@@ -170,12 +170,6 @@ const doctorItems = [
     badge: "AI",
   },
   {
-    title: "Calendar Sync",
-    url: "/calendar-sync",
-    icon: Calendar,
-    badge: "Google",
-  },
-  {
     title: "Doctor Wellness",
     url: "/doctor-wellness",
     icon: Heart,
