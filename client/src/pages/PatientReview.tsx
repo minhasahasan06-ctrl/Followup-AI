@@ -50,6 +50,9 @@ import { startOfWeek, endOfWeek, subWeeks, format, formatDistanceToNow } from "d
 import type { User, DailyFollowup, Medication, ChatMessage, Prescription } from "@shared/schema";
 import { PatientAIAlerts } from "@/components/patient-ai-alerts";
 import { PatientMLTools } from "@/components/patient-ml-tools";
+import { LysaPatientAssistant } from "@/components/LysaPatientAssistant";
+import { ClinicalDecisionSupport } from "@/components/ClinicalDecisionSupport";
+import { PredictiveAnalyticsDashboard } from "@/components/PredictiveAnalyticsDashboard";
 
 interface ChatSession {
   id: string;
@@ -477,6 +480,18 @@ export default function PatientReview() {
               <TabsTrigger value="reports" data-testid="tab-reports">
                 <FileText className="h-4 w-4 mr-2" />
                 Reports
+              </TabsTrigger>
+              <TabsTrigger value="lysa-assistant" data-testid="tab-lysa-assistant">
+                <Bot className="h-4 w-4 mr-2" />
+                Lysa AI
+              </TabsTrigger>
+              <TabsTrigger value="clinical-support" data-testid="tab-clinical-support">
+                <Stethoscope className="h-4 w-4 mr-2" />
+                Clinical Support
+              </TabsTrigger>
+              <TabsTrigger value="predictive" data-testid="tab-predictive">
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Predictive
               </TabsTrigger>
             </TabsList>
 
@@ -1050,6 +1065,56 @@ export default function PatientReview() {
                   </div>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Lysa AI Assistant Tab */}
+            <TabsContent value="lysa-assistant">
+              {patientId && patient && (
+                <LysaPatientAssistant
+                  patientId={patientId}
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    email: patient.email || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Clinical Decision Support Tab */}
+            <TabsContent value="clinical-support">
+              {patientId && patient && (
+                <ClinicalDecisionSupport
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Predictive Analytics Tab */}
+            <TabsContent value="predictive">
+              {patientId && patient && (
+                <PredictiveAnalyticsDashboard
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
             </TabsContent>
           </Tabs>
         </div>
