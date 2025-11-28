@@ -445,7 +445,7 @@ export function LabReportAnalysis({ patientContext, className }: LabReportAnalys
           </Card>
 
           {currentAnalysis && (
-            <Card className="border-primary/50">
+            <Card className="border-primary/50" data-testid="lab-analysis-result">
               <CardHeader>
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
@@ -522,7 +522,7 @@ export function LabReportAnalysis({ patientContext, className }: LabReportAnalys
 
                 <div className="space-y-2">
                   <h4 className="font-semibold text-sm">AI Interpretation</h4>
-                  <div className="text-sm text-muted-foreground bg-muted/50 p-4 rounded-md whitespace-pre-wrap">
+                  <div className="text-sm text-muted-foreground bg-muted/50 p-4 rounded-md whitespace-pre-wrap" data-testid="text-lab-interpretation">
                     {currentAnalysis.interpretation}
                   </div>
                 </div>
@@ -564,11 +564,12 @@ export function LabReportAnalysis({ patientContext, className }: LabReportAnalys
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-3">
                     {labHistory.panels.map((panel: LabPanel) => (
-                      <Card key={panel.id} className="hover-elevate">
+                      <Card key={panel.id} className="hover-elevate" data-testid={`lab-panel-${panel.id}`}>
                         <CardContent className="p-4">
                           <div 
                             className="flex items-center justify-between cursor-pointer"
                             onClick={() => setExpandedPanel(expandedPanel === panel.id ? null : panel.id)}
+                            data-testid={`button-expand-lab-${panel.id}`}
                           >
                             <div className="flex items-center gap-3">
                               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
