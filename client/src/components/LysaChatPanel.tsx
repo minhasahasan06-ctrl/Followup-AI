@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
+import { BookAppointmentDialog, CheckAvailabilityDialog, CalendarStatusBadge } from "./LysaCalendarBooking";
 
 interface ChatMessage {
   id: string;
@@ -113,6 +114,7 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, className = "" }:
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [appointmentDialog, setAppointmentDialog] = useState(false);
+  const [availabilityDialog, setAvailabilityDialog] = useState(false);
   const [emailDialog, setEmailDialog] = useState(false);
   const [prescriptionDialog, setPrescriptionDialog] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -150,6 +152,14 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, className = "" }:
   };
 
   const handleQuickAction = (action: QuickAction) => {
+    if (action.id === "book-appointment") {
+      setAppointmentDialog(true);
+      return;
+    }
+    if (action.id === "check-availability") {
+      setAvailabilityDialog(true);
+      return;
+    }
     setMessage(action.prompt);
     setShowQuickActions(false);
   };
@@ -368,12 +378,16 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, className = "" }:
           </p>
         </div>
       </CardContent>
+
+      <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
+      <CheckAvailabilityDialog open={availabilityDialog} onOpenChange={setAvailabilityDialog} />
     </Card>
   );
 }
 
 export function LysaQuickActionsBar() {
-  const [message, setMessage] = useState("");
+  const [appointmentDialog, setAppointmentDialog] = useState(false);
+  const [availabilityDialog, setAvailabilityDialog] = useState(false);
   
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
@@ -385,36 +399,48 @@ export function LysaQuickActionsBar() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
-      setMessage("");
     },
   });
 
-  const handleQuickAction = (prompt: string) => {
-    sendMessageMutation.mutate(prompt);
+  const handleQuickAction = (action: QuickAction) => {
+    if (action.id === "book-appointment") {
+      setAppointmentDialog(true);
+      return;
+    }
+    if (action.id === "check-availability") {
+      setAvailabilityDialog(true);
+      return;
+    }
+    sendMessageMutation.mutate(action.prompt);
   };
 
   return (
-    <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-      <Bot className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-      <div className="flex gap-1 overflow-x-auto">
-        {quickActions.slice(0, 5).map((action) => (
-          <Button
-            key={action.id}
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs whitespace-nowrap flex-shrink-0"
-            onClick={() => handleQuickAction(action.prompt)}
-            disabled={sendMessageMutation.isPending}
-            data-testid={`button-quick-${action.id}`}
-          >
-            {action.icon}
-            <span className="ml-1">{action.label}</span>
-          </Button>
-        ))}
+    <>
+      <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+        <Bot className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+        <CalendarStatusBadge />
+        <div className="flex gap-1 overflow-x-auto">
+          {quickActions.slice(0, 5).map((action) => (
+            <Button
+              key={action.id}
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs whitespace-nowrap flex-shrink-0"
+              onClick={() => handleQuickAction(action)}
+              disabled={sendMessageMutation.isPending}
+              data-testid={`button-quick-${action.id}`}
+            >
+              {action.icon}
+              <span className="ml-1">{action.label}</span>
+            </Button>
+          ))}
+        </div>
+        {sendMessageMutation.isPending && (
+          <Loader2 className="h-4 w-4 animate-spin ml-2" />
+        )}
       </div>
-      {sendMessageMutation.isPending && (
-        <Loader2 className="h-4 w-4 animate-spin ml-2" />
-      )}
-    </div>
+      <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
+      <CheckAvailabilityDialog open={availabilityDialog} onOpenChange={setAvailabilityDialog} />
+    </>
   );
 }
