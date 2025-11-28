@@ -5063,3 +5063,55 @@ export const insertClinicianWorkloadMetricSchema = createInsertSchema(clinicianW
 
 export type InsertClinicianWorkloadMetric = z.infer<typeof insertClinicianWorkloadMetricSchema>;
 export type ClinicianWorkloadMetric = typeof clinicianWorkloadMetrics.$inferSelect;
+
+// Doctor-Patient Assignments - Explicit authorization for HIPAA compliance
+export const doctorPatientAssignments = pgTable("doctor_patient_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Core relationship
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Assignment status
+  status: varchar("status").notNull().default("active"), // 'active', 'inactive', 'pending', 'revoked'
+  
+  // Source of assignment (for audit trail)
+  assignmentSource: varchar("assignment_source").notNull(), // 'appointment', 'prescription', 'referral', 'consultation', 'manual', 'intake'
+  sourceReferenceId: varchar("source_reference_id"), // ID of the related record (appointment_id, prescription_id, etc.)
+  
+  // Consent tracking
+  patientConsented: boolean("patient_consented").default(false),
+  consentedAt: timestamp("consented_at"),
+  consentMethod: varchar("consent_method"), // 'in_app', 'paper', 'verbal', 'implied'
+  
+  // Primary care relationship
+  isPrimaryCareProvider: boolean("is_primary_care_provider").default(false),
+  
+  // Specialty access (for specialists with limited scope)
+  accessScope: varchar("access_scope").default("full"), // 'full', 'limited', 'emergency_only'
+  accessNotes: text("access_notes"),
+  
+  // Revocation tracking
+  revokedAt: timestamp("revoked_at"),
+  revokedBy: varchar("revoked_by").references(() => users.id),
+  revocationReason: text("revocation_reason"),
+  
+  // Audit trail
+  assignedBy: varchar("assigned_by").references(() => users.id), // Who created this assignment
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorPatientIdx: index("doctor_patient_idx").on(table.doctorId, table.patientId),
+  doctorActiveIdx: index("doctor_active_assignments_idx").on(table.doctorId, table.status),
+  patientActiveIdx: index("patient_active_assignments_idx").on(table.patientId, table.status),
+  uniqueActiveAssignment: index("unique_active_doctor_patient").on(table.doctorId, table.patientId, table.status),
+}));
+
+export const insertDoctorPatientAssignmentSchema = createInsertSchema(doctorPatientAssignments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorPatientAssignment = z.infer<typeof insertDoctorPatientAssignmentSchema>;
+export type DoctorPatientAssignment = typeof doctorPatientAssignments.$inferSelect;
