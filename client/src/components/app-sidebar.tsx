@@ -164,18 +164,6 @@ const doctorItems = [
     icon: Users,
   },
   {
-    title: "Prescriptions",
-    url: "/prescriptions",
-    icon: Pill,
-    badge: "NEW",
-  },
-  {
-    title: "Drug Interactions",
-    url: "/drug-interactions",
-    icon: AlertTriangle,
-    badge: "AI",
-  },
-  {
     title: "Assistant Lysa Receptionist",
     url: "/receptionist",
     icon: Headphones,
