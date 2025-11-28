@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { seedDatabase } from "./seed";
 
 const app = express();
 // Trust the first proxy so secure cookies are set correctly when running behind a load balancer
@@ -39,6 +40,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Auto-seed database with sample data for fully functional features
+  try {
+    await seedDatabase();
+    log("Database seed completed");
+  } catch (error) {
+    log("Seed skipped or failed (non-critical)");
+  }
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
