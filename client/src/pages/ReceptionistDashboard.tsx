@@ -9,6 +9,8 @@ import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { LysaChatPanel, LysaQuickActionsBar } from "@/components/LysaChatPanel";
 import { EmailAIHelper } from "@/components/EmailAIHelper";
 import { PatientRecordAssistant } from "@/components/PatientRecordAssistant";
+import { DiagnosisHelper } from "@/components/DiagnosisHelper";
+import { PrescriptionHelper } from "@/components/PrescriptionHelper";
 
 interface Appointment {
   id: string;
@@ -130,7 +132,7 @@ export default function ReceptionistDashboard() {
         <LysaQuickActionsBar />
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-4">
+          <TabsList className="mb-4 flex-wrap">
             <TabsTrigger value="overview" data-testid="tab-overview">
               <LayoutDashboard className="h-4 w-4 mr-2" />
               Overview
@@ -142,6 +144,14 @@ export default function ReceptionistDashboard() {
             <TabsTrigger value="patients" data-testid="tab-patients">
               <Users className="h-4 w-4 mr-2" />
               Patients
+            </TabsTrigger>
+            <TabsTrigger value="diagnosis" data-testid="tab-diagnosis">
+              <Stethoscope className="h-4 w-4 mr-2" />
+              Diagnosis
+            </TabsTrigger>
+            <TabsTrigger value="prescription" data-testid="tab-prescription">
+              <Pill className="h-4 w-4 mr-2" />
+              Rx Builder
             </TabsTrigger>
           </TabsList>
 
@@ -486,6 +496,14 @@ export default function ReceptionistDashboard() {
 
           <TabsContent value="patients" className="mt-0">
             <PatientRecordAssistant onOpenLysa={() => setLysaExpanded(true)} />
+          </TabsContent>
+
+          <TabsContent value="diagnosis" className="mt-0">
+            <DiagnosisHelper />
+          </TabsContent>
+
+          <TabsContent value="prescription" className="mt-0">
+            <PrescriptionHelper />
           </TabsContent>
         </Tabs>
       </div>

@@ -6008,6 +6008,222 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // Lysa Prescription Interaction Check - Drug safety analysis
+  app.post('/api/v1/lysa/prescriptions/check-interactions', isAuthenticated, aiRateLimit, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can check drug interactions' });
+      }
+
+      const { medications, allergies, newPrescriptions } = req.body;
+
+      if (!medications || !Array.isArray(medications) || medications.length === 0) {
+        return res.status(400).json({ message: 'At least one medication is required' });
+      }
+
+      const medicationList = medications.join(', ');
+      const allergyList = allergies?.length > 0 ? allergies.join(', ') : 'None reported';
+      const newMedsList = newPrescriptions?.length > 0 ? newPrescriptions.join(', ') : 'None';
+
+      const systemPrompt = `You are a clinical pharmacology AI assistant specializing in drug interaction analysis. You analyze medication combinations for potential interactions, allergic cross-reactivity, and contraindications.
+
+Your role is to:
+1. Identify drug-drug interactions between all medications
+2. Flag potential allergic cross-reactivity based on drug classes
+3. Identify contraindications
+4. Provide clinical recommendations
+
+Severity levels:
+- minor: Unlikely to cause significant problems, monitor if needed
+- moderate: May require dosage adjustment or monitoring
+- major: Significant interaction requiring intervention
+- contraindicated: Should not be used together
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "hasInteractions": true/false,
+  "interactions": [
+    {
+      "drug1": "Medication 1",
+      "drug2": "Medication 2",
+      "severity": "minor|moderate|major|contraindicated",
+      "description": "Description of the interaction",
+      "clinicalEffect": "What happens when taken together",
+      "recommendation": "Clinical recommendation"
+    }
+  ],
+  "allergicRisks": ["Description of allergy cross-reactivity risks"],
+  "contraindications": ["Any absolute contraindications"],
+  "warnings": ["General warnings about the medication combination"],
+  "safeToPresrcibe": true/false
+}`;
+
+      const userPrompt = `Please analyze the following medication combination for potential drug interactions:
+
+**All Medications (Current + New):**
+${medicationList}
+
+**New Prescriptions Being Added:**
+${newMedsList}
+
+**Patient Allergies:**
+${allergyList}
+
+Please identify:
+1. Any drug-drug interactions between these medications
+2. Cross-reactivity risks with known allergies
+3. Contraindications or warnings
+4. Overall safety assessment
+
+Provide a comprehensive safety analysis.`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        max_tokens: 2000
+      });
+
+      const analysisResult = JSON.parse(completion.choices[0].message.content || '{}');
+
+      // Log for HIPAA audit
+      console.log(`[HIPAA-AUDIT] Drug interaction check performed by doctor ${userId}`);
+
+      res.json(analysisResult);
+    } catch (error) {
+      console.error('Error checking drug interactions:', error);
+      res.status(500).json({ message: 'Failed to check drug interactions' });
+    }
+  });
+
+  // Lysa Diagnosis Analysis - AI-powered clinical decision support
+  app.post('/api/v1/lysa/diagnosis/analyze', isAuthenticated, aiRateLimit, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access diagnosis support' });
+      }
+
+      const { symptoms, patientAge, patientSex, medicalHistory, currentMedications, additionalNotes } = req.body;
+
+      if (!symptoms || !Array.isArray(symptoms) || symptoms.length === 0) {
+        return res.status(400).json({ message: 'At least one symptom is required' });
+      }
+
+      // Format symptoms for analysis
+      const symptomList = symptoms.map((s: any) => 
+        `${s.name} (severity: ${s.severity}, duration: ${s.duration})`
+      ).join('\n- ');
+
+      const systemPrompt = `You are an advanced clinical decision support AI assistant. You help doctors by analyzing symptoms and suggesting possible diagnoses. You provide evidence-based recommendations.
+
+IMPORTANT DISCLAIMERS:
+- This is decision SUPPORT, not a replacement for clinical judgment
+- All suggestions must be verified through proper diagnostic procedures
+- Consider the complete clinical picture before making decisions
+
+Analyze the patient information and provide:
+1. A primary diagnosis suggestion with confidence level
+2. 2-3 differential diagnoses
+3. Red flags that warrant immediate attention
+4. Recommended diagnostic tests
+5. Clinical insights based on the symptom pattern
+6. Recommended next steps
+
+Consider:
+- Age and sex-specific conditions
+- Drug interactions with current medications
+- Medical history implications
+- Symptom severity and duration patterns
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "primaryDiagnosis": {
+    "condition": "Condition Name",
+    "probability": 75,
+    "matchingSymptoms": ["symptom1", "symptom2"],
+    "missingSymptoms": ["typical symptom not present"],
+    "urgency": "low|moderate|high|emergency",
+    "description": "Brief clinical description",
+    "recommendedTests": ["Test 1", "Test 2"],
+    "differentialDiagnosis": ["Alt condition 1"]
+  },
+  "differentialDiagnoses": [
+    {
+      "condition": "Alternative Condition",
+      "probability": 50,
+      "matchingSymptoms": [],
+      "missingSymptoms": [],
+      "urgency": "low",
+      "description": "Description",
+      "recommendedTests": [],
+      "differentialDiagnosis": []
+    }
+  ],
+  "clinicalInsights": ["Insight 1", "Insight 2"],
+  "recommendedActions": ["Action 1", "Action 2"],
+  "redFlags": ["Red flag if any"],
+  "references": ["Reference 1"]
+}`;
+
+      const userPrompt = `Please analyze the following patient presentation:
+
+**Patient Demographics:**
+- Age: ${patientAge || 'Not specified'}
+- Sex: ${patientSex || 'Not specified'}
+
+**Presenting Symptoms:**
+- ${symptomList}
+
+**Medical History:**
+${medicalHistory || 'Not provided'}
+
+**Current Medications:**
+${currentMedications || 'None reported'}
+
+**Additional Clinical Notes:**
+${additionalNotes || 'None'}
+
+Please provide a comprehensive clinical assessment with differential diagnosis.`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+        max_tokens: 2000
+      });
+
+      const analysisResult = JSON.parse(completion.choices[0].message.content || '{}');
+
+      // Log for HIPAA audit
+      console.log(`[HIPAA-AUDIT] Diagnosis analysis performed by doctor ${userId}`);
+
+      res.json(analysisResult);
+    } catch (error) {
+      console.error('Error analyzing diagnosis:', error);
+      res.status(500).json({ message: 'Failed to analyze symptoms' });
+    }
+  });
+
   // Lysa Doctor Patients - list all patients for a doctor
   app.get('/api/v1/lysa/patients', isAuthenticated, async (req: any, res) => {
     try {
