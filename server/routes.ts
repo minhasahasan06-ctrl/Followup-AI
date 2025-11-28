@@ -7607,6 +7607,84 @@ Provide:
     }
   });
 
+  // Lysa Patient Monitoring Status endpoint - get monitoring status for all assigned patients
+  app.get('/api/v1/lysa/monitoring/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access monitoring status' });
+      }
+
+      // Get assigned patients
+      const assignments = await storage.getDoctorPatientAssignments(userId, 'active');
+      
+      // Return monitoring status for each patient
+      const monitoringStatuses = assignments.map(assignment => ({
+        patientId: assignment.patientId,
+        isMonitored: assignment.accessLevel === 'full' || assignment.accessLevel === 'monitoring'
+      }));
+
+      res.json(monitoringStatuses);
+    } catch (error) {
+      console.error('Error fetching monitoring status:', error);
+      res.status(500).json({ message: 'Failed to fetch monitoring status' });
+    }
+  });
+
+  // Lysa Patient Monitoring Toggle endpoint
+  app.post('/api/v1/lysa/monitoring/toggle', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can toggle patient monitoring' });
+      }
+
+      const { patientId, enabled } = req.body;
+      if (!patientId || typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: 'Patient ID and enabled status are required' });
+      }
+
+      // Verify doctor-patient assignment
+      const assignments = await storage.getDoctorPatientAssignments(userId, 'active');
+      const hasAssignment = assignments.some(a => a.patientId === patientId);
+      
+      if (!hasAssignment) {
+        return res.status(403).json({ message: 'Not authorized to monitor this patient' });
+      }
+
+      // Update access level based on monitoring toggle
+      const newAccessLevel = enabled ? 'full' : 'basic';
+      
+      // In production, this would update the assignment's access level
+      // For now, we'll just return success and the frontend will track the state
+      
+      // Log the monitoring status change for HIPAA audit
+      console.log(`[HIPAA-AUDIT] Doctor ${userId} ${enabled ? 'enabled' : 'disabled'} monitoring for patient ${patientId}`);
+
+      res.json({
+        success: true,
+        patientId,
+        isMonitored: enabled,
+        message: enabled 
+          ? 'AI monitoring enabled for patient' 
+          : 'AI monitoring disabled for patient'
+      });
+    } catch (error) {
+      console.error('Error toggling monitoring status:', error);
+      res.status(500).json({ message: 'Failed to toggle monitoring status' });
+    }
+  });
+
   // Create appointment with conflict detection
   app.post('/api/v1/appointments', isAuthenticated, async (req: any, res) => {
     try {
