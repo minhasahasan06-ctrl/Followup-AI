@@ -8,6 +8,7 @@ import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, St
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { LysaChatPanel, LysaQuickActionsBar } from "@/components/LysaChatPanel";
 import { EmailAIHelper } from "@/components/EmailAIHelper";
+import { PatientRecordAssistant } from "@/components/PatientRecordAssistant";
 
 interface Appointment {
   id: string;
@@ -484,28 +485,7 @@ export default function ReceptionistDashboard() {
           </TabsContent>
 
           <TabsContent value="patients" className="mt-0">
-            <Card data-testid="card-patient-search">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Patient Records
-                </CardTitle>
-                <CardDescription>Search and manage patient records with AI assistance</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-12 text-muted-foreground">
-                  <Users className="h-16 w-16 mx-auto mb-4 opacity-30" />
-                  <p className="text-lg font-medium mb-2">Patient Record Assistant</p>
-                  <p className="text-sm max-w-md mx-auto mb-4">
-                    Use Assistant Lysa to search patient records, view medical history, and access treatment information.
-                  </p>
-                  <Button onClick={() => setLysaExpanded(true)} data-testid="button-ask-lysa-patients">
-                    <Bot className="h-4 w-4 mr-2" />
-                    Ask Lysa About Patients
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <PatientRecordAssistant onOpenLysa={() => setLysaExpanded(true)} />
           </TabsContent>
         </Tabs>
       </div>

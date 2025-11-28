@@ -42,7 +42,11 @@ import {
   parseRelativeDate,
   parseTime,
   checkAvailability,
-  bookAppointmentFromChat
+  bookAppointmentFromChat,
+  detectPatientSearchIntent,
+  searchPatients,
+  getPatientRecord,
+  formatPatientSummary
 } from "./chatReceptionistService";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -5913,6 +5917,133 @@ Please ask the doctor which date they want to check.`;
   // ============================================================================
   // RECEPTIONIST & ASSISTANT LYSA - APPOINTMENT MANAGEMENT ROUTES
   // ============================================================================
+
+  // Lysa Patient Search - search patients by name or identifier
+  app.get('/api/v1/lysa/patients/search', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access patient search' });
+      }
+
+      const { query, limit } = req.query;
+      if (!query || typeof query !== 'string') {
+        return res.status(400).json({ message: 'Search query is required' });
+      }
+
+      const results = await searchPatients(query, userId, parseInt(limit as string) || 10);
+      
+      res.json({
+        success: true,
+        results: results.map(r => ({
+          id: r.user.id,
+          firstName: r.user.firstName,
+          lastName: r.user.lastName,
+          email: r.user.email,
+          phoneNumber: r.user.phoneNumber,
+          followupPatientId: r.profile?.followupPatientId,
+          dateOfBirth: r.profile?.dateOfBirth,
+          bloodType: r.profile?.bloodType,
+          allergies: r.profile?.allergies,
+          medicalConditions: r.profile?.medicalConditions,
+          matchScore: r.matchScore
+        })),
+        count: results.length
+      });
+    } catch (error) {
+      console.error('Error searching patients:', error);
+      res.status(500).json({ message: 'Failed to search patients' });
+    }
+  });
+
+  // Lysa Patient Record - get detailed patient information
+  app.get('/api/v1/lysa/patients/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access patient records' });
+      }
+
+      const { patientId } = req.params;
+      const record = await getPatientRecord(patientId, userId);
+      
+      if (!record) {
+        return res.status(404).json({ message: 'Patient not found' });
+      }
+
+      res.json({
+        success: true,
+        patient: {
+          id: record.patient.id,
+          firstName: record.patient.firstName,
+          lastName: record.patient.lastName,
+          email: record.patient.email,
+          phoneNumber: record.patient.phoneNumber
+        },
+        profile: record.profile ? {
+          followupPatientId: record.profile.followupPatientId,
+          dateOfBirth: record.profile.dateOfBirth,
+          bloodType: record.profile.bloodType,
+          allergies: record.profile.allergies,
+          medicalConditions: record.profile.medicalConditions,
+          emergencyContact: record.profile.emergencyContact,
+          emergencyPhone: record.profile.emergencyPhone
+        } : null,
+        recentAppointments: record.recentAppointments,
+        upcomingAppointments: record.upcomingAppointments
+      });
+    } catch (error) {
+      console.error('Error getting patient record:', error);
+      res.status(500).json({ message: 'Failed to get patient record' });
+    }
+  });
+
+  // Lysa Doctor Patients - list all patients for a doctor
+  app.get('/api/v1/lysa/patients', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access patient list' });
+      }
+
+      const patients = await storage.getDoctorPatients(userId);
+      
+      res.json({
+        success: true,
+        patients: patients.map(p => ({
+          id: p.id,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          email: p.email,
+          phoneNumber: p.phoneNumber,
+          followupPatientId: p.profile?.followupPatientId,
+          dateOfBirth: p.profile?.dateOfBirth,
+          bloodType: p.profile?.bloodType,
+          allergies: p.profile?.allergies,
+          medicalConditions: p.profile?.medicalConditions
+        })),
+        count: patients.length
+      });
+    } catch (error) {
+      console.error('Error listing patients:', error);
+      res.status(500).json({ message: 'Failed to list patients' });
+    }
+  });
 
   // Create appointment with conflict detection
   app.post('/api/v1/appointments', isAuthenticated, async (req: any, res) => {

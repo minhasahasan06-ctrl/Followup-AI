@@ -8,11 +8,12 @@
  * - Real-time availability checking
  * - Appointment creation and confirmation
  * - Conflict resolution and rescheduling
+ * - Patient record search and lookup
  */
 
 import OpenAI from "openai";
 import { storage } from "./storage";
-import type { Appointment } from "@shared/schema";
+import type { Appointment, User, PatientProfile } from "@shared/schema";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -452,6 +453,274 @@ export async function checkAvailability(
     console.error('Error checking availability:', error);
     return [];
   }
+}
+
+/**
+ * Patient Search Intent Detection
+ */
+export interface PatientSearchIntent {
+  isPatientSearch: boolean;
+  intentType: 'search_by_name' | 'search_by_id' | 'get_record' | 'list_patients' | 'none';
+  confidence: number;
+  searchQuery: string | null;
+  patientId: string | null;
+}
+
+export interface PatientSearchResult {
+  user: User;
+  profile: PatientProfile | null;
+  recentAppointments?: Appointment[];
+  matchScore: number;
+}
+
+/**
+ * Detect patient search intent from message
+ * HIPAA COMPLIANT: Uses local pattern matching
+ */
+export function detectPatientSearchIntent(message: string): PatientSearchIntent {
+  const messageLower = message.toLowerCase();
+  
+  let intentType: PatientSearchIntent['intentType'] = 'none';
+  let confidence = 0;
+  let searchQuery: string | null = null;
+  let patientId: string | null = null;
+  
+  // List patients patterns
+  const listPatterns = ['list patients', 'show patients', 'all patients', 'my patients', 'patient list'];
+  if (listPatterns.some(p => messageLower.includes(p))) {
+    intentType = 'list_patients';
+    confidence = 90;
+  }
+  
+  // Search by name patterns
+  const searchPatterns = ['find patient', 'search patient', 'look up patient', 'lookup patient', 'patient named', 'find record'];
+  if (searchPatterns.some(p => messageLower.includes(p))) {
+    intentType = 'search_by_name';
+    confidence = 85;
+    
+    // Extract search query
+    const namePatterns = [
+      /(?:find|search|look\s*up|lookup)\s+(?:patient\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+      /patient\s+named\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+      /record\s+for\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+    ];
+    
+    for (const pattern of namePatterns) {
+      const match = message.match(pattern);
+      if (match && match[1]) {
+        searchQuery = match[1].trim();
+        break;
+      }
+    }
+  }
+  
+  // Search by ID patterns
+  const idPatterns = ['patient id', 'followup id', 'patient #', 'record id'];
+  if (idPatterns.some(p => messageLower.includes(p))) {
+    intentType = 'search_by_id';
+    confidence = 85;
+    
+    // Extract patient ID
+    const idMatch = message.match(/(?:patient\s+id|followup\s+id|patient\s*#|record\s+id)[:\s]*([A-Z0-9-]+)/i);
+    if (idMatch) {
+      patientId = idMatch[1].trim();
+    }
+  }
+  
+  // Get record patterns
+  const recordPatterns = ['get record', 'show record', 'view record', 'patient record', 'medical record'];
+  if (recordPatterns.some(p => messageLower.includes(p))) {
+    intentType = 'get_record';
+    confidence = 80;
+  }
+  
+  return {
+    isPatientSearch: intentType !== 'none',
+    intentType,
+    confidence,
+    searchQuery,
+    patientId
+  };
+}
+
+/**
+ * Search patients by name or identifier
+ * Returns results sorted by match score
+ */
+export async function searchPatients(
+  query: string,
+  doctorId?: string,
+  limit: number = 10
+): Promise<PatientSearchResult[]> {
+  try {
+    const normalizedQuery = query.toLowerCase().trim();
+    
+    // Get all patients (optionally filtered by doctor)
+    let patients: Array<User & { profile?: PatientProfile }>;
+    
+    if (doctorId) {
+      patients = await storage.getDoctorPatients(doctorId);
+    } else {
+      patients = await storage.getAllPatients();
+    }
+    
+    // Score and filter patients by query match
+    const results: PatientSearchResult[] = [];
+    
+    for (const patient of patients) {
+      let matchScore = 0;
+      
+      // Check name match
+      const fullName = `${patient.firstName} ${patient.lastName}`.toLowerCase();
+      if (fullName.includes(normalizedQuery)) {
+        matchScore = 100;
+      } else if (patient.firstName?.toLowerCase().includes(normalizedQuery)) {
+        matchScore = 80;
+      } else if (patient.lastName?.toLowerCase().includes(normalizedQuery)) {
+        matchScore = 80;
+      }
+      
+      // Check email match
+      if (patient.email?.toLowerCase().includes(normalizedQuery)) {
+        matchScore = Math.max(matchScore, 70);
+      }
+      
+      // Check followup ID match
+      if (patient.profile?.followupPatientId?.toLowerCase().includes(normalizedQuery)) {
+        matchScore = Math.max(matchScore, 90);
+      }
+      
+      // Check phone match
+      if (patient.phoneNumber?.includes(normalizedQuery)) {
+        matchScore = Math.max(matchScore, 75);
+      }
+      
+      if (matchScore > 0) {
+        results.push({
+          user: patient,
+          profile: patient.profile || null,
+          matchScore
+        });
+      }
+    }
+    
+    // Sort by match score and return top results
+    return results
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, limit);
+  } catch (error) {
+    console.error('Error searching patients:', error);
+    return [];
+  }
+}
+
+/**
+ * Get comprehensive patient record
+ */
+export async function getPatientRecord(
+  patientId: string,
+  doctorId?: string
+): Promise<{
+  patient: User;
+  profile: PatientProfile | null;
+  recentAppointments: Appointment[];
+  upcomingAppointments: Appointment[];
+} | null> {
+  try {
+    const patient = await storage.getUser(patientId);
+    if (!patient || patient.role !== 'patient') {
+      return null;
+    }
+    
+    const profile = await storage.getPatientProfile(patientId);
+    
+    // Get patient's appointments
+    const allAppointments = await storage.getPatientAppointments(patientId);
+    const today = new Date().toISOString().split('T')[0];
+    
+    const recentAppointments = allAppointments
+      .filter(apt => apt.date < today)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 5);
+    
+    const upcomingAppointments = allAppointments
+      .filter(apt => apt.date >= today && apt.status !== 'cancelled')
+      .sort((a, b) => a.date.localeCompare(b.date));
+    
+    return {
+      patient,
+      profile,
+      recentAppointments,
+      upcomingAppointments
+    };
+  } catch (error) {
+    console.error('Error getting patient record:', error);
+    return null;
+  }
+}
+
+/**
+ * Format patient information for chat response
+ * HIPAA COMPLIANT: Only includes necessary information
+ */
+export function formatPatientSummary(
+  patient: User,
+  profile: PatientProfile | null,
+  includeAppointments: boolean = false,
+  appointments?: Appointment[]
+): string {
+  let summary = `**${patient.firstName} ${patient.lastName}**\n`;
+  
+  if (profile?.followupPatientId) {
+    summary += `Patient ID: ${profile.followupPatientId}\n`;
+  }
+  
+  if (patient.email) {
+    summary += `Email: ${patient.email}\n`;
+  }
+  
+  if (patient.phoneNumber) {
+    summary += `Phone: ${patient.phoneNumber}\n`;
+  }
+  
+  if (profile) {
+    if (profile.dateOfBirth) {
+      const age = calculateAge(profile.dateOfBirth);
+      summary += `Age: ${age} years\n`;
+    }
+    
+    if (profile.bloodType) {
+      summary += `Blood Type: ${profile.bloodType}\n`;
+    }
+    
+    if (profile.allergies && profile.allergies.length > 0) {
+      summary += `Allergies: ${profile.allergies.join(', ')}\n`;
+    }
+    
+    if (profile.medicalConditions && profile.medicalConditions.length > 0) {
+      summary += `Conditions: ${profile.medicalConditions.join(', ')}\n`;
+    }
+  }
+  
+  if (includeAppointments && appointments && appointments.length > 0) {
+    summary += '\n**Recent Appointments:**\n';
+    for (const apt of appointments.slice(0, 3)) {
+      summary += `- ${apt.date} at ${apt.startTime}: ${apt.reason || 'General visit'} (${apt.status})\n`;
+    }
+  }
+  
+  return summary;
+}
+
+function calculateAge(dateOfBirth: string): number {
+  const birthDate = new Date(dateOfBirth);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
 }
 
 /**
