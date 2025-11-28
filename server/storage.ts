@@ -201,6 +201,9 @@ import {
   type InsertAppointment,
   type DoctorPatientAssignment,
   type InsertDoctorPatientAssignment,
+  patientConsentRequests,
+  type PatientConsentRequest,
+  type InsertPatientConsentRequest,
   type DoctorAvailability,
   type InsertDoctorAvailability,
   type EmailThread,
@@ -224,7 +227,7 @@ import {
   type InsertPaintrackSession,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, desc, sql, gte, lte, like, ilike, inArray, between } from "drizzle-orm";
+import { eq, and, or, desc, sql, gte, lte, gt, like, ilike, inArray, between } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -267,6 +270,16 @@ export interface IStorage {
   updateDoctorPatientAssignment(id: string, data: Partial<DoctorPatientAssignment>): Promise<DoctorPatientAssignment | undefined>;
   revokeDoctorPatientAssignment(id: string, revokedBy: string, reason: string): Promise<DoctorPatientAssignment | undefined>;
   doctorHasPatientAccess(doctorId: string, patientId: string): Promise<boolean>;
+  
+  // Patient Consent Request operations
+  searchPatientsByIdentifier(query: string): Promise<Array<{ user: User; profile: PatientProfile | null }>>;
+  createPatientConsentRequest(request: InsertPatientConsentRequest): Promise<PatientConsentRequest>;
+  getPendingConsentRequestsForPatient(patientId: string): Promise<PatientConsentRequest[]>;
+  getPendingConsentRequestsForDoctor(doctorId: string): Promise<PatientConsentRequest[]>;
+  getConsentRequest(id: string): Promise<PatientConsentRequest | undefined>;
+  respondToConsentRequest(id: string, approved: boolean, responseMessage?: string): Promise<PatientConsentRequest | undefined>;
+  generateFollowupPatientId(): Promise<string>;
+  getPatientByFollowupId(followupPatientId: string): Promise<User | undefined>;
   
   // Daily followup operations
   getDailyFollowup(patientId: string, date: Date): Promise<DailyFollowup | undefined>;
@@ -1041,6 +1054,180 @@ export class DatabaseStorage implements IStorage {
   async doctorHasPatientAccess(doctorId: string, patientId: string): Promise<boolean> {
     const assignment = await this.getDoctorPatientAssignment(doctorId, patientId);
     return !!assignment;
+  }
+
+  // Patient Consent Request operations
+  async searchPatientsByIdentifier(query: string): Promise<Array<{ user: User; profile: PatientProfile | null }>> {
+    const normalizedQuery = query.trim().toLowerCase();
+    
+    // Search by email, phone, or followup patient ID
+    const matchingUsers = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.role, 'patient'),
+          or(
+            ilike(users.email, `%${normalizedQuery}%`),
+            ilike(users.phoneNumber, `%${normalizedQuery}%`)
+          )
+        )
+      )
+      .limit(10);
+    
+    // Also search by followup patient ID in profiles
+    const matchingProfiles = await db
+      .select()
+      .from(patientProfiles)
+      .where(ilike(patientProfiles.followupPatientId, `%${normalizedQuery}%`))
+      .limit(10);
+    
+    // Combine results
+    const userIds = new Set<string>();
+    const results: Array<{ user: User; profile: PatientProfile | null }> = [];
+    
+    for (const user of matchingUsers) {
+      userIds.add(user.id);
+      const [profile] = await db
+        .select()
+        .from(patientProfiles)
+        .where(eq(patientProfiles.userId, user.id));
+      results.push({ user, profile: profile || null });
+    }
+    
+    for (const profile of matchingProfiles) {
+      if (!userIds.has(profile.userId)) {
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, profile.userId));
+        if (user) {
+          results.push({ user, profile });
+        }
+      }
+    }
+    
+    return results;
+  }
+
+  async createPatientConsentRequest(request: InsertPatientConsentRequest): Promise<PatientConsentRequest> {
+    // Check if there's already a pending request
+    const existing = await db
+      .select()
+      .from(patientConsentRequests)
+      .where(
+        and(
+          eq(patientConsentRequests.doctorId, request.doctorId),
+          eq(patientConsentRequests.patientId, request.patientId),
+          eq(patientConsentRequests.status, 'pending')
+        )
+      );
+    
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    
+    // Set expiry to 7 days from now
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    
+    const [consentRequest] = await db
+      .insert(patientConsentRequests)
+      .values({
+        ...request,
+        expiresAt,
+      })
+      .returning();
+    return consentRequest;
+  }
+
+  async getPendingConsentRequestsForPatient(patientId: string): Promise<PatientConsentRequest[]> {
+    return await db
+      .select()
+      .from(patientConsentRequests)
+      .where(
+        and(
+          eq(patientConsentRequests.patientId, patientId),
+          eq(patientConsentRequests.status, 'pending'),
+          gt(patientConsentRequests.expiresAt, new Date())
+        )
+      )
+      .orderBy(desc(patientConsentRequests.createdAt));
+  }
+
+  async getPendingConsentRequestsForDoctor(doctorId: string): Promise<PatientConsentRequest[]> {
+    return await db
+      .select()
+      .from(patientConsentRequests)
+      .where(
+        and(
+          eq(patientConsentRequests.doctorId, doctorId),
+          eq(patientConsentRequests.status, 'pending')
+        )
+      )
+      .orderBy(desc(patientConsentRequests.createdAt));
+  }
+
+  async getConsentRequest(id: string): Promise<PatientConsentRequest | undefined> {
+    const [request] = await db
+      .select()
+      .from(patientConsentRequests)
+      .where(eq(patientConsentRequests.id, id));
+    return request;
+  }
+
+  async respondToConsentRequest(id: string, approved: boolean, responseMessage?: string): Promise<PatientConsentRequest | undefined> {
+    const [request] = await db
+      .update(patientConsentRequests)
+      .set({
+        status: approved ? 'approved' : 'rejected',
+        respondedAt: new Date(),
+        responseMessage,
+        updatedAt: new Date(),
+      })
+      .where(eq(patientConsentRequests.id, id))
+      .returning();
+    return request;
+  }
+
+  async generateFollowupPatientId(): Promise<string> {
+    // Generate a unique FAI-XXXXXX format ID
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let patientId: string;
+    let exists = true;
+    
+    while (exists) {
+      let randomPart = '';
+      for (let i = 0; i < 6; i++) {
+        randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      patientId = `FAI-${randomPart}`;
+      
+      // Check if this ID already exists
+      const [existing] = await db
+        .select()
+        .from(patientProfiles)
+        .where(eq(patientProfiles.followupPatientId, patientId));
+      exists = !!existing;
+    }
+    
+    return patientId!;
+  }
+
+  async getPatientByFollowupId(followupPatientId: string): Promise<User | undefined> {
+    const [profile] = await db
+      .select()
+      .from(patientProfiles)
+      .where(eq(patientProfiles.followupPatientId, followupPatientId.toUpperCase()));
+    
+    if (!profile) return undefined;
+    
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, profile.userId));
+    
+    return user;
   }
 
   // Daily followup operations

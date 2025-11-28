@@ -91,6 +91,10 @@ export type UpsertUser = typeof users.$inferInsert;
 export const patientProfiles = pgTable("patient_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Unique Followup AI Patient ID (e.g., FAI-ABC123) - generated on profile creation
+  followupPatientId: varchar("followup_patient_id").unique(),
+  
   dateOfBirth: timestamp("date_of_birth"),
   address: text("address"),
   city: varchar("city"),
@@ -5115,3 +5119,41 @@ export const insertDoctorPatientAssignmentSchema = createInsertSchema(doctorPati
 
 export type InsertDoctorPatientAssignment = z.infer<typeof insertDoctorPatientAssignmentSchema>;
 export type DoctorPatientAssignment = typeof doctorPatientAssignments.$inferSelect;
+
+// Patient Consent Requests - Doctor requests to add a patient
+export const patientConsentRequests = pgTable("patient_consent_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Request parties
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Request status
+  status: varchar("status").notNull().default("pending"), // 'pending', 'approved', 'rejected', 'expired'
+  
+  // Request details
+  requestMessage: text("request_message"), // Optional message from doctor
+  
+  // Response details
+  respondedAt: timestamp("responded_at"),
+  responseMessage: text("response_message"), // Optional message from patient
+  
+  // Expiry (requests expire after 7 days)
+  expiresAt: timestamp("expires_at"),
+  
+  // Audit trail
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorPendingIdx: index("doctor_pending_requests_idx").on(table.doctorId, table.status),
+  patientPendingIdx: index("patient_pending_requests_idx").on(table.patientId, table.status),
+}));
+
+export const insertPatientConsentRequestSchema = createInsertSchema(patientConsentRequests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientConsentRequest = z.infer<typeof insertPatientConsentRequestSchema>;
+export type PatientConsentRequest = typeof patientConsentRequests.$inferSelect;
