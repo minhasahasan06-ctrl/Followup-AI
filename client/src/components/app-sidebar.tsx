@@ -164,12 +164,6 @@ const doctorItems = [
     icon: Users,
   },
   {
-    title: "AI Health Alerts",
-    url: "/ai-alerts",
-    icon: Bell,
-    badge: "AI",
-  },
-  {
     title: "Prescriptions",
     url: "/prescriptions",
     icon: Pill,
@@ -203,12 +197,6 @@ const doctorItems = [
     title: "Research Center",
     url: "/research",
     icon: Beaker,
-  },
-  {
-    title: "ML Inference",
-    url: "/ml-monitoring",
-    icon: Brain,
-    badge: "AI",
   },
   {
     title: "Chat with Assistant Lysa",
