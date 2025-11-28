@@ -4,9 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles } from "lucide-react";
+import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users } from "lucide-react";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { LysaChatPanel, LysaQuickActionsBar } from "@/components/LysaChatPanel";
+import { EmailAIHelper } from "@/components/EmailAIHelper";
 
 interface Appointment {
   id: string;
@@ -127,6 +128,23 @@ export default function ReceptionistDashboard() {
         
         <LysaQuickActionsBar />
 
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="overview" data-testid="tab-overview">
+              <LayoutDashboard className="h-4 w-4 mr-2" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="emails" data-testid="tab-emails">
+              <Mail className="h-4 w-4 mr-2" />
+              Email AI
+            </TabsTrigger>
+            <TabsTrigger value="patients" data-testid="tab-patients">
+              <Users className="h-4 w-4 mr-2" />
+              Patients
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-6 mt-0">
         <div className="grid gap-4 md:grid-cols-4">
           <Card data-testid="card-today-appointments">
             <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
@@ -411,6 +429,85 @@ export default function ReceptionistDashboard() {
             </CardContent>
           </Card>
         </div>
+          </TabsContent>
+
+          <TabsContent value="emails" className="mt-0">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <EmailAIHelper />
+              <Card data-testid="card-email-stats">
+                <CardHeader>
+                  <CardTitle>Email Analytics</CardTitle>
+                  <CardDescription>AI-powered email insights</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                          <Mail className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Total Threads</p>
+                          <p className="text-sm text-muted-foreground">Active email conversations</p>
+                        </div>
+                      </div>
+                      <span className="text-2xl font-bold">{emailThreads.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-orange-500/10 flex items-center justify-center">
+                          <Sparkles className="h-5 w-5 text-orange-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Urgent Messages</p>
+                          <p className="text-sm text-muted-foreground">Requires attention</p>
+                        </div>
+                      </div>
+                      <span className="text-2xl font-bold">{urgentEmails}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                          <MessageSquare className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Unread</p>
+                          <p className="text-sm text-muted-foreground">Awaiting review</p>
+                        </div>
+                      </div>
+                      <span className="text-2xl font-bold">{unreadEmails}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="patients" className="mt-0">
+            <Card data-testid="card-patient-search">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Patient Records
+                </CardTitle>
+                <CardDescription>Search and manage patient records with AI assistance</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-12 text-muted-foreground">
+                  <Users className="h-16 w-16 mx-auto mb-4 opacity-30" />
+                  <p className="text-lg font-medium mb-2">Patient Record Assistant</p>
+                  <p className="text-sm max-w-md mx-auto mb-4">
+                    Use Assistant Lysa to search patient records, view medical history, and access treatment information.
+                  </p>
+                  <Button onClick={() => setLysaExpanded(true)} data-testid="button-ask-lysa-patients">
+                    <Bot className="h-4 w-4 mr-2" />
+                    Ask Lysa About Patients
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {lysaExpanded && (
