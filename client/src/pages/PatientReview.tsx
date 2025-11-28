@@ -45,6 +45,8 @@ import {
   ThermometerSun,
   Wind,
   Eye,
+  FlaskConical,
+  Image,
 } from "lucide-react";
 import { startOfWeek, endOfWeek, subWeeks, format, formatDistanceToNow } from "date-fns";
 import type { User, DailyFollowup, Medication, ChatMessage, Prescription } from "@shared/schema";
@@ -53,6 +55,8 @@ import { PatientMLTools } from "@/components/patient-ml-tools";
 import { LysaPatientAssistant } from "@/components/LysaPatientAssistant";
 import { ClinicalDecisionSupport } from "@/components/ClinicalDecisionSupport";
 import { PredictiveAnalyticsDashboard } from "@/components/PredictiveAnalyticsDashboard";
+import { DiagnosticImagingAnalysis } from "@/components/DiagnosticImagingAnalysis";
+import { LabReportAnalysis } from "@/components/LabReportAnalysis";
 
 interface ChatSession {
   id: string;
@@ -492,6 +496,14 @@ export default function PatientReview() {
               <TabsTrigger value="predictive" data-testid="tab-predictive">
                 <TrendingUp className="h-4 w-4 mr-2" />
                 Predictive
+              </TabsTrigger>
+              <TabsTrigger value="imaging" data-testid="tab-imaging">
+                <Image className="h-4 w-4 mr-2" />
+                Imaging
+              </TabsTrigger>
+              <TabsTrigger value="labs" data-testid="tab-labs">
+                <FlaskConical className="h-4 w-4 mr-2" />
+                Labs
               </TabsTrigger>
             </TabsList>
 
@@ -1105,6 +1117,38 @@ export default function PatientReview() {
             <TabsContent value="predictive">
               {patientId && patient && (
                 <PredictiveAnalyticsDashboard
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Diagnostic Imaging Tab */}
+            <TabsContent value="imaging">
+              {patientId && patient && (
+                <DiagnosticImagingAnalysis
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Lab Report Analysis Tab */}
+            <TabsContent value="labs">
+              {patientId && patient && (
+                <LabReportAnalysis
                   patientContext={{
                     id: patientId,
                     firstName: patient.firstName || '',
