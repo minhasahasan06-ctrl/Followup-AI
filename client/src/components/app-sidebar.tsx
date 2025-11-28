@@ -159,13 +159,8 @@ const patientItems = [
 
 const doctorItems = [
   {
-    title: "All Patients",
+    title: "Assistant Lysa",
     url: "/",
-    icon: Users,
-  },
-  {
-    title: "Assistant Lysa Receptionist",
-    url: "/receptionist",
     icon: Headphones,
     badge: "AI",
   },

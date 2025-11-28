@@ -294,16 +294,16 @@ export interface IStorage {
   getAllVoiceFollowups(patientId: string): Promise<VoiceFollowup[]>;
   
   // Chat session operations
-  getActiveSession(patientId: string, agentType: string): Promise<ChatSession | undefined>;
+  getActiveSession(patientId: string, agentType: string, contextPatientId?: string): Promise<ChatSession | undefined>;
   getPatientSessions(patientId: string, agentType?: string, limit?: number): Promise<ChatSession[]>;
   getSessionsInDateRange(patientId: string, startDate: Date, endDate: Date, agentType?: string): Promise<ChatSession[]>;
-  createSession(session: InsertChatSession): Promise<ChatSession>;
+  createSession(session: InsertChatSession & { contextPatientId?: string }): Promise<ChatSession>;
   endSession(sessionId: string, aiSummary?: string, healthInsights?: any): Promise<ChatSession | undefined>;
   updateSessionMetadata(sessionId: string, data: Partial<ChatSession>): Promise<ChatSession | undefined>;
   getSessionMessages(sessionId: string): Promise<ChatMessage[]>;
   
   // Chat operations
-  getChatMessages(userId: string, agentType: string, limit?: number): Promise<ChatMessage[]>;
+  getChatMessages(userId: string, agentType: string, contextPatientId?: string, limit?: number): Promise<ChatMessage[]>;
   createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
   
   // Medication operations
@@ -1315,17 +1315,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Chat session operations
-  async getActiveSession(patientId: string, agentType: string): Promise<ChatSession | undefined> {
+  async getActiveSession(patientId: string, agentType: string, contextPatientId?: string): Promise<ChatSession | undefined> {
+    const conditions = [
+      eq(chatSessions.patientId, patientId),
+      eq(chatSessions.agentType, agentType),
+      sql`${chatSessions.endedAt} IS NULL`
+    ];
+    
+    if (contextPatientId) {
+      conditions.push(eq(chatSessions.contextPatientId, contextPatientId));
+    } else {
+      conditions.push(sql`${chatSessions.contextPatientId} IS NULL`);
+    }
+    
     const [session] = await db
       .select()
       .from(chatSessions)
-      .where(
-        and(
-          eq(chatSessions.patientId, patientId),
-          eq(chatSessions.agentType, agentType),
-          sql`${chatSessions.endedAt} IS NULL`
-        )
-      )
+      .where(and(...conditions))
       .orderBy(desc(chatSessions.startedAt))
       .limit(1);
     return session;
@@ -1418,11 +1424,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Chat operations
-  async getChatMessages(userId: string, agentType: string, limit: number = 50): Promise<ChatMessage[]> {
+  async getChatMessages(userId: string, agentType: string, contextPatientId?: string, limit: number = 50): Promise<ChatMessage[]> {
+    const conditions = [
+      eq(chatMessages.userId, userId),
+      eq(chatMessages.agentType, agentType)
+    ];
+    
+    if (contextPatientId) {
+      conditions.push(eq(chatMessages.patientContextId, contextPatientId));
+    } else {
+      conditions.push(sql`${chatMessages.patientContextId} IS NULL`);
+    }
+    
     const messages = await db
       .select()
       .from(chatMessages)
-      .where(and(eq(chatMessages.userId, userId), eq(chatMessages.agentType, agentType)))
+      .where(and(...conditions))
       .orderBy(desc(chatMessages.createdAt))
       .limit(limit);
     return messages.reverse();

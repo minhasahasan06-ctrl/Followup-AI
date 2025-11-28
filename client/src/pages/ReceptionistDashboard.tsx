@@ -8,7 +8,7 @@ import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, St
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { LysaChatPanel, LysaQuickActionsBar } from "@/components/LysaChatPanel";
 import { EmailAIHelper } from "@/components/EmailAIHelper";
-import { PatientRecordAssistant } from "@/components/PatientRecordAssistant";
+import { PatientManagementPanel } from "@/components/PatientManagementPanel";
 import { DiagnosisHelper } from "@/components/DiagnosisHelper";
 import { PrescriptionHelper } from "@/components/PrescriptionHelper";
 
@@ -50,9 +50,16 @@ interface CallLog {
   requiresFollowup: boolean;
 }
 
+interface LysaPatient {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+}
+
 export default function ReceptionistDashboard() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [lysaExpanded, setLysaExpanded] = useState(true);
+  const [lysaPatient, setLysaPatient] = useState<LysaPatient | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const weekStart = startOfWeek(selectedDate);
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -495,7 +502,12 @@ export default function ReceptionistDashboard() {
           </TabsContent>
 
           <TabsContent value="patients" className="mt-0">
-            <PatientRecordAssistant onOpenLysa={() => setLysaExpanded(true)} />
+            <PatientManagementPanel 
+              onOpenLysa={(patient) => {
+                setLysaPatient(patient);
+                setLysaExpanded(true);
+              }} 
+            />
           </TabsContent>
 
           <TabsContent value="diagnosis" className="mt-0">
@@ -512,7 +524,12 @@ export default function ReceptionistDashboard() {
         <div className="w-96 flex-shrink-0">
           <LysaChatPanel 
             isExpanded={lysaExpanded}
-            onMinimize={() => setLysaExpanded(false)}
+            onMinimize={() => {
+              setLysaExpanded(false);
+              setLysaPatient(null);
+            }}
+            patientId={lysaPatient?.id}
+            patientName={lysaPatient ? `${lysaPatient.firstName || ''} ${lysaPatient.lastName || ''}`.trim() : undefined}
             className="h-full sticky top-0"
           />
         </div>

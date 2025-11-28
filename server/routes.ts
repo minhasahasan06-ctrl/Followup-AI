@@ -1448,7 +1448,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       const agentType = req.query.agent as string;
-      const messages = await storage.getChatMessages(userId, agentType);
+      const contextPatientId = req.query.patientId as string | undefined;
+      const messages = await storage.getChatMessages(userId, agentType, contextPatientId);
       res.json(messages);
     } catch (error) {
       console.error("Error fetching chat messages:", error);
@@ -1459,16 +1460,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/chat/send', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user!.id;
-      const { content, agentType } = req.body;
+      const { content, agentType, patientId: contextPatientId, patientName: contextPatientName } = req.body;
 
-      let session = await storage.getActiveSession(userId, agentType);
+      let session = await storage.getActiveSession(userId, agentType, contextPatientId);
       
       if (!session) {
-        const sessionTitle = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+        const sessionTitle = contextPatientName 
+          ? `${contextPatientName}: ${content.substring(0, 30)}...`
+          : content.substring(0, 50) + (content.length > 50 ? '...' : '');
         session = await storage.createSession({
           patientId: userId,
           agentType,
           sessionTitle,
+          contextPatientId,
         });
       }
 
@@ -1478,6 +1482,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: 'user',
         content,
         agentType,
+        patientContextId: contextPatientId,
       });
 
       const user = await storage.getUser(userId);
@@ -1825,10 +1830,50 @@ Please ask the doctor which date they want to check.`;
 
       // Add greeting requirement for first message
       let augmentedSystemPrompt = systemPrompt + appointmentContext;
+      
+      // Add patient context for Lysa when doctor is reviewing a specific patient
+      if (agentType === 'lysa' && contextPatientId && contextPatientName) {
+        const patientProfile = await storage.getPatientProfile(contextPatientId);
+        const recentMetrics = await storage.getPatientHealthMetrics(contextPatientId, 7);
+        const medications = await storage.getActiveMedications(contextPatientId);
+        
+        let patientContext = `\n\nPATIENT CONTEXT:
+You are currently assisting with patient: ${contextPatientName} (ID: ${contextPatientId})
+All questions and discussions should be focused on this patient.`;
+        
+        if (patientProfile) {
+          patientContext += `\n\nPatient Profile:
+- DOB: ${patientProfile.dateOfBirth || 'Not provided'}
+- Blood Type: ${patientProfile.bloodType || 'Unknown'}
+- Primary Condition: ${patientProfile.primaryCondition || 'Not specified'}
+- Immunocompromised: ${patientProfile.immunocompromised ? 'Yes' : 'No'}`;
+        }
+        
+        if (medications.length > 0) {
+          const medList = medications.map(m => `${m.name} ${m.dosage}`).join(', ');
+          patientContext += `\n\nActive Medications: ${medList}`;
+        }
+        
+        if (recentMetrics.length > 0) {
+          const latestMetric = recentMetrics[0];
+          patientContext += `\n\nLatest Health Metrics (${new Date(latestMetric.recordedAt!).toLocaleDateString()}):`;
+          if (latestMetric.heartRate) patientContext += `\n- Heart Rate: ${latestMetric.heartRate} bpm`;
+          if (latestMetric.bloodPressureSystolic) patientContext += `\n- Blood Pressure: ${latestMetric.bloodPressureSystolic}/${latestMetric.bloodPressureDiastolic} mmHg`;
+          if (latestMetric.oxygenSaturation) patientContext += `\n- O2 Sat: ${latestMetric.oxygenSaturation}%`;
+          if (latestMetric.temperature) patientContext += `\n- Temperature: ${latestMetric.temperature}°F`;
+        }
+        
+        augmentedSystemPrompt += patientContext;
+      }
+      
       if (isFirstMessage && agentType === 'clona') {
         augmentedSystemPrompt += `\n\nIMPORTANT: This is the FIRST message in this conversation. You MUST start your response with a warm, personalized greeting. Ask the user's name if you don't know it, and ask how they're feeling today. Make them feel welcomed and cared for.`;
       } else if (isFirstMessage && agentType === 'lysa') {
-        augmentedSystemPrompt += `\n\nIMPORTANT: This is the FIRST message in this conversation. You MUST start your response with a professional, polite greeting. Introduce yourself as Assistant Lysa and ask how you can help the doctor today.`;
+        if (contextPatientId && contextPatientName) {
+          augmentedSystemPrompt += `\n\nIMPORTANT: This is the FIRST message in this conversation about ${contextPatientName}. Acknowledge that you're ready to help with this specific patient and ask what aspect of their care the doctor needs assistance with.`;
+        } else {
+          augmentedSystemPrompt += `\n\nIMPORTANT: This is the FIRST message in this conversation. You MUST start your response with a professional, polite greeting. Introduce yourself as Assistant Lysa and ask how you can help the doctor today.`;
+        }
       }
 
       const completion = await openai.chat.completions.create({
@@ -1923,6 +1968,7 @@ Please ask the doctor which date they want to check.`;
         content: assistantMessage,
         agentType,
         medicalEntities: assistantEntities,
+        patientContextId: contextPatientId,
       });
 
       // For Agent Clona only: Analyze user message for mental health red flag symptoms
