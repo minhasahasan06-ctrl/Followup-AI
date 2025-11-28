@@ -5157,3 +5157,304 @@ export const insertPatientConsentRequestSchema = createInsertSchema(patientConse
 
 export type InsertPatientConsentRequest = z.infer<typeof insertPatientConsentRequestSchema>;
 export type PatientConsentRequest = typeof patientConsentRequests.$inferSelect;
+
+// =========================================================================
+// LYSA PATIENT MONITORING SYSTEM
+// =========================================================================
+
+// Lysa Monitoring Assignments - Active patient monitoring by doctors via Lysa AI
+export const lysaMonitoringAssignments = pgTable("lysa_monitoring_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Relationship
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Monitoring configuration
+  monitoringLevel: varchar("monitoring_level").notNull().default("standard"), // 'minimal', 'standard', 'intensive', 'critical'
+  isActive: boolean("is_active").notNull().default(true),
+  
+  // Monitoring parameters
+  alertThresholds: jsonb("alert_thresholds").$type<{
+    vitalSigns?: { heartRate?: { min: number; max: number }; bloodPressure?: { systolicMax: number; diastolicMax: number }; oxygenSaturation?: { min: number } };
+    symptoms?: { painLevelMax: number; fatigueMax: number };
+    medications?: { missedDoseAlert: boolean; interactionCheck: boolean };
+    deterioration?: { riskThreshold: number };
+  }>(),
+  
+  // Monitoring schedule
+  checkFrequency: varchar("check_frequency").default("daily"), // 'hourly', 'every_4h', 'every_8h', 'daily', 'weekly'
+  lastCheckAt: timestamp("last_check_at"),
+  nextScheduledCheck: timestamp("next_scheduled_check"),
+  
+  // AI monitoring preferences
+  autoGenerateSummaries: boolean("auto_generate_summaries").default(true),
+  summaryFrequency: varchar("summary_frequency").default("daily"), // 'daily', 'weekly', 'on_change'
+  lastSummaryAt: timestamp("last_summary_at"),
+  
+  // Alert preferences
+  enableAlerts: boolean("enable_alerts").default(true),
+  alertChannels: jsonb("alert_channels").$type<{
+    inApp: boolean;
+    email: boolean;
+    sms: boolean;
+  }>(),
+  
+  // Notes and context
+  monitoringNotes: text("monitoring_notes"),
+  focusAreas: jsonb("focus_areas").$type<string[]>(), // ['respiratory', 'cardiac', 'mental_health', 'medication_adherence']
+  
+  // Status tracking
+  status: varchar("status").notNull().default("active"), // 'active', 'paused', 'completed', 'transferred'
+  pausedAt: timestamp("paused_at"),
+  pauseReason: text("pause_reason"),
+  completedAt: timestamp("completed_at"),
+  completionReason: text("completion_reason"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorPatientIdx: index("lysa_monitoring_doctor_patient_idx").on(table.doctorId, table.patientId),
+  doctorActiveIdx: index("lysa_monitoring_doctor_active_idx").on(table.doctorId, table.isActive),
+  patientActiveIdx: index("lysa_monitoring_patient_active_idx").on(table.patientId, table.isActive),
+  nextCheckIdx: index("lysa_monitoring_next_check_idx").on(table.nextScheduledCheck),
+}));
+
+export const insertLysaMonitoringAssignmentSchema = createInsertSchema(lysaMonitoringAssignments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertLysaMonitoringAssignment = z.infer<typeof insertLysaMonitoringAssignmentSchema>;
+export type LysaMonitoringAssignment = typeof lysaMonitoringAssignments.$inferSelect;
+
+// Lysa Monitoring Events - All events and actions taken during monitoring
+export const lysaMonitoringEvents = pgTable("lysa_monitoring_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Relationship to monitoring assignment
+  monitoringAssignmentId: varchar("monitoring_assignment_id").notNull().references(() => lysaMonitoringAssignments.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  doctorId: varchar("doctor_id").references(() => users.id),
+  
+  // Event classification
+  eventType: varchar("event_type").notNull(), // 'check', 'alert', 'summary', 'intervention', 'communication', 'data_update', 'analysis'
+  eventCategory: varchar("event_category").notNull(), // 'vital_signs', 'symptoms', 'medications', 'lab_results', 'imaging', 'behavior', 'ai_insight'
+  severity: varchar("severity").default("info"), // 'info', 'low', 'moderate', 'high', 'critical'
+  
+  // Event details
+  title: varchar("title").notNull(),
+  description: text("description"),
+  
+  // AI-generated content
+  aiAnalysis: text("ai_analysis"),
+  aiRecommendations: jsonb("ai_recommendations").$type<Array<{
+    recommendation: string;
+    priority: 'immediate' | 'high' | 'medium' | 'low';
+    category: string;
+    reasoning: string;
+  }>>(),
+  aiConfidence: decimal("ai_confidence", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  
+  // Data references
+  sourceDataType: varchar("source_data_type"), // 'daily_followup', 'chat_message', 'lab_report', 'imaging', 'wearable'
+  sourceDataId: varchar("source_data_id"),
+  relatedMetrics: jsonb("related_metrics").$type<Array<{
+    metricName: string;
+    value: number;
+    unit: string;
+    baseline?: number;
+    deviation?: number;
+  }>>(),
+  
+  // Action taken
+  actionRequired: boolean("action_required").default(false),
+  actionTaken: varchar("action_taken"),
+  actionTakenBy: varchar("action_taken_by").references(() => users.id),
+  actionTakenAt: timestamp("action_taken_at"),
+  
+  // Communication flags
+  notifiedDoctor: boolean("notified_doctor").default(false),
+  notifiedPatient: boolean("notified_patient").default(false),
+  notificationMethod: varchar("notification_method"), // 'in_app', 'email', 'sms', 'multiple'
+  
+  // Status
+  status: varchar("status").default("new"), // 'new', 'viewed', 'acknowledged', 'resolved', 'escalated', 'dismissed'
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: varchar("resolved_by").references(() => users.id),
+  resolutionNotes: text("resolution_notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  monitoringAssignmentIdx: index("lysa_events_assignment_idx").on(table.monitoringAssignmentId),
+  patientEventIdx: index("lysa_events_patient_idx").on(table.patientId, table.eventType),
+  doctorEventIdx: index("lysa_events_doctor_idx").on(table.doctorId),
+  severityIdx: index("lysa_events_severity_idx").on(table.severity),
+  statusIdx: index("lysa_events_status_idx").on(table.status),
+  createdAtIdx: index("lysa_events_created_at_idx").on(table.createdAt),
+}));
+
+export const insertLysaMonitoringEventSchema = createInsertSchema(lysaMonitoringEvents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertLysaMonitoringEvent = z.infer<typeof insertLysaMonitoringEventSchema>;
+export type LysaMonitoringEvent = typeof lysaMonitoringEvents.$inferSelect;
+
+// Lysa Monitoring Artifacts - Generated reports, summaries, and documents
+export const lysaMonitoringArtifacts = pgTable("lysa_monitoring_artifacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Relationship
+  monitoringAssignmentId: varchar("monitoring_assignment_id").references(() => lysaMonitoringAssignments.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  doctorId: varchar("doctor_id").references(() => users.id),
+  
+  // Artifact classification
+  artifactType: varchar("artifact_type").notNull(), // 'daily_summary', 'weekly_report', 'trend_analysis', 'risk_assessment', 'care_plan', 'handoff_note', 'consultation_prep'
+  artifactFormat: varchar("artifact_format").notNull().default("markdown"), // 'markdown', 'pdf', 'json', 'html'
+  
+  // Artifact metadata
+  title: varchar("title").notNull(),
+  description: text("description"),
+  
+  // Content
+  content: text("content"), // Main content (markdown/html)
+  structuredData: jsonb("structured_data").$type<{
+    summary?: string;
+    keyFindings?: string[];
+    riskFactors?: Array<{ factor: string; level: string; trend: string }>;
+    recommendations?: Array<{ action: string; priority: string; reasoning: string }>;
+    metrics?: Array<{ name: string; value: number; trend: string; baseline: number }>;
+    medications?: Array<{ name: string; status: string; adherence: number }>;
+    upcomingActions?: Array<{ action: string; dueDate: string; priority: string }>;
+  }>(),
+  
+  // File storage (for PDFs etc.)
+  fileUrl: varchar("file_url"),
+  fileSize: integer("file_size"),
+  fileMimeType: varchar("file_mime_type"),
+  
+  // Time range covered
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  
+  // Generation metadata
+  generatedBy: varchar("generated_by").default("lysa_ai"), // 'lysa_ai', 'doctor', 'system'
+  aiModelVersion: varchar("ai_model_version"),
+  generationPrompt: text("generation_prompt"),
+  
+  // Review status
+  requiresReview: boolean("requires_review").default(true),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+  approvedForPatient: boolean("approved_for_patient").default(false),
+  
+  // Sharing
+  sharedWithPatient: boolean("shared_with_patient").default(false),
+  sharedAt: timestamp("shared_at"),
+  
+  // Versioning
+  version: integer("version").default(1),
+  previousVersionId: varchar("previous_version_id"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  monitoringAssignmentIdx: index("lysa_artifacts_assignment_idx").on(table.monitoringAssignmentId),
+  patientArtifactIdx: index("lysa_artifacts_patient_idx").on(table.patientId, table.artifactType),
+  doctorArtifactIdx: index("lysa_artifacts_doctor_idx").on(table.doctorId),
+  createdAtIdx: index("lysa_artifacts_created_at_idx").on(table.createdAt),
+  periodIdx: index("lysa_artifacts_period_idx").on(table.periodStart, table.periodEnd),
+}));
+
+export const insertLysaMonitoringArtifactSchema = createInsertSchema(lysaMonitoringArtifacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertLysaMonitoringArtifact = z.infer<typeof insertLysaMonitoringArtifactSchema>;
+export type LysaMonitoringArtifact = typeof lysaMonitoringArtifacts.$inferSelect;
+
+// Lysa Clinical Insights - AI-generated clinical observations for doctor review
+export const lysaClinicalInsights = pgTable("lysa_clinical_insights", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Relationship
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  doctorId: varchar("doctor_id").references(() => users.id),
+  monitoringAssignmentId: varchar("monitoring_assignment_id").references(() => lysaMonitoringAssignments.id),
+  
+  // Insight classification
+  insightType: varchar("insight_type").notNull(), // 'pattern_detection', 'trend_alert', 'risk_indicator', 'medication_concern', 'behavioral_change', 'symptom_correlation'
+  insightCategory: varchar("insight_category").notNull(), // 'clinical', 'behavioral', 'medication', 'preventive', 'urgent'
+  severity: varchar("severity").notNull().default("info"), // 'info', 'advisory', 'warning', 'urgent', 'critical'
+  
+  // Insight content
+  title: varchar("title").notNull(),
+  summary: text("summary").notNull(),
+  detailedAnalysis: text("detailed_analysis"),
+  
+  // Evidence and reasoning
+  evidencePoints: jsonb("evidence_points").$type<Array<{
+    dataPoint: string;
+    value: string;
+    source: string;
+    timestamp: string;
+    significance: string;
+  }>>(),
+  aiReasoning: text("ai_reasoning"),
+  confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  
+  // Recommendations
+  suggestedActions: jsonb("suggested_actions").$type<Array<{
+    action: string;
+    priority: 'immediate' | 'high' | 'medium' | 'low';
+    category: string;
+    rationale: string;
+  }>>(),
+  
+  // Clinical references
+  relatedDiagnoses: jsonb("related_diagnoses").$type<string[]>(),
+  relatedMedications: jsonb("related_medications").$type<string[]>(),
+  clinicalGuidelines: jsonb("clinical_guidelines").$type<Array<{
+    guideline: string;
+    source: string;
+    relevance: string;
+  }>>(),
+  
+  // Doctor interaction
+  status: varchar("status").default("new"), // 'new', 'viewed', 'acknowledged', 'acted_upon', 'dismissed', 'archived'
+  viewedAt: timestamp("viewed_at"),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  doctorNotes: text("doctor_notes"),
+  actionTaken: text("action_taken"),
+  
+  // Validity
+  validUntil: timestamp("valid_until"),
+  supersededBy: varchar("superseded_by"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientInsightIdx: index("lysa_insights_patient_idx").on(table.patientId, table.insightType),
+  doctorInsightIdx: index("lysa_insights_doctor_idx").on(table.doctorId),
+  severityIdx: index("lysa_insights_severity_idx").on(table.severity),
+  statusIdx: index("lysa_insights_status_idx").on(table.status),
+  createdAtIdx: index("lysa_insights_created_at_idx").on(table.createdAt),
+}));
+
+export const insertLysaClinicalInsightSchema = createInsertSchema(lysaClinicalInsights).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertLysaClinicalInsight = z.infer<typeof insertLysaClinicalInsightSchema>;
+export type LysaClinicalInsight = typeof lysaClinicalInsights.$inferSelect;

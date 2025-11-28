@@ -4,11 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Search, TrendingUp, AlertCircle, Sparkles, Lightbulb, BookOpen, Beaker, UserPlus, Clock, CheckCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Users, Search, TrendingUp, AlertCircle, Sparkles, Lightbulb, BookOpen, Beaker, Clock, CheckCircle, Bot } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import type { User } from "@shared/schema";
 import { AddPatientDialog } from "@/components/AddPatientDialog";
+import { LysaChatPanel } from "@/components/LysaChatPanel";
 
 type Recommendation = {
   id: string;
@@ -24,10 +26,18 @@ type Recommendation = {
 export default function DoctorDashboard() {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
+  const [lysaDialogOpen, setLysaDialogOpen] = useState(false);
+  const [selectedPatientForLysa, setSelectedPatientForLysa] = useState<User | null>(null);
 
   const { data: patients, isLoading } = useQuery<User[]>({
     queryKey: ["/api/doctor/patients"],
   });
+
+  const openLysaForPatient = (patient: User, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedPatientForLysa(patient);
+    setLysaDialogOpen(true);
+  };
 
   // Fetch Assistant Lysa recommendations for doctors
   const { data: recommendations = [], isLoading: recommendationsLoading, isError: recommendationsError } = useQuery<Recommendation[]>({
@@ -267,9 +277,25 @@ export default function DoctorDashboard() {
                   </div>
                 </div>
 
-                <Button className="w-full mt-4" variant="outline" data-testid={`button-view-patient-${patient.id}`}>
-                  View Patient
-                </Button>
+                <div className="flex gap-2 mt-4">
+                  <Button 
+                    className="flex-1" 
+                    variant="outline" 
+                    data-testid={`button-view-patient-${patient.id}`}
+                  >
+                    View Patient
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={(e) => openLysaForPatient(patient, e)}
+                    data-testid={`button-lysa-patient-${patient.id}`}
+                    className="shrink-0"
+                    title="Open Lysa AI Assistant"
+                  >
+                    <Bot className="h-4 w-4" />
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -285,6 +311,35 @@ export default function DoctorDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Lysa AI Assistant Dialog */}
+      <Dialog open={lysaDialogOpen} onOpenChange={setLysaDialogOpen}>
+        <DialogContent className="max-w-4xl h-[80vh]" data-testid="dialog-lysa-assistant">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-primary" />
+              Lysa AI Assistant
+              {selectedPatientForLysa && (
+                <Badge variant="secondary" className="ml-2">
+                  {selectedPatientForLysa.firstName} {selectedPatientForLysa.lastName}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              AI-powered clinical assistant for patient care and decision support
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden -mx-6 -mb-6">
+            {selectedPatientForLysa && (
+              <LysaChatPanel 
+                patientId={selectedPatientForLysa.id}
+                patientName={`${selectedPatientForLysa.firstName} ${selectedPatientForLysa.lastName}`}
+                className="h-full border-0 rounded-none"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
