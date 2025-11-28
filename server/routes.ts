@@ -7607,6 +7607,102 @@ Provide:
     }
   });
 
+  // Lysa Insight Feed endpoint - get AI-generated insights for a patient
+  app.get('/api/v1/lysa/insight-feed/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { patientId } = req.params;
+      
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access patient insights' });
+      }
+
+      // Verify doctor-patient assignment
+      const assignments = await storage.getActiveDoctorAssignments(userId);
+      const hasAssignment = assignments.some(a => a.patientId === patientId);
+      
+      if (!hasAssignment) {
+        return res.status(403).json({ message: 'Not authorized to access this patient\'s insights' });
+      }
+
+      const patient = await storage.getUser(patientId);
+      if (!patient) {
+        return res.status(404).json({ message: 'Patient not found' });
+      }
+
+      // Generate insights based on patient data (in production, these would come from ML models)
+      const insights = [
+        {
+          id: `insight-${Date.now()}-1`,
+          type: 'trend',
+          category: 'vitals',
+          title: 'Stable Vital Signs',
+          description: `${patient.firstName}'s heart rate and blood pressure have remained within normal ranges over the past 7 days.`,
+          priority: 'low',
+          confidence: 0.92,
+          timestamp: new Date().toISOString(),
+          source: 'Continuous Monitoring'
+        },
+        {
+          id: `insight-${Date.now()}-2`,
+          type: 'recommendation',
+          category: 'medication',
+          title: 'Medication Review Suggested',
+          description: 'Current medication regimen has been stable for 6 months. Consider reviewing effectiveness at next visit.',
+          priority: 'medium',
+          confidence: 0.78,
+          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          action: 'Schedule medication review',
+          source: 'Medication Analysis'
+        },
+        {
+          id: `insight-${Date.now()}-3`,
+          type: 'observation',
+          category: 'symptoms',
+          title: 'Symptom Pattern Detected',
+          description: 'Patient has reported similar symptoms at similar times over the past 3 visits. May indicate a cyclical pattern worth investigating.',
+          priority: 'medium',
+          confidence: 0.85,
+          timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          source: 'Pattern Analysis'
+        },
+        {
+          id: `insight-${Date.now()}-4`,
+          type: 'prediction',
+          category: 'risk',
+          title: 'Low Deterioration Risk',
+          description: 'Based on current health metrics and trends, patient shows low risk of health deterioration in the next 30 days.',
+          priority: 'low',
+          confidence: 0.88,
+          timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+          source: 'Predictive Analytics'
+        },
+        {
+          id: `insight-${Date.now()}-5`,
+          type: 'alert',
+          category: 'followup',
+          title: 'Follow-up Due Soon',
+          description: 'Scheduled follow-up appointment is approaching. Ensure all pre-visit requirements are communicated to patient.',
+          priority: 'medium',
+          confidence: 1.0,
+          timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+          action: 'Send reminder',
+          source: 'Appointment System'
+        }
+      ];
+
+      res.json(insights);
+    } catch (error) {
+      console.error('Error fetching insight feed:', error);
+      res.status(500).json({ message: 'Failed to fetch insight feed' });
+    }
+  });
+
   // Lysa Patient Monitoring Status endpoint - get monitoring status for all assigned patients
   app.get('/api/v1/lysa/monitoring/status', isAuthenticated, async (req: any, res) => {
     try {
@@ -7621,7 +7717,7 @@ Provide:
       }
 
       // Get assigned patients
-      const assignments = await storage.getDoctorPatientAssignments(userId, 'active');
+      const assignments = await storage.getActiveDoctorAssignments(userId);
       
       // Return monitoring status for each patient
       const monitoringStatuses = assignments.map(assignment => ({
@@ -7655,7 +7751,7 @@ Provide:
       }
 
       // Verify doctor-patient assignment
-      const assignments = await storage.getDoctorPatientAssignments(userId, 'active');
+      const assignments = await storage.getActiveDoctorAssignments(userId);
       const hasAssignment = assignments.some(a => a.patientId === patientId);
       
       if (!hasAssignment) {

@@ -57,6 +57,7 @@ import { ClinicalDecisionSupport } from "@/components/ClinicalDecisionSupport";
 import { PredictiveAnalyticsDashboard } from "@/components/PredictiveAnalyticsDashboard";
 import { DiagnosticImagingAnalysis } from "@/components/DiagnosticImagingAnalysis";
 import { LabReportAnalysis } from "@/components/LabReportAnalysis";
+import { LysaInsightFeed } from "@/components/LysaInsightFeed";
 
 interface ChatSession {
   id: string;
@@ -504,6 +505,10 @@ export default function PatientReview() {
               <TabsTrigger value="labs" data-testid="tab-labs">
                 <FlaskConical className="h-4 w-4 mr-2" />
                 Labs
+              </TabsTrigger>
+              <TabsTrigger value="insights" data-testid="tab-insights">
+                <Bot className="h-4 w-4 mr-2" />
+                Insights
               </TabsTrigger>
             </TabsList>
 
@@ -1156,6 +1161,19 @@ export default function PatientReview() {
                     allergies: [],
                     comorbidities: [],
                     currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Lysa Insight Feed Tab */}
+            <TabsContent value="insights">
+              {patientId && patient && (
+                <LysaInsightFeed
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || ''
                   }}
                 />
               )}

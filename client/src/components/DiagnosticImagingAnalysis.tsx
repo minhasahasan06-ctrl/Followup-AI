@@ -261,7 +261,7 @@ export function DiagnosticImagingAnalysis({ patientContext, className }: Diagnos
           </Card>
 
           {currentAnalysis && (
-            <Card className="border-primary/50">
+            <Card className="border-primary/50" data-testid="imaging-analysis-result">
               <CardHeader>
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
@@ -302,7 +302,7 @@ export function DiagnosticImagingAnalysis({ patientContext, className }: Diagnos
                     <h4 className="font-semibold text-sm flex items-center gap-1">
                       <Activity className="h-4 w-4" /> Technique
                     </h4>
-                    <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                    <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md" data-testid="text-imaging-technique">
                       {currentAnalysis.sections.technique || 'Not specified'}
                     </p>
                   </div>
@@ -310,7 +310,7 @@ export function DiagnosticImagingAnalysis({ patientContext, className }: Diagnos
                     <h4 className="font-semibold text-sm flex items-center gap-1">
                       <Stethoscope className="h-4 w-4" /> Impression
                     </h4>
-                    <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                    <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md" data-testid="text-imaging-impression">
                       {currentAnalysis.sections.impression || 'Pending review'}
                     </p>
                   </div>
@@ -320,7 +320,7 @@ export function DiagnosticImagingAnalysis({ patientContext, className }: Diagnos
                   <h4 className="font-semibold text-sm flex items-center gap-1">
                     <Eye className="h-4 w-4" /> Findings
                   </h4>
-                  <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md whitespace-pre-wrap">
+                  <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md whitespace-pre-wrap" data-testid="text-imaging-findings">
                     {currentAnalysis.sections.findings || 'No findings documented'}
                   </div>
                 </div>
@@ -329,7 +329,7 @@ export function DiagnosticImagingAnalysis({ patientContext, className }: Diagnos
                   <h4 className="font-semibold text-sm flex items-center gap-1">
                     <CheckCircle className="h-4 w-4" /> Recommendations
                   </h4>
-                  <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                  <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md" data-testid="text-imaging-recommendations">
                     {currentAnalysis.sections.recommendations || 'No specific recommendations'}
                   </p>
                 </div>
@@ -374,7 +374,7 @@ export function DiagnosticImagingAnalysis({ patientContext, className }: Diagnos
                 <ScrollArea className="h-[400px]">
                   <div className="space-y-3">
                     {imagingHistory.studies.map((study: ImagingStudy) => (
-                      <Card key={study.id} className="hover-elevate">
+                      <Card key={study.id} className="hover-elevate" data-testid={`imaging-study-${study.id}`}>
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-3">
