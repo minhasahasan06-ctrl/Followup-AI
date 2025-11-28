@@ -106,10 +106,12 @@ const quickActions: QuickAction[] = [
 interface LysaChatPanelProps {
   onMinimize?: () => void;
   isExpanded?: boolean;
+  patientId?: string;
+  patientName?: string;
   className?: string;
 }
 
-export function LysaChatPanel({ onMinimize, isExpanded = true, className = "" }: LysaChatPanelProps) {
+export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patientName, className = "" }: LysaChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string>("all");
@@ -120,9 +122,12 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, className = "" }:
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { data: chatMessages = [], isLoading } = useQuery<ChatMessage[]>({
-    queryKey: ["/api/chat/messages", { agent: "lysa" }],
+    queryKey: ["/api/chat/messages", { agent: "lysa", patientId }],
     queryFn: async () => {
-      const response = await fetch(`/api/chat/messages?agent=lysa`, {
+      const url = patientId 
+        ? `/api/chat/messages?agent=lysa&patientId=${patientId}`
+        : `/api/chat/messages?agent=lysa`;
+      const response = await fetch(url, {
         credentials: "include",
       });
       if (!response.ok) {
@@ -134,14 +139,22 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, className = "" }:
 
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
+      const payload: { content: string; agentType: string; patientId?: string; patientName?: string } = { 
+        content, 
+        agentType: "lysa" 
+      };
+      if (patientId) {
+        payload.patientId = patientId;
+        payload.patientName = patientName;
+      }
       const response = await apiRequest("/api/chat/send", { 
         method: "POST", 
-        json: { content, agentType: "lysa" } 
+        json: payload
       });
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/chat/messages", { agent: "lysa", patientId }] });
       setMessage("");
     },
   });
@@ -247,10 +260,22 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, className = "" }:
             </div>
             <div>
               <CardTitle className="text-sm" data-testid="text-lysa-title">Assistant Lysa</CardTitle>
-              <p className="text-xs text-muted-foreground">AI Receptionist & Doctor's Assistant</p>
+              {patientName ? (
+                <p className="text-xs text-muted-foreground" data-testid="text-lysa-patient-context">
+                  Assisting with: <span className="font-medium text-foreground">{patientName}</span>
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">AI Receptionist & Doctor's Assistant</p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {patientId && (
+              <Badge variant="secondary" className="text-xs" data-testid="badge-patient-context">
+                <Users className="h-3 w-3 mr-1" />
+                Patient
+              </Badge>
+            )}
             <Badge variant="outline" className="text-xs">
               <Sparkles className="h-3 w-3 mr-1" />
               GPT-4
@@ -319,9 +344,14 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, className = "" }:
             ) : chatMessages.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Bot className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                <p className="text-sm font-medium mb-1">Hello! I'm Assistant Lysa</p>
-                <p className="text-xs">
-                  I can help with appointments, emails, patient records, diagnosis support, and prescriptions.
+                <p className="text-sm font-medium mb-1" data-testid="text-lysa-greeting">
+                  {patientName ? `Ready to assist with ${patientName}` : "Hello! I'm Assistant Lysa"}
+                </p>
+                <p className="text-xs" data-testid="text-lysa-greeting-subtitle">
+                  {patientName 
+                    ? "Ask me about their health metrics, prescriptions, appointments, or any clinical questions."
+                    : "I can help with appointments, emails, patient records, diagnosis support, and prescriptions."
+                  }
                 </p>
               </div>
             ) : (

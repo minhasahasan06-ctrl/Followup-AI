@@ -36,7 +36,6 @@ import Chat from "@/pages/Chat";
 import Wellness from "@/pages/Wellness";
 import Files from "@/pages/Files";
 import Profile from "@/pages/Profile";
-import DoctorDashboard from "@/pages/DoctorDashboard";
 import DoctorWellness from "@/pages/DoctorWellness";
 import ReceptionistDashboard from "@/pages/ReceptionistDashboard";
 import CalendarSync from "@/pages/CalendarSync";
@@ -125,11 +124,10 @@ function PatientRouter() {
 function DoctorRouter() {
   return (
     <Switch>
-      <Route path="/" component={DoctorDashboard} />
+      <Route path="/" component={ReceptionistDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/prescriptions" component={Prescriptions} />
       <Route path="/drug-interactions" component={DrugInteractions} />
-      <Route path="/receptionist" component={ReceptionistDashboard} />
       <Route path="/calendar-sync" component={CalendarSync} />
       <Route path="/doctor-wellness" component={DoctorWellness} />
       <Route path="/doctor/patient/:id" component={PatientReview} />

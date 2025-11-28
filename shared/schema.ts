@@ -238,6 +238,7 @@ export const chatSessions = pgTable("chat_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   patientId: varchar("patient_id").notNull().references(() => users.id),
   agentType: varchar("agent_type", { length: 20 }).notNull(), // 'clona' or 'lysa'
+  contextPatientId: varchar("context_patient_id").references(() => users.id), // For Lysa: patient being discussed
   sessionTitle: varchar("session_title"), // Auto-generated or user-set title
   startedAt: timestamp("started_at").notNull().defaultNow(),
   endedAt: timestamp("ended_at"),
