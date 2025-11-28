@@ -62,6 +62,8 @@ import {
   dailyEngagement,
   doctorWellness,
   appointments,
+  consultations,
+  doctorPatientAssignments,
   doctorAvailability,
   emailThreads,
   emailMessages,
@@ -197,6 +199,8 @@ import {
   type InsertDoctorWellness,
   type Appointment,
   type InsertAppointment,
+  type DoctorPatientAssignment,
+  type InsertDoctorPatientAssignment,
   type DoctorAvailability,
   type InsertDoctorAvailability,
   type EmailThread,
@@ -253,6 +257,16 @@ export interface IStorage {
   getDoctorProfile(userId: string): Promise<DoctorProfile | undefined>;
   upsertDoctorProfile(profile: InsertDoctorProfile): Promise<DoctorProfile>;
   getAllPatients(): Promise<Array<User & { profile?: PatientProfile }>>;
+  getDoctorPatients(doctorId: string): Promise<Array<User & { profile?: PatientProfile }>>;
+  
+  // Doctor-Patient Assignment operations (HIPAA compliance)
+  getDoctorPatientAssignment(doctorId: string, patientId: string): Promise<DoctorPatientAssignment | undefined>;
+  getActiveDoctorAssignments(doctorId: string): Promise<DoctorPatientAssignment[]>;
+  getPatientDoctorAssignments(patientId: string): Promise<DoctorPatientAssignment[]>;
+  createDoctorPatientAssignment(assignment: InsertDoctorPatientAssignment): Promise<DoctorPatientAssignment>;
+  updateDoctorPatientAssignment(id: string, data: Partial<DoctorPatientAssignment>): Promise<DoctorPatientAssignment | undefined>;
+  revokeDoctorPatientAssignment(id: string, revokedBy: string, reason: string): Promise<DoctorPatientAssignment | undefined>;
+  doctorHasPatientAccess(doctorId: string, patientId: string): Promise<boolean>;
   
   // Daily followup operations
   getDailyFollowup(patientId: string, date: Date): Promise<DailyFollowup | undefined>;
@@ -892,6 +906,141 @@ export class DatabaseStorage implements IStorage {
       ...row.users,
       profile: row.patient_profiles || undefined,
     }));
+  }
+
+  async getDoctorPatients(doctorId: string): Promise<Array<User & { profile?: PatientProfile }>> {
+    // Get unique patient IDs from appointments, prescriptions, and consultations
+    const appointmentPatients = await db
+      .selectDistinct({ patientId: appointments.patientId })
+      .from(appointments)
+      .where(eq(appointments.doctorId, doctorId));
+
+    const prescriptionPatients = await db
+      .selectDistinct({ patientId: prescriptions.patientId })
+      .from(prescriptions)
+      .where(eq(prescriptions.doctorId, doctorId));
+
+    const consultationPatients = await db
+      .selectDistinct({ patientId: consultations.patientId })
+      .from(consultations)
+      .where(eq(consultations.doctorId, doctorId));
+
+    // Combine all patient IDs into a unique set
+    const allPatientIds = new Set<string>();
+    for (const p of appointmentPatients) {
+      if (p.patientId) allPatientIds.add(p.patientId);
+    }
+    for (const p of prescriptionPatients) {
+      if (p.patientId) allPatientIds.add(p.patientId);
+    }
+    for (const p of consultationPatients) {
+      if (p.patientId) allPatientIds.add(p.patientId);
+    }
+
+    if (allPatientIds.size === 0) {
+      return [];
+    }
+
+    // Fetch patient data with profiles
+    const patientsData = await db
+      .select()
+      .from(users)
+      .leftJoin(patientProfiles, eq(users.id, patientProfiles.userId))
+      .where(
+        and(
+          eq(users.role, 'patient'),
+          inArray(users.id, Array.from(allPatientIds))
+        )
+      );
+
+    return patientsData.map(row => ({
+      ...row.users,
+      profile: row.patient_profiles || undefined,
+    }));
+  }
+
+  // Doctor-Patient Assignment operations (HIPAA compliance)
+  async getDoctorPatientAssignment(doctorId: string, patientId: string): Promise<DoctorPatientAssignment | undefined> {
+    const [assignment] = await db
+      .select()
+      .from(doctorPatientAssignments)
+      .where(
+        and(
+          eq(doctorPatientAssignments.doctorId, doctorId),
+          eq(doctorPatientAssignments.patientId, patientId),
+          eq(doctorPatientAssignments.status, 'active')
+        )
+      );
+    return assignment;
+  }
+
+  async getActiveDoctorAssignments(doctorId: string): Promise<DoctorPatientAssignment[]> {
+    return db
+      .select()
+      .from(doctorPatientAssignments)
+      .where(
+        and(
+          eq(doctorPatientAssignments.doctorId, doctorId),
+          eq(doctorPatientAssignments.status, 'active')
+        )
+      )
+      .orderBy(desc(doctorPatientAssignments.createdAt));
+  }
+
+  async getPatientDoctorAssignments(patientId: string): Promise<DoctorPatientAssignment[]> {
+    return db
+      .select()
+      .from(doctorPatientAssignments)
+      .where(
+        and(
+          eq(doctorPatientAssignments.patientId, patientId),
+          eq(doctorPatientAssignments.status, 'active')
+        )
+      )
+      .orderBy(desc(doctorPatientAssignments.createdAt));
+  }
+
+  async createDoctorPatientAssignment(assignmentData: InsertDoctorPatientAssignment): Promise<DoctorPatientAssignment> {
+    // Check if active assignment already exists
+    const existing = await this.getDoctorPatientAssignment(assignmentData.doctorId, assignmentData.patientId);
+    if (existing) {
+      return existing;
+    }
+    
+    const [assignment] = await db
+      .insert(doctorPatientAssignments)
+      .values(assignmentData)
+      .returning();
+    return assignment;
+  }
+
+  async updateDoctorPatientAssignment(id: string, data: Partial<DoctorPatientAssignment>): Promise<DoctorPatientAssignment | undefined> {
+    const [assignment] = await db
+      .update(doctorPatientAssignments)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(doctorPatientAssignments.id, id))
+      .returning();
+    return assignment;
+  }
+
+  async revokeDoctorPatientAssignment(id: string, revokedBy: string, reason: string): Promise<DoctorPatientAssignment | undefined> {
+    const [assignment] = await db
+      .update(doctorPatientAssignments)
+      .set({
+        status: 'revoked',
+        revokedAt: new Date(),
+        revokedBy,
+        revocationReason: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(doctorPatientAssignments.id, id))
+      .returning();
+    return assignment;
+  }
+
+  async doctorHasPatientAccess(doctorId: string, patientId: string): Promise<boolean> {
+    const assignment = await this.getDoctorPatientAssignment(doctorId, patientId);
+    return !!assignment;
   }
 
   // Daily followup operations

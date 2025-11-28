@@ -2819,6 +2819,119 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // ============================================================================
+  // DOCTOR-PATIENT ASSIGNMENT ROUTES (HIPAA-COMPLIANT ACCESS CONTROL)
+  // ============================================================================
+
+  // Get all assigned patients for the authenticated doctor
+  app.get('/api/doctor/assigned-patients', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const statusFilter = req.query.status as string || 'active';
+      
+      const assignments = await storage.getDoctorAssignments(doctorId, statusFilter);
+      
+      // Enrich with patient profile data
+      const enrichedAssignments = await Promise.all(
+        assignments.map(async (assignment) => {
+          const patient = await storage.getUser(assignment.patientId);
+          const profile = await storage.getPatientProfile(assignment.patientId);
+          return {
+            ...assignment,
+            patient: patient ? {
+              id: patient.id,
+              firstName: patient.firstName,
+              lastName: patient.lastName,
+              email: patient.email,
+            } : null,
+            profile,
+          };
+        })
+      );
+      
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} retrieved assigned patients list at ${new Date().toISOString()}`);
+      res.json(enrichedAssignments);
+    } catch (error) {
+      console.error("Error fetching assigned patients:", error);
+      res.status(500).json({ message: "Failed to fetch assigned patients" });
+    }
+  });
+
+  // Create a new doctor-patient assignment (manual assignment)
+  app.post('/api/doctor/assignments', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const { patientId, consentMethod, accessNotes, isPrimaryProvider } = req.body;
+      
+      if (!patientId) {
+        return res.status(400).json({ message: "Patient ID is required" });
+      }
+      
+      // Verify patient exists
+      const patient = await storage.getUser(patientId);
+      if (!patient || patient.role !== 'patient') {
+        return res.status(404).json({ message: "Patient not found" });
+      }
+      
+      const assignment = await storage.createDoctorPatientAssignment({
+        doctorId,
+        patientId,
+        assignmentSource: 'manual',
+        assignedBy: doctorId,
+        patientConsented: consentMethod ? true : false,
+        consentMethod: consentMethod || 'pending',
+        consentedAt: consentMethod ? new Date() : undefined,
+        isPrimaryProvider: isPrimaryProvider || false,
+        accessNotes,
+      });
+      
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} created assignment with patient ${patientId} at ${new Date().toISOString()}`);
+      res.json(assignment);
+    } catch (error) {
+      console.error("Error creating assignment:", error);
+      res.status(500).json({ message: "Failed to create assignment" });
+    }
+  });
+
+  // Revoke a doctor-patient assignment
+  app.post('/api/doctor/assignments/:id/revoke', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const { id } = req.params;
+      const { reason } = req.body;
+      
+      const assignment = await storage.revokeDoctorPatientAssignment(id, doctorId, reason);
+      if (!assignment) {
+        return res.status(404).json({ message: "Assignment not found" });
+      }
+      
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} revoked assignment ${id} at ${new Date().toISOString()}`);
+      res.json(assignment);
+    } catch (error) {
+      console.error("Error revoking assignment:", error);
+      res.status(500).json({ message: "Failed to revoke assignment" });
+    }
+  });
+
+  // Get assignment details for a specific patient
+  app.get('/api/doctor/assignments/patient/:patientId', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const { patientId } = req.params;
+      
+      const hasAccess = await storage.doctorHasPatientAccess(doctorId, patientId);
+      const assignment = await storage.getDoctorPatientAssignment(doctorId, patientId);
+      
+      res.json({
+        hasAccess,
+        assignment,
+      });
+    } catch (error) {
+      console.error("Error checking assignment:", error);
+      res.status(500).json({ message: "Failed to check assignment" });
+    }
+  });
+
   // Educational content
   app.get('/api/education/progress', isAuthenticated, async (req: any, res) => {
     try {
@@ -4492,9 +4605,62 @@ Please ask the doctor which date they want to check.`;
     }
   });
 
+  // Doctor-specific: Get prescriptions for a specific patient
+  // Uses doctor_patient_assignments table for HIPAA-compliant access control
+  app.get('/api/prescriptions/patient/:patientId', isDoctor, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const doctorId = req.user!.id;
+      
+      // Verify patient exists and is a valid patient
+      const patient = await storage.getUser(patientId);
+      if (!patient || patient.role !== 'patient') {
+        return res.status(404).json({ message: 'Patient not found' });
+      }
+      
+      // HIPAA authorization: Check if doctor has active assignment with this patient
+      const hasAccess = await storage.doctorHasPatientAccess(doctorId, patientId);
+      if (!hasAccess) {
+        console.log(`[HIPAA-AUDIT] DENIED: Doctor ${doctorId} attempted to access prescriptions for unassigned patient ${patientId} at ${new Date().toISOString()}`);
+        return res.status(403).json({ 
+          message: 'Access denied. No active assignment with this patient.',
+          code: 'NO_PATIENT_ASSIGNMENT'
+        });
+      }
+      
+      // HIPAA audit: Log successful access to patient prescriptions
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} accessed prescriptions for patient ${patientId} at ${new Date().toISOString()}`);
+      
+      const prescriptions = await storage.getPrescriptions(patientId);
+      res.json(prescriptions);
+    } catch (error) {
+      console.error('Error fetching patient prescriptions:', error);
+      res.status(500).json({ message: 'Failed to fetch prescriptions' });
+    }
+  });
+
   app.post('/api/prescriptions', isDoctor, async (req: any, res) => {
     try {
       const doctorId = req.user!.id;
+      const patientId = req.body.patientId;
+      
+      // Verify patient exists
+      const patient = await storage.getUser(patientId);
+      if (!patient || patient.role !== 'patient') {
+        return res.status(404).json({ message: 'Patient not found' });
+      }
+      
+      // Auto-create doctor-patient assignment if not exists (HIPAA compliance)
+      await storage.createDoctorPatientAssignment({
+        doctorId,
+        patientId,
+        assignmentSource: 'prescription',
+        assignedBy: doctorId,
+        patientConsented: true,
+        consentMethod: 'implied',
+        consentedAt: new Date(),
+      });
+      
       const prescription = await storage.createPrescription({
         doctorId,
         ...req.body,
@@ -4502,7 +4668,7 @@ Please ask the doctor which date they want to check.`;
       
       // Create medication for patient
       const medication = await storage.createMedication({
-        patientId: req.body.patientId,
+        patientId,
         name: req.body.medicationName,
         dosage: req.body.dosage,
         frequency: req.body.frequency,
@@ -4518,13 +4684,16 @@ Please ask the doctor which date they want to check.`;
       // Log the change
       await storage.createMedicationChangeLog({
         medicationId: medication.id,
-        patientId: req.body.patientId,
+        patientId,
         changeType: 'added',
         changedBy: 'doctor',
         changedByUserId: doctorId,
         changeReason: `Prescription created by doctor`,
         notes: req.body.notes,
       });
+      
+      // HIPAA audit log
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} created prescription for patient ${patientId} at ${new Date().toISOString()}`);
       
       res.json({ prescription, medication });
     } catch (error) {
@@ -4542,6 +4711,106 @@ Please ask the doctor which date they want to check.`;
     } catch (error) {
       console.error('Error acknowledging prescription:', error);
       res.status(500).json({ message: 'Failed to acknowledge prescription' });
+    }
+  });
+
+  // Doctor-specific drug interaction check for patient
+  // Uses doctor_patient_assignments table for HIPAA-compliant access control
+  app.post('/api/drug-interactions/analyze-for-patient', isDoctor, async (req: any, res) => {
+    try {
+      const { patientId, drugName, drugClass, genericName } = req.body;
+      const doctorId = req.user!.id;
+
+      if (!patientId || !drugName) {
+        return res.status(400).json({ message: "Patient ID and drug name are required" });
+      }
+
+      // Verify patient exists and is a valid patient
+      const patient = await storage.getUser(patientId);
+      if (!patient || patient.role !== 'patient') {
+        return res.status(404).json({ message: 'Patient not found' });
+      }
+      
+      // HIPAA authorization: Check if doctor has active assignment with this patient
+      const hasAccess = await storage.doctorHasPatientAccess(doctorId, patientId);
+      if (!hasAccess) {
+        console.log(`[HIPAA-AUDIT] DENIED: Doctor ${doctorId} attempted drug interaction check for unassigned patient ${patientId} at ${new Date().toISOString()}`);
+        return res.status(403).json({ 
+          message: 'Access denied. No active assignment with this patient.',
+          code: 'NO_PATIENT_ASSIGNMENT'
+        });
+      }
+      
+      // HIPAA audit: Log drug interaction check
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} checked drug interactions for patient ${patientId} (drug: ${drugName}) at ${new Date().toISOString()}`);
+
+      const patientProfile = await storage.getPatientProfile(patientId);
+      const currentMedications = await storage.getActiveMedications(patientId);
+
+      const { analyzeMultipleDrugInteractions, enrichMedicationWithGenericName } = await import('./drugInteraction');
+
+      // Build medication list with ALL name variations
+      const medicationsToCheck = await Promise.all(currentMedications.map(async (med) => {
+        let drug = await storage.getDrugByName(med.name);
+        
+        if (!drug) {
+          const enriched = await enrichMedicationWithGenericName(med.name);
+          drug = await storage.createDrug({
+            name: med.name,
+            genericName: enriched.genericName,
+            brandNames: enriched.brandNames
+          });
+        }
+        
+        return {
+          name: med.name,
+          genericName: drug.genericName || med.name,
+          drugClass: drug.drugClass,
+          id: med.id,
+          brandNames: drug.brandNames || []
+        };
+      }));
+
+      // Add the new drug
+      const newDrug = {
+        name: drugName,
+        genericName: genericName || drugName,
+        drugClass: drugClass,
+        id: null,
+        brandNames: []
+      };
+
+      medicationsToCheck.push(newDrug);
+
+      const interactions = await analyzeMultipleDrugInteractions(
+        medicationsToCheck,
+        {
+          isImmunocompromised: true,
+          conditions: patientProfile?.immunocompromisedCondition 
+            ? [patientProfile.immunocompromisedCondition]
+            : [],
+        }
+      );
+
+      // Transform to simpler format for frontend
+      const formattedInteractions = interactions.map(i => ({
+        drug1: i.drug1,
+        drug2: i.drug2,
+        severity: i.interaction.severityLevel,
+        description: i.interaction.clinicalEffects,
+        recommendations: i.interaction.managementRecommendations 
+          ? [i.interaction.managementRecommendations] 
+          : [],
+      }));
+
+      res.json({
+        interactions: formattedInteractions,
+        patientId,
+        medicationsChecked: currentMedications.length + 1,
+      });
+    } catch (error) {
+      console.error("Error checking drug interactions for patient:", error);
+      res.status(500).json({ message: "Failed to analyze drug interactions" });
     }
   });
 
