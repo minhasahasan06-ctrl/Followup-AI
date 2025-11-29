@@ -73,6 +73,9 @@ import {
   googleCalendarSyncLogs,
   gmailSync,
   gmailSyncLogs,
+  doctorIntegrations,
+  doctorEmails,
+  doctorWhatsappMessages,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -212,6 +215,12 @@ import {
   type InsertEmailMessage,
   type CallLog,
   type InsertCallLog,
+  type DoctorIntegration,
+  type InsertDoctorIntegration,
+  type DoctorEmail,
+  type InsertDoctorEmail,
+  type DoctorWhatsappMessage,
+  type InsertDoctorWhatsappMessage,
   type AppointmentReminder,
   type InsertAppointmentReminder,
   type GoogleCalendarSync,
@@ -678,6 +687,33 @@ export interface IStorage {
   createPaintrackSession(session: InsertPaintrackSession): Promise<PaintrackSession>;
   getPaintrackSessions(userId: string, limit?: number): Promise<PaintrackSession[]>;
   getPaintrackSession(id: string, userId: string): Promise<PaintrackSession | undefined>;
+
+  // Doctor Integrations operations (per-doctor OAuth/API connections)
+  getDoctorIntegrations(doctorId: string): Promise<DoctorIntegration[]>;
+  getDoctorIntegrationByType(doctorId: string, integrationType: string): Promise<DoctorIntegration | undefined>;
+  createDoctorIntegration(integration: InsertDoctorIntegration): Promise<DoctorIntegration>;
+  updateDoctorIntegration(id: string, data: Partial<DoctorIntegration>): Promise<DoctorIntegration | undefined>;
+  deleteDoctorIntegration(id: string): Promise<boolean>;
+  
+  // Doctor Emails operations
+  getDoctorEmails(doctorId: string, options?: { category?: string; isRead?: boolean; limit?: number; offset?: number }): Promise<DoctorEmail[]>;
+  getDoctorEmailByProviderId(doctorId: string, providerMessageId: string): Promise<DoctorEmail | undefined>;
+  createDoctorEmail(email: InsertDoctorEmail): Promise<DoctorEmail>;
+  updateDoctorEmail(id: string, data: Partial<DoctorEmail>): Promise<DoctorEmail | undefined>;
+  
+  // Doctor WhatsApp operations
+  getDoctorWhatsappMessages(doctorId: string, options?: { status?: string; limit?: number }): Promise<DoctorWhatsappMessage[]>;
+  createDoctorWhatsappMessage(message: InsertDoctorWhatsappMessage): Promise<DoctorWhatsappMessage>;
+  updateDoctorWhatsappMessage(id: string, data: Partial<DoctorWhatsappMessage>): Promise<DoctorWhatsappMessage | undefined>;
+  
+  // Call log operations (enhanced)
+  getCallLogs(doctorId: string, options?: { status?: string; limit?: number }): Promise<CallLog[]>;
+  getCallLogByTwilioSid(twilioCallSid: string): Promise<CallLog | undefined>;
+  createCallLog(log: InsertCallLog): Promise<CallLog>;
+  updateCallLog(id: string, data: Partial<CallLog>): Promise<CallLog | undefined>;
+  
+  // Utility
+  getUserByPhone(phone: string): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4344,6 +4380,179 @@ export class DatabaseStorage implements IStorage {
       .from(paintrackSessions)
       .where(and(eq(paintrackSessions.id, id), eq(paintrackSessions.userId, userId)));
     return session;
+  }
+
+  // Doctor Integrations operations
+  async getDoctorIntegrations(doctorId: string): Promise<DoctorIntegration[]> {
+    return await db
+      .select()
+      .from(doctorIntegrations)
+      .where(eq(doctorIntegrations.doctorId, doctorId));
+  }
+
+  async getDoctorIntegrationByType(doctorId: string, integrationType: string): Promise<DoctorIntegration | undefined> {
+    const [integration] = await db
+      .select()
+      .from(doctorIntegrations)
+      .where(and(
+        eq(doctorIntegrations.doctorId, doctorId),
+        eq(doctorIntegrations.integrationType, integrationType)
+      ));
+    return integration;
+  }
+
+  async createDoctorIntegration(integration: InsertDoctorIntegration): Promise<DoctorIntegration> {
+    const [created] = await db
+      .insert(doctorIntegrations)
+      .values(integration)
+      .returning();
+    return created;
+  }
+
+  async updateDoctorIntegration(id: string, data: Partial<DoctorIntegration>): Promise<DoctorIntegration | undefined> {
+    const [updated] = await db
+      .update(doctorIntegrations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(doctorIntegrations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDoctorIntegration(id: string): Promise<boolean> {
+    await db.delete(doctorIntegrations).where(eq(doctorIntegrations.id, id));
+    return true;
+  }
+
+  // Doctor Emails operations
+  async getDoctorEmails(doctorId: string, options?: { category?: string; isRead?: boolean; limit?: number; offset?: number }): Promise<DoctorEmail[]> {
+    const conditions = [eq(doctorEmails.doctorId, doctorId)];
+    
+    if (options?.category) {
+      conditions.push(eq(doctorEmails.aiCategory, options.category));
+    }
+    if (options?.isRead !== undefined) {
+      conditions.push(eq(doctorEmails.isRead, options.isRead));
+    }
+
+    return await db
+      .select()
+      .from(doctorEmails)
+      .where(and(...conditions))
+      .orderBy(desc(doctorEmails.receivedAt))
+      .limit(options?.limit || 50)
+      .offset(options?.offset || 0);
+  }
+
+  async getDoctorEmailByProviderId(doctorId: string, providerMessageId: string): Promise<DoctorEmail | undefined> {
+    const [email] = await db
+      .select()
+      .from(doctorEmails)
+      .where(and(
+        eq(doctorEmails.doctorId, doctorId),
+        eq(doctorEmails.providerMessageId, providerMessageId)
+      ));
+    return email;
+  }
+
+  async createDoctorEmail(email: InsertDoctorEmail): Promise<DoctorEmail> {
+    const [created] = await db
+      .insert(doctorEmails)
+      .values(email)
+      .returning();
+    return created;
+  }
+
+  async updateDoctorEmail(id: string, data: Partial<DoctorEmail>): Promise<DoctorEmail | undefined> {
+    const [updated] = await db
+      .update(doctorEmails)
+      .set(data)
+      .where(eq(doctorEmails.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Doctor WhatsApp operations
+  async getDoctorWhatsappMessages(doctorId: string, options?: { status?: string; limit?: number }): Promise<DoctorWhatsappMessage[]> {
+    const conditions = [eq(doctorWhatsappMessages.doctorId, doctorId)];
+    
+    if (options?.status) {
+      conditions.push(eq(doctorWhatsappMessages.status, options.status));
+    }
+
+    return await db
+      .select()
+      .from(doctorWhatsappMessages)
+      .where(and(...conditions))
+      .orderBy(desc(doctorWhatsappMessages.receivedAt))
+      .limit(options?.limit || 50);
+  }
+
+  async createDoctorWhatsappMessage(message: InsertDoctorWhatsappMessage): Promise<DoctorWhatsappMessage> {
+    const [created] = await db
+      .insert(doctorWhatsappMessages)
+      .values(message)
+      .returning();
+    return created;
+  }
+
+  async updateDoctorWhatsappMessage(id: string, data: Partial<DoctorWhatsappMessage>): Promise<DoctorWhatsappMessage | undefined> {
+    const [updated] = await db
+      .update(doctorWhatsappMessages)
+      .set(data)
+      .where(eq(doctorWhatsappMessages.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Call log operations (enhanced)
+  async getCallLogs(doctorId: string, options?: { status?: string; limit?: number }): Promise<CallLog[]> {
+    const conditions = [eq(callLogs.doctorId, doctorId)];
+    
+    if (options?.status) {
+      conditions.push(eq(callLogs.status, options.status));
+    }
+
+    return await db
+      .select()
+      .from(callLogs)
+      .where(and(...conditions))
+      .orderBy(desc(callLogs.startTime))
+      .limit(options?.limit || 50);
+  }
+
+  async getCallLogByTwilioSid(twilioCallSid: string): Promise<CallLog | undefined> {
+    const [log] = await db
+      .select()
+      .from(callLogs)
+      .where(eq(callLogs.twilioCallSid, twilioCallSid));
+    return log;
+  }
+
+  async createCallLog(log: InsertCallLog): Promise<CallLog> {
+    const [created] = await db
+      .insert(callLogs)
+      .values(log)
+      .returning();
+    return created;
+  }
+
+  async updateCallLog(id: string, data: Partial<CallLog>): Promise<CallLog | undefined> {
+    const [updated] = await db
+      .update(callLogs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(callLogs.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Utility
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    const normalizedPhone = phone.replace(/\D/g, '');
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(sql`REPLACE(${users.phoneNumber}, '+', '') LIKE '%' || ${normalizedPhone} || '%'`);
+    return user;
   }
 }
 

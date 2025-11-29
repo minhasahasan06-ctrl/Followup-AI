@@ -5459,3 +5459,192 @@ export const insertLysaClinicalInsightSchema = createInsertSchema(lysaClinicalIn
 
 export type InsertLysaClinicalInsight = z.infer<typeof insertLysaClinicalInsightSchema>;
 export type LysaClinicalInsight = typeof lysaClinicalInsights.$inferSelect;
+
+// Doctor Integrations - Per-doctor OAuth tokens and connection settings for personal accounts
+export const doctorIntegrations = pgTable("doctor_integrations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Integration type
+  integrationType: varchar("integration_type").notNull(), // 'gmail', 'outlook', 'twilio', 'whatsapp_business'
+  
+  // Connection status
+  status: varchar("status").notNull().default("disconnected"), // 'disconnected', 'connecting', 'connected', 'error', 'expired'
+  lastSyncAt: timestamp("last_sync_at"),
+  lastErrorAt: timestamp("last_error_at"),
+  lastErrorMessage: text("last_error_message"),
+  
+  // OAuth tokens (encrypted at rest)
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  tokenScope: text("token_scope"),
+  
+  // Provider-specific identifiers
+  providerAccountId: varchar("provider_account_id"), // Gmail email, Twilio account SID, etc.
+  providerAccountEmail: varchar("provider_account_email"),
+  
+  // Twilio-specific fields
+  twilioPhoneNumber: varchar("twilio_phone_number"),
+  twilioAccountSid: varchar("twilio_account_sid"),
+  twilioApiKey: varchar("twilio_api_key"),
+  twilioApiSecret: text("twilio_api_secret"),
+  
+  // WhatsApp Business specific
+  whatsappBusinessId: varchar("whatsapp_business_id"),
+  whatsappPhoneNumberId: varchar("whatsapp_phone_number_id"),
+  whatsappDisplayNumber: varchar("whatsapp_display_number"),
+  
+  // Sync settings
+  syncEnabled: boolean("sync_enabled").default(true),
+  syncFrequencyMinutes: integer("sync_frequency_minutes").default(5),
+  autoReplyEnabled: boolean("auto_reply_enabled").default(false),
+  
+  // Email-specific settings
+  emailLabelsToSync: jsonb("email_labels_to_sync").$type<string[]>(), // ['INBOX', 'SENT', etc.]
+  emailAutoCategorizationEnabled: boolean("email_auto_categorization_enabled").default(true),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorIntegrationIdx: index("doctor_integrations_doctor_idx").on(table.doctorId),
+  typeIdx: index("doctor_integrations_type_idx").on(table.integrationType),
+  statusIdx: index("doctor_integrations_status_idx").on(table.status),
+  uniqueDoctorType: index("doctor_integrations_unique_idx").on(table.doctorId, table.integrationType),
+}));
+
+export const insertDoctorIntegrationSchema = createInsertSchema(doctorIntegrations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorIntegration = z.infer<typeof insertDoctorIntegrationSchema>;
+export type DoctorIntegration = typeof doctorIntegrations.$inferSelect;
+
+// Doctor Email Sync - Cached synced emails from doctor's personal account
+export const doctorEmails = pgTable("doctor_emails", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  integrationId: varchar("integration_id").notNull().references(() => doctorIntegrations.id),
+  
+  // Original email identifiers
+  providerMessageId: varchar("provider_message_id").notNull(), // Gmail message ID
+  threadId: varchar("thread_id"),
+  
+  // Email metadata
+  subject: varchar("subject"),
+  fromEmail: varchar("from_email").notNull(),
+  fromName: varchar("from_name"),
+  toEmails: jsonb("to_emails").$type<string[]>(),
+  ccEmails: jsonb("cc_emails").$type<string[]>(),
+  
+  // Email content
+  snippet: text("snippet"),
+  bodyPlain: text("body_plain"),
+  bodyHtml: text("body_html"),
+  
+  // Email state
+  isRead: boolean("is_read").default(false),
+  isStarred: boolean("is_starred").default(false),
+  labels: jsonb("labels").$type<string[]>(),
+  
+  // Patient linking
+  linkedPatientId: varchar("linked_patient_id").references(() => users.id),
+  patientLinkConfidence: decimal("patient_link_confidence", { precision: 3, scale: 2 }),
+  
+  // AI analysis
+  aiCategory: varchar("ai_category"), // 'appointment_request', 'medical_question', 'prescription_refill', 'test_results', 'general', 'spam'
+  aiPriority: varchar("ai_priority"), // 'urgent', 'high', 'normal', 'low'
+  aiSummary: text("ai_summary"),
+  aiSuggestedReply: text("ai_suggested_reply"),
+  aiExtractedInfo: jsonb("ai_extracted_info").$type<{
+    appointmentRequest?: { date?: string; time?: string; reason?: string };
+    symptoms?: string[];
+    medications?: string[];
+    urgencyIndicators?: string[];
+  }>(),
+  
+  // Reply tracking
+  hasBeenReplied: boolean("has_been_replied").default(false),
+  repliedAt: timestamp("replied_at"),
+  
+  // Timestamps
+  receivedAt: timestamp("received_at").notNull(),
+  syncedAt: timestamp("synced_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  doctorEmailIdx: index("doctor_emails_doctor_idx").on(table.doctorId),
+  threadIdx: index("doctor_emails_thread_idx").on(table.threadId),
+  categoryIdx: index("doctor_emails_category_idx").on(table.aiCategory),
+  patientIdx: index("doctor_emails_patient_idx").on(table.linkedPatientId),
+  receivedIdx: index("doctor_emails_received_idx").on(table.receivedAt),
+}));
+
+export const insertDoctorEmailSchema = createInsertSchema(doctorEmails).omit({
+  id: true,
+  createdAt: true,
+  syncedAt: true,
+});
+
+export type InsertDoctorEmail = z.infer<typeof insertDoctorEmailSchema>;
+export type DoctorEmail = typeof doctorEmails.$inferSelect;
+
+// Doctor WhatsApp Messages - Synced messages from doctor's WhatsApp Business
+export const doctorWhatsappMessages = pgTable("doctor_whatsapp_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  integrationId: varchar("integration_id").notNull().references(() => doctorIntegrations.id),
+  
+  // WhatsApp identifiers
+  waMessageId: varchar("wa_message_id").notNull(),
+  waConversationId: varchar("wa_conversation_id"),
+  
+  // Message details
+  direction: varchar("direction").notNull(), // 'inbound', 'outbound'
+  fromNumber: varchar("from_number").notNull(),
+  toNumber: varchar("to_number").notNull(),
+  contactName: varchar("contact_name"),
+  
+  // Content
+  messageType: varchar("message_type").notNull(), // 'text', 'image', 'document', 'audio', 'video', 'location'
+  textContent: text("text_content"),
+  mediaUrl: varchar("media_url"),
+  mediaMimeType: varchar("media_mime_type"),
+  
+  // Patient linking
+  linkedPatientId: varchar("linked_patient_id").references(() => users.id),
+  
+  // AI analysis
+  aiCategory: varchar("ai_category"), // 'appointment_request', 'question', 'confirmation', 'general'
+  aiPriority: varchar("ai_priority"),
+  aiSuggestedReply: text("ai_suggested_reply"),
+  aiExtractedInfo: jsonb("ai_extracted_info").$type<{
+    appointmentRequest?: { date?: string; time?: string };
+    intent?: string;
+    urgency?: string;
+  }>(),
+  
+  // Status
+  status: varchar("status").notNull().default("received"), // 'received', 'read', 'replied', 'archived'
+  repliedAt: timestamp("replied_at"),
+  
+  // Timestamps
+  receivedAt: timestamp("received_at").notNull(),
+  syncedAt: timestamp("synced_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  doctorWaIdx: index("doctor_wa_doctor_idx").on(table.doctorId),
+  conversationIdx: index("doctor_wa_conversation_idx").on(table.waConversationId),
+  patientIdx: index("doctor_wa_patient_idx").on(table.linkedPatientId),
+  receivedIdx: index("doctor_wa_received_idx").on(table.receivedAt),
+}));
+
+export const insertDoctorWhatsappMessageSchema = createInsertSchema(doctorWhatsappMessages).omit({
+  id: true,
+  createdAt: true,
+  syncedAt: true,
+});
+
+export type InsertDoctorWhatsappMessage = z.infer<typeof insertDoctorWhatsappMessageSchema>;
+export type DoctorWhatsappMessage = typeof doctorWhatsappMessages.$inferSelect;
