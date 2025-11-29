@@ -4,14 +4,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users, Settings } from "lucide-react";
+import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users } from "lucide-react";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { LysaChatPanel, LysaQuickActionsBar } from "@/components/LysaChatPanel";
 import { EmailAIHelper } from "@/components/EmailAIHelper";
 import { PatientManagementPanel } from "@/components/PatientManagementPanel";
 import { DiagnosisHelper } from "@/components/DiagnosisHelper";
 import { PrescriptionHelper } from "@/components/PrescriptionHelper";
-import { IntegrationSettings } from "@/components/IntegrationSettings";
 
 interface Appointment {
   id: string;
@@ -38,19 +37,6 @@ interface EmailThread {
   lastMessageAt: string;
 }
 
-interface CallLog {
-  id: string;
-  doctorId: string;
-  callerName: string;
-  callerPhone: string;
-  direction: string;
-  callType: string;
-  status: string;
-  startTime: string;
-  duration?: number;
-  requiresFollowup: boolean;
-}
-
 interface IntegrationStatus {
   gmail: { connected: boolean; email?: string; lastSync?: string };
   whatsapp: { connected: boolean; number?: string; lastSync?: string };
@@ -70,21 +56,6 @@ interface SyncedEmail {
   sentiment?: string;
   isRead: boolean;
   receivedAt: string;
-}
-
-interface TwilioCallLog {
-  id: string;
-  doctorId: string;
-  twilioCallSid?: string;
-  fromNumber: string;
-  toNumber: string;
-  direction: string;
-  status: string;
-  startTime?: string;
-  endTime?: string;
-  duration?: number;
-  recordingUrl?: string;
-  transcription?: string;
 }
 
 interface LysaPatient {
@@ -109,10 +80,6 @@ export default function ReceptionistDashboard() {
     queryKey: ["/api/v1/emails/threads", { limit: 10 }],
   });
 
-  const { data: callLogs = [], isLoading: callsLoading } = useQuery<CallLog[]>({
-    queryKey: ["/api/v1/calls", { limit: 10 }],
-  });
-
   // Fetch integration status
   const { data: integrationStatus } = useQuery<IntegrationStatus>({
     queryKey: ["/api/v1/integrations/status"],
@@ -124,11 +91,6 @@ export default function ReceptionistDashboard() {
     enabled: integrationStatus?.gmail.connected === true,
   });
 
-  // Fetch synced call logs from connected Twilio
-  const { data: twilioCallLogs = [] } = useQuery<TwilioCallLog[]>({
-    queryKey: ["/api/v1/integrations/twilio/calls"],
-    enabled: integrationStatus?.twilio.connected === true,
-  });
 
   // Combine email sources - synced emails take priority if Gmail is connected
   const combinedEmails = integrationStatus?.gmail.connected && syncedEmails.length > 0
@@ -146,25 +108,8 @@ export default function ReceptionistDashboard() {
       }))
     : emailThreads;
 
-  // Combine call log sources
-  const combinedCallLogs = integrationStatus?.twilio.connected && twilioCallLogs.length > 0
-    ? twilioCallLogs.map(call => ({
-        id: call.id,
-        doctorId: call.doctorId,
-        callerName: call.fromNumber,
-        callerPhone: call.fromNumber,
-        direction: call.direction,
-        callType: 'phone',
-        status: call.status,
-        startTime: call.startTime || new Date().toISOString(),
-        duration: call.duration,
-        requiresFollowup: false,
-      }))
-    : callLogs;
-
   const unreadEmails = combinedEmails.filter(thread => !thread.isRead).length;
   const urgentEmails = combinedEmails.filter(thread => thread.priority === 'urgent').length;
-  const pendingCalls = combinedCallLogs.filter(call => call.requiresFollowup).length;
   const todayAppointments = upcomingAppointments.filter(apt => 
     isSameDay(parseISO(apt.startTime), new Date())
   );
@@ -246,10 +191,6 @@ export default function ReceptionistDashboard() {
               <Pill className="h-4 w-4 mr-2" />
               Rx Builder
             </TabsTrigger>
-            <TabsTrigger value="integrations" data-testid="tab-integrations">
-              <Settings className="h-4 w-4 mr-2" />
-              Integrations
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6 mt-0">
@@ -280,15 +221,18 @@ export default function ReceptionistDashboard() {
             </CardContent>
           </Card>
 
-          <Card data-testid="card-pending-calls">
+          <Card data-testid="card-lysa-status">
             <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Follow-ups</CardTitle>
-              <Phone className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Lysa Assistant</CardTitle>
+              <Bot className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{pendingCalls}</div>
-              <p className="text-xs text-muted-foreground">
-                {callLogs.length} total calls logged
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-sm font-medium text-green-600">Active</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Ready to assist with tasks
               </p>
             </CardContent>
           </Card>
@@ -479,61 +423,58 @@ export default function ReceptionistDashboard() {
             </CardContent>
           </Card>
 
-          <Card data-testid="card-call-logs">
+          <Card data-testid="card-lysa-capabilities">
             <CardHeader>
-              <CardTitle>Call Logs</CardTitle>
-              <CardDescription>Recent phone calls</CardDescription>
+              <CardTitle>Lysa Capabilities</CardTitle>
+              <CardDescription>What your AI assistant can do</CardDescription>
             </CardHeader>
             <CardContent>
-              {callsLoading ? (
-                <div className="animate-pulse space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-16 bg-muted rounded" />
-                  ))}
-                </div>
-              ) : combinedCallLogs.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Phone className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No call logs</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {combinedCallLogs.slice(0, 5).map((call) => (
-                    <div
-                      key={call.id}
-                      className="p-3 rounded-md border hover-elevate active-elevate-2"
-                      data-testid={`call-log-${call.id}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
-                            call.direction === 'inbound' ? 'bg-green-500/10' : 'bg-blue-500/10'
-                          }`}>
-                            <Phone className={`h-5 w-5 ${
-                              call.direction === 'inbound' ? 'text-green-600' : 'text-blue-600'
-                            }`} />
-                          </div>
-                          <div>
-                            <p className="font-medium">{call.callerName}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {call.callerPhone} · {call.direction}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {call.requiresFollowup && (
-                            <Badge variant="destructive">Follow-up</Badge>
-                          )}
-                          <Badge variant="outline">{call.callType}</Badge>
-                          <Badge variant={call.status === 'completed' ? 'default' : 'secondary'}>
-                            {call.status}
-                          </Badge>
-                        </div>
-                      </div>
+              <div className="space-y-3">
+                <div className="p-3 rounded-md border hover-elevate active-elevate-2">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                      <Calendar className="h-5 w-5 text-blue-600" />
                     </div>
-                  ))}
+                    <div>
+                      <p className="font-medium">Appointment Booking</p>
+                      <p className="text-sm text-muted-foreground">Schedule and manage patient appointments</p>
+                    </div>
+                  </div>
                 </div>
-              )}
+                <div className="p-3 rounded-md border hover-elevate active-elevate-2">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                      <Mail className="h-5 w-5 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Email Drafting</p>
+                      <p className="text-sm text-muted-foreground">AI-assisted professional responses</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-3 rounded-md border hover-elevate active-elevate-2">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-purple-500/10 flex items-center justify-center">
+                      <Users className="h-5 w-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Patient Records</p>
+                      <p className="text-sm text-muted-foreground">Quick access to patient information</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-3 rounded-md border hover-elevate active-elevate-2">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-orange-500/10 flex items-center justify-center">
+                      <Stethoscope className="h-5 w-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Clinical Support</p>
+                      <p className="text-sm text-muted-foreground">Diagnosis and prescription assistance</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -606,10 +547,6 @@ export default function ReceptionistDashboard() {
 
           <TabsContent value="prescription" className="mt-0">
             <PrescriptionHelper />
-          </TabsContent>
-
-          <TabsContent value="integrations" className="mt-0">
-            <IntegrationSettings />
           </TabsContent>
         </Tabs>
       </div>

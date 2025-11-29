@@ -11,14 +11,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
 import { 
   Send, Bot, Calendar, Mail, Phone, FileText, Stethoscope, Pill, 
   Users, MessageSquare, Clock, Sparkles, ChevronDown, ChevronUp,
-  X, Plus, Search, AlertTriangle, CheckCircle, Loader2, ExternalLink
+  X, Plus, Search, AlertTriangle, CheckCircle, Loader2, ExternalLink, Link2
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { BookAppointmentDialog, CheckAvailabilityDialog, CalendarStatusBadge } from "./LysaCalendarBooking";
+
+interface IntegrationStatus {
+  gmail: { connected: boolean; email?: string; lastSync?: string };
+  whatsapp: { connected: boolean; number?: string; lastSync?: string };
+  twilio: { connected: boolean; number?: string; lastSync?: string };
+}
 
 interface ChatMessage {
   id: string;
@@ -105,14 +112,22 @@ interface LysaChatPanelProps {
 }
 
 export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patientName, className = "" }: LysaChatPanelProps) {
+  const { toast } = useToast();
   const [message, setMessage] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [appointmentDialog, setAppointmentDialog] = useState(false);
   const [availabilityDialog, setAvailabilityDialog] = useState(false);
-  const [emailDialog, setEmailDialog] = useState(false);
-  const [prescriptionDialog, setPrescriptionDialog] = useState(false);
+  const [gmailConnectDialog, setGmailConnectDialog] = useState(false);
+  const [whatsappConnectDialog, setWhatsappConnectDialog] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const { data: integrationStatus } = useQuery<IntegrationStatus>({
+    queryKey: ["/api/v1/integrations/status"],
+  });
+
+  const gmailConnected = integrationStatus?.gmail?.connected === true;
+  const whatsappConnected = integrationStatus?.whatsapp?.connected === true;
 
   const { data: chatMessages = [], isLoading } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat/messages", { agent: "lysa", patientId }],
@@ -152,6 +167,23 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
     },
   });
 
+  const getGmailAuthUrl = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("/api/v1/integrations/gmail/auth-url");
+      return response.json();
+    },
+    onSuccess: (data: { authUrl: string }) => {
+      window.location.href = data.authUrl;
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to start Gmail connection. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSend = () => {
     if (!message.trim() || sendMessageMutation.isPending) return;
     sendMessageMutation.mutate(message);
@@ -165,6 +197,18 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
     if (action.id === "check-availability") {
       setAvailabilityDialog(true);
       return;
+    }
+    if (action.id === "reply-email") {
+      if (!gmailConnected) {
+        setGmailConnectDialog(true);
+        return;
+      }
+    }
+    if (action.id === "whatsapp-appointment") {
+      if (!whatsappConnected) {
+        setWhatsappConnectDialog(true);
+        return;
+      }
     }
     setMessage(action.prompt);
     setShowQuickActions(false);
@@ -404,7 +448,174 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
 
       <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
       <CheckAvailabilityDialog open={availabilityDialog} onOpenChange={setAvailabilityDialog} />
+      
+      <Dialog open={gmailConnectDialog} onOpenChange={setGmailConnectDialog}>
+        <DialogContent data-testid="dialog-gmail-connect">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5 text-red-600" />
+              Connect Gmail
+            </DialogTitle>
+            <DialogDescription>
+              Connect your Gmail account to reply to patient emails.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="flex items-center justify-center mb-4">
+              <div className="h-16 w-16 rounded-full bg-red-500/10 flex items-center justify-center">
+                <Mail className="h-8 w-8 text-red-600" />
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground text-center mb-4">
+              Link your Gmail to automatically sync patient emails, use AI to categorize them, and draft professional replies.
+            </p>
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setGmailConnectDialog(false)} data-testid="button-cancel-gmail-connect">
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => getGmailAuthUrl.mutate()}
+              disabled={getGmailAuthUrl.isPending}
+              data-testid="button-confirm-gmail-connect"
+            >
+              {getGmailAuthUrl.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Link2 className="h-4 w-4 mr-2" />
+              )}
+              Connect Gmail
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <WhatsAppConnectDialog open={whatsappConnectDialog} onOpenChange={setWhatsappConnectDialog} />
     </Card>
+  );
+}
+
+function WhatsAppConnectDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { toast } = useToast();
+  const [whatsappForm, setWhatsappForm] = useState({
+    businessId: "",
+    phoneNumberId: "",
+    displayNumber: "",
+    accessToken: ""
+  });
+
+  const configureWhatsApp = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("/api/v1/integrations/whatsapp/configure", {
+        method: "POST",
+        json: whatsappForm,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/integrations/status"] });
+      onOpenChange(false);
+      setWhatsappForm({ businessId: "", phoneNumberId: "", displayNumber: "", accessToken: "" });
+      toast({
+        title: "Connected",
+        description: "WhatsApp Business has been connected successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Connection Failed",
+        description: "Failed to connect WhatsApp Business. Please check your credentials.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="dialog-whatsapp-connect">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-green-600" />
+            Connect WhatsApp Business
+          </DialogTitle>
+          <DialogDescription>
+            Enter your WhatsApp Business API credentials from Meta Business Suite
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 pt-4">
+          <div className="space-y-2">
+            <Label htmlFor="businessId">Business ID</Label>
+            <Input
+              id="businessId"
+              placeholder="Your WhatsApp Business ID"
+              value={whatsappForm.businessId}
+              onChange={(e) => setWhatsappForm(prev => ({ ...prev, businessId: e.target.value }))}
+              data-testid="input-whatsapp-businessid"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="phoneNumberId">Phone Number ID</Label>
+            <Input
+              id="phoneNumberId"
+              placeholder="Your Phone Number ID"
+              value={whatsappForm.phoneNumberId}
+              onChange={(e) => setWhatsappForm(prev => ({ ...prev, phoneNumberId: e.target.value }))}
+              data-testid="input-whatsapp-phoneid"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="displayNumber">Display Number</Label>
+            <Input
+              id="displayNumber"
+              placeholder="+1234567890"
+              value={whatsappForm.displayNumber}
+              onChange={(e) => setWhatsappForm(prev => ({ ...prev, displayNumber: e.target.value }))}
+              data-testid="input-whatsapp-number"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="accessToken">Access Token</Label>
+            <Input
+              id="accessToken"
+              type="password"
+              placeholder="Your permanent access token"
+              value={whatsappForm.accessToken}
+              onChange={(e) => setWhatsappForm(prev => ({ ...prev, accessToken: e.target.value }))}
+              data-testid="input-whatsapp-token"
+            />
+          </div>
+          <div className="flex justify-between items-center pt-2">
+            <a 
+              href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline flex items-center gap-1"
+              data-testid="link-whatsapp-guide"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Setup Guide
+            </a>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                data-testid="button-cancel-whatsapp"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => configureWhatsApp.mutate()}
+                disabled={configureWhatsApp.isPending || !whatsappForm.businessId.trim() || !whatsappForm.phoneNumberId.trim() || !whatsappForm.displayNumber.trim() || !whatsappForm.accessToken.trim()}
+                data-testid="button-submit-whatsapp"
+              >
+                {configureWhatsApp.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Connect
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
