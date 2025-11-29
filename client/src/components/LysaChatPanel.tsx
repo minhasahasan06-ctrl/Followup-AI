@@ -67,13 +67,6 @@ const quickActions: QuickAction[] = [
     category: "communication"
   },
   {
-    id: "call-notes",
-    label: "Log Phone Call",
-    icon: <Phone className="h-4 w-4" />,
-    prompt: "I just finished a phone call and need to log it with a follow-up action.",
-    category: "communication"
-  },
-  {
     id: "find-patient",
     label: "Find Patient",
     icon: <Search className="h-4 w-4" />,
