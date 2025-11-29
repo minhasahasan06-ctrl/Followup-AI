@@ -4,13 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users } from "lucide-react";
+import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users, Settings } from "lucide-react";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { LysaChatPanel, LysaQuickActionsBar } from "@/components/LysaChatPanel";
 import { EmailAIHelper } from "@/components/EmailAIHelper";
 import { PatientManagementPanel } from "@/components/PatientManagementPanel";
 import { DiagnosisHelper } from "@/components/DiagnosisHelper";
 import { PrescriptionHelper } from "@/components/PrescriptionHelper";
+import { IntegrationSettings } from "@/components/IntegrationSettings";
 
 interface Appointment {
   id: string;
@@ -50,6 +51,42 @@ interface CallLog {
   requiresFollowup: boolean;
 }
 
+interface IntegrationStatus {
+  gmail: { connected: boolean; email?: string; lastSync?: string };
+  whatsapp: { connected: boolean; number?: string; lastSync?: string };
+  twilio: { connected: boolean; number?: string; lastSync?: string };
+}
+
+interface SyncedEmail {
+  id: string;
+  doctorId: string;
+  gmailMessageId: string;
+  from: string;
+  to: string;
+  subject: string;
+  body?: string;
+  category?: string;
+  priority?: string;
+  sentiment?: string;
+  isRead: boolean;
+  receivedAt: string;
+}
+
+interface TwilioCallLog {
+  id: string;
+  doctorId: string;
+  twilioCallSid?: string;
+  fromNumber: string;
+  toNumber: string;
+  direction: string;
+  status: string;
+  startTime?: string;
+  endTime?: string;
+  duration?: number;
+  recordingUrl?: string;
+  transcription?: string;
+}
+
 interface LysaPatient {
   id: string;
   firstName?: string | null;
@@ -76,9 +113,58 @@ export default function ReceptionistDashboard() {
     queryKey: ["/api/v1/calls", { limit: 10 }],
   });
 
-  const unreadEmails = emailThreads.filter(thread => !thread.isRead).length;
-  const urgentEmails = emailThreads.filter(thread => thread.priority === 'urgent').length;
-  const pendingCalls = callLogs.filter(call => call.requiresFollowup).length;
+  // Fetch integration status
+  const { data: integrationStatus } = useQuery<IntegrationStatus>({
+    queryKey: ["/api/v1/integrations/status"],
+  });
+
+  // Fetch synced emails from connected Gmail
+  const { data: syncedEmails = [] } = useQuery<SyncedEmail[]>({
+    queryKey: ["/api/v1/integrations/gmail/emails"],
+    enabled: integrationStatus?.gmail.connected === true,
+  });
+
+  // Fetch synced call logs from connected Twilio
+  const { data: twilioCallLogs = [] } = useQuery<TwilioCallLog[]>({
+    queryKey: ["/api/v1/integrations/twilio/calls"],
+    enabled: integrationStatus?.twilio.connected === true,
+  });
+
+  // Combine email sources - synced emails take priority if Gmail is connected
+  const combinedEmails = integrationStatus?.gmail.connected && syncedEmails.length > 0
+    ? syncedEmails.map(email => ({
+        id: email.id,
+        doctorId: email.doctorId,
+        subject: email.subject,
+        category: email.category || 'general',
+        priority: email.priority || 'normal',
+        status: 'active',
+        isRead: email.isRead,
+        messageCount: 1,
+        lastMessageAt: email.receivedAt,
+        from: email.from,
+      }))
+    : emailThreads;
+
+  // Combine call log sources
+  const combinedCallLogs = integrationStatus?.twilio.connected && twilioCallLogs.length > 0
+    ? twilioCallLogs.map(call => ({
+        id: call.id,
+        doctorId: call.doctorId,
+        callerName: call.fromNumber,
+        callerPhone: call.fromNumber,
+        direction: call.direction,
+        callType: 'phone',
+        status: call.status,
+        startTime: call.startTime || new Date().toISOString(),
+        duration: call.duration,
+        requiresFollowup: false,
+      }))
+    : callLogs;
+
+  const unreadEmails = combinedEmails.filter(thread => !thread.isRead).length;
+  const urgentEmails = combinedEmails.filter(thread => thread.priority === 'urgent').length;
+  const pendingCalls = combinedCallLogs.filter(call => call.requiresFollowup).length;
   const todayAppointments = upcomingAppointments.filter(apt => 
     isSameDay(parseISO(apt.startTime), new Date())
   );
@@ -159,6 +245,10 @@ export default function ReceptionistDashboard() {
             <TabsTrigger value="prescription" data-testid="tab-prescription">
               <Pill className="h-4 w-4 mr-2" />
               Rx Builder
+            </TabsTrigger>
+            <TabsTrigger value="integrations" data-testid="tab-integrations">
+              <Settings className="h-4 w-4 mr-2" />
+              Integrations
             </TabsTrigger>
           </TabsList>
 
@@ -346,14 +436,14 @@ export default function ReceptionistDashboard() {
                     <div key={i} className="h-16 bg-muted rounded" />
                   ))}
                 </div>
-              ) : emailThreads.length === 0 ? (
+              ) : combinedEmails.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Mail className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No email threads</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {emailThreads.slice(0, 5).map((thread) => (
+                  {combinedEmails.slice(0, 5).map((thread) => (
                     <div
                       key={thread.id}
                       className={`p-3 rounded-md border hover-elevate active-elevate-2 ${
@@ -401,14 +491,14 @@ export default function ReceptionistDashboard() {
                     <div key={i} className="h-16 bg-muted rounded" />
                   ))}
                 </div>
-              ) : callLogs.length === 0 ? (
+              ) : combinedCallLogs.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Phone className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No call logs</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {callLogs.slice(0, 5).map((call) => (
+                  {combinedCallLogs.slice(0, 5).map((call) => (
                     <div
                       key={call.id}
                       className="p-3 rounded-md border hover-elevate active-elevate-2"
@@ -516,6 +606,10 @@ export default function ReceptionistDashboard() {
 
           <TabsContent value="prescription" className="mt-0">
             <PrescriptionHelper />
+          </TabsContent>
+
+          <TabsContent value="integrations" className="mt-0">
+            <IntegrationSettings />
           </TabsContent>
         </Tabs>
       </div>

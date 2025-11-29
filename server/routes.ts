@@ -48,6 +48,10 @@ import {
   getPatientRecord,
   formatPatientSummary
 } from "./chatReceptionistService";
+import { 
+  doctorIntegrationService, 
+  initDoctorIntegrationService 
+} from "./doctorIntegrationService";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
@@ -244,6 +248,10 @@ const medicalDocUpload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // ============== INITIALIZE SERVICES ==============
+  // Initialize doctor integration service early so it's available for all routes
+  initDoctorIntegrationService(storage);
+  
   // ============== SESSION CONFIGURATION ==============
   // Configure session middleware for cookie-based authentication
   app.use(getSession());
@@ -9493,6 +9501,387 @@ Provide:
       console.error('Error disconnecting Gmail:', error);
       res.status(500).json({ message: 'Failed to disconnect Gmail' });
     }
+  });
+
+  // ===== DOCTOR INTEGRATIONS (PER-DOCTOR PERSONAL ACCOUNTS) =====
+  // Note: doctorIntegrationService is imported and initialized at the top of registerRoutes
+
+  // Get all integration statuses for doctor
+  app.get('/api/v1/integrations/status', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access integrations' });
+      }
+
+      const status = await doctorIntegrationService.getIntegrationStatus(req.user.id);
+      res.json(status);
+    } catch (error) {
+      console.error('Error fetching integration status:', error);
+      res.status(500).json({ message: 'Failed to fetch integration status' });
+    }
+  });
+
+  // Get all integrations for doctor
+  app.get('/api/v1/integrations', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can access integrations' });
+      }
+
+      const integrations = await doctorIntegrationService.getDoctorIntegrations(req.user.id);
+      res.json(integrations);
+    } catch (error) {
+      console.error('Error fetching integrations:', error);
+      res.status(500).json({ message: 'Failed to fetch integrations' });
+    }
+  });
+
+  // Get Gmail OAuth URL for per-doctor connection
+  app.get('/api/v1/integrations/gmail/auth-url', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can connect Gmail' });
+      }
+
+      const authUrl = doctorIntegrationService.getGmailAuthUrl(req.user.id);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error('Error generating Gmail auth URL:', error);
+      res.status(500).json({ message: 'Failed to generate auth URL' });
+    }
+  });
+
+  // Gmail OAuth callback for per-doctor connection
+  // Uses signed JWT state token for CSRF protection (HIPAA-compliant)
+  app.get('/api/integrations/gmail/callback', async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const stateToken = req.query.state as string;
+      
+      if (!code || !stateToken) {
+        return res.redirect('/?integration=error&message=Missing+parameters');
+      }
+
+      // The handleGmailCallback validates the signed JWT state token internally
+      // This prevents CSRF attacks where an attacker could craft a callback URL
+      const result = await doctorIntegrationService.handleGmailCallback(code, stateToken);
+      
+      if (result.success) {
+        res.redirect(`/?integration=gmail&status=connected&email=${encodeURIComponent(result.email || '')}`);
+      } else {
+        res.redirect(`/?integration=gmail&status=error&message=${encodeURIComponent(result.error || 'Unknown error')}`);
+      }
+    } catch (error) {
+      console.error('Error in Gmail OAuth callback:', error);
+      res.redirect('/?integration=gmail&status=error&message=OAuth+failed');
+    }
+  });
+
+  // Sync Gmail emails for doctor
+  app.post('/api/v1/integrations/gmail/sync', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can sync Gmail' });
+      }
+
+      const result = await doctorIntegrationService.syncGmailEmails(req.user.id);
+      res.json(result);
+    } catch (error) {
+      console.error('Error syncing Gmail:', error);
+      res.status(500).json({ message: 'Failed to sync Gmail' });
+    }
+  });
+
+  // Get synced emails for doctor
+  app.get('/api/v1/integrations/gmail/emails', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view emails' });
+      }
+
+      const { category, isRead, limit, offset } = req.query;
+      const emails = await doctorIntegrationService.getDoctorEmails(req.user.id, {
+        category: category as string,
+        isRead: isRead !== undefined ? isRead === 'true' : undefined,
+        limit: limit ? parseInt(limit as string) : undefined,
+        offset: offset ? parseInt(offset as string) : undefined,
+      });
+      res.json(emails);
+    } catch (error) {
+      console.error('Error fetching emails:', error);
+      res.status(500).json({ message: 'Failed to fetch emails' });
+    }
+  });
+
+  // Send email from doctor's connected account
+  app.post('/api/v1/integrations/gmail/send', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can send emails' });
+      }
+
+      const { to, subject, body, replyToMessageId } = req.body;
+      const result = await doctorIntegrationService.sendEmailFromDoctor(req.user.id, to, subject, body, replyToMessageId);
+      res.json(result);
+    } catch (error) {
+      console.error('Error sending email:', error);
+      res.status(500).json({ message: 'Failed to send email' });
+    }
+  });
+
+  // Disconnect Gmail
+  app.post('/api/v1/integrations/gmail/disconnect', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can disconnect Gmail' });
+      }
+
+      const result = await doctorIntegrationService.disconnectGmail(req.user.id);
+      res.json(result);
+    } catch (error) {
+      console.error('Error disconnecting Gmail:', error);
+      res.status(500).json({ message: 'Failed to disconnect Gmail' });
+    }
+  });
+
+  // Configure WhatsApp Business for doctor
+  app.post('/api/v1/integrations/whatsapp/configure', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can configure WhatsApp' });
+      }
+
+      const { businessId, phoneNumberId, displayNumber, accessToken } = req.body;
+      const result = await doctorIntegrationService.configureWhatsAppBusiness(
+        req.user.id,
+        businessId,
+        phoneNumberId,
+        displayNumber,
+        accessToken
+      );
+      res.json(result);
+    } catch (error) {
+      console.error('Error configuring WhatsApp:', error);
+      res.status(500).json({ message: 'Failed to configure WhatsApp' });
+    }
+  });
+
+  // Get WhatsApp messages for doctor
+  app.get('/api/v1/integrations/whatsapp/messages', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view WhatsApp messages' });
+      }
+
+      const { status, limit } = req.query;
+      const messages = await doctorIntegrationService.getDoctorWhatsappMessages(req.user.id, {
+        status: status as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+      res.json(messages);
+    } catch (error) {
+      console.error('Error fetching WhatsApp messages:', error);
+      res.status(500).json({ message: 'Failed to fetch WhatsApp messages' });
+    }
+  });
+
+  // Send WhatsApp message
+  app.post('/api/v1/integrations/whatsapp/send', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can send WhatsApp messages' });
+      }
+
+      const { toNumber, message } = req.body;
+      const result = await doctorIntegrationService.sendWhatsAppMessage(req.user.id, toNumber, message);
+      res.json(result);
+    } catch (error) {
+      console.error('Error sending WhatsApp message:', error);
+      res.status(500).json({ message: 'Failed to send WhatsApp message' });
+    }
+  });
+
+  // WhatsApp webhook for incoming messages
+  app.post('/api/webhooks/whatsapp/:doctorId', async (req, res) => {
+    try {
+      const { doctorId } = req.params;
+      const { entry } = req.body;
+
+      if (entry && entry[0]?.changes) {
+        for (const change of entry[0].changes) {
+          if (change.field === 'messages' && change.value?.messages) {
+            for (const message of change.value.messages) {
+              await doctorIntegrationService.processIncomingWhatsAppMessage(
+                doctorId,
+                message.id,
+                message.from,
+                change.value.metadata.display_phone_number,
+                message.type,
+                message.text?.body,
+                change.value.contacts?.[0]?.profile?.name
+              );
+            }
+          }
+        }
+      }
+
+      res.status(200).send('OK');
+    } catch (error) {
+      console.error('Error processing WhatsApp webhook:', error);
+      res.status(500).send('Error');
+    }
+  });
+
+  // WhatsApp webhook verification
+  app.get('/api/webhooks/whatsapp/:doctorId', async (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    // Verify token - in production, use a secure token per doctor
+    if (mode === 'subscribe' && token === 'followup-ai-whatsapp-verify') {
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  });
+
+  // Configure Twilio for doctor
+  app.post('/api/v1/integrations/twilio/configure', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can configure Twilio' });
+      }
+
+      const { accountSid, apiKey, apiSecret, phoneNumber } = req.body;
+      const result = await doctorIntegrationService.configureTwilioAccount(
+        req.user.id,
+        accountSid,
+        apiKey,
+        apiSecret,
+        phoneNumber
+      );
+      res.json(result);
+    } catch (error) {
+      console.error('Error configuring Twilio:', error);
+      res.status(500).json({ message: 'Failed to configure Twilio' });
+    }
+  });
+
+  // Get call logs for doctor
+  app.get('/api/v1/integrations/twilio/calls', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can view call logs' });
+      }
+
+      const { status, limit } = req.query;
+      const calls = await doctorIntegrationService.getDoctorCallLogs(req.user.id, {
+        status: status as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+      res.json(calls);
+    } catch (error) {
+      console.error('Error fetching call logs:', error);
+      res.status(500).json({ message: 'Failed to fetch call logs' });
+    }
+  });
+
+  // Sync Twilio call history
+  app.post('/api/v1/integrations/twilio/sync', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can sync call history' });
+      }
+
+      const result = await doctorIntegrationService.syncTwilioCallHistory(req.user.id);
+      res.json(result);
+    } catch (error) {
+      console.error('Error syncing Twilio:', error);
+      res.status(500).json({ message: 'Failed to sync call history' });
+    }
+  });
+
+  // Make outbound call
+  app.post('/api/v1/integrations/twilio/call', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'doctor') {
+        return res.status(403).json({ message: 'Only doctors can make calls' });
+      }
+
+      const { toNumber } = req.body;
+      const result = await doctorIntegrationService.makeOutboundCall(req.user.id, toNumber);
+      res.json(result);
+    } catch (error) {
+      console.error('Error making call:', error);
+      res.status(500).json({ message: 'Failed to make call' });
+    }
+  });
+
+  // Twilio voice webhook for incoming calls
+  app.post('/api/webhooks/twilio/voice/:doctorId', async (req, res) => {
+    try {
+      const { doctorId } = req.params;
+      const { CallSid, From, To, CallStatus, RecordingUrl, TranscriptionText, CallDuration } = req.body;
+
+      await doctorIntegrationService.processIncomingCall(
+        doctorId,
+        CallSid,
+        From,
+        undefined,
+        'inbound',
+        CallStatus,
+        CallDuration ? parseInt(CallDuration) : undefined,
+        RecordingUrl,
+        TranscriptionText
+      );
+
+      // Return TwiML for call handling
+      res.type('text/xml');
+      res.send(`<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+          <Say>Thank you for calling. A doctor will be with you shortly.</Say>
+          <Record transcribe="true" transcribeCallback="/api/webhooks/twilio/transcription/${doctorId}"/>
+        </Response>
+      `);
+    } catch (error) {
+      console.error('Error processing Twilio voice webhook:', error);
+      res.status(500).send('Error');
+    }
+  });
+
+  // Twilio transcription callback
+  app.post('/api/webhooks/twilio/transcription/:doctorId', async (req, res) => {
+    try {
+      const { doctorId } = req.params;
+      const { CallSid, TranscriptionText, TranscriptionStatus } = req.body;
+
+      if (TranscriptionStatus === 'completed' && TranscriptionText) {
+        const callLog = await storage.getCallLogByTwilioSid(CallSid);
+        if (callLog) {
+          await storage.updateCallLog(callLog.id, {
+            transcription: TranscriptionText,
+          });
+        }
+      }
+
+      res.status(200).send('OK');
+    } catch (error) {
+      console.error('Error processing transcription:', error);
+      res.status(500).send('Error');
+    }
+  });
+
+  // TwiML for outbound calls
+  app.post('/api/twilio/twiml/outbound', async (req, res) => {
+    res.type('text/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+      <Response>
+        <Dial callerId="${req.body.From || ''}" record="record-from-answer" transcribe="true">
+          <Number>${req.body.To || ''}</Number>
+        </Dial>
+      </Response>
+    `);
   });
 
   // ===== RESEARCH SERVICE =====
