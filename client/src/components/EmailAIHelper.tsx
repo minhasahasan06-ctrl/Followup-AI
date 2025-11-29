@@ -28,9 +28,18 @@ import {
   Edit3,
   Wand2,
   ChevronRight,
-  MailPlus
+  MailPlus,
+  Link2,
+  CheckCircle2,
+  Unplug
 } from "lucide-react";
 import { format } from "date-fns";
+
+interface IntegrationStatus {
+  gmail: { connected: boolean; email?: string; lastSync?: string };
+  whatsapp: { connected: boolean; number?: string; lastSync?: string };
+  twilio: { connected: boolean; number?: string; lastSync?: string };
+}
 
 interface EmailThread {
   id: string;
@@ -88,8 +97,76 @@ export function EmailAIHelper() {
   const [generatedReply, setGeneratedReply] = useState<EmailReplyResult | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const { data: integrationStatus, isLoading: statusLoading } = useQuery<IntegrationStatus>({
+    queryKey: ["/api/v1/integrations/status"],
+  });
+
+  const gmailConnected = integrationStatus?.gmail?.connected === true;
+
   const { data: emailThreads = [], isLoading: threadsLoading } = useQuery<EmailThread[]>({
     queryKey: ["/api/v1/emails/threads"],
+    enabled: gmailConnected,
+  });
+
+  const getGmailAuthUrl = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("/api/v1/integrations/gmail/auth-url");
+      return response.json();
+    },
+    onSuccess: (data: { authUrl: string }) => {
+      window.location.href = data.authUrl;
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to start Gmail connection. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const syncGmail = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("/api/v1/integrations/gmail/sync", { method: "POST" });
+      return response.json();
+    },
+    onSuccess: (data: { emailsFetched: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/integrations/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/emails/threads"] });
+      toast({
+        title: "Sync Complete",
+        description: `Successfully synced ${data.emailsFetched} new emails.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Sync Failed",
+        description: "Failed to sync emails. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const disconnectGmail = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("/api/v1/integrations/gmail/disconnect", { method: "POST" });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/integrations/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/emails/threads"] });
+      toast({
+        title: "Disconnected",
+        description: "Gmail has been disconnected successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to disconnect Gmail. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const generateReplyMutation = useMutation({
@@ -195,6 +272,168 @@ export function EmailAIHelper() {
     }
   };
 
+  if (statusLoading) {
+    return (
+      <Card className="h-full flex flex-col">
+        <CardContent className="flex-1 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!gmailConnected) {
+    return (
+      <Card className="h-full flex flex-col" data-testid="card-gmail-connect">
+        <CardHeader className="flex-shrink-0 pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="h-5 w-5" />
+                Email Assistant
+              </CardTitle>
+              <CardDescription>Connect Gmail for inbox sync, or compose manually</CardDescription>
+            </div>
+            <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" data-testid="button-compose-email-manual">
+                  <MailPlus className="h-4 w-4 mr-1" />
+                  Compose
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Edit3 className="h-5 w-5" />
+                    Compose Email with AI
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="recipient-manual">To</Label>
+                    <Input
+                      id="recipient-manual"
+                      placeholder="patient@example.com"
+                      value={recipientEmail}
+                      onChange={(e) => setRecipientEmail(e.target.value)}
+                      data-testid="input-email-recipient-manual"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="subject-manual">Subject</Label>
+                    <Input
+                      id="subject-manual"
+                      placeholder="Re: Your appointment confirmation"
+                      value={emailSubject}
+                      onChange={(e) => setEmailSubject(e.target.value)}
+                      data-testid="input-email-subject-manual"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="body-manual">Message</Label>
+                      <div className="flex gap-2">
+                        <Select value={selectedTone} onValueChange={setSelectedTone}>
+                          <SelectTrigger className="w-32 h-8">
+                            <SelectValue placeholder="Tone" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="professional">Professional</SelectItem>
+                            <SelectItem value="warm">Warm</SelectItem>
+                            <SelectItem value="empathetic">Empathetic</SelectItem>
+                            <SelectItem value="concise">Concise</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => enhanceDraftMutation.mutate(draftEmail)}
+                          disabled={!draftEmail.trim() || enhanceDraftMutation.isPending}
+                          data-testid="button-enhance-email-manual"
+                        >
+                          {enhanceDraftMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Wand2 className="h-4 w-4 mr-1" />
+                              Enhance
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    <Textarea
+                      id="body-manual"
+                      placeholder="Type your message here... AI will help you refine it."
+                      value={draftEmail}
+                      onChange={(e) => setDraftEmail(e.target.value)}
+                      rows={10}
+                      className="resize-none"
+                      data-testid="input-email-body-manual"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setComposeOpen(false)}
+                      data-testid="button-cancel-email-manual"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`To: ${recipientEmail}\nSubject: ${emailSubject}\n\n${draftEmail}`);
+                        toast({
+                          title: "Copied to Clipboard",
+                          description: "Email content copied. Paste into your email client to send.",
+                        });
+                        setComposeOpen(false);
+                      }}
+                      disabled={!recipientEmail || !emailSubject || !draftEmail}
+                      data-testid="button-copy-email-manual"
+                    >
+                      <Copy className="h-4 w-4 mr-1" />
+                      Copy Email
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent className="flex-1 flex flex-col items-center justify-center py-8">
+          <div className="h-20 w-20 rounded-full bg-red-500/10 flex items-center justify-center mb-6">
+            <Mail className="h-10 w-10 text-red-600" />
+          </div>
+          <h3 className="text-lg font-semibold mb-2" data-testid="text-gmail-connect-title">
+            Connect Your Gmail
+          </h3>
+          <p className="text-muted-foreground text-center max-w-sm mb-6">
+            Link your Gmail account to automatically sync patient emails, categorize messages with AI, and draft professional replies.
+          </p>
+          <div className="space-y-3 w-full max-w-xs">
+            <Button 
+              onClick={() => getGmailAuthUrl.mutate()}
+              disabled={getGmailAuthUrl.isPending}
+              className="w-full"
+              data-testid="button-connect-gmail"
+            >
+              {getGmailAuthUrl.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Link2 className="h-4 w-4 mr-2" />
+              )}
+              Connect Gmail Account
+            </Button>
+            <p className="text-xs text-muted-foreground text-center">
+              Your credentials are encrypted and stored securely. HIPAA compliant.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="flex-shrink-0 pb-3">
@@ -204,7 +443,36 @@ export function EmailAIHelper() {
               <Mail className="h-5 w-5" />
               Email Assistant
             </CardTitle>
-            <CardDescription>AI-powered email management</CardDescription>
+            <CardDescription className="flex items-center gap-2">
+              <Badge variant="secondary" className="bg-green-500/10 text-green-600 text-xs">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                {integrationStatus?.gmail?.email || "Connected"}
+              </Badge>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 px-2 text-xs"
+                onClick={() => syncGmail.mutate()}
+                disabled={syncGmail.isPending}
+                data-testid="button-sync-gmail"
+              >
+                {syncGmail.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3 w-3" />
+                )}
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 px-2 text-xs text-muted-foreground"
+                onClick={() => disconnectGmail.mutate()}
+                disabled={disconnectGmail.isPending}
+                data-testid="button-disconnect-gmail"
+              >
+                <Unplug className="h-3 w-3" />
+              </Button>
+            </CardDescription>
           </div>
           <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
             <DialogTrigger asChild>
