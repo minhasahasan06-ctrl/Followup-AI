@@ -18,7 +18,7 @@ import {
   ChevronDown, ChevronRight, Save, RefreshCw, 
   Loader2, Check, AlertCircle, Play, Pause, Settings,
   Zap, Bell, FileText, Pill, Activity, Shield,
-  HelpCircle, History, RotateCcw, Brain
+  HelpCircle, History, RotateCcw, Brain, Plus, Trash2, Edit
 } from "lucide-react";
 import { SiGoogle, SiWhatsapp } from "react-icons/si";
 import { apiRequest, queryClient } from "@/lib/queryClient";
