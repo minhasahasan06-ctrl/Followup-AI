@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { BookAppointmentDialog, CheckAvailabilityDialog, CalendarStatusBadge } from "./LysaCalendarBooking";
+import { BookAppointmentDialog } from "./LysaCalendarBooking";
 
 interface IntegrationStatus {
   gmail: { connected: boolean; email?: string; lastSync?: string };
@@ -53,13 +53,6 @@ const quickActions: QuickAction[] = [
     category: "appointment"
   },
   {
-    id: "check-availability",
-    label: "Check Availability",
-    icon: <Clock className="h-4 w-4" />,
-    prompt: "Show me available appointment slots for today and tomorrow.",
-    category: "appointment"
-  },
-  {
     id: "whatsapp-appointment",
     label: "WhatsApp Booking",
     icon: <Phone className="h-4 w-4" />,
@@ -67,10 +60,10 @@ const quickActions: QuickAction[] = [
     category: "appointment"
   },
   {
-    id: "reply-email",
-    label: "Reply to Email",
+    id: "email",
+    label: "Email",
     icon: <Mail className="h-4 w-4" />,
-    prompt: "Help me draft a professional reply to a patient email.",
+    prompt: "Help me compose and send a professional email to a patient.",
     category: "communication"
   },
   {
@@ -621,10 +614,16 @@ function WhatsAppConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
 export function LysaQuickActionsBar() {
   const [appointmentDialog, setAppointmentDialog] = useState(false);
-  const [availabilityDialog, setAvailabilityDialog] = useState(false);
-  const [gmailConnectDialog, setGmailConnectDialog] = useState(false);
+  const [emailDialog, setEmailDialog] = useState(false);
   const [whatsappConnectDialog, setWhatsappConnectDialog] = useState(false);
+  const [gmailConnectDialog, setGmailConnectDialog] = useState(false);
   const { toast } = useToast();
+  
+  // Email compose state
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [draftEmail, setDraftEmail] = useState("");
+  const [selectedTone, setSelectedTone] = useState<string>("professional");
   
   const { data: integrationStatus } = useQuery<IntegrationStatus>({
     queryKey: ["/api/v1/integrations/status"],
@@ -663,13 +662,65 @@ export function LysaQuickActionsBar() {
     },
   });
 
+  const enhanceDraftMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const response = await apiRequest("/api/chat/send", {
+        method: "POST",
+        json: {
+          content: `Please enhance this email draft to be more ${selectedTone} and clear while maintaining HIPAA compliance. Keep the same meaning but improve the writing:\n\n${content}`,
+          agentType: "lysa",
+        },
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.response) {
+        setDraftEmail(data.response);
+        toast({
+          title: "Draft Enhanced",
+          description: "Your email has been professionally refined by AI.",
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Enhancement Failed",
+        description: "Could not enhance the draft. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const sendEmailMutation = useMutation({
+    mutationFn: async ({ to, subject, body }: { to: string; subject: string; body: string }) => {
+      const response = await apiRequest("/api/v1/emails/messages", {
+        method: "POST",
+        json: { to, subject, body, isFromDoctor: true },
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Email Sent",
+        description: "Your message has been delivered successfully.",
+      });
+      setEmailDialog(false);
+      setDraftEmail("");
+      setEmailSubject("");
+      setRecipientEmail("");
+    },
+    onError: () => {
+      toast({
+        title: "Send Failed",
+        description: "Could not send the email. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleQuickAction = (action: QuickAction) => {
     if (action.id === "book-appointment") {
       setAppointmentDialog(true);
-      return;
-    }
-    if (action.id === "check-availability") {
-      setAvailabilityDialog(true);
       return;
     }
     if (action.id === "whatsapp-appointment") {
@@ -680,26 +731,33 @@ export function LysaQuickActionsBar() {
       sendMessageMutation.mutate(action.prompt);
       return;
     }
-    if (action.id === "reply-email") {
+    if (action.id === "email") {
       if (!gmailConnected) {
         setGmailConnectDialog(true);
         return;
       }
-      sendMessageMutation.mutate(action.prompt);
+      setEmailDialog(true);
       return;
     }
     sendMessageMutation.mutate(action.prompt);
+  };
+
+  const handleCopyEmail = () => {
+    navigator.clipboard.writeText(`To: ${recipientEmail}\nSubject: ${emailSubject}\n\n${draftEmail}`);
+    toast({
+      title: "Copied to Clipboard",
+      description: "Email content copied. Paste into your email client to send.",
+    });
   };
 
   return (
     <>
       <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
         <Bot className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-        <CalendarStatusBadge />
         <div className="flex gap-1 overflow-x-auto">
-          {quickActions.slice(0, 5).map((action) => {
+          {quickActions.slice(0, 4).map((action) => {
             const isWhatsApp = action.id === "whatsapp-appointment";
-            const isEmail = action.id === "reply-email";
+            const isEmail = action.id === "email";
             const notConnected = (isWhatsApp && !whatsappConnected) || (isEmail && !gmailConnected);
             
             return (
@@ -724,33 +782,145 @@ export function LysaQuickActionsBar() {
         )}
       </div>
       <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
-      <CheckAvailabilityDialog open={availabilityDialog} onOpenChange={setAvailabilityDialog} />
+      
+      {/* Email Compose Dialog with AI Features */}
+      <Dialog open={emailDialog} onOpenChange={setEmailDialog}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-email-compose">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Compose Email with AI
+            </DialogTitle>
+            <DialogDescription>
+              Write your email and use AI to enhance it professionally
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="email-recipient">To</Label>
+              <Input
+                id="email-recipient"
+                placeholder="patient@example.com"
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                data-testid="input-email-recipient"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-subject">Subject</Label>
+              <Input
+                id="email-subject"
+                placeholder="Re: Your appointment confirmation"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                data-testid="input-email-subject"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="email-body">Message</Label>
+                <div className="flex gap-2">
+                  <Select value={selectedTone} onValueChange={setSelectedTone}>
+                    <SelectTrigger className="w-32 h-8" data-testid="select-email-tone">
+                      <SelectValue placeholder="Tone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="professional">Professional</SelectItem>
+                      <SelectItem value="warm">Warm</SelectItem>
+                      <SelectItem value="empathetic">Empathetic</SelectItem>
+                      <SelectItem value="concise">Concise</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => enhanceDraftMutation.mutate(draftEmail)}
+                    disabled={!draftEmail.trim() || enhanceDraftMutation.isPending}
+                    data-testid="button-enhance-email"
+                  >
+                    {enhanceDraftMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-1" />
+                        Enhance
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <Textarea
+                id="email-body"
+                placeholder="Type your message here... AI will help you refine it."
+                value={draftEmail}
+                onChange={(e) => setDraftEmail(e.target.value)}
+                rows={10}
+                className="resize-none"
+                data-testid="input-email-body"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setEmailDialog(false)}
+                data-testid="button-cancel-email"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleCopyEmail}
+                disabled={!recipientEmail || !emailSubject || !draftEmail}
+                data-testid="button-copy-email"
+              >
+                Copy Email
+              </Button>
+              <Button
+                onClick={() => sendEmailMutation.mutate({
+                  to: recipientEmail,
+                  subject: emailSubject,
+                  body: draftEmail,
+                })}
+                disabled={!recipientEmail || !emailSubject || !draftEmail || sendEmailMutation.isPending}
+                data-testid="button-send-email"
+              >
+                {sendEmailMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                Send Email
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       
       {/* Gmail Connect Dialog */}
       <Dialog open={gmailConnectDialog} onOpenChange={setGmailConnectDialog}>
-        <DialogContent>
+        <DialogContent data-testid="dialog-gmail-connect">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Mail className="h-5 w-5" />
               Connect Gmail
             </DialogTitle>
             <DialogDescription>
-              Connect your Gmail account to enable email management features in Lysa.
+              Connect your Gmail account to enable email features
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                 <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-sm">Read and organize patient emails</span>
+                <span className="text-sm">Compose and send emails directly</span>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                 <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-sm">AI-powered email classification</span>
+                <span className="text-sm">AI-powered draft enhancement</span>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                 <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-sm">Draft and send replies with AI assistance</span>
+                <span className="text-sm">HIPAA-compliant email management</span>
               </div>
             </div>
           </div>
