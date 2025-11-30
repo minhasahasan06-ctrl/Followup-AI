@@ -3183,6 +3183,9 @@ export const appointments = pgTable("appointments", {
   bookedByAI: boolean("booked_by_ai").default(false),
   aiBookingContext: jsonb("ai_booking_context").$type<{ intent: string; confidence: number; extractedInfo: any }>(),
   
+  // Booking method tracking - how the appointment was booked
+  bookedByMethod: varchar("booked_by_method").default("online"), // 'whatsapp', 'email', 'phone', 'online', 'walk-in'
+  
   // Symptom triage (AI-powered urgency assessment)
   symptoms: text("symptoms"),
   urgencyLevel: varchar("urgency_level").default("routine"), // 'emergency', 'urgent', 'routine', 'non-urgent'

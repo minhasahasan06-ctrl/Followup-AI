@@ -1,17 +1,22 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users, Activity } from "lucide-react";
-import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users, Activity, Link2Off, ExternalLink, Loader2 } from "lucide-react";
+import { SiGoogle, SiWhatsapp } from "react-icons/si";
+import { format, startOfWeek, addDays, isSameDay, parseISO, differenceInMinutes } from "date-fns";
 import { LysaChatPanel } from "@/components/LysaChatPanel";
 import { PatientManagementPanel } from "@/components/PatientManagementPanel";
 import { DiagnosisHelper } from "@/components/DiagnosisHelper";
 import { PrescriptionHelper } from "@/components/PrescriptionHelper";
 import { AutomationStatusPanel, AutomationStatusBadge } from "@/components/AutomationStatusPanel";
 import { BookAppointmentDialog } from "@/components/LysaCalendarBooking";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface Appointment {
   id: string;
@@ -24,6 +29,29 @@ interface Appointment {
   confirmationStatus: string;
   notes?: string;
   patientName?: string;
+  patientEmail?: string;
+  patientPhone?: string;
+  duration?: number;
+  bookedByMethod?: string;
+  description?: string;
+}
+
+interface CalendarEvent {
+  id: string;
+  summary: string;
+  description?: string;
+  location?: string;
+  start: { dateTime?: string; date?: string };
+  end: { dateTime?: string; date?: string };
+  status: string;
+}
+
+interface ConnectorStatus {
+  connected: boolean;
+  calendarId?: string;
+  calendarName?: string;
+  email?: string;
+  source: string;
 }
 
 interface EmailThread {
@@ -71,6 +99,9 @@ export default function ReceptionistDashboard() {
   const [lysaPatient, setLysaPatient] = useState<LysaPatient | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [appointmentDialog, setAppointmentDialog] = useState(false);
+  const [todayAppointmentsDialog, setTodayAppointmentsDialog] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const { toast } = useToast();
   const weekStart = startOfWeek(selectedDate);
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
@@ -87,10 +118,41 @@ export default function ReceptionistDashboard() {
     queryKey: ["/api/v1/integrations/status"],
   });
 
+  // Fetch Google Calendar connector status
+  const { data: calendarConnector, isLoading: connectorLoading } = useQuery<ConnectorStatus>({
+    queryKey: ["/api/v1/calendar/connector-status"],
+  });
+
+  // Fetch Google Calendar events when connected
+  const { data: calendarEventsData, isLoading: eventsLoading } = useQuery<{ events: CalendarEvent[] }>({
+    queryKey: ["/api/v1/calendar/events"],
+    enabled: calendarConnector?.connected === true,
+  });
+
+  const calendarEvents = calendarEventsData?.events || [];
+
   // Fetch synced emails from connected Gmail
   const { data: syncedEmails = [] } = useQuery<SyncedEmail[]>({
     queryKey: ["/api/v1/integrations/gmail/emails"],
     enabled: integrationStatus?.gmail.connected === true,
+  });
+
+  // Get auth URL mutation for Google Calendar
+  const getCalendarAuthUrl = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("/api/v1/calendar/auth-url");
+      return response.json();
+    },
+    onSuccess: (data: { authUrl: string }) => {
+      window.location.href = data.authUrl;
+    },
+    onError: () => {
+      toast({
+        title: "Connection Error",
+        description: "Failed to get Google Calendar authorization URL.",
+        variant: "destructive",
+      });
+    },
   });
 
 
@@ -120,6 +182,38 @@ export default function ReceptionistDashboard() {
     return upcomingAppointments.filter(apt => 
       isSameDay(parseISO(apt.startTime), date)
     );
+  };
+
+  // Get Google Calendar events for a specific day
+  const getCalendarEventsForDay = (date: Date) => {
+    return calendarEvents.filter(event => {
+      const eventDate = event.start.dateTime ? parseISO(event.start.dateTime) : 
+                       event.start.date ? parseISO(event.start.date) : null;
+      return eventDate && isSameDay(eventDate, date);
+    });
+  };
+
+  // Combined events (appointments + calendar events) for weekly view
+  const getAllEventsForDay = (date: Date) => {
+    const appointments = getAppointmentsForDay(date);
+    const events = getCalendarEventsForDay(date);
+    return {
+      appointments,
+      events,
+      total: appointments.length + events.length
+    };
+  };
+
+  // Get booking method icon and label
+  const getBookingMethodInfo = (method?: string) => {
+    const methods: Record<string, { icon: JSX.Element; label: string; color: string }> = {
+      whatsapp: { icon: <SiWhatsapp className="h-3 w-3" />, label: "WhatsApp", color: "text-green-600" },
+      email: { icon: <Mail className="h-3 w-3" />, label: "Email", color: "text-blue-600" },
+      phone: { icon: <Phone className="h-3 w-3" />, label: "Phone", color: "text-orange-600" },
+      online: { icon: <ExternalLink className="h-3 w-3" />, label: "Online", color: "text-purple-600" },
+      "walk-in": { icon: <User className="h-3 w-3" />, label: "Walk-in", color: "text-gray-600" },
+    };
+    return methods[method || "online"] || methods.online;
   };
 
   const getCategoryColor = (category: string) => {
@@ -195,15 +289,20 @@ export default function ReceptionistDashboard() {
 
           <TabsContent value="overview" className="space-y-6 mt-0">
         <div className="grid gap-4 md:grid-cols-4">
-          <Card data-testid="card-today-appointments">
+          <Card 
+            className="hover-elevate active-elevate-2 cursor-pointer" 
+            onClick={() => setTodayAppointmentsDialog(true)}
+            data-testid="card-today-appointments"
+          >
             <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Today's Appointments</CardTitle>
               <Calendar className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{todayAppointments.length}</div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
                 {upcomingAppointments.length} total this week
+                <ChevronRight className="h-3 w-3" />
               </p>
             </CardContent>
           </Card>
@@ -257,23 +356,52 @@ export default function ReceptionistDashboard() {
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card data-testid="card-week-calendar">
-            <CardHeader>
-              <CardTitle>Weekly Calendar</CardTitle>
-              <CardDescription>
-                {format(weekStart, "MMM d")} - {format(addDays(weekStart, 6), "MMM d, yyyy")}
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between gap-1">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  Weekly Calendar
+                  {calendarConnector?.connected && (
+                    <Badge variant="outline" className="text-xs">
+                      <SiGoogle className="h-3 w-3 mr-1" />
+                      Synced
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  {format(weekStart, "MMM d")} - {format(addDays(weekStart, 6), "MMM d, yyyy")}
+                </CardDescription>
+              </div>
             </CardHeader>
             <CardContent>
-              {appointmentsLoading ? (
+              {connectorLoading || appointmentsLoading || eventsLoading ? (
                 <div className="animate-pulse space-y-3">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-12 bg-muted rounded" />
                   ))}
                 </div>
+              ) : !calendarConnector?.connected ? (
+                <div className="text-center py-6">
+                  <Link2Off className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-50" />
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Connect Google Calendar to sync your schedule
+                  </p>
+                  <Button 
+                    onClick={() => getCalendarAuthUrl.mutate()}
+                    disabled={getCalendarAuthUrl.isPending}
+                    data-testid="button-connect-calendar"
+                  >
+                    {getCalendarAuthUrl.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <SiGoogle className="h-4 w-4 mr-2" />
+                    )}
+                    Connect Google Calendar
+                  </Button>
+                </div>
               ) : (
                 <div className="grid grid-cols-7 gap-2">
                   {weekDays.map((day) => {
-                    const dayAppointments = getAppointmentsForDay(day);
+                    const dayData = getAllEventsForDay(day);
                     const isToday = isSameDay(day, new Date());
                     
                     return (
@@ -290,20 +418,30 @@ export default function ReceptionistDashboard() {
                         <div className="text-2xl font-bold mb-2">
                           {format(day, "d")}
                         </div>
-                        {dayAppointments.length > 0 && (
+                        {dayData.total > 0 && (
                           <div className="space-y-1">
-                            {dayAppointments.slice(0, 2).map((apt) => (
+                            {dayData.appointments.slice(0, 2).map((apt) => (
                               <div
                                 key={apt.id}
-                                className="text-xs p-1 rounded bg-primary/10 text-primary truncate"
+                                className="text-xs p-1 rounded bg-primary/10 text-primary truncate cursor-pointer hover:bg-primary/20"
+                                onClick={() => setSelectedAppointment(apt)}
                                 data-testid={`appointment-${apt.id}`}
                               >
                                 {format(parseISO(apt.startTime), "HH:mm")}
                               </div>
                             ))}
-                            {dayAppointments.length > 2 && (
+                            {dayData.events.slice(0, Math.max(0, 2 - dayData.appointments.length)).map((event) => (
+                              <div
+                                key={event.id}
+                                className="text-xs p-1 rounded bg-accent text-accent-foreground truncate"
+                                data-testid={`event-${event.id}`}
+                              >
+                                {event.start.dateTime ? format(parseISO(event.start.dateTime), "HH:mm") : "All day"}
+                              </div>
+                            ))}
+                            {dayData.total > 2 && (
                               <div className="text-xs text-muted-foreground">
-                                +{dayAppointments.length - 2} more
+                                +{dayData.total - 2} more
                               </div>
                             )}
                           </div>
@@ -328,42 +466,60 @@ export default function ReceptionistDashboard() {
                     <div key={i} className="h-16 bg-muted rounded" />
                   ))}
                 </div>
-              ) : upcomingAppointments.length === 0 ? (
+              ) : !calendarConnector?.connected ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Link2Off className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p className="mb-2">Connect Google Calendar</p>
+                  <p className="text-xs">to see your upcoming appointments</p>
+                </div>
+              ) : upcomingAppointments.length === 0 && calendarEvents.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No upcoming appointments</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {upcomingAppointments.slice(0, 5).map((appointment) => (
-                    <div
-                      key={appointment.id}
-                      className="flex items-center justify-between p-3 rounded-md border hover-elevate active-elevate-2"
-                      data-testid={`appointment-item-${appointment.id}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <User className="h-5 w-5 text-primary" />
+                <ScrollArea className="h-[280px]">
+                  <div className="space-y-3 pr-3">
+                    {upcomingAppointments.slice(0, 10).map((appointment) => {
+                      const methodInfo = getBookingMethodInfo(appointment.bookedByMethod);
+                      return (
+                        <div
+                          key={appointment.id}
+                          className="flex items-center justify-between p-3 rounded-md border hover-elevate active-elevate-2 cursor-pointer"
+                          onClick={() => setSelectedAppointment(appointment)}
+                          data-testid={`appointment-item-${appointment.id}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                              <User className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-medium">
+                                {appointment.patientName || `Patient ${appointment.patientId?.slice(0, 8) || 'Unknown'}`}
+                              </p>
+                              <p className="text-sm text-muted-foreground flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {format(parseISO(appointment.startTime), "MMM d, h:mm a")}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant={appointment.confirmationStatus === 'confirmed' ? 'default' : 'secondary'}>
+                                {appointment.confirmationStatus}
+                              </Badge>
+                              <Badge variant="outline">{appointment.appointmentType}</Badge>
+                            </div>
+                            <span className={`text-xs flex items-center gap-1 ${methodInfo.color}`}>
+                              {methodInfo.icon}
+                              {methodInfo.label}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">
-                            {appointment.patientName || `Patient ${appointment.patientId.slice(0, 8)}`}
-                          </p>
-                          <p className="text-sm text-muted-foreground flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {format(parseISO(appointment.startTime), "MMM d, h:mm a")}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={appointment.confirmationStatus === 'confirmed' ? 'default' : 'secondary'}>
-                          {appointment.confirmationStatus}
-                        </Badge>
-                        <Badge variant="outline">{appointment.appointmentType}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
               )}
             </CardContent>
           </Card>
@@ -594,6 +750,211 @@ export default function ReceptionistDashboard() {
       )}
       
       <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
+
+      {/* Today's Appointments Dialog */}
+      <Dialog open={todayAppointmentsDialog} onOpenChange={setTodayAppointmentsDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh]" data-testid="dialog-today-appointments">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Today's Appointments
+            </DialogTitle>
+            <DialogDescription>
+              {format(new Date(), "EEEE, MMMM d, yyyy")} · {todayAppointments.length} appointment{todayAppointments.length !== 1 ? 's' : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh]">
+            {todayAppointments.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Calendar className="h-16 w-16 mx-auto mb-4 opacity-30" />
+                <p className="text-lg font-medium mb-1">No appointments today</p>
+                <p className="text-sm">Book an appointment to get started</p>
+              </div>
+            ) : (
+              <div className="space-y-3 pr-3">
+                {todayAppointments.map((appointment) => {
+                  const methodInfo = getBookingMethodInfo(appointment.bookedByMethod);
+                  const duration = appointment.duration || 
+                    differenceInMinutes(parseISO(appointment.endTime), parseISO(appointment.startTime));
+                  
+                  return (
+                    <div
+                      key={appointment.id}
+                      className="p-4 rounded-lg border hover-elevate active-elevate-2 cursor-pointer"
+                      onClick={() => {
+                        setSelectedAppointment(appointment);
+                        setTodayAppointmentsDialog(false);
+                      }}
+                      data-testid={`today-appointment-${appointment.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <User className="h-6 w-6 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-base">
+                              {appointment.patientName || `Patient ${appointment.patientId?.slice(0, 8) || 'Unknown'}`}
+                            </p>
+                            <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3.5 w-3.5" />
+                                {format(parseISO(appointment.startTime), "h:mm a")} - {format(parseISO(appointment.endTime), "h:mm a")}
+                              </span>
+                              <span>({duration} min)</span>
+                            </div>
+                            {appointment.patientEmail && (
+                              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                <Mail className="h-3 w-3" />
+                                {appointment.patientEmail}
+                              </p>
+                            )}
+                            {appointment.patientPhone && (
+                              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {appointment.patientPhone}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant={appointment.confirmationStatus === 'confirmed' ? 'default' : 'secondary'}>
+                              {appointment.confirmationStatus}
+                            </Badge>
+                            <Badge variant="outline">{appointment.appointmentType}</Badge>
+                          </div>
+                          <span className={`text-xs flex items-center gap-1 ${methodInfo.color}`}>
+                            {methodInfo.icon}
+                            Booked via {methodInfo.label}
+                          </span>
+                        </div>
+                      </div>
+                      {appointment.description && (
+                        <p className="text-sm text-muted-foreground mt-3 pl-15">
+                          {appointment.description}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </ScrollArea>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setTodayAppointmentsDialog(false)} data-testid="button-close-today-appointments">
+              Close
+            </Button>
+            <Button onClick={() => { setTodayAppointmentsDialog(false); setAppointmentDialog(true); }} data-testid="button-book-new-appointment">
+              <Plus className="h-4 w-4 mr-2" />
+              Book New
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Appointment Details Dialog */}
+      <Dialog open={!!selectedAppointment} onOpenChange={(open) => !open && setSelectedAppointment(null)}>
+        <DialogContent className="max-w-lg" data-testid="dialog-appointment-details">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Appointment Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedAppointment && (
+            <div className="space-y-4">
+              {/* Patient Info */}
+              <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+                <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
+                  <User className="h-7 w-7 text-primary" />
+                </div>
+                <div>
+                  <p className="font-semibold text-lg">
+                    {selectedAppointment.patientName || `Patient ${selectedAppointment.patientId?.slice(0, 8) || 'Unknown'}`}
+                  </p>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    {selectedAppointment.patientEmail && (
+                      <span className="flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        {selectedAppointment.patientEmail}
+                      </span>
+                    )}
+                  </div>
+                  {selectedAppointment.patientPhone && (
+                    <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <Phone className="h-3 w-3" />
+                      {selectedAppointment.patientPhone}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Appointment Time */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 border rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-1">Date & Time</p>
+                  <p className="font-medium flex items-center gap-1">
+                    <Clock className="h-4 w-4" />
+                    {format(parseISO(selectedAppointment.startTime), "MMM d, yyyy")}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {format(parseISO(selectedAppointment.startTime), "h:mm a")} - {format(parseISO(selectedAppointment.endTime), "h:mm a")}
+                  </p>
+                </div>
+                <div className="p-3 border rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-1">Duration</p>
+                  <p className="font-medium">
+                    {selectedAppointment.duration || 
+                      differenceInMinutes(parseISO(selectedAppointment.endTime), parseISO(selectedAppointment.startTime))} minutes
+                  </p>
+                  <p className="text-sm text-muted-foreground capitalize">
+                    {selectedAppointment.appointmentType}
+                  </p>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Status</p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={selectedAppointment.confirmationStatus === 'confirmed' ? 'default' : 'secondary'}>
+                      {selectedAppointment.confirmationStatus}
+                    </Badge>
+                    <Badge variant="outline">{selectedAppointment.status}</Badge>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground mb-1">Booked via</p>
+                  {(() => {
+                    const methodInfo = getBookingMethodInfo(selectedAppointment.bookedByMethod);
+                    return (
+                      <span className={`text-sm flex items-center gap-1 justify-end ${methodInfo.color}`}>
+                        {methodInfo.icon}
+                        {methodInfo.label}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Notes */}
+              {(selectedAppointment.notes || selectedAppointment.description) && (
+                <div className="p-3 border rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-1">Notes</p>
+                  <p className="text-sm">{selectedAppointment.notes || selectedAppointment.description}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setSelectedAppointment(null)} data-testid="button-close-appointment-details">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
