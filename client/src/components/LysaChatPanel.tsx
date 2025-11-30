@@ -60,20 +60,6 @@ const quickActions: QuickAction[] = [
     category: "communication"
   },
   {
-    id: "calendar",
-    label: "Calendar",
-    icon: <Calendar className="h-4 w-4" />,
-    prompt: "Show me my calendar and upcoming appointments.",
-    category: "appointment"
-  },
-  {
-    id: "patient-summary",
-    label: "Patient Summary",
-    icon: <FileText className="h-4 w-4" />,
-    prompt: "Generate a summary of a patient's recent health data and visits.",
-    category: "records"
-  },
-  {
     id: "diagnosis-support",
     label: "Diagnosis Support",
     icon: <Stethoscope className="h-4 w-4" />,
