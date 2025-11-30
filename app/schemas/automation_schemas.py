@@ -339,6 +339,24 @@ class ClinicalAutomationConfigCreate(BaseModel):
     chronic_refill_require_approval: bool = True
 
 
+class ClinicalAutomationConfigUpdate(BaseModel):
+    """Partial update schema for clinical automation config"""
+    is_enabled: Optional[bool] = None
+    auto_soap_notes: Optional[bool] = None
+    auto_icd10_suggest: Optional[bool] = None
+    auto_differential_diagnosis: Optional[bool] = None
+    prescription_assist_enabled: Optional[bool] = None
+    require_prescription_approval: Optional[bool] = None
+    use_patient_history: Optional[bool] = None
+    drug_interaction_check: Optional[bool] = None
+    contraindication_alerts: Optional[bool] = None
+    auto_dosage_recommendations: Optional[bool] = None
+    chronic_refill_enabled: Optional[bool] = None
+    chronic_refill_adherence_threshold: Optional[int] = Field(None, ge=0, le=100)
+    chronic_refill_days_before_expiry: Optional[int] = Field(None, ge=1, le=90)
+    chronic_refill_require_approval: Optional[bool] = None
+
+
 class ClinicalAutomationConfigResponse(BaseModel):
     id: str
     doctor_id: str
@@ -371,6 +389,19 @@ class RxTemplateCreate(BaseModel):
     route: str = "oral"
     instructions: Optional[str] = None
     is_active: bool = True
+
+
+class RxTemplateUpdate(BaseModel):
+    """Partial update schema for Rx templates"""
+    name: Optional[str] = None
+    condition: Optional[str] = None
+    medication_name: Optional[str] = None
+    dosage: Optional[str] = None
+    frequency: Optional[str] = None
+    duration: Optional[str] = None
+    route: Optional[str] = None
+    instructions: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class RxTemplateResponse(BaseModel):

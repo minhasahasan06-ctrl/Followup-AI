@@ -35,9 +35,9 @@ from app.schemas.automation_schemas import (
     WhatsAppAutomationConfigCreate, WhatsAppAutomationConfigResponse,
     AppointmentAutomationConfigCreate, AppointmentAutomationConfigResponse,
     ReminderAutomationConfigCreate, ReminderAutomationConfigResponse,
-    ClinicalAutomationConfigCreate, ClinicalAutomationConfigResponse,
+    ClinicalAutomationConfigCreate, ClinicalAutomationConfigUpdate, ClinicalAutomationConfigResponse,
     AutomationLogResponse, AutomationEvent,
-    RxTemplateCreate, RxTemplateResponse
+    RxTemplateCreate, RxTemplateUpdate, RxTemplateResponse
 )
 from app.services.automation_engine import automation_engine
 
@@ -631,11 +631,11 @@ async def get_clinical_config(
 
 @router.put("/config/clinical", response_model=ClinicalAutomationConfigResponse)
 async def update_clinical_config(
-    request: ClinicalAutomationConfigCreate,
+    request: ClinicalAutomationConfigUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Update clinical automation configuration"""
+    """Update clinical automation configuration with partial updates"""
     import uuid
     
     doctor_id = current_user.get("id") or current_user.get("sub")
@@ -651,8 +651,19 @@ async def update_clinical_config(
         config = ClinicalAutomationConfig(id=str(uuid.uuid4()), doctor_id=doctor_id)
         db.add(config)
     
-    for field, value in request.model_dump().items():
-        if hasattr(config, field):
+    update_data = request.model_dump(exclude_unset=True)
+    
+    if update_data.get('chronic_refill_enabled', False) or (config.chronic_refill_enabled and 'chronic_refill_enabled' not in update_data):
+        threshold = update_data.get('chronic_refill_adherence_threshold', config.chronic_refill_adherence_threshold)
+        days_before = update_data.get('chronic_refill_days_before_expiry', config.chronic_refill_days_before_expiry)
+        if threshold is None or days_before is None:
+            raise HTTPException(
+                status_code=400,
+                detail="When chronic refill is enabled, adherence_threshold and days_before_expiry are required"
+            )
+    
+    for field, value in update_data.items():
+        if hasattr(config, field) and value is not None:
             setattr(config, field, value)
     
     config.updated_at = datetime.utcnow()
@@ -1026,11 +1037,11 @@ async def get_rx_template(
 @router.put("/rx-templates/{template_id}", response_model=RxTemplateResponse)
 async def update_rx_template(
     template_id: str,
-    request: RxTemplateCreate,
+    request: RxTemplateUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Update a prescription template"""
+    """Update a prescription template with partial updates"""
     doctor_id = current_user.get("id") or current_user.get("sub")
     
     if not doctor_id:
@@ -1046,29 +1057,27 @@ async def update_rx_template(
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
     
-    name_conflict = db.query(RxTemplate).filter(
-        and_(
-            RxTemplate.doctor_id == doctor_id,
-            RxTemplate.name == request.name,
-            RxTemplate.id != template_id
-        )
-    ).first()
+    update_data = request.model_dump(exclude_unset=True)
     
-    if name_conflict:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Another template with name '{request.name}' already exists"
-        )
+    if 'name' in update_data and update_data['name'] != template.name:
+        name_conflict = db.query(RxTemplate).filter(
+            and_(
+                RxTemplate.doctor_id == doctor_id,
+                RxTemplate.name == update_data['name'],
+                RxTemplate.id != template_id
+            )
+        ).first()
+        
+        if name_conflict:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Another template with name '{update_data['name']}' already exists"
+            )
     
-    template.name = request.name
-    template.condition = request.condition
-    template.medication_name = request.medication_name
-    template.dosage = request.dosage
-    template.frequency = request.frequency
-    template.duration = request.duration
-    template.route = request.route
-    template.instructions = request.instructions
-    template.is_active = request.is_active
+    for field, value in update_data.items():
+        if hasattr(template, field) and value is not None:
+            setattr(template, field, value)
+    
     template.updated_at = datetime.utcnow()
     
     db.commit()
