@@ -40,6 +40,14 @@ The backend consists of two services:
 - **Google Calendar Sync:** Bidirectional appointment sync for doctors with OAuth, conflict resolution, and HIPAA-compliant PHI handling.
 - **Drug-Drug Interaction Detection:** Medication adherence system with RxNorm integration and real-time interaction detection.
 - **Automatic Drug Normalization:** On-demand medication normalization against RxNorm API, creating standardized drug records.
+- **Clinical Automation (Rx Builder):** AI-assisted prescription system with:
+  - AI SOAP notes generation and ICD-10 code suggestions
+  - AI differential diagnosis based on patient history
+  - Drug-drug interaction checks and contraindication alerts
+  - Auto-dosage recommendations based on patient parameters
+  - Chronic refill automation with adherence threshold (0-100%, default 80%) and days-before-expiry triggers (1-90 days, default 7)
+  - Prescription templates with doctor-specific customization
+  - Schema-level validation with safe defaults for chronic refill settings
 - **PainTrack Platform:** Chronic pain tracking system with dual-camera video capture, VAS pain slider, and medication tracking.
 - **Mental Health AI Dashboard:** Integrated questionnaires (PHQ-9, GAD-7, PSS-10) with AI-powered GPT-4o analysis, crisis detection, and scoring.
 - **Agent Clona Symptom Extraction:** AI-powered symptom extraction from patient conversations (GPT-4o) identifying symptoms, body locations, intensity, and temporal information.

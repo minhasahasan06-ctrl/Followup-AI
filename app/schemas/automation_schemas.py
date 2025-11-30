@@ -2,7 +2,7 @@
 Pydantic schemas for Lysa Automation Engine API.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -355,6 +355,16 @@ class ClinicalAutomationConfigUpdate(BaseModel):
     chronic_refill_adherence_threshold: Optional[int] = Field(None, ge=0, le=100)
     chronic_refill_days_before_expiry: Optional[int] = Field(None, ge=1, le=90)
     chronic_refill_require_approval: Optional[bool] = None
+    
+    @model_validator(mode='after')
+    def validate_chronic_refill_params(self) -> 'ClinicalAutomationConfigUpdate':
+        """Ensure chronic refill parameters have safe values when enabling"""
+        if self.chronic_refill_enabled is True:
+            if self.chronic_refill_adherence_threshold is None:
+                self.chronic_refill_adherence_threshold = 80
+            if self.chronic_refill_days_before_expiry is None:
+                self.chronic_refill_days_before_expiry = 7
+        return self
 
 
 class ClinicalAutomationConfigResponse(BaseModel):
