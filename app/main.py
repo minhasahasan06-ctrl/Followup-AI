@@ -55,6 +55,7 @@ from app.routers import (
     drug_normalization_api,  # ✅ Drug Normalization Service - PRODUCTION READY
     ai_health_alerts,  # ✅ AI Health Alert Engine - PRODUCTION READY
     habits,  # ✅ Comprehensive Habit Tracker - 13 Features - PRODUCTION READY
+    automation,  # ✅ Lysa Automation Engine - PRODUCTION READY
 )
 
 logger = logging.getLogger(__name__)
@@ -127,12 +128,32 @@ async def lifespan(app: FastAPI):
     await AIEngineManager.initialize_all()
     logger.info("✅ AI engines initialized successfully")
     
+    # Step 4: Start Lysa Automation Engine (optional - enabled via environment)
+    automation_enabled = os.getenv("LYSA_AUTOMATION_ENABLED", "false").lower() == "true"
+    if automation_enabled:
+        logger.info("🤖 Starting Lysa Automation Engine...")
+        try:
+            from app.services.scheduler import start_automation_services
+            await start_automation_services()
+            logger.info("✅ Lysa Automation Engine started")
+        except Exception as e:
+            logger.warning(f"⚠️  Automation Engine startup failed: {e}")
+    else:
+        logger.info("ℹ️  Lysa Automation Engine disabled (set LYSA_AUTOMATION_ENABLED=true to enable)")
+    
     logger.info("🎉 Followup AI Backend startup complete!")
     
     yield
     
-    # Shutdown: Cleanup AI engines
+    # Shutdown: Cleanup AI engines and automation
     logger.info("🛑 Shutting down Followup AI Backend...")
+    if automation_enabled:
+        try:
+            from app.services.scheduler import stop_automation_services
+            await stop_automation_services()
+            logger.info("✅ Lysa Automation Engine stopped")
+        except Exception as e:
+            logger.warning(f"⚠️  Automation Engine shutdown error: {e}")
     await AIEngineManager.cleanup_all()
     logger.info("✅ Shutdown complete")
 
@@ -189,6 +210,9 @@ app.include_router(ai_health_alerts.router)
 
 # Comprehensive Habit Tracker (13 Features: Routines, Streaks, AI Coach, CBT, etc.) - PRODUCTION READY
 app.include_router(habits.router)
+
+# Lysa Automation Engine (Email/WhatsApp sync, Appointments, Reminders, Clinical AI) - PRODUCTION READY
+app.include_router(automation.router)
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:

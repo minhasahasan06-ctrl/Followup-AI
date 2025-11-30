@@ -4,13 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users } from "lucide-react";
+import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users, Activity } from "lucide-react";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { LysaChatPanel, LysaQuickActionsBar } from "@/components/LysaChatPanel";
 import { EmailAIHelper } from "@/components/EmailAIHelper";
 import { PatientManagementPanel } from "@/components/PatientManagementPanel";
 import { DiagnosisHelper } from "@/components/DiagnosisHelper";
 import { PrescriptionHelper } from "@/components/PrescriptionHelper";
+import { AutomationStatusPanel, AutomationStatusBadge } from "@/components/AutomationStatusPanel";
 
 interface Appointment {
   id: string;
@@ -175,6 +176,10 @@ export default function ReceptionistDashboard() {
               <LayoutDashboard className="h-4 w-4 mr-2" />
               Overview
             </TabsTrigger>
+            <TabsTrigger value="automation" data-testid="tab-automation">
+              <Activity className="h-4 w-4 mr-2" />
+              Automation
+            </TabsTrigger>
             <TabsTrigger value="emails" data-testid="tab-emails">
               <Mail className="h-4 w-4 mr-2" />
               Email AI
@@ -223,17 +228,15 @@ export default function ReceptionistDashboard() {
 
           <Card data-testid="card-lysa-status">
             <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Lysa Assistant</CardTitle>
-              <Bot className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Lysa Automation</CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                 <span className="text-sm font-medium text-green-600">Active</span>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Ready to assist with tasks
-              </p>
+              <AutomationStatusBadge />
             </CardContent>
           </Card>
 
@@ -478,6 +481,82 @@ export default function ReceptionistDashboard() {
             </CardContent>
           </Card>
         </div>
+          </TabsContent>
+
+          <TabsContent value="automation" className="mt-0">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <AutomationStatusPanel />
+              <Card data-testid="card-automation-config">
+                <CardHeader>
+                  <CardTitle>Automation Settings</CardTitle>
+                  <CardDescription>Configure Lysa's automated tasks</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                          <Mail className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Email Automation</p>
+                          <p className="text-sm text-muted-foreground">Auto-classify, reply & forward</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" data-testid="badge-email-automation">Configure</Badge>
+                    </div>
+                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                          <MessageSquare className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">WhatsApp Automation</p>
+                          <p className="text-sm text-muted-foreground">Auto-reply & templates</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" data-testid="badge-whatsapp-automation">Configure</Badge>
+                    </div>
+                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-purple-500/10 flex items-center justify-center">
+                          <Calendar className="h-5 w-5 text-purple-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Appointment Automation</p>
+                          <p className="text-sm text-muted-foreground">Auto-book & confirm</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" data-testid="badge-appointment-automation">Configure</Badge>
+                    </div>
+                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                          <Clock className="h-5 w-5 text-amber-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Reminder Automation</p>
+                          <p className="text-sm text-muted-foreground">Medication, appointments, follow-ups</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" data-testid="badge-reminder-automation">Configure</Badge>
+                    </div>
+                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-pink-500/10 flex items-center justify-center">
+                          <Stethoscope className="h-5 w-5 text-pink-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Clinical Automation</p>
+                          <p className="text-sm text-muted-foreground">SOAP notes, ICD-10 suggestions</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" data-testid="badge-clinical-automation">Configure</Badge>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="emails" className="mt-0">

@@ -70,6 +70,17 @@ from app.models.habit_models import (
     HabitJournal,
     HabitRiskAlert
 )
+from app.models.automation_models import (
+    AutomationJob,
+    AutomationSchedule,
+    AutomationLog,
+    AutomationMetric,
+    EmailAutomationConfig,
+    WhatsAppAutomationConfig,
+    AppointmentAutomationConfig,
+    ReminderAutomationConfig,
+    ClinicalAutomationConfig
+)
 
 __all__ = [
     "User",
@@ -132,4 +143,13 @@ __all__ = [
     "HabitReward",
     "HabitJournal",
     "HabitRiskAlert",
+    "AutomationJob",
+    "AutomationSchedule",
+    "AutomationLog",
+    "AutomationMetric",
+    "EmailAutomationConfig",
+    "WhatsAppAutomationConfig",
+    "AppointmentAutomationConfig",
+    "ReminderAutomationConfig",
+    "ClinicalAutomationConfig",
 ]
