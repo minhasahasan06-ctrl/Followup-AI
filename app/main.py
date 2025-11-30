@@ -58,6 +58,7 @@ from app.routers import (
     automation,  # ✅ Lysa Automation Engine - PRODUCTION READY
     webhooks,  # ✅ Gmail/WhatsApp Webhook Receivers - PRODUCTION READY
     clinical_assessment,  # ✅ Clinical Assessment Aggregation - PRODUCTION READY
+    medical_nlp,  # ✅ Medical NLP (GPT-4o PHI Detection & Entity Extraction) - PRODUCTION READY
 )
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,9 @@ app.include_router(webhooks.router)
 
 # Clinical Assessment Aggregation (Patient Data Integration for AI Diagnosis) - PRODUCTION READY
 app.include_router(clinical_assessment.router)
+
+# Medical NLP (GPT-4o PHI Detection & Entity Extraction - Replaces AWS Comprehend Medical) - PRODUCTION READY
+app.include_router(medical_nlp.router)
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:

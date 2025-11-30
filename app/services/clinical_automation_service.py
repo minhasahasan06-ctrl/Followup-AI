@@ -316,20 +316,65 @@ Format as JSON:
 NOTE: This is clinical decision support only. Doctor must make final diagnosis."""
 
         try:
-            response = await openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are a clinical decision support system. Provide thorough differential diagnosis analysis."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=800,
-                response_format={"type": "json_object"}
-            )
+            use_o1_model = os.getenv("USE_O1_FOR_CLINICAL_REASONING", "true").lower() == "true"
+            baa_signed = os.getenv("OPENAI_BAA_SIGNED", "").lower() == "true"
+            enterprise = os.getenv("OPENAI_ENTERPRISE", "").lower() == "true"
             
-            result = json.loads(response.choices[0].message.content)
+            if use_o1_model and not (baa_signed and enterprise):
+                logger.warning("o1 model requested but BAA/Enterprise not verified - falling back to gpt-4o")
+                use_o1_model = False
             
-            logger.info(f"Generated differential diagnosis for patient {patient_id}")
+            if use_o1_model:
+                logger.info(f"Using o1 model for differential diagnosis (patient: {patient_id}, doctor: {doctor_id})")
+                o1_prompt = f"""You are a clinical decision support system providing differential diagnosis analysis.
+
+{prompt}
+
+IMPORTANT: You MUST respond with ONLY valid JSON in this exact format (no markdown, no explanation, just JSON):
+{{"differentials": [{{"diagnosis": "...", "likelihood": "high/medium/low", "supporting_findings": [...], "rule_out_tests": [...]}}]}}
+
+NOTE: This is clinical decision support only. Doctor must make final diagnosis."""
+                
+                try:
+                    response = await openai_client.chat.completions.create(
+                        model="o1",
+                        messages=[
+                            {"role": "user", "content": o1_prompt}
+                        ],
+                        max_completion_tokens=2000
+                    )
+                except Exception as o1_error:
+                    logger.warning(f"o1 model failed: {o1_error}, falling back to gpt-4o")
+                    response = await openai_client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {"role": "system", "content": "You are a clinical decision support system. Provide thorough differential diagnosis analysis."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.3,
+                        max_tokens=800,
+                        response_format={"type": "json_object"}
+                    )
+                    use_o1_model = False
+            else:
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "You are a clinical decision support system. Provide thorough differential diagnosis analysis."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=800,
+                    response_format={"type": "json_object"}
+                )
+            
+            response_content = response.choices[0].message.content
+            if response_content.startswith("```"):
+                lines = response_content.split("\n")
+                response_content = "\n".join(lines[1:-1])
+            result = json.loads(response_content)
+            
+            logger.info(f"Generated differential diagnosis for patient {patient_id} using {'o1' if use_o1_model else 'gpt-4o'}")
             
             return {
                 "success": True,

@@ -771,16 +771,85 @@ Format your response as structured JSON with the following schema:
     "patient_context_summary": "brief summary of patient's current health status"
 }}"""
 
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3,
-            max_tokens=2000,
-            response_format={"type": "json_object"}
-        )
+        use_o1_model = os.environ.get("USE_O1_FOR_CLINICAL_REASONING", "true").lower() == "true"
+        baa_signed = os.environ.get("OPENAI_BAA_SIGNED", "").lower() == "true"
+        enterprise = os.environ.get("OPENAI_ENTERPRISE", "").lower() == "true"
+        
+        if use_o1_model and not (baa_signed and enterprise):
+            logger.warning("o1 model requested but BAA/Enterprise not verified - falling back to gpt-4o")
+            use_o1_model = False
+        
+        if use_o1_model:
+            logger.info(f"Using o1 model for clinical assessment (patient: {patient_id}, doctor: {doctor_id})")
+            combined_prompt = f"""You are an AI clinical decision support assistant for healthcare providers.
+Your role is to help analyze patient symptoms and provide differential diagnosis suggestions.
+
+IMPORTANT DISCLAIMERS:
+- This is decision SUPPORT only, not a diagnosis
+- All suggestions require physician verification
+- Never replace professional medical judgment
+- Always recommend appropriate testing/consultation
+
+When analyzing, consider:
+1. Symptom patterns and combinations
+2. Patient's current medications (drug interactions, side effects)
+3. Recent health alerts and risk indicators
+4. ML-based deterioration predictions if available
+5. Last follow-up findings
+
+{user_prompt}
+
+You MUST respond with ONLY valid JSON in this exact schema (no markdown, no explanation, just JSON):
+{{
+    "primary_diagnosis": {{
+        "condition": "string",
+        "probability": 0.0-1.0,
+        "matching_symptoms": ["list"],
+        "missing_symptoms": ["list"],
+        "urgency": "low|moderate|high|emergency",
+        "description": "string",
+        "recommended_tests": ["list"],
+        "differential_diagnosis": ["list"]
+    }},
+    "differential_diagnoses": [{{ same structure as primary }}],
+    "red_flags": ["list of concerning findings"],
+    "recommended_actions": ["list of next steps"],
+    "medication_considerations": ["list of drug-related concerns"],
+    "clinical_insights": ["list of observations from health data"],
+    "patient_context_summary": "brief summary of patient's current health status"
+}}"""
+            
+            try:
+                response = client.chat.completions.create(
+                    model="o1",
+                    messages=[
+                        {"role": "user", "content": combined_prompt}
+                    ],
+                    max_completion_tokens=4000
+                )
+            except Exception as o1_error:
+                logger.warning(f"o1 model failed: {o1_error}, falling back to gpt-4o")
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=2000,
+                    response_format={"type": "json_object"}
+                )
+        else:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+                response_format={"type": "json_object"}
+            )
         
         import json
         result_json = json.loads(response.choices[0].message.content)
