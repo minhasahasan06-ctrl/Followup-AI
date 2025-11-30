@@ -101,7 +101,7 @@ class WhatsAppMessage(Base):
     is_urgent = Column(Boolean, default=False)
     contains_phi = Column(Boolean, default=False)
     
-    metadata = Column(JSON, nullable=True)
+    message_data = Column(JSON, nullable=True)
     
     received_at = Column(DateTime, nullable=True)
     sent_at = Column(DateTime, nullable=True)
