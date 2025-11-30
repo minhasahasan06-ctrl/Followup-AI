@@ -12784,6 +12784,35 @@ Provide:
   // END LYSA AUTOMATION ENGINE PROXY ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // CLINICAL ASSESSMENT AGGREGATION PROXY ROUTES
+  // Comprehensive patient data integration for AI clinical diagnosis
+  // =============================================================================
+
+  // Get consented patients for clinical assessment
+  app.get('/api/v1/clinical-assessment/patients', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/clinical-assessment/patients', 'GET');
+  });
+
+  // Get aggregated patient data (medical files, alerts, ML inference, meds, followup)
+  app.get('/api/v1/clinical-assessment/patient/:patientId/data', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/clinical-assessment/patient/${req.params.patientId}/data`, 'GET');
+  });
+
+  // AI clinical assessment with patient context
+  app.post('/api/v1/clinical-assessment/analyze', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/clinical-assessment/analyze', 'POST');
+  });
+
+  // HIPAA audit log for patient data access
+  app.get('/api/v1/clinical-assessment/audit-log/:patientId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/clinical-assessment/audit-log/${req.params.patientId}`, 'GET');
+  });
+
+  // =============================================================================
+  // END CLINICAL ASSESSMENT PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
   return httpServer;
 }
