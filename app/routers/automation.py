@@ -653,14 +653,28 @@ async def update_clinical_config(
     
     update_data = request.model_dump(exclude_unset=True)
     
-    if update_data.get('chronic_refill_enabled', False) or (config.chronic_refill_enabled and 'chronic_refill_enabled' not in update_data):
-        threshold = update_data.get('chronic_refill_adherence_threshold', config.chronic_refill_adherence_threshold)
-        days_before = update_data.get('chronic_refill_days_before_expiry', config.chronic_refill_days_before_expiry)
-        if threshold is None or days_before is None:
+    chronic_refill_will_be_enabled = update_data.get('chronic_refill_enabled', config.chronic_refill_enabled)
+    
+    if chronic_refill_will_be_enabled:
+        current_threshold = update_data.get('chronic_refill_adherence_threshold')
+        current_days = update_data.get('chronic_refill_days_before_expiry')
+        
+        final_threshold = current_threshold if current_threshold is not None else (config.chronic_refill_adherence_threshold or 80)
+        final_days = current_days if current_days is not None else (config.chronic_refill_days_before_expiry or 7)
+        
+        if not (0 <= final_threshold <= 100):
             raise HTTPException(
                 status_code=400,
-                detail="When chronic refill is enabled, adherence_threshold and days_before_expiry are required"
+                detail="Chronic refill adherence threshold must be between 0 and 100"
             )
+        if not (1 <= final_days <= 90):
+            raise HTTPException(
+                status_code=400,
+                detail="Chronic refill days before expiry must be between 1 and 90"
+            )
+        
+        config.chronic_refill_adherence_threshold = final_threshold
+        config.chronic_refill_days_before_expiry = final_days
     
     for field, value in update_data.items():
         if hasattr(config, field) and value is not None:
