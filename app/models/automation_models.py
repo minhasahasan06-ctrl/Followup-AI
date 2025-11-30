@@ -398,7 +398,47 @@ class ClinicalAutomationConfig(Base):
     include_vitals_in_notes = Column(Boolean, default=True)
     include_medications_in_notes = Column(Boolean, default=True)
     
+    drug_interaction_check = Column(Boolean, default=True)
+    contraindication_alerts = Column(Boolean, default=True)
+    auto_dosage_recommendations = Column(Boolean, default=True)
+    
+    chronic_refill_enabled = Column(Boolean, default=False)
+    chronic_refill_adherence_threshold = Column(Integer, default=80)
+    chronic_refill_days_before_expiry = Column(Integer, default=7)
+    chronic_refill_require_approval = Column(Boolean, default=True)
+    
     preferred_language = Column(String(10), default="en")
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RxTemplate(Base):
+    """
+    Prescription templates for quick prescription creation.
+    Doctors can save common prescriptions as templates for reuse.
+    """
+    __tablename__ = "rx_templates"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    doctor_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    
+    name = Column(String(255), nullable=False)
+    condition = Column(String(255), nullable=True)
+    
+    medication_name = Column(String(255), nullable=False)
+    dosage = Column(String(100), nullable=False)
+    frequency = Column(String(50), default="once_daily")
+    duration = Column(String(50), default="30 days")
+    route = Column(String(50), default="oral")
+    instructions = Column(Text, nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    usage_count = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        Index("ix_rx_templates_doctor_active", "doctor_id", "is_active"),
+    )
