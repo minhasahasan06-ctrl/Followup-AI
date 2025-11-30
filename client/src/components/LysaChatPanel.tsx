@@ -46,18 +46,11 @@ interface QuickAction {
 
 const quickActions: QuickAction[] = [
   {
-    id: "book-appointment",
-    label: "Book Appointment",
-    icon: <Calendar className="h-4 w-4" />,
-    prompt: "I need to schedule a new appointment for a patient.",
-    category: "appointment"
-  },
-  {
-    id: "whatsapp-appointment",
-    label: "WhatsApp Booking",
+    id: "whatsapp",
+    label: "WhatsApp",
     icon: <Phone className="h-4 w-4" />,
-    prompt: "I received a WhatsApp message requesting an appointment. Help me process it.",
-    category: "appointment"
+    prompt: "Show me recent WhatsApp messages from patients.",
+    category: "communication"
   },
   {
     id: "email",
@@ -67,11 +60,11 @@ const quickActions: QuickAction[] = [
     category: "communication"
   },
   {
-    id: "find-patient",
-    label: "Find Patient",
-    icon: <Search className="h-4 w-4" />,
-    prompt: "Help me find a patient's records.",
-    category: "records"
+    id: "calendar",
+    label: "Calendar",
+    icon: <Calendar className="h-4 w-4" />,
+    prompt: "Show me my calendar and upcoming appointments.",
+    category: "appointment"
   },
   {
     id: "patient-summary",
@@ -109,7 +102,6 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
   const [message, setMessage] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [appointmentDialog, setAppointmentDialog] = useState(false);
   const [emailDialog, setEmailDialog] = useState(false);
   const [gmailConnectDialog, setGmailConnectDialog] = useState(false);
   const [whatsappConnectDialog, setWhatsappConnectDialog] = useState(false);
@@ -245,10 +237,6 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
   };
 
   const handleQuickAction = (action: QuickAction) => {
-    if (action.id === "book-appointment") {
-      setAppointmentDialog(true);
-      return;
-    }
     if (action.id === "email") {
       if (!gmailConnected) {
         setGmailConnectDialog(true);
@@ -257,7 +245,7 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
       setEmailDialog(true);
       return;
     }
-    if (action.id === "whatsapp-appointment") {
+    if (action.id === "whatsapp") {
       if (!whatsappConnected) {
         setWhatsappConnectDialog(true);
         return;
@@ -506,8 +494,6 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
           </p>
         </div>
       </CardContent>
-
-      <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
       
       {/* Email Compose Dialog with AI Features */}
       <Dialog open={emailDialog} onOpenChange={setEmailDialog}>
@@ -793,7 +779,6 @@ function WhatsAppConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 }
 
 export function LysaQuickActionsBar() {
-  const [appointmentDialog, setAppointmentDialog] = useState(false);
   const [emailDialog, setEmailDialog] = useState(false);
   const [whatsappConnectDialog, setWhatsappConnectDialog] = useState(false);
   const [gmailConnectDialog, setGmailConnectDialog] = useState(false);
@@ -899,11 +884,7 @@ export function LysaQuickActionsBar() {
   });
 
   const handleQuickAction = (action: QuickAction) => {
-    if (action.id === "book-appointment") {
-      setAppointmentDialog(true);
-      return;
-    }
-    if (action.id === "whatsapp-appointment") {
+    if (action.id === "whatsapp") {
       if (!whatsappConnected) {
         setWhatsappConnectDialog(true);
         return;
@@ -936,7 +917,7 @@ export function LysaQuickActionsBar() {
         <Bot className="h-5 w-5 text-muted-foreground flex-shrink-0" />
         <div className="flex gap-1 overflow-x-auto">
           {quickActions.slice(0, 4).map((action) => {
-            const isWhatsApp = action.id === "whatsapp-appointment";
+            const isWhatsApp = action.id === "whatsapp";
             const isEmail = action.id === "email";
             const notConnected = (isWhatsApp && !whatsappConnected) || (isEmail && !gmailConnected);
             
@@ -961,7 +942,6 @@ export function LysaQuickActionsBar() {
           <Loader2 className="h-4 w-4 animate-spin ml-2" />
         )}
       </div>
-      <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
       
       {/* Email Compose Dialog with AI Features */}
       <Dialog open={emailDialog} onOpenChange={setEmailDialog}>

@@ -11,6 +11,7 @@ import { PatientManagementPanel } from "@/components/PatientManagementPanel";
 import { DiagnosisHelper } from "@/components/DiagnosisHelper";
 import { PrescriptionHelper } from "@/components/PrescriptionHelper";
 import { AutomationStatusPanel, AutomationStatusBadge } from "@/components/AutomationStatusPanel";
+import { BookAppointmentDialog } from "@/components/LysaCalendarBooking";
 
 interface Appointment {
   id: string;
@@ -69,6 +70,7 @@ export default function ReceptionistDashboard() {
   const [lysaExpanded, setLysaExpanded] = useState(true);
   const [lysaPatient, setLysaPatient] = useState<LysaPatient | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const [appointmentDialog, setAppointmentDialog] = useState(false);
   const weekStart = startOfWeek(selectedDate);
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
@@ -160,7 +162,7 @@ export default function ReceptionistDashboard() {
               <MessageSquare className="h-4 w-4 mr-2" />
               {lysaExpanded ? "Hide Chat" : "Show Chat"}
             </Button>
-            <Button data-testid="button-book-appointment">
+            <Button onClick={() => setAppointmentDialog(true)} data-testid="button-book-appointment">
               <Plus className="h-4 w-4 mr-2" />
               Book Appointment
             </Button>
@@ -588,6 +590,8 @@ export default function ReceptionistDashboard() {
           />
         </div>
       )}
+      
+      <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
     </div>
   );
 }
