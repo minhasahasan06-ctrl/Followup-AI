@@ -110,9 +110,15 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [appointmentDialog, setAppointmentDialog] = useState(false);
-  const [availabilityDialog, setAvailabilityDialog] = useState(false);
+  const [emailDialog, setEmailDialog] = useState(false);
   const [gmailConnectDialog, setGmailConnectDialog] = useState(false);
   const [whatsappConnectDialog, setWhatsappConnectDialog] = useState(false);
+  
+  // Email compose state for LysaChatPanel
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [draftEmail, setDraftEmail] = useState("");
+  const [selectedTone, setSelectedTone] = useState<string>("professional");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { data: integrationStatus } = useQuery<IntegrationStatus>({
@@ -177,6 +183,62 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
     },
   });
 
+  const enhanceDraftMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const response = await apiRequest("/api/chat/send", {
+        method: "POST",
+        json: {
+          content: `Please enhance this email draft to be more ${selectedTone} and clear while maintaining HIPAA compliance. Keep the same meaning but improve the writing:\n\n${content}`,
+          agentType: "lysa",
+        },
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.response) {
+        setDraftEmail(data.response);
+        toast({
+          title: "Draft Enhanced",
+          description: "Your email has been professionally refined by AI.",
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Enhancement Failed",
+        description: "Could not enhance the draft. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const sendEmailMutation = useMutation({
+    mutationFn: async ({ to, subject, body }: { to: string; subject: string; body: string }) => {
+      const response = await apiRequest("/api/v1/emails/messages", {
+        method: "POST",
+        json: { to, subject, body, isFromDoctor: true },
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Email Sent",
+        description: "Your message has been delivered successfully.",
+      });
+      setEmailDialog(false);
+      setDraftEmail("");
+      setEmailSubject("");
+      setRecipientEmail("");
+    },
+    onError: () => {
+      toast({
+        title: "Send Failed",
+        description: "Could not send the email. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSend = () => {
     if (!message.trim() || sendMessageMutation.isPending) return;
     sendMessageMutation.mutate(message);
@@ -187,15 +249,13 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
       setAppointmentDialog(true);
       return;
     }
-    if (action.id === "check-availability") {
-      setAvailabilityDialog(true);
-      return;
-    }
-    if (action.id === "reply-email") {
+    if (action.id === "email") {
       if (!gmailConnected) {
         setGmailConnectDialog(true);
         return;
       }
+      setEmailDialog(true);
+      return;
     }
     if (action.id === "whatsapp-appointment") {
       if (!whatsappConnected) {
@@ -205,6 +265,14 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
     }
     setMessage(action.prompt);
     setShowQuickActions(false);
+  };
+
+  const handleCopyEmail = () => {
+    navigator.clipboard.writeText(`To: ${recipientEmail}\nSubject: ${emailSubject}\n\n${draftEmail}`);
+    toast({
+      title: "Copied to Clipboard",
+      description: "Email content copied. Paste into your email client to send.",
+    });
   };
 
   useEffect(() => {
@@ -440,7 +508,119 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
       </CardContent>
 
       <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
-      <CheckAvailabilityDialog open={availabilityDialog} onOpenChange={setAvailabilityDialog} />
+      
+      {/* Email Compose Dialog with AI Features */}
+      <Dialog open={emailDialog} onOpenChange={setEmailDialog}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-email-compose-panel">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Compose Email with AI
+            </DialogTitle>
+            <DialogDescription>
+              Write your email and use AI to enhance it professionally
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="panel-email-recipient">To</Label>
+              <Input
+                id="panel-email-recipient"
+                placeholder="patient@example.com"
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                data-testid="input-panel-email-recipient"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="panel-email-subject">Subject</Label>
+              <Input
+                id="panel-email-subject"
+                placeholder="Re: Your appointment confirmation"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                data-testid="input-panel-email-subject"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="panel-email-body">Message</Label>
+                <div className="flex gap-2">
+                  <Select value={selectedTone} onValueChange={setSelectedTone}>
+                    <SelectTrigger className="w-32 h-8" data-testid="select-panel-email-tone">
+                      <SelectValue placeholder="Tone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="professional">Professional</SelectItem>
+                      <SelectItem value="warm">Warm</SelectItem>
+                      <SelectItem value="empathetic">Empathetic</SelectItem>
+                      <SelectItem value="concise">Concise</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => enhanceDraftMutation.mutate(draftEmail)}
+                    disabled={!draftEmail.trim() || enhanceDraftMutation.isPending}
+                    data-testid="button-panel-enhance-email"
+                  >
+                    {enhanceDraftMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-1" />
+                        Enhance
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <Textarea
+                id="panel-email-body"
+                placeholder="Type your message here... AI will help you refine it."
+                value={draftEmail}
+                onChange={(e) => setDraftEmail(e.target.value)}
+                rows={10}
+                className="resize-none"
+                data-testid="input-panel-email-body"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setEmailDialog(false)}
+                data-testid="button-panel-cancel-email"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleCopyEmail}
+                disabled={!recipientEmail || !emailSubject || !draftEmail}
+                data-testid="button-panel-copy-email"
+              >
+                Copy Email
+              </Button>
+              <Button
+                onClick={() => sendEmailMutation.mutate({
+                  to: recipientEmail,
+                  subject: emailSubject,
+                  body: draftEmail,
+                })}
+                disabled={!recipientEmail || !emailSubject || !draftEmail || sendEmailMutation.isPending}
+                data-testid="button-panel-send-email"
+              >
+                {sendEmailMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                Send Email
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       
       <Dialog open={gmailConnectDialog} onOpenChange={setGmailConnectDialog}>
         <DialogContent data-testid="dialog-gmail-connect">
