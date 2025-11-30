@@ -622,6 +622,16 @@ function WhatsAppConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 export function LysaQuickActionsBar() {
   const [appointmentDialog, setAppointmentDialog] = useState(false);
   const [availabilityDialog, setAvailabilityDialog] = useState(false);
+  const [gmailConnectDialog, setGmailConnectDialog] = useState(false);
+  const [whatsappConnectDialog, setWhatsappConnectDialog] = useState(false);
+  const { toast } = useToast();
+  
+  const { data: integrationStatus } = useQuery<IntegrationStatus>({
+    queryKey: ["/api/v1/integrations/status"],
+  });
+
+  const gmailConnected = integrationStatus?.gmail?.connected === true;
+  const whatsappConnected = integrationStatus?.whatsapp?.connected === true;
   
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
@@ -636,6 +646,23 @@ export function LysaQuickActionsBar() {
     },
   });
 
+  const getGmailAuthUrl = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("/api/v1/integrations/gmail/auth-url");
+      return response.json();
+    },
+    onSuccess: (data: { authUrl: string }) => {
+      window.location.href = data.authUrl;
+    },
+    onError: () => {
+      toast({
+        title: "Connection Error",
+        description: "Failed to get Gmail authorization URL. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleQuickAction = (action: QuickAction) => {
     if (action.id === "book-appointment") {
       setAppointmentDialog(true);
@@ -643,6 +670,22 @@ export function LysaQuickActionsBar() {
     }
     if (action.id === "check-availability") {
       setAvailabilityDialog(true);
+      return;
+    }
+    if (action.id === "whatsapp-appointment") {
+      if (!whatsappConnected) {
+        setWhatsappConnectDialog(true);
+        return;
+      }
+      sendMessageMutation.mutate(action.prompt);
+      return;
+    }
+    if (action.id === "reply-email") {
+      if (!gmailConnected) {
+        setGmailConnectDialog(true);
+        return;
+      }
+      sendMessageMutation.mutate(action.prompt);
       return;
     }
     sendMessageMutation.mutate(action.prompt);
@@ -654,20 +697,27 @@ export function LysaQuickActionsBar() {
         <Bot className="h-5 w-5 text-muted-foreground flex-shrink-0" />
         <CalendarStatusBadge />
         <div className="flex gap-1 overflow-x-auto">
-          {quickActions.slice(0, 5).map((action) => (
-            <Button
-              key={action.id}
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs whitespace-nowrap flex-shrink-0"
-              onClick={() => handleQuickAction(action)}
-              disabled={sendMessageMutation.isPending}
-              data-testid={`button-quick-${action.id}`}
-            >
-              {action.icon}
-              <span className="ml-1">{action.label}</span>
-            </Button>
-          ))}
+          {quickActions.slice(0, 5).map((action) => {
+            const isWhatsApp = action.id === "whatsapp-appointment";
+            const isEmail = action.id === "reply-email";
+            const notConnected = (isWhatsApp && !whatsappConnected) || (isEmail && !gmailConnected);
+            
+            return (
+              <Button
+                key={action.id}
+                variant="ghost"
+                size="sm"
+                className={`h-7 px-2 text-xs whitespace-nowrap flex-shrink-0 ${notConnected ? 'opacity-70' : ''}`}
+                onClick={() => handleQuickAction(action)}
+                disabled={sendMessageMutation.isPending}
+                data-testid={`button-quick-${action.id}`}
+              >
+                {notConnected && <Link2 className="h-3 w-3 mr-1 text-muted-foreground" />}
+                {action.icon}
+                <span className="ml-1">{action.label}</span>
+              </Button>
+            );
+          })}
         </div>
         {sendMessageMutation.isPending && (
           <Loader2 className="h-4 w-4 animate-spin ml-2" />
@@ -675,6 +725,52 @@ export function LysaQuickActionsBar() {
       </div>
       <BookAppointmentDialog open={appointmentDialog} onOpenChange={setAppointmentDialog} />
       <CheckAvailabilityDialog open={availabilityDialog} onOpenChange={setAvailabilityDialog} />
+      
+      {/* Gmail Connect Dialog */}
+      <Dialog open={gmailConnectDialog} onOpenChange={setGmailConnectDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Connect Gmail
+            </DialogTitle>
+            <DialogDescription>
+              Connect your Gmail account to enable email management features in Lysa.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                <span className="text-sm">Read and organize patient emails</span>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                <span className="text-sm">AI-powered email classification</span>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                <span className="text-sm">Draft and send replies with AI assistance</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGmailConnectDialog(false)} data-testid="button-cancel-gmail">
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => getGmailAuthUrl.mutate()}
+              disabled={getGmailAuthUrl.isPending}
+              data-testid="button-connect-gmail"
+            >
+              {getGmailAuthUrl.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Connect Gmail
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <WhatsAppConnectDialog open={whatsappConnectDialog} onOpenChange={setWhatsappConnectDialog} />
     </>
   );
 }
