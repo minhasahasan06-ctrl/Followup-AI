@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar, Clock, Mail, Phone, Plus, User, Video, Bot, MessageSquare, Stethoscope, Pill, FileText, ChevronRight, Sparkles, LayoutDashboard, Users, Activity } from "lucide-react";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
-import { LysaChatPanel, LysaQuickActionsBar } from "@/components/LysaChatPanel";
+import { LysaChatPanel } from "@/components/LysaChatPanel";
 import { PatientManagementPanel } from "@/components/PatientManagementPanel";
 import { DiagnosisHelper } from "@/components/DiagnosisHelper";
 import { PrescriptionHelper } from "@/components/PrescriptionHelper";
@@ -168,8 +168,6 @@ export default function ReceptionistDashboard() {
             </Button>
           </div>
         </div>
-        
-        <LysaQuickActionsBar />
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-4 flex-wrap">
@@ -240,13 +238,17 @@ export default function ReceptionistDashboard() {
           <Card data-testid="card-quick-actions">
             <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
-              <Video className="h-4 w-4 text-muted-foreground" />
+              <Sparkles className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="flex flex-col gap-2">
-                <Button variant="outline" size="sm" data-testid="button-view-calendar" className="justify-start">
-                  <Calendar className="h-3 w-3 mr-2" />
-                  Calendar
+                <Button variant="outline" size="sm" data-testid="button-quick-whatsapp" className="justify-start">
+                  <Phone className="h-3 w-3 mr-2" />
+                  WhatsApp
+                </Button>
+                <Button variant="outline" size="sm" data-testid="button-quick-email" className="justify-start">
+                  <Mail className="h-3 w-3 mr-2" />
+                  Email
                 </Button>
               </div>
             </CardContent>
