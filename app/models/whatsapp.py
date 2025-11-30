@@ -53,7 +53,7 @@ class WhatsAppConversation(Base):
     consent_received = Column(Boolean, default=False)
     consent_at = Column(DateTime, nullable=True)
     
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column(JSON, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

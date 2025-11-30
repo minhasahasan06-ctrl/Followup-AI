@@ -12576,6 +12576,214 @@ Provide:
   // END HABIT TRACKER PROXY ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // LYSA AUTOMATION ENGINE PROXY ROUTES
+  // =============================================================================
+
+  // Helper function for automation proxy requests
+  const automationProxy = async (req: any, res: any, path: string, method: string = 'GET') => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const userId = req.user?.id || req.query.user_id;
+      
+      // Build query string
+      const queryParams = new URLSearchParams(req.query as Record<string, string>);
+      const queryString = queryParams.toString();
+      const url = `${pythonBackendUrl}${path}${queryString ? '?' + queryString : ''}`;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const fetchOptions: RequestInit = {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+          'X-User-Id': userId || '',
+        },
+      };
+      
+      if (method !== 'GET' && method !== 'HEAD' && req.body) {
+        fetchOptions.body = JSON.stringify(req.body);
+      }
+      
+      const response = await fetch(url, fetchOptions);
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Automation proxy error (${path}):`, response.status, error);
+        return res.status(response.status).json({ message: error || 'Request failed' });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error(`Automation proxy error (${path}):`, error);
+      res.status(502).json({ error: 'Automation service unavailable' });
+    }
+  };
+
+  // Automation Status & Dashboard
+  app.get('/api/v1/automation/status', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/status', 'GET');
+  });
+
+  app.get('/api/v1/automation/dashboard/stats', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/dashboard/stats', 'GET');
+  });
+
+  // Automation Jobs
+  app.get('/api/v1/automation/jobs', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/jobs', 'GET');
+  });
+
+  app.post('/api/v1/automation/jobs', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/jobs', 'POST');
+  });
+
+  app.get('/api/v1/automation/jobs/:jobId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/jobs/${req.params.jobId}`, 'GET');
+  });
+
+  app.post('/api/v1/automation/jobs/:jobId/cancel', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/jobs/${req.params.jobId}/cancel`, 'POST');
+  });
+
+  app.post('/api/v1/automation/jobs/:jobId/retry', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/jobs/${req.params.jobId}/retry`, 'POST');
+  });
+
+  // Automation Schedules
+  app.get('/api/v1/automation/schedules', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/schedules', 'GET');
+  });
+
+  app.post('/api/v1/automation/schedules', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/schedules', 'POST');
+  });
+
+  app.put('/api/v1/automation/schedules/:scheduleId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/schedules/${req.params.scheduleId}`, 'PUT');
+  });
+
+  app.delete('/api/v1/automation/schedules/:scheduleId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/schedules/${req.params.scheduleId}`, 'DELETE');
+  });
+
+  // Automation Config Endpoints
+  app.get('/api/v1/automation/config', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config', 'GET');
+  });
+
+  app.patch('/api/v1/automation/config', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config', 'PATCH');
+  });
+
+  // Email Config
+  app.get('/api/v1/automation/config/email', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/email', 'GET');
+  });
+
+  app.put('/api/v1/automation/config/email', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/email', 'PUT');
+  });
+
+  // WhatsApp Config
+  app.get('/api/v1/automation/config/whatsapp', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/whatsapp', 'GET');
+  });
+
+  app.put('/api/v1/automation/config/whatsapp', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/whatsapp', 'PUT');
+  });
+
+  // Appointment Config
+  app.get('/api/v1/automation/config/appointments', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/appointments', 'GET');
+  });
+
+  app.put('/api/v1/automation/config/appointments', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/appointments', 'PUT');
+  });
+
+  // Reminders Config
+  app.get('/api/v1/automation/config/reminders', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/reminders', 'GET');
+  });
+
+  app.put('/api/v1/automation/config/reminders', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/reminders', 'PUT');
+  });
+
+  // Clinical Config
+  app.get('/api/v1/automation/config/clinical', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/clinical', 'GET');
+  });
+
+  app.put('/api/v1/automation/config/clinical', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/config/clinical', 'PUT');
+  });
+
+  // Rx Templates CRUD
+  app.get('/api/v1/automation/rx-templates', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/rx-templates', 'GET');
+  });
+
+  app.post('/api/v1/automation/rx-templates', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/rx-templates', 'POST');
+  });
+
+  app.get('/api/v1/automation/rx-templates/:templateId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/rx-templates/${req.params.templateId}`, 'GET');
+  });
+
+  app.put('/api/v1/automation/rx-templates/:templateId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/rx-templates/${req.params.templateId}`, 'PUT');
+  });
+
+  app.delete('/api/v1/automation/rx-templates/:templateId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/rx-templates/${req.params.templateId}`, 'DELETE');
+  });
+
+  app.post('/api/v1/automation/rx-templates/:templateId/use', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/rx-templates/${req.params.templateId}/use`, 'POST');
+  });
+
+  // Automation Engine Control
+  app.post('/api/v1/automation/engine/start', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/engine/start', 'POST');
+  });
+
+  app.post('/api/v1/automation/engine/pause', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/engine/pause', 'POST');
+  });
+
+  // Manual Sync Triggers
+  app.post('/api/v1/automation/sync/:channel', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/automation/sync/${req.params.channel}`, 'POST');
+  });
+
+  // Logs
+  app.get('/api/v1/automation/logs', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/logs', 'GET');
+  });
+
+  // Trigger Job
+  app.post('/api/v1/automation/trigger', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/automation/trigger', 'POST');
+  });
+
+  // =============================================================================
+  // END LYSA AUTOMATION ENGINE PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
   return httpServer;
 }

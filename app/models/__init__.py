@@ -79,7 +79,8 @@ from app.models.automation_models import (
     WhatsAppAutomationConfig,
     AppointmentAutomationConfig,
     ReminderAutomationConfig,
-    ClinicalAutomationConfig
+    ClinicalAutomationConfig,
+    RxTemplate
 )
 
 __all__ = [
@@ -152,4 +153,5 @@ __all__ = [
     "AppointmentAutomationConfig",
     "ReminderAutomationConfig",
     "ClinicalAutomationConfig",
+    "RxTemplate",
 ]

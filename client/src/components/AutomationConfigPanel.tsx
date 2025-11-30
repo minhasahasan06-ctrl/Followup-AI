@@ -93,6 +93,27 @@ interface ClinicalConfig {
   prescription_assist_enabled: boolean;
   require_prescription_approval: boolean;
   use_patient_history: boolean;
+  drug_interaction_check: boolean;
+  contraindication_alerts: boolean;
+  auto_dosage_recommendations: boolean;
+  chronic_refill_enabled: boolean;
+  chronic_refill_adherence_threshold: number;
+  chronic_refill_days_before_expiry: number;
+  chronic_refill_require_approval: boolean;
+}
+
+interface RxTemplate {
+  id: string;
+  doctor_id: string;
+  name: string;
+  condition: string;
+  medication_name: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  route: string;
+  instructions: string;
+  is_active: boolean;
 }
 
 interface ScheduledJob {
@@ -171,6 +192,24 @@ export function AutomationConfigPanel() {
 
   const { data: scheduledJobs = [], refetch: refetchJobs } = useQuery<ScheduledJob[]>({
     queryKey: ["/api/v1/automation/schedules"],
+  });
+
+  const { data: rxTemplates = [], refetch: refetchTemplates } = useQuery<RxTemplate[]>({
+    queryKey: ["/api/v1/automation/rx-templates"],
+  });
+
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<RxTemplate | null>(null);
+  const [newTemplate, setNewTemplate] = useState<Partial<RxTemplate>>({
+    name: "",
+    condition: "",
+    medication_name: "",
+    dosage: "",
+    frequency: "once_daily",
+    duration: "30 days",
+    route: "oral",
+    instructions: "",
+    is_active: true
   });
 
   useEffect(() => {
@@ -280,6 +319,56 @@ export function AutomationConfigPanel() {
     },
     onError: () => {
       toast({ title: "Failed to save clinical settings", variant: "destructive" });
+    },
+  });
+
+  const saveRxTemplate = useMutation({
+    mutationFn: async (template: Partial<RxTemplate>) => {
+      const method = template.id ? "PUT" : "POST";
+      const url = template.id 
+        ? `/api/v1/automation/rx-templates/${template.id}`
+        : "/api/v1/automation/rx-templates";
+      const response = await apiRequest(url, {
+        method,
+        body: JSON.stringify(template),
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchTemplates();
+      setShowTemplateDialog(false);
+      setEditingTemplate(null);
+      setNewTemplate({
+        name: "",
+        condition: "",
+        medication_name: "",
+        dosage: "",
+        frequency: "once_daily",
+        duration: "30 days",
+        route: "oral",
+        instructions: "",
+        is_active: true
+      });
+      toast({ title: "Rx template saved successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save Rx template", variant: "destructive" });
+    },
+  });
+
+  const deleteRxTemplate = useMutation({
+    mutationFn: async (templateId: string) => {
+      const response = await apiRequest(`/api/v1/automation/rx-templates/${templateId}`, {
+        method: "DELETE",
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchTemplates();
+      toast({ title: "Rx template deleted" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete template", variant: "destructive" });
     },
   });
 
@@ -1092,7 +1181,7 @@ export function AutomationConfigPanel() {
                     </div>
                     <div>
                       <h3 className="font-medium">Clinical Automation</h3>
-                      <p className="text-sm text-muted-foreground">SOAP notes, ICD-10, diagnosis, and prescriptions</p>
+                      <p className="text-sm text-muted-foreground">AI-powered diagnosis, prescriptions, and clinical decision support</p>
                     </div>
                   </div>
                   <Switch
@@ -1102,9 +1191,16 @@ export function AutomationConfigPanel() {
                   />
                 </div>
 
-                <div className="grid gap-6 md:grid-cols-2">
-                  <div className="space-y-4">
-                    <h4 className="font-medium text-sm">Documentation Assist</h4>
+                {/* AI Diagnosis Assist Section */}
+                <Card className="border-2 border-purple-200 dark:border-purple-800">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <Brain className="h-5 w-5 text-purple-600" />
+                      <CardTitle className="text-base">AI Diagnosis Assist</CardTitle>
+                    </div>
+                    <CardDescription>Lysa pre-analyzes patient data and suggests diagnoses</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <Label>Auto-Generate SOAP Notes</Label>
@@ -1121,7 +1217,7 @@ export function AutomationConfigPanel() {
                     <div className="flex items-center justify-between">
                       <div>
                         <Label>ICD-10 Code Suggestions</Label>
-                        <p className="text-xs text-muted-foreground">Suggest ICD-10 codes based on diagnosis</p>
+                        <p className="text-xs text-muted-foreground">Automatically suggest ICD-10 codes based on symptoms</p>
                       </div>
                       <Switch
                         checked={clinicalConfig.auto_icd10_suggest ?? true}
@@ -1133,8 +1229,8 @@ export function AutomationConfigPanel() {
 
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label>Differential Diagnosis</Label>
-                        <p className="text-xs text-muted-foreground">Generate differential diagnosis lists</p>
+                        <Label>Differential Diagnosis Lists</Label>
+                        <p className="text-xs text-muted-foreground">Generate differential diagnosis based on patient data</p>
                       </div>
                       <Switch
                         checked={clinicalConfig.auto_differential_diagnosis ?? true}
@@ -1143,14 +1239,36 @@ export function AutomationConfigPanel() {
                         data-testid="switch-auto-differential"
                       />
                     </div>
-                  </div>
 
-                  <div className="space-y-4">
-                    <h4 className="font-medium text-sm">Prescription Assist</h4>
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label>Prescription Suggestions</Label>
-                        <p className="text-xs text-muted-foreground">AI-powered medication suggestions</p>
+                        <Label>Use Patient History</Label>
+                        <p className="text-xs text-muted-foreground">Consider patient medical history for diagnosis suggestions</p>
+                      </div>
+                      <Switch
+                        checked={clinicalConfig.use_patient_history ?? true}
+                        onCheckedChange={(checked) => updateClinicalField("use_patient_history", checked)}
+                        disabled={!clinicalConfig.is_enabled}
+                        data-testid="switch-use-history"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Rx Builder Assist Section */}
+                <Card className="border-2 border-blue-200 dark:border-blue-800">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <Pill className="h-5 w-5 text-blue-600" />
+                      <CardTitle className="text-base">Rx Builder Assist</CardTitle>
+                    </div>
+                    <CardDescription>AI-powered prescription assistance with safety checks</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Medication Suggestions</Label>
+                        <p className="text-xs text-muted-foreground">Suggest medications based on diagnosis</p>
                       </div>
                       <Switch
                         checked={clinicalConfig.prescription_assist_enabled ?? true}
@@ -1162,8 +1280,47 @@ export function AutomationConfigPanel() {
 
                     <div className="flex items-center justify-between">
                       <div>
+                        <Label>Drug-Drug Interaction Check</Label>
+                        <p className="text-xs text-muted-foreground">Automatically check for medication interactions</p>
+                      </div>
+                      <Switch
+                        checked={clinicalConfig.drug_interaction_check ?? true}
+                        onCheckedChange={(checked) => updateClinicalField("drug_interaction_check", checked)}
+                        disabled={!clinicalConfig.is_enabled}
+                        data-testid="switch-drug-interaction"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Contraindication Alerts</Label>
+                        <p className="text-xs text-muted-foreground">Alert for medication contraindications based on patient history</p>
+                      </div>
+                      <Switch
+                        checked={clinicalConfig.contraindication_alerts ?? true}
+                        onCheckedChange={(checked) => updateClinicalField("contraindication_alerts", checked)}
+                        disabled={!clinicalConfig.is_enabled}
+                        data-testid="switch-contraindication"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Auto-Fill Dosage Recommendations</Label>
+                        <p className="text-xs text-muted-foreground">Suggest standard dosages based on condition and patient profile</p>
+                      </div>
+                      <Switch
+                        checked={clinicalConfig.auto_dosage_recommendations ?? true}
+                        onCheckedChange={(checked) => updateClinicalField("auto_dosage_recommendations", checked)}
+                        disabled={!clinicalConfig.is_enabled}
+                        data-testid="switch-auto-dosage"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
                         <Label>Require Doctor Approval</Label>
-                        <p className="text-xs text-muted-foreground">All prescriptions require doctor review</p>
+                        <p className="text-xs text-muted-foreground">All prescriptions require physician sign-off</p>
                       </div>
                       <Switch
                         checked={clinicalConfig.require_prescription_approval ?? true}
@@ -1172,21 +1329,167 @@ export function AutomationConfigPanel() {
                         data-testid="switch-require-approval"
                       />
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Chronic Refill Automation Section */}
+                <Card className="border-2 border-green-200 dark:border-green-800">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <RotateCcw className="h-5 w-5 text-green-600" />
+                        <CardTitle className="text-base">Chronic Refill Automation</CardTitle>
+                      </div>
+                      <Switch
+                        checked={clinicalConfig.chronic_refill_enabled ?? false}
+                        onCheckedChange={(checked) => updateClinicalField("chronic_refill_enabled", checked)}
+                        disabled={!clinicalConfig.is_enabled}
+                        data-testid="switch-chronic-refill"
+                      />
+                    </div>
+                    <CardDescription>Auto-generate refill prescriptions for stable chronic patients</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Minimum Adherence Threshold</Label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input
+                            type="number"
+                            min={50}
+                            max={100}
+                            value={clinicalConfig.chronic_refill_adherence_threshold ?? 80}
+                            onChange={(e) => updateClinicalField("chronic_refill_adherence_threshold", parseInt(e.target.value))}
+                            disabled={!clinicalConfig.is_enabled || !clinicalConfig.chronic_refill_enabled}
+                            className="w-20"
+                            data-testid="input-adherence-threshold"
+                          />
+                          <span className="text-sm text-muted-foreground">%</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">Patient must meet this adherence level</p>
+                      </div>
+                      <div>
+                        <Label>Days Before Expiry to Alert</Label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={30}
+                            value={clinicalConfig.chronic_refill_days_before_expiry ?? 7}
+                            onChange={(e) => updateClinicalField("chronic_refill_days_before_expiry", parseInt(e.target.value))}
+                            disabled={!clinicalConfig.is_enabled || !clinicalConfig.chronic_refill_enabled}
+                            className="w-20"
+                            data-testid="input-days-before-expiry"
+                          />
+                          <span className="text-sm text-muted-foreground">days</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">Alert before prescription expires</p>
+                      </div>
+                    </div>
 
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label>Use Patient History</Label>
-                        <p className="text-xs text-muted-foreground">Consider patient history for suggestions</p>
+                        <Label>Require Doctor Approval for Refills</Label>
+                        <p className="text-xs text-muted-foreground">Doctor must approve each auto-generated refill</p>
                       </div>
                       <Switch
-                        checked={clinicalConfig.use_patient_history ?? true}
-                        onCheckedChange={(checked) => updateClinicalField("use_patient_history", checked)}
-                        disabled={!clinicalConfig.is_enabled}
-                        data-testid="switch-use-history"
+                        checked={clinicalConfig.chronic_refill_require_approval ?? true}
+                        onCheckedChange={(checked) => updateClinicalField("chronic_refill_require_approval", checked)}
+                        disabled={!clinicalConfig.is_enabled || !clinicalConfig.chronic_refill_enabled}
+                        data-testid="switch-refill-approval"
                       />
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
+
+                {/* Rx Templates Section */}
+                <Card className="border-2 border-orange-200 dark:border-orange-800">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-orange-600" />
+                        <CardTitle className="text-base">Rx Templates</CardTitle>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setEditingTemplate(null);
+                          setNewTemplate({
+                            name: "",
+                            condition: "",
+                            medication_name: "",
+                            dosage: "",
+                            frequency: "once_daily",
+                            duration: "30 days",
+                            route: "oral",
+                            instructions: "",
+                            is_active: true
+                          });
+                          setShowTemplateDialog(true);
+                        }}
+                        disabled={!clinicalConfig.is_enabled}
+                        data-testid="button-add-template"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Template
+                      </Button>
+                    </div>
+                    <CardDescription>Saved prescription templates for common conditions</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {rxTemplates.length === 0 ? (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <FileText className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                        <p>No Rx templates configured</p>
+                        <p className="text-xs">Add templates for quick prescription creation</p>
+                      </div>
+                    ) : (
+                      <ScrollArea className="h-[200px]">
+                        <div className="space-y-2">
+                          {rxTemplates.map((template) => (
+                            <div
+                              key={template.id}
+                              className="flex items-center justify-between p-3 rounded-lg border hover-elevate"
+                              data-testid={`rx-template-${template.id}`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className={`h-2 w-2 rounded-full ${template.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
+                                <div>
+                                  <p className="font-medium text-sm">{template.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {template.medication_name} {template.dosage} - {template.condition}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingTemplate(template);
+                                    setNewTemplate(template);
+                                    setShowTemplateDialog(true);
+                                  }}
+                                  data-testid={`button-edit-template-${template.id}`}
+                                >
+                                  <Settings className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => deleteRxTemplate.mutate(template.id)}
+                                  data-testid={`button-delete-template-${template.id}`}
+                                >
+                                  <X className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    )}
+                  </CardContent>
+                </Card>
 
                 <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
                   <div className="flex items-start gap-3">
@@ -1256,6 +1559,189 @@ export function AutomationConfigPanel() {
           )}
         </CardContent>
       </Card>
+
+      {/* Rx Template Dialog */}
+      <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingTemplate ? "Edit Rx Template" : "Add New Rx Template"}</DialogTitle>
+            <DialogDescription>
+              Create a prescription template for quick reuse with common conditions
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="template-name">Template Name</Label>
+                <Input
+                  id="template-name"
+                  placeholder="e.g., Hypertension Standard"
+                  value={newTemplate.name || ""}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                  data-testid="input-template-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="template-condition">Condition</Label>
+                <Input
+                  id="template-condition"
+                  placeholder="e.g., Hypertension"
+                  value={newTemplate.condition || ""}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, condition: e.target.value })}
+                  data-testid="input-template-condition"
+                />
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="template-medication">Medication Name</Label>
+                <Input
+                  id="template-medication"
+                  placeholder="e.g., Lisinopril"
+                  value={newTemplate.medication_name || ""}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, medication_name: e.target.value })}
+                  data-testid="input-template-medication"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="template-dosage">Dosage</Label>
+                <Input
+                  id="template-dosage"
+                  placeholder="e.g., 10mg"
+                  value={newTemplate.dosage || ""}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, dosage: e.target.value })}
+                  data-testid="input-template-dosage"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="template-frequency">Frequency</Label>
+                <Select
+                  value={newTemplate.frequency || "once_daily"}
+                  onValueChange={(value) => setNewTemplate({ ...newTemplate, frequency: value })}
+                >
+                  <SelectTrigger data-testid="select-template-frequency">
+                    <SelectValue placeholder="Select frequency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="once_daily">Once daily</SelectItem>
+                    <SelectItem value="twice_daily">Twice daily (BID)</SelectItem>
+                    <SelectItem value="three_times_daily">Three times daily (TID)</SelectItem>
+                    <SelectItem value="four_times_daily">Four times daily (QID)</SelectItem>
+                    <SelectItem value="every_4_hours">Every 4 hours</SelectItem>
+                    <SelectItem value="every_6_hours">Every 6 hours</SelectItem>
+                    <SelectItem value="every_8_hours">Every 8 hours</SelectItem>
+                    <SelectItem value="every_12_hours">Every 12 hours</SelectItem>
+                    <SelectItem value="as_needed">As needed (PRN)</SelectItem>
+                    <SelectItem value="at_bedtime">At bedtime (HS)</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="template-route">Route</Label>
+                <Select
+                  value={newTemplate.route || "oral"}
+                  onValueChange={(value) => setNewTemplate({ ...newTemplate, route: value })}
+                >
+                  <SelectTrigger data-testid="select-template-route">
+                    <SelectValue placeholder="Select route" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="oral">Oral (PO)</SelectItem>
+                    <SelectItem value="sublingual">Sublingual (SL)</SelectItem>
+                    <SelectItem value="topical">Topical</SelectItem>
+                    <SelectItem value="inhalation">Inhalation</SelectItem>
+                    <SelectItem value="injection_im">Intramuscular (IM)</SelectItem>
+                    <SelectItem value="injection_iv">Intravenous (IV)</SelectItem>
+                    <SelectItem value="injection_sc">Subcutaneous (SC)</SelectItem>
+                    <SelectItem value="rectal">Rectal (PR)</SelectItem>
+                    <SelectItem value="ophthalmic">Ophthalmic (Eye)</SelectItem>
+                    <SelectItem value="otic">Otic (Ear)</SelectItem>
+                    <SelectItem value="nasal">Nasal</SelectItem>
+                    <SelectItem value="transdermal">Transdermal (Patch)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="template-duration">Duration</Label>
+                <Input
+                  id="template-duration"
+                  placeholder="e.g., 30 days"
+                  value={newTemplate.duration || ""}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, duration: e.target.value })}
+                  data-testid="input-template-duration"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="template-instructions">Special Instructions</Label>
+              <Textarea
+                id="template-instructions"
+                placeholder="e.g., Take with food. Avoid grapefruit."
+                value={newTemplate.instructions || ""}
+                onChange={(e) => setNewTemplate({ ...newTemplate, instructions: e.target.value })}
+                rows={2}
+                data-testid="textarea-template-instructions"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={newTemplate.is_active ?? true}
+                  onCheckedChange={(checked) => setNewTemplate({ ...newTemplate, is_active: checked })}
+                  data-testid="switch-template-active"
+                />
+                <Label>Template Active</Label>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowTemplateDialog(false);
+                setEditingTemplate(null);
+              }}
+              data-testid="button-cancel-template"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (editingTemplate) {
+                  saveRxTemplate.mutate({ ...newTemplate, id: editingTemplate.id });
+                } else {
+                  saveRxTemplate.mutate(newTemplate);
+                }
+              }}
+              disabled={!newTemplate.name || !newTemplate.medication_name || !newTemplate.dosage || saveRxTemplate.isPending}
+              data-testid="button-save-template"
+            >
+              {saveRxTemplate.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  {editingTemplate ? "Update Template" : "Save Template"}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

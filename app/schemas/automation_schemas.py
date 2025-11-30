@@ -330,6 +330,13 @@ class ClinicalAutomationConfigCreate(BaseModel):
     prescription_assist_enabled: bool = True
     require_prescription_approval: bool = True
     use_patient_history: bool = True
+    drug_interaction_check: bool = True
+    contraindication_alerts: bool = True
+    auto_dosage_recommendations: bool = True
+    chronic_refill_enabled: bool = False
+    chronic_refill_adherence_threshold: int = 80
+    chronic_refill_days_before_expiry: int = 7
+    chronic_refill_require_approval: bool = True
 
 
 class ClinicalAutomationConfigResponse(BaseModel):
@@ -341,6 +348,44 @@ class ClinicalAutomationConfigResponse(BaseModel):
     auto_differential_diagnosis: bool
     prescription_assist_enabled: bool
     require_prescription_approval: bool
+    use_patient_history: bool = True
+    drug_interaction_check: bool = True
+    contraindication_alerts: bool = True
+    auto_dosage_recommendations: bool = True
+    chronic_refill_enabled: bool = False
+    chronic_refill_adherence_threshold: int = 80
+    chronic_refill_days_before_expiry: int = 7
+    chronic_refill_require_approval: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class RxTemplateCreate(BaseModel):
+    name: str
+    condition: Optional[str] = None
+    medication_name: str
+    dosage: str
+    frequency: str = "once_daily"
+    duration: str = "30 days"
+    route: str = "oral"
+    instructions: Optional[str] = None
+    is_active: bool = True
+
+
+class RxTemplateResponse(BaseModel):
+    id: str
+    doctor_id: str
+    name: str
+    condition: Optional[str]
+    medication_name: str
+    dosage: str
+    frequency: str
+    duration: str
+    route: str
+    instructions: Optional[str]
+    is_active: bool
+    usage_count: int = 0
 
     class Config:
         from_attributes = True

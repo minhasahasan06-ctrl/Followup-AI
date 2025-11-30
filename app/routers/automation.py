@@ -25,7 +25,7 @@ from app.models.automation_models import (
     AutomationJob, AutomationSchedule, AutomationLog, AutomationMetric,
     EmailAutomationConfig, WhatsAppAutomationConfig,
     AppointmentAutomationConfig, ReminderAutomationConfig,
-    ClinicalAutomationConfig
+    ClinicalAutomationConfig, RxTemplate
 )
 from app.schemas.automation_schemas import (
     AutomationJobCreate, AutomationJobResponse, AutomationJobListResponse,
@@ -36,7 +36,8 @@ from app.schemas.automation_schemas import (
     AppointmentAutomationConfigCreate, AppointmentAutomationConfigResponse,
     ReminderAutomationConfigCreate, ReminderAutomationConfigResponse,
     ClinicalAutomationConfigCreate, ClinicalAutomationConfigResponse,
-    AutomationLogResponse, AutomationEvent
+    AutomationLogResponse, AutomationEvent,
+    RxTemplateCreate, RxTemplateResponse
 )
 from app.services.automation_engine import automation_engine
 
@@ -628,6 +629,41 @@ async def get_clinical_config(
     return ClinicalAutomationConfigResponse.model_validate(config)
 
 
+@router.put("/config/clinical", response_model=ClinicalAutomationConfigResponse)
+async def update_clinical_config(
+    request: ClinicalAutomationConfigCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Update clinical automation configuration"""
+    import uuid
+    
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    config = db.query(ClinicalAutomationConfig).filter(
+        ClinicalAutomationConfig.doctor_id == doctor_id
+    ).first()
+    
+    if not config:
+        config = ClinicalAutomationConfig(id=str(uuid.uuid4()), doctor_id=doctor_id)
+        db.add(config)
+    
+    for field, value in request.model_dump().items():
+        if hasattr(config, field):
+            setattr(config, field, value)
+    
+    config.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(config)
+    
+    logger.info(f"Updated clinical automation config for doctor {doctor_id}")
+    
+    return ClinicalAutomationConfigResponse.model_validate(config)
+
+
 @router.get("/config")
 async def get_unified_config(
     db: Session = Depends(get_db),
@@ -883,3 +919,223 @@ async def automation_events_stream(
             "X-Accel-Buffering": "no"
         }
     )
+
+
+@router.get("/rx-templates", response_model=List[RxTemplateResponse])
+async def get_rx_templates(
+    active_only: bool = Query(True, description="Filter to active templates only"),
+    condition: Optional[str] = Query(None, description="Filter by condition"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all prescription templates for the doctor"""
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    query = db.query(RxTemplate).filter(RxTemplate.doctor_id == doctor_id)
+    
+    if active_only:
+        query = query.filter(RxTemplate.is_active == True)
+    
+    if condition:
+        query = query.filter(RxTemplate.condition.ilike(f"%{condition}%"))
+    
+    templates = query.order_by(desc(RxTemplate.usage_count)).all()
+    
+    return [RxTemplateResponse.model_validate(t) for t in templates]
+
+
+@router.post("/rx-templates", response_model=RxTemplateResponse, status_code=201)
+async def create_rx_template(
+    request: RxTemplateCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a new prescription template"""
+    import uuid
+    
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    existing = db.query(RxTemplate).filter(
+        and_(
+            RxTemplate.doctor_id == doctor_id,
+            RxTemplate.name == request.name
+        )
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Template with name '{request.name}' already exists"
+        )
+    
+    template = RxTemplate(
+        id=str(uuid.uuid4()),
+        doctor_id=doctor_id,
+        name=request.name,
+        condition=request.condition,
+        medication_name=request.medication_name,
+        dosage=request.dosage,
+        frequency=request.frequency,
+        duration=request.duration,
+        route=request.route,
+        instructions=request.instructions,
+        is_active=request.is_active,
+        usage_count=0
+    )
+    
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+    
+    logger.info(f"Created Rx template '{request.name}' for doctor {doctor_id}")
+    
+    return RxTemplateResponse.model_validate(template)
+
+
+@router.get("/rx-templates/{template_id}", response_model=RxTemplateResponse)
+async def get_rx_template(
+    template_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get a specific prescription template"""
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    template = db.query(RxTemplate).filter(
+        and_(
+            RxTemplate.id == template_id,
+            RxTemplate.doctor_id == doctor_id
+        )
+    ).first()
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    return RxTemplateResponse.model_validate(template)
+
+
+@router.put("/rx-templates/{template_id}", response_model=RxTemplateResponse)
+async def update_rx_template(
+    template_id: str,
+    request: RxTemplateCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Update a prescription template"""
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    template = db.query(RxTemplate).filter(
+        and_(
+            RxTemplate.id == template_id,
+            RxTemplate.doctor_id == doctor_id
+        )
+    ).first()
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    name_conflict = db.query(RxTemplate).filter(
+        and_(
+            RxTemplate.doctor_id == doctor_id,
+            RxTemplate.name == request.name,
+            RxTemplate.id != template_id
+        )
+    ).first()
+    
+    if name_conflict:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Another template with name '{request.name}' already exists"
+        )
+    
+    template.name = request.name
+    template.condition = request.condition
+    template.medication_name = request.medication_name
+    template.dosage = request.dosage
+    template.frequency = request.frequency
+    template.duration = request.duration
+    template.route = request.route
+    template.instructions = request.instructions
+    template.is_active = request.is_active
+    template.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(template)
+    
+    logger.info(f"Updated Rx template '{template.name}' for doctor {doctor_id}")
+    
+    return RxTemplateResponse.model_validate(template)
+
+
+@router.delete("/rx-templates/{template_id}")
+async def delete_rx_template(
+    template_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a prescription template"""
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    template = db.query(RxTemplate).filter(
+        and_(
+            RxTemplate.id == template_id,
+            RxTemplate.doctor_id == doctor_id
+        )
+    ).first()
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    template_name = template.name
+    db.delete(template)
+    db.commit()
+    
+    logger.info(f"Deleted Rx template '{template_name}' for doctor {doctor_id}")
+    
+    return {"success": True, "message": f"Template '{template_name}' deleted"}
+
+
+@router.post("/rx-templates/{template_id}/use", response_model=RxTemplateResponse)
+async def use_rx_template(
+    template_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Increment usage count when a template is used"""
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    template = db.query(RxTemplate).filter(
+        and_(
+            RxTemplate.id == template_id,
+            RxTemplate.doctor_id == doctor_id
+        )
+    ).first()
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    template.usage_count = (template.usage_count or 0) + 1
+    template.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(template)
+    
+    return RxTemplateResponse.model_validate(template)
