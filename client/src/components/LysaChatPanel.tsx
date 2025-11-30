@@ -36,45 +36,6 @@ interface ChatMessage {
   actionData?: any;
 }
 
-interface QuickAction {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  prompt: string;
-  category: "appointment" | "communication" | "clinical" | "records";
-}
-
-const quickActions: QuickAction[] = [
-  {
-    id: "whatsapp",
-    label: "WhatsApp",
-    icon: <Phone className="h-4 w-4" />,
-    prompt: "Show me recent WhatsApp messages from patients.",
-    category: "communication"
-  },
-  {
-    id: "email",
-    label: "Email",
-    icon: <Mail className="h-4 w-4" />,
-    prompt: "Help me compose and send a professional email to a patient.",
-    category: "communication"
-  },
-  {
-    id: "diagnosis-support",
-    label: "Diagnosis Support",
-    icon: <Stethoscope className="h-4 w-4" />,
-    prompt: "I need help analyzing symptoms and considering differential diagnoses.",
-    category: "clinical"
-  },
-  {
-    id: "write-prescription",
-    label: "Write Prescription",
-    icon: <Pill className="h-4 w-4" />,
-    prompt: "Help me write a prescription and check for drug interactions.",
-    category: "clinical"
-  }
-];
-
 interface LysaChatPanelProps {
   onMinimize?: () => void;
   isExpanded?: boolean;
@@ -86,8 +47,6 @@ interface LysaChatPanelProps {
 export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patientName, className = "" }: LysaChatPanelProps) {
   const { toast } = useToast();
   const [message, setMessage] = useState("");
-  const [showQuickActions, setShowQuickActions] = useState(true);
-  const [activeCategory, setActiveCategory] = useState<string>("all");
   const [emailDialog, setEmailDialog] = useState(false);
   const [gmailConnectDialog, setGmailConnectDialog] = useState(false);
   const [whatsappConnectDialog, setWhatsappConnectDialog] = useState(false);
@@ -222,25 +181,6 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
     sendMessageMutation.mutate(message);
   };
 
-  const handleQuickAction = (action: QuickAction) => {
-    if (action.id === "email") {
-      if (!gmailConnected) {
-        setGmailConnectDialog(true);
-        return;
-      }
-      setEmailDialog(true);
-      return;
-    }
-    if (action.id === "whatsapp") {
-      if (!whatsappConnected) {
-        setWhatsappConnectDialog(true);
-        return;
-      }
-    }
-    setMessage(action.prompt);
-    setShowQuickActions(false);
-  };
-
   const handleCopyEmail = () => {
     navigator.clipboard.writeText(`To: ${recipientEmail}\nSubject: ${emailSubject}\n\n${draftEmail}`);
     toast({
@@ -254,10 +194,6 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [chatMessages]);
-
-  const filteredActions = activeCategory === "all" 
-    ? quickActions 
-    : quickActions.filter(a => a.category === activeCategory);
 
   const renderMessage = (msg: ChatMessage) => {
     const isUser = msg.role === "user";
@@ -367,46 +303,6 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
       </CardHeader>
 
       <CardContent className="flex-1 flex flex-col p-0 min-h-0 overflow-hidden">
-        {showQuickActions && chatMessages.length === 0 && (
-          <div className="p-4 border-b flex-shrink-0">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium">Quick Actions</h4>
-              <Tabs value={activeCategory} onValueChange={setActiveCategory} className="h-8">
-                <TabsList className="h-7">
-                  <TabsTrigger value="all" className="text-xs px-2 h-6">All</TabsTrigger>
-                  <TabsTrigger value="appointment" className="text-xs px-2 h-6">
-                    <Calendar className="h-3 w-3" />
-                  </TabsTrigger>
-                  <TabsTrigger value="communication" className="text-xs px-2 h-6">
-                    <Mail className="h-3 w-3" />
-                  </TabsTrigger>
-                  <TabsTrigger value="clinical" className="text-xs px-2 h-6">
-                    <Stethoscope className="h-3 w-3" />
-                  </TabsTrigger>
-                  <TabsTrigger value="records" className="text-xs px-2 h-6">
-                    <FileText className="h-3 w-3" />
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {filteredActions.map((action) => (
-                <Button
-                  key={action.id}
-                  variant="outline"
-                  size="sm"
-                  className="h-auto py-2 px-3 flex flex-col items-center gap-1 text-xs"
-                  onClick={() => handleQuickAction(action)}
-                  data-testid={`button-quick-action-${action.id}`}
-                >
-                  {action.icon}
-                  <span className="text-center leading-tight">{action.label}</span>
-                </Button>
-              ))}
-            </div>
-          </div>
-        )}
-
         <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
           <div className="p-4">
             {isLoading ? (
@@ -456,24 +352,14 @@ export function LysaChatPanel({ onMinimize, isExpanded = true, patientId, patien
               rows={2}
               data-testid="input-lysa-message"
             />
-            <div className="flex flex-col gap-1">
-              <Button
-                size="icon"
-                onClick={handleSend}
-                disabled={!message.trim() || sendMessageMutation.isPending}
-                data-testid="button-lysa-send"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setShowQuickActions(!showQuickActions)}
-                data-testid="button-toggle-quick-actions"
-              >
-                <Sparkles className="h-4 w-4" />
-              </Button>
-            </div>
+            <Button
+              size="icon"
+              onClick={handleSend}
+              disabled={!message.trim() || sendMessageMutation.isPending}
+              data-testid="button-lysa-send"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             AI assistant for clinical workflow. Always verify recommendations.
@@ -761,332 +647,5 @@ function WhatsAppConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-export function LysaQuickActionsBar() {
-  const [emailDialog, setEmailDialog] = useState(false);
-  const [whatsappConnectDialog, setWhatsappConnectDialog] = useState(false);
-  const [gmailConnectDialog, setGmailConnectDialog] = useState(false);
-  const { toast } = useToast();
-  
-  // Email compose state
-  const [recipientEmail, setRecipientEmail] = useState("");
-  const [emailSubject, setEmailSubject] = useState("");
-  const [draftEmail, setDraftEmail] = useState("");
-  const [selectedTone, setSelectedTone] = useState<string>("professional");
-  
-  const { data: integrationStatus } = useQuery<IntegrationStatus>({
-    queryKey: ["/api/v1/integrations/status"],
-  });
-
-  const gmailConnected = integrationStatus?.gmail?.connected === true;
-  const whatsappConnected = integrationStatus?.whatsapp?.connected === true;
-  
-  const sendMessageMutation = useMutation({
-    mutationFn: async (content: string) => {
-      const response = await apiRequest("/api/chat/send", { 
-        method: "POST", 
-        json: { content, agentType: "lysa" } 
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
-    },
-  });
-
-  const getGmailAuthUrl = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("/api/v1/integrations/gmail/auth-url");
-      return response.json();
-    },
-    onSuccess: (data: { authUrl: string }) => {
-      window.location.href = data.authUrl;
-    },
-    onError: () => {
-      toast({
-        title: "Connection Error",
-        description: "Failed to get Gmail authorization URL. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const enhanceDraftMutation = useMutation({
-    mutationFn: async (content: string) => {
-      const response = await apiRequest("/api/chat/send", {
-        method: "POST",
-        json: {
-          content: `Please enhance this email draft to be more ${selectedTone} and clear while maintaining HIPAA compliance. Keep the same meaning but improve the writing:\n\n${content}`,
-          agentType: "lysa",
-        },
-      });
-      return response.json();
-    },
-    onSuccess: (data) => {
-      if (data.response) {
-        setDraftEmail(data.response);
-        toast({
-          title: "Draft Enhanced",
-          description: "Your email has been professionally refined by AI.",
-        });
-      }
-    },
-    onError: () => {
-      toast({
-        title: "Enhancement Failed",
-        description: "Could not enhance the draft. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const sendEmailMutation = useMutation({
-    mutationFn: async ({ to, subject, body }: { to: string; subject: string; body: string }) => {
-      const response = await apiRequest("/api/v1/emails/messages", {
-        method: "POST",
-        json: { to, subject, body, isFromDoctor: true },
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Email Sent",
-        description: "Your message has been delivered successfully.",
-      });
-      setEmailDialog(false);
-      setDraftEmail("");
-      setEmailSubject("");
-      setRecipientEmail("");
-    },
-    onError: () => {
-      toast({
-        title: "Send Failed",
-        description: "Could not send the email. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleQuickAction = (action: QuickAction) => {
-    if (action.id === "whatsapp") {
-      if (!whatsappConnected) {
-        setWhatsappConnectDialog(true);
-        return;
-      }
-      sendMessageMutation.mutate(action.prompt);
-      return;
-    }
-    if (action.id === "email") {
-      if (!gmailConnected) {
-        setGmailConnectDialog(true);
-        return;
-      }
-      setEmailDialog(true);
-      return;
-    }
-    sendMessageMutation.mutate(action.prompt);
-  };
-
-  const handleCopyEmail = () => {
-    navigator.clipboard.writeText(`To: ${recipientEmail}\nSubject: ${emailSubject}\n\n${draftEmail}`);
-    toast({
-      title: "Copied to Clipboard",
-      description: "Email content copied. Paste into your email client to send.",
-    });
-  };
-
-  return (
-    <>
-      <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-        <Bot className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-        <div className="flex gap-1 overflow-x-auto">
-          {quickActions.slice(0, 4).map((action) => {
-            const isWhatsApp = action.id === "whatsapp";
-            const isEmail = action.id === "email";
-            const notConnected = (isWhatsApp && !whatsappConnected) || (isEmail && !gmailConnected);
-            
-            return (
-              <Button
-                key={action.id}
-                variant="ghost"
-                size="sm"
-                className={`h-7 px-2 text-xs whitespace-nowrap flex-shrink-0 ${notConnected ? 'opacity-70' : ''}`}
-                onClick={() => handleQuickAction(action)}
-                disabled={sendMessageMutation.isPending}
-                data-testid={`button-quick-${action.id}`}
-              >
-                {notConnected && <Link2 className="h-3 w-3 mr-1 text-muted-foreground" />}
-                {action.icon}
-                <span className="ml-1">{action.label}</span>
-              </Button>
-            );
-          })}
-        </div>
-        {sendMessageMutation.isPending && (
-          <Loader2 className="h-4 w-4 animate-spin ml-2" />
-        )}
-      </div>
-      
-      {/* Email Compose Dialog with AI Features */}
-      <Dialog open={emailDialog} onOpenChange={setEmailDialog}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-email-compose">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5" />
-              Compose Email with AI
-            </DialogTitle>
-            <DialogDescription>
-              Write your email and use AI to enhance it professionally
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="email-recipient">To</Label>
-              <Input
-                id="email-recipient"
-                placeholder="patient@example.com"
-                value={recipientEmail}
-                onChange={(e) => setRecipientEmail(e.target.value)}
-                data-testid="input-email-recipient"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email-subject">Subject</Label>
-              <Input
-                id="email-subject"
-                placeholder="Re: Your appointment confirmation"
-                value={emailSubject}
-                onChange={(e) => setEmailSubject(e.target.value)}
-                data-testid="input-email-subject"
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="email-body">Message</Label>
-                <div className="flex gap-2">
-                  <Select value={selectedTone} onValueChange={setSelectedTone}>
-                    <SelectTrigger className="w-32 h-8" data-testid="select-email-tone">
-                      <SelectValue placeholder="Tone" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="professional">Professional</SelectItem>
-                      <SelectItem value="warm">Warm</SelectItem>
-                      <SelectItem value="empathetic">Empathetic</SelectItem>
-                      <SelectItem value="concise">Concise</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => enhanceDraftMutation.mutate(draftEmail)}
-                    disabled={!draftEmail.trim() || enhanceDraftMutation.isPending}
-                    data-testid="button-enhance-email"
-                  >
-                    {enhanceDraftMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Sparkles className="h-4 w-4 mr-1" />
-                        Enhance
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-              <Textarea
-                id="email-body"
-                placeholder="Type your message here... AI will help you refine it."
-                value={draftEmail}
-                onChange={(e) => setDraftEmail(e.target.value)}
-                rows={10}
-                className="resize-none"
-                data-testid="input-email-body"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setEmailDialog(false)}
-                data-testid="button-cancel-email"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleCopyEmail}
-                disabled={!recipientEmail || !emailSubject || !draftEmail}
-                data-testid="button-copy-email"
-              >
-                Copy Email
-              </Button>
-              <Button
-                onClick={() => sendEmailMutation.mutate({
-                  to: recipientEmail,
-                  subject: emailSubject,
-                  body: draftEmail,
-                })}
-                disabled={!recipientEmail || !emailSubject || !draftEmail || sendEmailMutation.isPending}
-                data-testid="button-send-email"
-              >
-                {sendEmailMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4 mr-2" />
-                )}
-                Send Email
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Gmail Connect Dialog */}
-      <Dialog open={gmailConnectDialog} onOpenChange={setGmailConnectDialog}>
-        <DialogContent data-testid="dialog-gmail-connect">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5" />
-              Connect Gmail
-            </DialogTitle>
-            <DialogDescription>
-              Connect your Gmail account to enable email features
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-sm">Compose and send emails directly</span>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-sm">AI-powered draft enhancement</span>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-sm">HIPAA-compliant email management</span>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setGmailConnectDialog(false)} data-testid="button-cancel-gmail">
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => getGmailAuthUrl.mutate()}
-              disabled={getGmailAuthUrl.isPending}
-              data-testid="button-connect-gmail"
-            >
-              {getGmailAuthUrl.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Connect Gmail
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      <WhatsAppConnectDialog open={whatsappConnectDialog} onOpenChange={setWhatsappConnectDialog} />
-    </>
   );
 }
