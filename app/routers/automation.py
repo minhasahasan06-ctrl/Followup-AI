@@ -628,6 +628,225 @@ async def get_clinical_config(
     return ClinicalAutomationConfigResponse.model_validate(config)
 
 
+@router.get("/config")
+async def get_unified_config(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get unified automation configuration for all channels"""
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    email_config = db.query(EmailAutomationConfig).filter(
+        EmailAutomationConfig.doctor_id == doctor_id
+    ).first()
+    
+    whatsapp_config = db.query(WhatsAppAutomationConfig).filter(
+        WhatsAppAutomationConfig.doctor_id == doctor_id
+    ).first()
+    
+    appointment_config = db.query(AppointmentAutomationConfig).filter(
+        AppointmentAutomationConfig.doctor_id == doctor_id
+    ).first()
+    
+    return {
+        "email": {
+            "enabled": email_config.is_enabled if email_config else False,
+            "auto_reply": email_config.auto_reply_enabled if email_config else False,
+            "auto_classify": email_config.auto_classify if email_config else True,
+            "forward_urgent": email_config.forward_urgent_enabled if email_config else True,
+            "sync_interval_minutes": email_config.sync_frequency_minutes if email_config else 5
+        },
+        "whatsapp": {
+            "enabled": whatsapp_config.is_enabled if whatsapp_config else False,
+            "auto_reply": whatsapp_config.auto_reply_enabled if whatsapp_config else False,
+            "business_hours_only": whatsapp_config.business_hours_only if whatsapp_config else True,
+            "welcome_message": whatsapp_config.greeting_template if whatsapp_config else "",
+            "away_message": whatsapp_config.out_of_hours_template if whatsapp_config else ""
+        },
+        "calendar": {
+            "enabled": appointment_config.is_enabled if appointment_config else False,
+            "bidirectional_sync": appointment_config.calendar_sync_enabled if appointment_config else True,
+            "sync_interval_minutes": appointment_config.calendar_sync_frequency_minutes if appointment_config else 15,
+            "auto_book_appointments": appointment_config.auto_book_enabled if appointment_config else False
+        }
+    }
+
+
+@router.patch("/config")
+async def update_unified_config(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Update unified automation configuration"""
+    import uuid
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    updated = {}
+    
+    if "email" in request:
+        email_data = request["email"]
+        config = db.query(EmailAutomationConfig).filter(
+            EmailAutomationConfig.doctor_id == doctor_id
+        ).first()
+        
+        if not config:
+            config = EmailAutomationConfig(id=str(uuid.uuid4()), doctor_id=doctor_id)
+            db.add(config)
+        
+        if "enabled" in email_data:
+            config.is_enabled = email_data["enabled"]
+        if "auto_reply" in email_data:
+            config.auto_reply_enabled = email_data["auto_reply"]
+        if "auto_classify" in email_data:
+            config.auto_classify = email_data["auto_classify"]
+        if "forward_urgent" in email_data:
+            config.forward_urgent_enabled = email_data["forward_urgent"]
+        if "sync_interval_minutes" in email_data:
+            config.sync_frequency_minutes = email_data["sync_interval_minutes"]
+        
+        config.updated_at = datetime.utcnow()
+        updated["email"] = True
+    
+    if "whatsapp" in request:
+        whatsapp_data = request["whatsapp"]
+        config = db.query(WhatsAppAutomationConfig).filter(
+            WhatsAppAutomationConfig.doctor_id == doctor_id
+        ).first()
+        
+        if not config:
+            config = WhatsAppAutomationConfig(id=str(uuid.uuid4()), doctor_id=doctor_id)
+            db.add(config)
+        
+        if "enabled" in whatsapp_data:
+            config.is_enabled = whatsapp_data["enabled"]
+        if "auto_reply" in whatsapp_data:
+            config.auto_reply_enabled = whatsapp_data["auto_reply"]
+        if "business_hours_only" in whatsapp_data:
+            config.business_hours_only = whatsapp_data["business_hours_only"]
+        if "welcome_message" in whatsapp_data:
+            config.greeting_template = whatsapp_data["welcome_message"]
+        if "away_message" in whatsapp_data:
+            config.out_of_hours_template = whatsapp_data["away_message"]
+        
+        config.updated_at = datetime.utcnow()
+        updated["whatsapp"] = True
+    
+    if "calendar" in request:
+        calendar_data = request["calendar"]
+        config = db.query(AppointmentAutomationConfig).filter(
+            AppointmentAutomationConfig.doctor_id == doctor_id
+        ).first()
+        
+        if not config:
+            config = AppointmentAutomationConfig(id=str(uuid.uuid4()), doctor_id=doctor_id)
+            db.add(config)
+        
+        if "enabled" in calendar_data:
+            config.is_enabled = calendar_data["enabled"]
+        if "bidirectional_sync" in calendar_data:
+            config.calendar_sync_enabled = calendar_data["bidirectional_sync"]
+        if "sync_interval_minutes" in calendar_data:
+            config.calendar_sync_frequency_minutes = calendar_data["sync_interval_minutes"]
+        if "auto_book_appointments" in calendar_data:
+            config.auto_book_enabled = calendar_data["auto_book_appointments"]
+        
+        config.updated_at = datetime.utcnow()
+        updated["calendar"] = True
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "updated": updated,
+        "message": "Configuration updated successfully"
+    }
+
+
+@router.post("/engine/start")
+async def start_engine(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Start the automation engine"""
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    await automation_engine.start()
+    
+    return {
+        "success": True,
+        "status": "running",
+        "message": "Automation engine started successfully"
+    }
+
+
+@router.post("/engine/pause")
+async def pause_engine(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Pause the automation engine"""
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    await automation_engine.stop()
+    
+    return {
+        "success": True,
+        "status": "paused",
+        "message": "Automation engine paused successfully"
+    }
+
+
+@router.post("/sync/{channel}")
+async def trigger_sync(
+    channel: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Trigger a manual sync for a specific channel"""
+    doctor_id = current_user.get("id") or current_user.get("sub")
+    
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="User ID not found")
+    
+    if channel not in ["email", "whatsapp", "calendar"]:
+        raise HTTPException(status_code=400, detail=f"Invalid channel: {channel}")
+    
+    job_type_map = {
+        "email": "email_sync",
+        "whatsapp": "whatsapp_sync",
+        "calendar": "calendar_sync"
+    }
+    
+    job = await automation_engine.enqueue_job(
+        db=db,
+        doctor_id=doctor_id,
+        job_type=job_type_map[channel],
+        input_data={"triggered_by": "manual"},
+        priority="high"
+    )
+    
+    return {
+        "success": True,
+        "job_id": job.id,
+        "channel": channel,
+        "message": f"{channel.capitalize()} sync triggered successfully"
+    }
+
+
 @router.get("/events/stream")
 async def automation_events_stream(
     current_user: dict = Depends(get_current_user)

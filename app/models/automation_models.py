@@ -281,6 +281,7 @@ class WhatsAppAutomationConfig(Base):
     
     is_enabled = Column(Boolean, default=True)
     auto_reply_enabled = Column(Boolean, default=False)
+    business_hours_only = Column(Boolean, default=True)
     
     greeting_template = Column(Text, nullable=True)
     out_of_hours_template = Column(Text, nullable=True)
