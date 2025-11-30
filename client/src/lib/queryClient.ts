@@ -23,9 +23,17 @@ function getPythonBackendUrl(url: string): string {
     normalizedUrl.startsWith("/api/v1/guided-audio-exam") ||
     normalizedUrl.startsWith("/api/v1/guided-exam") ||
     normalizedUrl.startsWith("/api/v1/gait-analysis") ||
-    normalizedUrl.startsWith("/api/v1/tremor")
+    normalizedUrl.startsWith("/api/v1/tremor") ||
+    normalizedUrl.startsWith("/api/v1/automation") ||
+    normalizedUrl.startsWith("/api/v1/webhooks")
   ) {
     return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
+  }
+  
+  // Handle /api/py/ prefix - strip 'py' and route to Python backend
+  if (normalizedUrl.startsWith("/api/py/")) {
+    const strippedUrl = normalizedUrl.replace("/api/py/", "/api/");
+    return `${PYTHON_BACKEND_URL}${strippedUrl}`;
   }
 
   return normalizedUrl;

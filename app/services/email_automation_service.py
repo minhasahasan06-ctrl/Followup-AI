@@ -100,7 +100,7 @@ class EmailAutomationService:
                 ).execute()
                 
                 existing = db.query(EmailMessage).filter(
-                    EmailMessage.gmail_message_id == msg['id']
+                    EmailMessage.message_id == msg['id']
                 ).first()
                 
                 if existing:
@@ -121,20 +121,20 @@ class EmailAutomationService:
                         msg_detail['payload']['body']['data']
                     ).decode('utf-8', errors='ignore')
                 
-                thread_id = msg_detail.get('threadId', msg['id'])
+                gmail_thread_id = msg_detail.get('threadId', msg['id'])
                 thread = db.query(EmailThread).filter(
-                    EmailThread.gmail_thread_id == thread_id
+                    EmailThread.thread_id == gmail_thread_id
                 ).first()
                 
+                import uuid
                 if not thread:
                     thread = EmailThread(
+                        id=str(uuid.uuid4()),
                         doctor_id=doctor_id,
-                        gmail_thread_id=thread_id,
+                        thread_id=gmail_thread_id,
                         subject=headers.get('Subject', 'No Subject'),
                         category='uncategorized',
                         priority='normal',
-                        status='new',
-                        is_read=False,
                         message_count=0,
                         last_message_at=datetime.utcnow()
                     )
@@ -142,10 +142,12 @@ class EmailAutomationService:
                     db.flush()
                 
                 email_msg = EmailMessage(
+                    id=str(uuid.uuid4()),
                     thread_id=thread.id,
-                    gmail_message_id=msg['id'],
-                    from_address=headers.get('From', ''),
-                    to_address=headers.get('To', ''),
+                    doctor_id=doctor_id,
+                    message_id=msg['id'],
+                    from_email=headers.get('From', ''),
+                    to_emails=headers.get('To', ''),
                     subject=headers.get('Subject', 'No Subject'),
                     body=body[:10000],
                     is_read='UNREAD' not in msg_detail.get('labelIds', []),
@@ -234,7 +236,7 @@ class EmailAutomationService:
         prompt = f"""Classify this medical office email. Respond with JSON only.
 
 Subject: {email.subject}
-From: {email.from_address}
+From: {email.from_email}
 Body (first 1000 chars): {email.body[:1000] if email.body else 'No body'}
 
 Categories:
@@ -346,7 +348,7 @@ Best regards,
 
 Original Email:
 Subject: {email.subject}
-From: {email.from_address}
+From: {email.from_email}
 Category: {category}
 
 Template to use as base:
@@ -399,7 +401,7 @@ Generate the reply text only, no subject line needed."""
                         service = build('gmail', 'v1', credentials=creds)
                         
                         message = MIMEText(reply_text)
-                        message['To'] = email.from_address
+                        message['To'] = email.from_email
                         message['Subject'] = f"Re: {email.subject}"
                         
                         raw = base64.urlsafe_b64encode(
@@ -408,7 +410,7 @@ Generate the reply text only, no subject line needed."""
                         
                         service.users().messages().send(
                             userId='me',
-                            body={'raw': raw, 'threadId': email.gmail_message_id}
+                            body={'raw': raw, 'threadId': email.message_id}
                         ).execute()
                         
                         result["sent"] = True
@@ -493,7 +495,7 @@ Generate the reply text only, no subject line needed."""
             
             forward_text = f"""[URGENT - Forwarded by Lysa AI Assistant]
 
-Original From: {email.from_address}
+Original From: {email.from_email}
 Original Subject: {email.subject}
 Received: {email.received_at}
 

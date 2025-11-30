@@ -56,6 +56,7 @@ from app.routers import (
     ai_health_alerts,  # ✅ AI Health Alert Engine - PRODUCTION READY
     habits,  # ✅ Comprehensive Habit Tracker - 13 Features - PRODUCTION READY
     automation,  # ✅ Lysa Automation Engine - PRODUCTION READY
+    webhooks,  # ✅ Gmail/WhatsApp Webhook Receivers - PRODUCTION READY
 )
 
 logger = logging.getLogger(__name__)
@@ -213,6 +214,9 @@ app.include_router(habits.router)
 
 # Lysa Automation Engine (Email/WhatsApp sync, Appointments, Reminders, Clinical AI) - PRODUCTION READY
 app.include_router(automation.router)
+
+# Gmail/WhatsApp Webhook Receivers (Real-time sync via Pub/Sub and Cloud API) - PRODUCTION READY
+app.include_router(webhooks.router)
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:
