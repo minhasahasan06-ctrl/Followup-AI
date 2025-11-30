@@ -16,7 +16,7 @@ import { LysaChatPanel } from "@/components/LysaChatPanel";
 import { PatientManagementPanel } from "@/components/PatientManagementPanel";
 import { DiagnosisHelper } from "@/components/DiagnosisHelper";
 import { PrescriptionHelper } from "@/components/PrescriptionHelper";
-import { AutomationStatusPanel, AutomationStatusBadge } from "@/components/AutomationStatusPanel";
+import { AutomationConfigPanel } from "@/components/AutomationConfigPanel";
 import { BookAppointmentDialog } from "@/components/LysaCalendarBooking";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -853,79 +853,7 @@ export default function ReceptionistDashboard() {
           </TabsContent>
 
           <TabsContent value="automation" className="mt-0">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <AutomationStatusPanel />
-              <Card data-testid="card-automation-config">
-                <CardHeader>
-                  <CardTitle>Automation Settings</CardTitle>
-                  <CardDescription>Configure Lysa's automated tasks</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-                          <Mail className="h-5 w-5 text-blue-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium">Email Automation</p>
-                          <p className="text-sm text-muted-foreground">Auto-classify, reply & forward</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" data-testid="badge-email-automation">Configure</Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
-                          <MessageSquare className="h-5 w-5 text-green-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium">WhatsApp Automation</p>
-                          <p className="text-sm text-muted-foreground">Auto-reply & templates</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" data-testid="badge-whatsapp-automation">Configure</Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-purple-500/10 flex items-center justify-center">
-                          <Calendar className="h-5 w-5 text-purple-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium">Appointment Automation</p>
-                          <p className="text-sm text-muted-foreground">Auto-book & confirm</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" data-testid="badge-appointment-automation">Configure</Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center">
-                          <Clock className="h-5 w-5 text-amber-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium">Reminder Automation</p>
-                          <p className="text-sm text-muted-foreground">Medication, appointments, follow-ups</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" data-testid="badge-reminder-automation">Configure</Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-pink-500/10 flex items-center justify-center">
-                          <Stethoscope className="h-5 w-5 text-pink-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium">Clinical Automation</p>
-                          <p className="text-sm text-muted-foreground">SOAP notes, ICD-10 suggestions</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" data-testid="badge-clinical-automation">Configure</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <AutomationConfigPanel />
           </TabsContent>
 
           <TabsContent value="patients" className="mt-0">

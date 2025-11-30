@@ -53,6 +53,7 @@ class JobType(str, enum.Enum):
     REMINDER_APPOINTMENT = "reminder_appointment"
     REMINDER_FOLLOWUP = "reminder_followup"
     REMINDER_NOSHOW = "reminder_noshow"
+    REMINDER_BATCH = "reminder_batch"
     CALENDAR_SYNC = "calendar_sync"
     PATIENT_LOOKUP = "patient_lookup"
     DIAGNOSIS_SUMMARY = "diagnosis_summary"
@@ -64,6 +65,8 @@ class JobType(str, enum.Enum):
     WEEKLY_DIGEST = "weekly_digest"
     ALERT_PROCESS = "alert_process"
     PATIENT_MONITOR = "patient_monitor"
+    CLEANUP_STALE = "cleanup_stale"
+    DAILY_CLEANUP = "daily_cleanup"
 
 
 class ScheduleFrequency(str, enum.Enum):

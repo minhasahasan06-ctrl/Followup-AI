@@ -56,25 +56,71 @@ class JobScheduler:
         """Set up default automation schedules"""
         
         self.schedules = {
+            # === EVERY MINUTE TASKS ===
             "email_sync": {
                 "job_type": "email_sync",
                 "interval_minutes": 1,
                 "enabled": True,
                 "description": "Sync emails from connected Gmail accounts"
             },
+            "whatsapp_sync": {
+                "job_type": "whatsapp_sync",
+                "interval_minutes": 1,
+                "enabled": True,
+                "description": "Process WhatsApp messages and auto-reply"
+            },
+            
+            # === EVERY 5 MINUTES TASKS ===
             "email_classify": {
                 "job_type": "email_classify",
                 "interval_minutes": 5,
                 "enabled": True,
                 "description": "Classify new unread emails with AI"
             },
-            "appointment_reminders_24h": {
-                "job_type": "reminder_appointment",
+            
+            # === EVERY 10 MINUTES TASKS ===
+            "patient_followup_check": {
+                "job_type": "patient_monitor",
+                "interval_minutes": 10,
+                "enabled": True,
+                "description": "Check patients with active sharing links for health changes"
+            },
+            
+            # === EVERY 15 MINUTES TASKS ===
+            "calendar_sync": {
+                "job_type": "calendar_sync",
+                "interval_minutes": 15,
+                "enabled": True,
+                "description": "Bidirectional sync with Google Calendar"
+            },
+            
+            # === HOURLY TASKS ===
+            "clean_stale_tasks": {
+                "job_type": "cleanup_stale",
+                "interval_minutes": 60,
+                "enabled": True,
+                "description": "Clean stale/stuck automation tasks"
+            },
+            
+            # === DAILY MORNING TASKS (8 AM) ===
+            "morning_reminders": {
+                "job_type": "reminder_batch",
                 "run_at_hour": 8,
                 "run_at_minute": 0,
                 "enabled": True,
+                "input_data": {"reminder_types": ["medication", "appointment", "followup"]},
+                "description": "Send all morning reminders (medication, appointments, follow-ups)"
+            },
+            "appointment_reminders_24h": {
+                "job_type": "reminder_appointment",
+                "run_at_hour": 8,
+                "run_at_minute": 30,
+                "enabled": True,
+                "input_data": {"hours_before": 24},
                 "description": "Send 24-hour appointment reminders"
             },
+            
+            # === DAILY AFTERNOON TASKS ===
             "appointment_reminders_2h": {
                 "job_type": "reminder_appointment",
                 "run_at_hour": 10,
@@ -83,31 +129,30 @@ class JobScheduler:
                 "input_data": {"hours_before": 2},
                 "description": "Send 2-hour appointment reminders"
             },
+            
+            # === DAILY EVENING TASKS ===
             "noshow_followups": {
-                "job_type": "noshow_followup",
+                "job_type": "reminder_noshow",
                 "run_at_hour": 18,
                 "run_at_minute": 0,
                 "enabled": True,
                 "description": "Send no-show follow-up messages"
             },
+            
+            # === MIDNIGHT TASKS ===
             "daily_report": {
                 "job_type": "daily_report",
-                "run_at_hour": 23,
+                "run_at_hour": 0,
                 "run_at_minute": 0,
                 "enabled": True,
                 "description": "Generate daily activity reports"
             },
-            "calendar_sync": {
-                "job_type": "calendar_sync",
-                "interval_minutes": 15,
+            "daily_cleanup": {
+                "job_type": "daily_cleanup",
+                "run_at_hour": 0,
+                "run_at_minute": 30,
                 "enabled": True,
-                "description": "Sync with Google Calendar"
-            },
-            "whatsapp_sync": {
-                "job_type": "whatsapp_sync",
-                "interval_minutes": 1,
-                "enabled": True,
-                "description": "Process WhatsApp webhook queue"
+                "description": "Clean up old logs and temporary data"
             }
         }
         

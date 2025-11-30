@@ -101,6 +101,7 @@ class AutomationEngine:
         from app.services.appointment_automation_service import AppointmentAutomationService
         from app.services.reminder_automation_service import ReminderAutomationService
         from app.services.clinical_automation_service import ClinicalAutomationService
+        from app.services.patient_monitoring_service import PatientMonitoringService
         
         self.job_handlers = {
             JobType.EMAIL_SYNC.value: EmailAutomationService.sync_emails,
@@ -115,12 +116,17 @@ class AutomationEngine:
             JobType.REMINDER_MEDICATION.value: ReminderAutomationService.send_medication_reminder,
             JobType.REMINDER_APPOINTMENT.value: ReminderAutomationService.send_appointment_reminder,
             JobType.REMINDER_FOLLOWUP.value: ReminderAutomationService.send_followup_reminder,
+            JobType.REMINDER_NOSHOW.value: ReminderAutomationService.send_noshow_followup,
+            JobType.REMINDER_BATCH.value: ReminderAutomationService.send_batch_reminders,
             JobType.CALENDAR_SYNC.value: AppointmentAutomationService.sync_calendar,
             JobType.DIAGNOSIS_SUMMARY.value: ClinicalAutomationService.generate_summary,
             JobType.SOAP_NOTE.value: ClinicalAutomationService.generate_soap_note,
             JobType.ICD10_SUGGEST.value: ClinicalAutomationService.suggest_icd10,
             JobType.DIFFERENTIAL_DIAGNOSIS.value: ClinicalAutomationService.generate_differential,
             JobType.DAILY_REPORT.value: ClinicalAutomationService.generate_daily_report,
+            JobType.PATIENT_MONITOR.value: PatientMonitoringService.check_patients_with_sharing_links,
+            JobType.CLEANUP_STALE.value: self._cleanup_stale_tasks,
+            JobType.DAILY_CLEANUP.value: self._daily_cleanup,
         }
     
     def register_handler(self, job_type: str, handler: Callable):
@@ -650,6 +656,116 @@ class AutomationEngine:
         db.commit()
         logger.info(f"Job {job_id} cancelled")
         return True
+    
+    async def _cleanup_stale_tasks(
+        self,
+        db: Session,
+        doctor_id: str,
+        patient_id: Optional[str],
+        input_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Clean up stale/stuck automation tasks.
+        Called every hour to handle jobs that got stuck.
+        """
+        stale_threshold = timedelta(hours=1)
+        now = datetime.utcnow()
+        
+        stale_jobs = db.query(AutomationJob).filter(
+            and_(
+                AutomationJob.status == JobStatus.RUNNING.value,
+                AutomationJob.started_at < now - stale_threshold
+            )
+        ).all()
+        
+        cleaned = 0
+        for job in stale_jobs:
+            job.status = JobStatus.FAILED.value
+            job.error_message = "Job timed out and marked as failed by cleanup"
+            job.completed_at = now
+            cleaned += 1
+            
+            self._log_action(
+                db, job.id, job.doctor_id, job.patient_id,
+                "warning", f"Stale job cleaned up: {job.job_type}",
+                action_type="stale_cleanup"
+            )
+        
+        queued_threshold = timedelta(hours=24)
+        old_queued = db.query(AutomationJob).filter(
+            and_(
+                AutomationJob.status.in_([
+                    JobStatus.QUEUED.value,
+                    JobStatus.PENDING.value
+                ]),
+                AutomationJob.created_at < now - queued_threshold
+            )
+        ).all()
+        
+        for job in old_queued:
+            job.status = JobStatus.CANCELLED.value
+            job.error_message = "Job expired after 24 hours in queue"
+            job.completed_at = now
+            cleaned += 1
+        
+        if cleaned > 0:
+            db.commit()
+            logger.info(f"Cleaned up {cleaned} stale/expired jobs")
+        
+        return {
+            "success": True,
+            "jobs_cleaned": cleaned,
+            "message": f"Cleaned {cleaned} stale or expired jobs"
+        }
+    
+    async def _daily_cleanup(
+        self,
+        db: Session,
+        doctor_id: str,
+        patient_id: Optional[str],
+        input_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Daily cleanup of old logs and temporary data.
+        Called at midnight.
+        """
+        now = datetime.utcnow()
+        logs_deleted = 0
+        jobs_archived = 0
+        
+        log_retention_days = 30
+        log_cutoff = now - timedelta(days=log_retention_days)
+        
+        old_logs = db.query(AutomationLog).filter(
+            AutomationLog.created_at < log_cutoff
+        ).delete(synchronize_session=False)
+        logs_deleted = old_logs
+        
+        job_retention_days = 90
+        job_cutoff = now - timedelta(days=job_retention_days)
+        
+        old_completed_jobs = db.query(AutomationJob).filter(
+            and_(
+                AutomationJob.status.in_([
+                    JobStatus.COMPLETED.value,
+                    JobStatus.FAILED.value,
+                    JobStatus.CANCELLED.value
+                ]),
+                AutomationJob.completed_at < job_cutoff
+            )
+        ).delete(synchronize_session=False)
+        jobs_archived = old_completed_jobs
+        
+        db.commit()
+        
+        logger.info(f"Daily cleanup: {logs_deleted} logs deleted, {jobs_archived} old jobs removed")
+        
+        return {
+            "success": True,
+            "logs_deleted": logs_deleted,
+            "jobs_archived": jobs_archived,
+            "message": f"Cleanup complete: {logs_deleted} logs, {jobs_archived} jobs"
+        }
 
 
 automation_engine = AutomationEngine.get_instance()

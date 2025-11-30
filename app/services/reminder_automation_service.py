@@ -83,12 +83,29 @@ class ReminderAutomationService:
         }
         
         if config.email_enabled:
-            try:
-                results["channels_sent"].append("email")
-                results["email_queued"] = True
-            except Exception as e:
-                logger.error(f"Email reminder error: {e}")
-                results["email_error"] = str(e)
+            patient_email = input_data.get("patient_email")
+            patient_name = input_data.get("patient_name", "Patient")
+            if patient_email:
+                try:
+                    email_result = await EmailAutomationService.send_email(
+                        db, doctor_id, patient_id, {
+                            "to_email": patient_email,
+                            "to_name": patient_name,
+                            "subject": f"Medication Reminder: {medication_name}",
+                            "body": message,
+                            "template_type": "medication_reminder"
+                        }
+                    )
+                    if email_result.get("success"):
+                        results["channels_sent"].append("email")
+                        results["email_sent"] = True
+                    else:
+                        results["email_error"] = email_result.get("error", "Unknown error")
+                except Exception as e:
+                    logger.error(f"Email reminder error: {e}")
+                    results["email_error"] = str(e)
+            else:
+                results["email_error"] = "No patient email available"
         
         if config.whatsapp_enabled:
             patient_phone = input_data.get("patient_phone")
@@ -468,6 +485,117 @@ class ReminderAutomationService:
             results["appointment_reminders"]["sent"] +
             results["noshow_followups"]["sent"]
         )
+        
+        return {
+            "success": True,
+            **results
+        }
+    
+    @staticmethod
+    async def send_batch_reminders(
+        db: Session,
+        doctor_id: str,
+        patient_id: Optional[str],
+        input_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Send batch reminders for multiple reminder types.
+        Called by the morning reminder scheduler task.
+        
+        Gathers all patients assigned to this doctor and sends appropriate reminders.
+        
+        Args:
+            input_data: Should contain 'reminder_types' list
+        """
+        reminder_types = input_data.get("reminder_types", ["medication", "appointment", "followup"])
+        
+        results = {
+            "medication": {"sent": 0, "errors": 0},
+            "appointment": {"sent": 0, "errors": 0},
+            "followup": {"sent": 0, "errors": 0},
+            "total_sent": 0
+        }
+        
+        try:
+            from app.models.patient_doctor_connection import PatientDoctorConnection
+            
+            connections = db.query(PatientDoctorConnection.patient_id).filter(
+                and_(
+                    PatientDoctorConnection.doctor_id == doctor_id,
+                    PatientDoctorConnection.status == "connected"
+                )
+            ).all()
+            patient_ids = [p[0] for p in connections]
+        except ImportError:
+            patient_ids = []
+            logger.warning("PatientDoctorConnection model not available, skipping batch reminders")
+        except Exception as e:
+            patient_ids = []
+            logger.error(f"Error fetching patient connections: {e}")
+        
+        if "medication" in reminder_types and patient_ids:
+            try:
+                from app.models.medication import Medication
+                from app.models.user import User
+                
+                for pid in patient_ids:
+                    try:
+                        patient = db.query(User).filter(User.id == pid).first()
+                        if not patient:
+                            continue
+                        
+                        meds = db.query(Medication).filter(
+                            and_(
+                                Medication.patient_id == pid,
+                                Medication.is_active == True
+                            )
+                        ).all()
+                        
+                        for med in meds:
+                            med_result = await ReminderAutomationService.send_medication_reminder(
+                                db, doctor_id, pid, {
+                                    "medication_name": med.medication_name,
+                                    "dosage": med.dosage,
+                                    "patient_email": patient.email,
+                                    "patient_phone": patient.phone_number,
+                                    "patient_name": f"{patient.first_name or ''} {patient.last_name or ''}".strip() or "Patient"
+                                }
+                            )
+                            if med_result.get("success"):
+                                results["medication"]["sent"] += 1
+                    except Exception as e:
+                        logger.error(f"Medication reminder error for patient {pid}: {e}")
+                        results["medication"]["errors"] += 1
+            except ImportError:
+                logger.warning("Medication or User model not available")
+        
+        if "appointment" in reminder_types:
+            try:
+                apt_result = await ReminderAutomationService.send_appointment_reminder(
+                    db, doctor_id, None, {"hours_before": 24}
+                )
+                results["appointment"]["sent"] = apt_result.get("reminders_sent", 0)
+            except Exception as e:
+                logger.error(f"Appointment reminder error: {e}")
+                results["appointment"]["errors"] += 1
+        
+        if "followup" in reminder_types:
+            try:
+                followup_result = await ReminderAutomationService.send_followup_reminder(
+                    db, doctor_id, None, {}
+                )
+                results["followup"]["sent"] = followup_result.get("reminders_sent", 0)
+            except Exception as e:
+                logger.error(f"Followup reminder error: {e}")
+                results["followup"]["errors"] += 1
+        
+        results["total_sent"] = (
+            results["medication"]["sent"] +
+            results["appointment"]["sent"] +
+            results["followup"]["sent"]
+        )
+        
+        logger.info(f"Batch reminders for doctor {doctor_id}: {results['total_sent']} sent")
         
         return {
             "success": True,
