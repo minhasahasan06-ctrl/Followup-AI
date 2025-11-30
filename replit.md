@@ -20,7 +20,15 @@ The backend consists of two services:
 - **Python FastAPI Backend (Port 8000)**: Handles all AI deterioration detection endpoints, guided video/audio examinations, mental health questionnaires, database interactions, and core authentication. It uses an async AI engine initialization with an `AIEngineManager` singleton and loads heavy ML models (TensorFlow, MediaPipe, YAMNet) at startup.
 
 ### Core Features & Technical Implementations
-- **AI Integration:** Leverages OpenAI API (GPT-4o) for symptom analysis, wellness suggestions, doctor assistance, sentiment analysis, medical entity extraction, and personalization via RAG.
+- **AI Integration:** Leverages OpenAI API with a tiered model strategy:
+  - **GPT-4o:** PHI detection, symptom extraction, entity categorization, SOAP notes, email categorization
+  - **o1 (Advanced Clinical Reasoning):** Differential diagnosis, complex drug interactions, clinical decision support (requires BAA/Enterprise)
+  - All AI operations have graceful fallback (o1 → GPT-4o) and comprehensive audit logging
+- **PHI Detection Service (Python):** OpenAI GPT-4o-based HIPAA-compliant PHI detection replacing AWS Comprehend Medical:
+  - Comprehensive detection of HIPAA's 18 PHI identifiers
+  - Medical entity extraction with ICD-10-CM, RxNorm, SNOMED-CT inference
+  - Regex-based fallback when API unavailable
+  - Legacy category mapping for TypeScript compatibility
 - **Real-Time Monitoring:** AI-powered digital biomarker tracking from wearable data.
 - **Voice-Based Followups:** Uses OpenAI Whisper for transcription and GPT-4 for analysis.
 - **Assistant Lysa:** AI-powered appointment management, email categorization, call log transcription, and automated reminders.
