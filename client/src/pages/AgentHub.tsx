@@ -8,6 +8,24 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   Send, 
   Bot, 
@@ -28,7 +46,14 @@ import {
   Shield,
   AlertTriangle,
   Stethoscope,
-  Heart
+  Heart,
+  Wrench,
+  ThumbsUp,
+  ThumbsDown,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  Activity
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -68,6 +93,23 @@ interface PresenceStatus {
   isTyping?: boolean;
 }
 
+interface ToolCallApproval {
+  id: string;
+  toolName: string;
+  reason: string;
+  parameters?: Record<string, unknown>;
+  timestamp: string;
+  status: "pending" | "approved" | "rejected";
+}
+
+interface ToolCallStatus {
+  id: string;
+  toolName: string;
+  status: "pending" | "running" | "completed" | "failed";
+  result?: string;
+  error?: string;
+}
+
 export default function AgentHub() {
   const { user } = useAuth();
   const isDoctor = user?.role === "doctor";
@@ -78,6 +120,10 @@ export default function AgentHub() {
   const wsRef = useRef<WebSocket | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [agentPresence, setAgentPresence] = useState<PresenceStatus>({ isOnline: true });
+  const [pendingApprovals, setPendingApprovals] = useState<ToolCallApproval[]>([]);
+  const [toolCallStatuses, setToolCallStatuses] = useState<ToolCallStatus[]>([]);
+  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [selectedApproval, setSelectedApproval] = useState<ToolCallApproval | null>(null);
 
   const agentName = isDoctor ? "Assistant Lysa" : "Agent Clona";
   const agentDescription = isDoctor 
@@ -122,21 +168,33 @@ export default function AgentHub() {
   });
 
   // WebSocket connection for real-time updates
+  // Connect to Python FastAPI backend for agent communication
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    // Use the same host for WebSocket - Vite proxy will forward /ws/agent to Python backend
     const wsUrl = `${protocol}//${window.location.host}/ws/agent`;
+    
+    let reconnectTimeout: ReturnType<typeof setTimeout>;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
     
     const connectWebSocket = () => {
       try {
         const ws = new WebSocket(wsUrl);
         
         ws.onopen = () => {
-          console.log("WebSocket connected");
+          console.log("Agent WebSocket connected");
           setWsConnected(true);
+          reconnectAttempts = 0;
+          
           // Send authentication
           ws.send(JSON.stringify({
             type: "auth",
-            payload: { userId: user?.id, role: user?.role }
+            payload: { 
+              userId: user?.id, 
+              role: user?.role,
+              token: document.cookie.includes('session') ? 'session' : undefined
+            }
           }));
         };
         
@@ -149,20 +207,33 @@ export default function AgentHub() {
           }
         };
         
-        ws.onclose = () => {
-          console.log("WebSocket disconnected");
+        ws.onclose = (event) => {
+          console.log("Agent WebSocket disconnected:", event.code, event.reason);
           setWsConnected(false);
-          // Reconnect after 3 seconds
-          setTimeout(connectWebSocket, 3000);
+          
+          // Reconnect with exponential backoff
+          if (reconnectAttempts < maxReconnectAttempts) {
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+            reconnectAttempts++;
+            console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+            reconnectTimeout = setTimeout(connectWebSocket, delay);
+          } else {
+            console.log("Max reconnection attempts reached");
+          }
         };
         
         ws.onerror = (error) => {
-          console.error("WebSocket error:", error);
+          console.error("Agent WebSocket error:", error);
         };
         
         wsRef.current = ws;
       } catch (error) {
         console.error("Failed to connect WebSocket:", error);
+        // Retry on connection failure
+        if (reconnectAttempts < maxReconnectAttempts) {
+          reconnectAttempts++;
+          reconnectTimeout = setTimeout(connectWebSocket, 3000);
+        }
       }
     };
     
@@ -171,11 +242,14 @@ export default function AgentHub() {
     }
     
     return () => {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
       if (wsRef.current) {
         wsRef.current.close();
       }
     };
-  }, [user?.id]);
+  }, [user?.id, user?.role]);
 
   const handleWebSocketMessage = useCallback((data: any) => {
     switch (data.type) {
@@ -191,6 +265,43 @@ export default function AgentHub() {
       case "ack":
         // Handle delivery acknowledgment
         queryClient.invalidateQueries({ queryKey: ["/api/agent/messages"] });
+        break;
+      case "approval_required":
+        // Add new approval request
+        const approval: ToolCallApproval = {
+          id: data.payload.messageId || crypto.randomUUID(),
+          toolName: data.payload.toolName,
+          reason: data.payload.reason,
+          parameters: data.payload.parameters,
+          timestamp: new Date().toISOString(),
+          status: "pending"
+        };
+        setPendingApprovals(prev => [...prev, approval]);
+        setSelectedApproval(approval);
+        setApprovalDialogOpen(true);
+        break;
+      case "tool_call":
+        // Update tool call status
+        const toolStatus: ToolCallStatus = {
+          id: data.payload.toolCallId || crypto.randomUUID(),
+          toolName: data.payload.toolName,
+          status: data.payload.status,
+          result: data.payload.result,
+          error: data.payload.error
+        };
+        setToolCallStatuses(prev => {
+          const existing = prev.find(t => t.id === toolStatus.id);
+          if (existing) {
+            return prev.map(t => t.id === toolStatus.id ? toolStatus : t);
+          }
+          return [...prev, toolStatus];
+        });
+        // Remove from pending if completed or failed
+        if (toolStatus.status === "completed" || toolStatus.status === "failed") {
+          setTimeout(() => {
+            setToolCallStatuses(prev => prev.filter(t => t.id !== toolStatus.id));
+          }, 5000);
+        }
         break;
     }
   }, [refetchMessages]);
@@ -232,7 +343,131 @@ export default function AgentHub() {
     return <Check className="h-3 w-3 text-muted-foreground" />;
   };
 
+  // Tool approval mutation
+  const approvalMutation = useMutation({
+    mutationFn: async ({ approvalId, approved }: { approvalId: string; approved: boolean }) => {
+      return apiRequest("/api/agent/tool-approval", {
+        method: "POST",
+        body: JSON.stringify({
+          approvalId,
+          approved,
+          userId: user?.id
+        }),
+      });
+    },
+    onSuccess: (_, variables) => {
+      setPendingApprovals(prev => 
+        prev.map(a => a.id === variables.approvalId 
+          ? { ...a, status: variables.approved ? "approved" : "rejected" } 
+          : a
+        )
+      );
+      setApprovalDialogOpen(false);
+      setSelectedApproval(null);
+      // Remove from pending after a short delay
+      setTimeout(() => {
+        setPendingApprovals(prev => prev.filter(a => a.id !== variables.approvalId));
+      }, 3000);
+    },
+  });
+
+  const handleApproval = (approved: boolean) => {
+    if (selectedApproval) {
+      approvalMutation.mutate({ approvalId: selectedApproval.id, approved });
+    }
+  };
+
+  const getToolIcon = (toolName: string) => {
+    const toolIcons: Record<string, typeof Wrench> = {
+      calendar: Clock,
+      prescription: Stethoscope,
+      message: MessageSquare,
+      alert: AlertCircle,
+      lab: Activity,
+    };
+    const Icon = toolIcons[toolName.toLowerCase()] || Wrench;
+    return <Icon className="h-4 w-4" />;
+  };
+
+  const getToolStatusColor = (status: ToolCallStatus["status"]) => {
+    switch (status) {
+      case "pending": return "text-yellow-500";
+      case "running": return "text-blue-500";
+      case "completed": return "text-green-500";
+      case "failed": return "text-red-500";
+      default: return "text-muted-foreground";
+    }
+  };
+
+  const getToolStatusIcon = (status: ToolCallStatus["status"]) => {
+    switch (status) {
+      case "pending": return <Clock className="h-4 w-4 animate-pulse" />;
+      case "running": return <Loader2 className="h-4 w-4 animate-spin" />;
+      case "completed": return <CheckCircle className="h-4 w-4" />;
+      case "failed": return <XCircle className="h-4 w-4" />;
+      default: return <Circle className="h-4 w-4" />;
+    }
+  };
+
   return (
+    <>
+    {/* Tool Approval Dialog */}
+    <AlertDialog open={approvalDialogOpen} onOpenChange={setApprovalDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" />
+            Action Approval Required
+          </AlertDialogTitle>
+          <AlertDialogDescription className="space-y-3">
+            <p>{agentName} is requesting permission to perform the following action:</p>
+            {selectedApproval && (
+              <div className="bg-muted rounded-lg p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  {getToolIcon(selectedApproval.toolName)}
+                  <span className="font-medium">{selectedApproval.toolName}</span>
+                </div>
+                <p className="text-sm">{selectedApproval.reason}</p>
+                {selectedApproval.parameters && (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted-foreground">View details</summary>
+                    <pre className="mt-2 p-2 bg-background rounded text-xs overflow-auto max-h-32">
+                      {JSON.stringify(selectedApproval.parameters, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )}
+            <p className="text-sm text-muted-foreground">
+              This action requires your explicit approval before proceeding.
+            </p>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel 
+            onClick={() => handleApproval(false)}
+            disabled={approvalMutation.isPending}
+            data-testid="button-reject-approval"
+          >
+            <ThumbsDown className="h-4 w-4 mr-2" />
+            Reject
+          </AlertDialogCancel>
+          <AlertDialogAction 
+            onClick={() => handleApproval(true)}
+            disabled={approvalMutation.isPending}
+            data-testid="button-approve-action"
+          >
+            {approvalMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <ThumbsUp className="h-4 w-4 mr-2" />
+            )}
+            Approve
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    
     <div className="flex h-[calc(100vh-8rem)] gap-4" data-testid="container-agent-hub">
       {/* Conversations Sidebar */}
       <Card className="w-80 flex flex-col">
@@ -490,6 +725,89 @@ export default function AgentHub() {
               </div>
             ))}
 
+            {/* Tool Call Status Indicators */}
+            {toolCallStatuses.length > 0 && (
+              <div className="space-y-2" data-testid="container-tool-statuses">
+                {toolCallStatuses.map((tool) => (
+                  <div 
+                    key={tool.id} 
+                    className="flex gap-3"
+                    data-testid={`tool-status-${tool.id}`}
+                  >
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="bg-primary text-primary-foreground">
+                        {getToolIcon(tool.toolName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className={cn(
+                        "rounded-lg px-4 py-2 border",
+                        tool.status === "completed" && "border-green-500/30 bg-green-500/10",
+                        tool.status === "failed" && "border-red-500/30 bg-red-500/10",
+                        tool.status === "running" && "border-blue-500/30 bg-blue-500/10",
+                        tool.status === "pending" && "border-yellow-500/30 bg-yellow-500/10"
+                      )}>
+                        <div className="flex items-center gap-2">
+                          <span className={getToolStatusColor(tool.status)}>
+                            {getToolStatusIcon(tool.status)}
+                          </span>
+                          <span className="text-sm font-medium">{tool.toolName}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {tool.status}
+                          </Badge>
+                        </div>
+                        {tool.result && (
+                          <p className="text-xs text-muted-foreground mt-1">{tool.result}</p>
+                        )}
+                        {tool.error && (
+                          <p className="text-xs text-red-500 mt-1">{tool.error}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Pending Approval Indicators */}
+            {pendingApprovals.filter(a => a.status === "pending").length > 0 && (
+              <div className="space-y-2" data-testid="container-pending-approvals">
+                {pendingApprovals.filter(a => a.status === "pending").map((approval) => (
+                  <div 
+                    key={approval.id}
+                    className="flex gap-3 cursor-pointer"
+                    onClick={() => {
+                      setSelectedApproval(approval);
+                      setApprovalDialogOpen(true);
+                    }}
+                    data-testid={`pending-approval-${approval.id}`}
+                  >
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="bg-yellow-500 text-yellow-900">
+                        <AlertTriangle className="h-4 w-4" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className="rounded-lg px-4 py-2 border border-yellow-500/30 bg-yellow-500/10">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">Approval Required</span>
+                            <Badge variant="outline" className="text-xs border-yellow-500">
+                              {approval.toolName}
+                            </Badge>
+                          </div>
+                          <Button size="sm" variant="outline" className="h-7">
+                            Review
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">{approval.reason}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Typing Indicator */}
             {isTyping && (
               <div className="flex gap-3">
@@ -636,5 +954,6 @@ export default function AgentHub() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }

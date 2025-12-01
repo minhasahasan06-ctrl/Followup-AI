@@ -71,6 +71,50 @@ The backend consists of two services:
 - **Doctor-Patient Assignment System:** Explicit doctor-patient relationships with authorization via `doctor_patient_assignments` table, auto-assignment, consent tracking, access levels, revocation, and HIPAA audit logging. All patient data endpoints verify active assignment.
 - **Per-Doctor Personal Integrations:** Each doctor can connect their own Gmail (OAuth), WhatsApp Business API, and Twilio VoIP phone accounts for automated communication sync and logging. Features JWT-signed OAuth state tokens for CSRF protection and AES-256-GCM encrypted credential storage for HIPAA compliance. Legacy plaintext tokens are automatically re-encrypted on next update.
 
+### Multi-Agent Communication System
+The platform features a sophisticated multi-agent system enabling real-time communication between AI agents, users, and healthcare providers:
+
+**Architecture:**
+- **Agent Clona**: Patient-facing AI health companion for daily check-ins, symptom tracking, medication reminders, and wellness support
+- **Assistant Lysa**: Doctor-facing AI assistant for patient management, scheduling, clinical summaries, and health alert triage
+- **Message Router**: Central routing service handling user↔agent, agent↔agent, and agent↔tool communications
+- **Memory Service**: Dual-layer memory (Redis short-term + PostgreSQL pgvector long-term) with TTL-based expiration
+
+**Message Protocol (MessageEnvelope):**
+```python
+{
+  msg_id: str,           # Unique message identifier
+  sender: {type, id},    # ActorType (agent/user/system) + ID
+  to: [{type, id}],      # Recipients list
+  type: MessageType,     # chat/command/event/tool_call/ack
+  timestamp: datetime,
+  payload: dict          # Message-specific content
+}
+```
+
+**Agent Hub UI Features:**
+- Unified conversation interface for both patients and doctors
+- Real-time WebSocket connection with presence indicators
+- Delivery checkmarks (sent/delivered/read)
+- Tool call status indicators (pending/running/completed/failed)
+- Human-in-the-loop approval dialogs for sensitive operations
+- HIPAA-compliant audit logging of all interactions
+
+**Database Schema (agent tables):**
+- `agents`: Agent configurations (clona, lysa) with personas and tool registries
+- `agent_messages`: Message storage with delivery tracking
+- `agent_conversations`: Conversation management with participant tracking
+- `agent_tasks`: Background task queue for scheduled operations
+- `agent_tools`: Tool registry with permissions and versioning
+- `agent_memory`: Long-term memory with vector embeddings (pgvector)
+- `agent_audit_logs`: HIPAA-compliant comprehensive audit trail
+
+**Files:**
+- Backend: `app/models/agent_models.py`, `app/services/agent_engine.py`, `app/services/message_router.py`, `app/services/memory_service.py`
+- Routes: `app/routers/agent_api.py`, `app/routers/agent_websocket.py`
+- Frontend: `client/src/pages/AgentHub.tsx`
+- Schema: `shared/schema.ts` (agent tables)
+
 ### Security and Compliance
 The platform is HIPAA-compliant, utilizing AWS Cognito for authentication, BAA verification for integrations, comprehensive audit logging, end-to-end encryption for video, strict PHI handling, and explicit doctor-patient assignment authorization. Positioned as a General Wellness Product.
 
