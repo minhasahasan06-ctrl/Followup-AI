@@ -19,6 +19,7 @@ from app.models.agent_models import (
 from app.services.agent_engine import get_agent_engine, AgentEngine
 from app.services.message_router import get_message_router, MessageRouter
 from app.services.memory_service import get_memory_service, MemoryService
+from app.services.delivery_service import get_delivery_service, DeliveryService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["Agent API"])
@@ -264,6 +265,136 @@ async def get_task(
     return {"id": task_id, "status": "not_found"}
 
 
+# ==================== DELIVERY RECEIPTS ====================
+
+class DeliveryReceiptRequest(BaseModel):
+    messageIds: List[str]
+    conversationId: Optional[str] = None
+
+
+class ReadReceiptRequest(BaseModel):
+    messageIds: List[str]
+    conversationId: Optional[str] = None
+
+
+def get_delivery_service_dep() -> DeliveryService:
+    """Dependency injection for delivery service"""
+    return get_delivery_service()
+
+
+@router.post("/messages/delivered")
+async def mark_messages_delivered(
+    request: Request,
+    body: DeliveryReceiptRequest,
+    user: dict = Depends(get_current_user),
+    delivery_service: DeliveryService = Depends(get_delivery_service_dep)
+):
+    """
+    Mark messages as delivered to the user.
+    
+    Updates database, publishes to Redis stream, and notifies senders via WebSocket.
+    """
+    user_id = user["id"]
+    
+    result = await delivery_service.mark_messages_delivered(
+        message_ids=body.messageIds,
+        recipient_id=user_id,
+        conversation_id=body.conversationId
+    )
+    
+    if not result["success"]:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to mark messages as delivered: {result['errors']}"
+        )
+    
+    return {
+        "success": result["success"],
+        "messageIds": result["message_ids"],
+        "deliveredAt": result["delivered_at"],
+        "deliveredCount": result["delivered_count"],
+        "userId": user_id
+    }
+
+
+@router.post("/messages/read")
+async def mark_messages_read(
+    request: Request,
+    body: ReadReceiptRequest,
+    user: dict = Depends(get_current_user),
+    delivery_service: DeliveryService = Depends(get_delivery_service_dep)
+):
+    """
+    Mark messages as read by the user.
+    
+    Updates database, publishes to Redis stream, and notifies senders via WebSocket.
+    """
+    user_id = user["id"]
+    
+    result = await delivery_service.mark_messages_read(
+        message_ids=body.messageIds,
+        reader_id=user_id,
+        conversation_id=body.conversationId
+    )
+    
+    if not result["success"]:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to mark messages as read: {result['errors']}"
+        )
+    
+    return {
+        "success": result["success"],
+        "messageIds": result["message_ids"],
+        "readAt": result["read_at"],
+        "readCount": result["read_count"],
+        "userId": user_id
+    }
+
+
+@router.get("/messages/{message_id}/status")
+async def get_message_status(
+    message_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    delivery_service: DeliveryService = Depends(get_delivery_service_dep)
+):
+    """Get delivery status for a specific message"""
+    status = await delivery_service.get_message_delivery_status(message_id)
+    
+    return {
+        "messageId": status["message_id"],
+        "sent": status["sent"],
+        "sentAt": status["sent_at"].isoformat() if status["sent_at"] else None,
+        "delivered": status["delivered"],
+        "deliveredAt": status["delivered_at"].isoformat() if status["delivered_at"] else None,
+        "read": status["read"],
+        "readAt": status["read_at"].isoformat() if status["read_at"] else None
+    }
+
+
+@router.get("/messages/undelivered")
+async def get_undelivered_messages(
+    request: Request,
+    conversation_id: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+    delivery_service: DeliveryService = Depends(get_delivery_service_dep)
+):
+    """Get all undelivered messages for the current user"""
+    user_id = user["id"]
+    
+    messages = await delivery_service.get_undelivered_messages(
+        recipient_id=user_id,
+        conversation_id=conversation_id
+    )
+    
+    return {
+        "messages": messages,
+        "total": len(messages),
+        "userId": user_id
+    }
+
+
 # ==================== APPROVALS ====================
 
 @router.get("/approvals/pending")
@@ -392,6 +523,128 @@ async def get_agent(
         "type": agent.agent_type,
         "targetRole": agent.target_role,
         "isOnline": True
+    }
+
+
+# ==================== PRESENCE ====================
+
+class PresenceUpdateRequest(BaseModel):
+    isOnline: bool = True
+    activity: Optional[str] = None
+    conversationId: Optional[str] = None
+
+
+class HeartbeatRequest(BaseModel):
+    conversationId: Optional[str] = None
+
+
+@router.post("/presence")
+async def update_presence(
+    request: Request,
+    presence_data: PresenceUpdateRequest,
+    user: dict = Depends(get_current_user),
+    message_router: MessageRouter = Depends(get_message_router)
+):
+    """Update user presence status"""
+    user_id = user["id"]
+    
+    await message_router.update_presence(
+        user_id=user_id,
+        is_online=presence_data.isOnline,
+        metadata={
+            "activity": presence_data.activity,
+            "conversation_id": presence_data.conversationId
+        }
+    )
+    
+    return {
+        "success": True,
+        "userId": user_id,
+        "isOnline": presence_data.isOnline
+    }
+
+
+@router.post("/presence/heartbeat")
+async def send_heartbeat(
+    request: Request,
+    heartbeat_data: HeartbeatRequest,
+    user: dict = Depends(get_current_user),
+    message_router: MessageRouter = Depends(get_message_router)
+):
+    """Send presence heartbeat to keep session alive"""
+    user_id = user["id"]
+    
+    await message_router.heartbeat(user_id)
+    
+    return {
+        "success": True,
+        "userId": user_id,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@router.get("/presence/online")
+async def get_online_users(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    message_router: MessageRouter = Depends(get_message_router)
+):
+    """Get list of currently online users"""
+    user_role = user["role"]
+    
+    # Only doctors can see list of online patients
+    if user_role != "doctor":
+        raise HTTPException(
+            status_code=403,
+            detail="Only doctors can view online users list"
+        )
+    
+    online_users = await message_router.get_online_users()
+    
+    return {
+        "users": online_users,
+        "count": len(online_users)
+    }
+
+
+@router.get("/presence/{target_user_id}")
+async def get_user_presence(
+    target_user_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    message_router: MessageRouter = Depends(get_message_router)
+):
+    """Get presence status for a specific user"""
+    # Get from connection manager first
+    presence = message_router.connection_manager.get_presence(target_user_id)
+    
+    if presence:
+        return {
+            "userId": target_user_id,
+            "isOnline": presence.is_online,
+            "lastSeenAt": presence.last_seen_at.isoformat() if presence.last_seen_at else None,
+            "activeConnections": presence.active_connections,
+            "currentActivity": presence.current_activity
+        }
+    
+    # Try Redis if available
+    if message_router._redis_stream:
+        try:
+            redis_presence = await message_router._redis_stream.get_presence(target_user_id)
+            if redis_presence:
+                return {
+                    "userId": target_user_id,
+                    "isOnline": redis_presence.get("is_online", False),
+                    "lastSeenAt": redis_presence.get("last_seen"),
+                    "metadata": redis_presence.get("metadata", {})
+                }
+        except Exception as e:
+            logger.error(f"Failed to get Redis presence: {e}")
+    
+    return {
+        "userId": target_user_id,
+        "isOnline": False,
+        "lastSeenAt": None
     }
 
 

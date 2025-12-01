@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.database import get_db
 from app.services.phi_detection_service import (
     get_phi_detection_service,
     PHIDetectionResult,

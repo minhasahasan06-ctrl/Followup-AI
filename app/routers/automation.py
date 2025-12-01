@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc, func
 
 from app.database import get_db
-from app.auth import get_current_user
+from app.dependencies import get_current_user
 from app.models.automation_models import (
     AutomationJob, AutomationSchedule, AutomationLog, AutomationMetric,
     EmailAutomationConfig, WhatsAppAutomationConfig,

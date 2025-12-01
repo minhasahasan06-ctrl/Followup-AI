@@ -237,11 +237,26 @@ export default function AgentHub() {
       }
     };
     
+    let heartbeatInterval: ReturnType<typeof setInterval>;
+    
     if (user?.id) {
       connectWebSocket();
+      
+      // Send heartbeat every 30 seconds to keep connection alive
+      heartbeatInterval = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: "heartbeat",
+            payload: {}
+          }));
+        }
+      }, 30000);
     }
     
     return () => {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
       }
@@ -251,10 +266,40 @@ export default function AgentHub() {
     };
   }, [user?.id, user?.role]);
 
+  // Send delivery receipts for received messages
+  const sendDeliveryReceipt = useCallback((messageIds: string[], conversationId?: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "delivered",
+        payload: {
+          messageIds,
+          conversationId
+        }
+      }));
+    }
+  }, []);
+  
+  // Send read receipts when messages are viewed
+  const sendReadReceipt = useCallback((messageIds: string[], conversationId?: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "read",
+        payload: {
+          messageIds,
+          conversationId
+        }
+      }));
+    }
+  }, []);
+
   const handleWebSocketMessage = useCallback((data: any) => {
     switch (data.type) {
       case "message":
         refetchMessages();
+        // Send delivery receipt for new message
+        if (data.payload?.msgId) {
+          sendDeliveryReceipt([data.payload.msgId], data.payload?.conversationId);
+        }
         break;
       case "presence":
         setAgentPresence(data.payload);
@@ -303,13 +348,58 @@ export default function AgentHub() {
           }, 5000);
         }
         break;
+      case "heartbeat_ack":
+        // Heartbeat acknowledged - connection is healthy
+        console.debug("Heartbeat acknowledged at:", data.payload?.timestamp);
+        break;
+      case "presence_ack":
+        // Presence update acknowledged
+        console.debug("Presence update acknowledged");
+        break;
+      case "auth_success":
+        // Authentication successful
+        console.log("Agent WebSocket authenticated:", data.payload);
+        break;
+      case "delivery_receipt":
+        // Our messages have been delivered
+        console.debug("Messages delivered:", data.payload?.messageIds);
+        // Refresh to show updated delivery status
+        queryClient.invalidateQueries({ queryKey: ["/api/agent/messages"] });
+        break;
+      case "read_receipt":
+        // Our messages have been read
+        console.debug("Messages read:", data.payload?.messageIds);
+        // Refresh to show updated read status
+        queryClient.invalidateQueries({ queryKey: ["/api/agent/messages"] });
+        break;
+      case "error":
+        // Handle error message
+        console.error("Agent WebSocket error:", data.payload?.message);
+        break;
     }
-  }, [refetchMessages]);
+  }, [refetchMessages, sendDeliveryReceipt]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+  
+  // Send read receipts when messages are viewed in the active conversation
+  useEffect(() => {
+    if (selectedConversation && messages.length > 0) {
+      // Find unread messages from the other party (agent or doctor)
+      const unreadMessages = messages.filter(msg => {
+        const isFromOther = msg.fromId !== user?.id;
+        const notRead = !msg.readAt;
+        return isFromOther && notRead;
+      });
+      
+      if (unreadMessages.length > 0) {
+        const messageIds = unreadMessages.map(msg => msg.msgId || msg.id);
+        sendReadReceipt(messageIds, selectedConversation);
+      }
+    }
+  }, [messages, selectedConversation, user?.id, sendReadReceipt]);
 
   // Auto-select first conversation or create default agent conversation
   useEffect(() => {

@@ -180,9 +180,15 @@ async def agent_websocket(
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
     finally:
-        # Clean up connection
+        # Clean up connection and update presence
         if user_info:
             await message_router.connection_manager.disconnect(websocket)
+            # Update presence to offline if no more connections
+            if not message_router.connection_manager.is_online(user_info["id"]):
+                await message_router.update_presence(
+                    user_id=user_info["id"],
+                    is_online=False
+                )
 
 
 async def handle_websocket_message(
@@ -218,15 +224,51 @@ async def handle_websocket_message(
             is_typing
         )
 
-    elif msg_type == "read":
-        # Mark messages as read
+    elif msg_type == "delivered":
+        # Mark messages as delivered using DeliveryService
         message_ids = payload.get("messageIds", [])
-        # In production, update read status in database
+        conversation_id = payload.get("conversationId")
+        
+        from app.services.delivery_service import get_delivery_service
+        delivery_service = get_delivery_service()
+        
+        result = await delivery_service.mark_messages_delivered(
+            message_ids=message_ids,
+            recipient_id=user_info["id"],
+            conversation_id=conversation_id
+        )
+        
+        await websocket.send_json({
+            "type": "ack",
+            "payload": {
+                "action": "delivered",
+                "messageIds": message_ids,
+                "deliveredCount": result.get("delivered_count", 0),
+                "timestamp": result.get("delivered_at", datetime.utcnow().isoformat())
+            }
+        })
+
+    elif msg_type == "read":
+        # Mark messages as read using DeliveryService
+        message_ids = payload.get("messageIds", [])
+        conversation_id = payload.get("conversationId")
+        
+        from app.services.delivery_service import get_delivery_service
+        delivery_service = get_delivery_service()
+        
+        result = await delivery_service.mark_messages_read(
+            message_ids=message_ids,
+            reader_id=user_info["id"],
+            conversation_id=conversation_id
+        )
+        
         await websocket.send_json({
             "type": "ack",
             "payload": {
                 "action": "read",
-                "messageIds": message_ids
+                "messageIds": message_ids,
+                "readCount": result.get("read_count", 0),
+                "timestamp": result.get("read_at", datetime.utcnow().isoformat())
             }
         })
 
@@ -238,6 +280,39 @@ async def handle_websocket_message(
             user_info=user_info,
             message_router=message_router
         )
+
+    elif msg_type == "heartbeat":
+        # Presence heartbeat to keep session alive
+        await message_router.heartbeat(user_info["id"])
+        await websocket.send_json({
+            "type": "heartbeat_ack",
+            "payload": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+    elif msg_type == "presence":
+        # Update user presence status
+        is_online = payload.get("isOnline", True)
+        activity = payload.get("activity")
+        conversation_id = payload.get("conversationId")
+        
+        await message_router.update_presence(
+            user_id=user_info["id"],
+            is_online=is_online,
+            metadata={
+                "activity": activity,
+                "conversation_id": conversation_id
+            }
+        )
+        
+        await websocket.send_json({
+            "type": "presence_ack",
+            "payload": {
+                "isOnline": is_online,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
 
     else:
         await websocket.send_json({
