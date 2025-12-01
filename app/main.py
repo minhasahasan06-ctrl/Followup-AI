@@ -140,9 +140,19 @@ async def lifespan(app: FastAPI):
         from app.services.agent_engine import get_agent_engine
         from app.services.message_router import get_message_router
         from app.services.memory_service import get_memory_service
+        from app.services.delivery_service import init_delivery_service
+        
         await get_agent_engine()
-        await get_message_router()
+        message_router = await get_message_router()
         await get_memory_service()
+        
+        # Initialize delivery service with Redis stream and WebSocket dependencies
+        # Use public accessor methods instead of private attributes
+        await init_delivery_service(
+            redis_stream=message_router.get_redis_stream(),
+            connection_manager=message_router.get_connection_manager()
+        )
+        
         logger.info("✅ Multi-Agent Communication System initialized (Clona & Lysa)")
     except Exception as e:
         logger.warning(f"⚠️  Multi-Agent System initialization failed: {e}")
