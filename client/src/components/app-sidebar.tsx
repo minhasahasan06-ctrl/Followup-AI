@@ -63,8 +63,8 @@ const patientItems = [
     badge: "History",
   },
   {
-    title: "Chat with Agent Clona",
-    url: "/chat",
+    title: "Agent Clona",
+    url: "/agent-hub",
     icon: Bot,
     badge: "AI",
   },
@@ -106,11 +106,6 @@ const patientItems = [
     title: "Wellness",
     url: "/wellness",
     icon: Wind,
-  },
-  {
-    title: "Counseling",
-    url: "/counseling",
-    icon: MessageCircle,
   },
   {
     title: "App Connections",
@@ -159,8 +154,13 @@ const patientItems = [
 
 const doctorItems = [
   {
-    title: "Assistant Lysa",
+    title: "Dashboard",
     url: "/",
+    icon: Home,
+  },
+  {
+    title: "Assistant Lysa",
+    url: "/agent-hub",
     icon: Headphones,
     badge: "AI",
   },
@@ -174,17 +174,6 @@ const doctorItems = [
     title: "Research Center",
     url: "/research",
     icon: Beaker,
-  },
-  {
-    title: "Chat with Assistant Lysa",
-    url: "/chat",
-    icon: Bot,
-    badge: "AI",
-  },
-  {
-    title: "Counseling",
-    url: "/counseling",
-    icon: MessageCircle,
   },
   {
     title: "Referrals",

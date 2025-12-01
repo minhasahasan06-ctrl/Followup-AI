@@ -1,0 +1,42 @@
+1) Message protocol (JSON)
+   - Standard envelope:
+     {
+       "msg_id": "<uuid>",
+       "from": {"type":"agent|user|system", "id":"<uuid>"},
+       "to": [{"type":"agent|user","id":"<uuid>"}],
+       "type": "chat|command|event|tool_call|ack",
+       "timestamp": "ISO8601",
+       "payload": { ... }
+     }
+   - All messages persisted to Postgres messages table and mirrored in Redis stream for real-time processing.
+
+2) Router service
+   - WebSocket gateway that authenticates JWTs via Firebase Auth / Clerk.
+   - Receives messages from clients and agents; enqueues to worker queue if processing needed.
+   - Routes agent->agent messages, logs delivery receipts, supports presence/online status.
+
+3) Agent Engine
+   - Each agent has:
+     • profile (behavior prompts, persona)
+     • tools registry (calendar, EHR read-only, secure messaging, appointment booking, prescription drafting—doctor approval required)
+     • memory pointers
+   - Agent decision loop:
+     • receives message → retrieves short-term & long-term memory → plans actions via OpenAI Assistants API → executes tool calls or sends messages → persists actions & results.
+   - Agents must include a verification step before any action that could affect care (always require human confirmation for orders).
+
+4) Tools & Tool Calls
+   - Standard tools implemented as secured microservices: Calendar, Messaging, PrescriptionDraft (returns draft note), EHRFetch (read-only patient history), LabFetch (read-only), ImagingLinker.
+   - Tools are called via JSON tool_call messages, must return structured output or error.
+
+5) Memory
+   - Short-term: Redis per-session buffers, ephemeral (TTL 1–2 hrs).
+   - Long-term: vector store (Supabase Vector or Pinecone) storing embeddings of important events, clinician notes, long-running tasks. Implement recall policy: store only salient items (use LLM to summarize before vectorizing), cap per patient.
+   - Memory schema: {id, patient_id, agent_id, vector, type, summary, source, ts}.
+
+6) Database schema (minimum)
+   - users (id, name, role[doctor/patient], org_id, contact, created_at)
+   - agents (id, user_id, persona_json, memory_policy_json, created_at)
+   - messages (id, job_id, msg_id, from_type, from_id, to, type, payload_json, delivered_bool, ts)
+   - tasks (id, agent_id, type, status, payload, scheduled_at, result, attempts)
+   - tools (id, name, config_json)
+   - audit_logs (actor_id, action, object_type, object_id, details, ts)

@@ -32,7 +32,7 @@ import Documentation from "@/pages/Documentation";
 import API from "@/pages/API";
 import Blog from "@/pages/Blog";
 import Dashboard from "@/pages/Dashboard";
-import Chat from "@/pages/Chat";
+import AgentHub from "@/pages/AgentHub";
 import Wellness from "@/pages/Wellness";
 import Files from "@/pages/Files";
 import Profile from "@/pages/Profile";
@@ -41,7 +41,6 @@ import ReceptionistDashboard from "@/pages/ReceptionistDashboard";
 import CalendarSync from "@/pages/CalendarSync";
 import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
-import Counseling from "@/pages/Counseling";
 import ConsentManagement from "@/pages/ConsentManagement";
 import WearableDevices from "@/pages/WearableDevices";
 import Referrals from "@/pages/Referrals";
@@ -84,7 +83,7 @@ function PatientRouter() {
       <Route path="/" component={Dashboard} />
       <Route path="/daily-followup" component={DailyFollowupHistory} />
       <Route path="/daily-followup/video-exam" component={DailyFollowup} />
-      <Route path="/chat" component={Chat} />
+      <Route path="/agent-hub" component={AgentHub} />
       <Route path="/medications" component={Medications} />
       <Route path="/prescriptions" component={Prescriptions} />
       <Route path="/drug-interactions" component={DrugInteractions} />
@@ -102,7 +101,6 @@ function PatientRouter() {
       <Route path="/my-doctors" component={MyDoctors} />
       <Route path="/consultation-requests" component={ConsultationRequests} />
       <Route path="/wellness/:type?" component={Wellness} />
-      <Route path="/counseling" component={Counseling} />
       <Route path="/consents" component={ConsentManagement} />
       <Route path="/medical-files" component={MedicalFiles} />
       <Route path="/wearables" component={WearableDevices} />
@@ -134,8 +132,7 @@ function DoctorRouter() {
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/ml-monitoring" component={MLMonitoring} />
-      <Route path="/chat" component={Chat} />
-      <Route path="/counseling" component={Counseling} />
+      <Route path="/agent-hub" component={AgentHub} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/admin/verify-doctors" component={AdminVerification} />
