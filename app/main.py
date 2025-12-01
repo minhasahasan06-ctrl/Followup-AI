@@ -59,6 +59,8 @@ from app.routers import (
     webhooks,  # ✅ Gmail/WhatsApp Webhook Receivers - PRODUCTION READY
     clinical_assessment,  # ✅ Clinical Assessment Aggregation - PRODUCTION READY
     medical_nlp,  # ✅ Medical NLP (GPT-4o PHI Detection & Entity Extraction) - PRODUCTION READY
+    agent_api,  # ✅ Multi-Agent REST API - Agent Clona & Assistant Lysa
+    agent_websocket,  # ✅ Multi-Agent WebSocket - Real-time Communication
 )
 
 logger = logging.getLogger(__name__)
@@ -131,7 +133,20 @@ async def lifespan(app: FastAPI):
     await AIEngineManager.initialize_all()
     logger.info("✅ AI engines initialized successfully")
     
-    # Step 4: Start Lysa Automation Engine (optional - enabled via environment)
+    # Step 4: Initialize Multi-Agent Communication System
+    logger.info("🤖 Initializing Multi-Agent Communication System...")
+    try:
+        from app.services.agent_engine import get_agent_engine
+        from app.services.message_router import get_message_router
+        from app.services.memory_service import get_memory_service
+        await get_agent_engine()
+        await get_message_router()
+        await get_memory_service()
+        logger.info("✅ Multi-Agent Communication System initialized (Clona & Lysa)")
+    except Exception as e:
+        logger.warning(f"⚠️  Multi-Agent System initialization failed: {e}")
+    
+    # Step 5: Start Lysa Automation Engine (optional - enabled via environment)
     automation_enabled = os.getenv("LYSA_AUTOMATION_ENABLED", "false").lower() == "true"
     if automation_enabled:
         logger.info("🤖 Starting Lysa Automation Engine...")
@@ -225,6 +240,10 @@ app.include_router(clinical_assessment.router)
 
 # Medical NLP (GPT-4o PHI Detection & Entity Extraction - Replaces AWS Comprehend Medical) - PRODUCTION READY
 app.include_router(medical_nlp.router)
+
+# Multi-Agent Communication System (Agent Clona & Assistant Lysa) - PRODUCTION READY
+app.include_router(agent_api.router)
+app.include_router(agent_websocket.router)
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:

@@ -5651,3 +5651,474 @@ export const insertDoctorWhatsappMessageSchema = createInsertSchema(doctorWhatsa
 
 export type InsertDoctorWhatsappMessage = z.infer<typeof insertDoctorWhatsappMessageSchema>;
 export type DoctorWhatsappMessage = typeof doctorWhatsappMessages.$inferSelect;
+
+// ============================================================================
+// MULTI-AGENT COMMUNICATION SYSTEM
+// ============================================================================
+
+// Agent definitions (Lysa for doctors, Clona for patients)
+export const agents = pgTable("agents", {
+  id: varchar("id").primaryKey(), // 'lysa', 'clona', or custom agent IDs
+  name: varchar("name").notNull(),
+  description: text("description"),
+  agentType: varchar("agent_type").notNull(), // 'assistant' (Lysa), 'companion' (Clona), 'system'
+  targetRole: varchar("target_role").notNull(), // 'doctor', 'patient', 'all'
+  
+  // Agent persona and behavior
+  personaJson: jsonb("persona_json").$type<{
+    systemPrompt: string;
+    personality: string;
+    tone: string;
+    specializations: string[];
+    constraints: string[];
+  }>(),
+  
+  // Memory policy configuration
+  memoryPolicyJson: jsonb("memory_policy_json").$type<{
+    shortTermTtlHours: number;
+    longTermEnabled: boolean;
+    vectorizationEnabled: boolean;
+    maxMemoryPerPatient: number;
+    summarizationThreshold: number;
+  }>(),
+  
+  // OpenAI Assistants API integration
+  openaiAssistantId: varchar("openai_assistant_id"),
+  openaiModel: varchar("openai_model").default("gpt-4o"),
+  
+  // Status and versioning
+  isActive: boolean("is_active").default(true),
+  version: integer("version").default(1),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAgentSchema = createInsertSchema(agents).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgent = z.infer<typeof insertAgentSchema>;
+export type Agent = typeof agents.$inferSelect;
+
+// Agent tools registry
+export const agentTools = pgTable("agent_tools", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull().unique(),
+  displayName: varchar("display_name").notNull(),
+  description: text("description"),
+  
+  // Tool configuration
+  toolType: varchar("tool_type").notNull(), // 'calendar', 'messaging', 'ehr_fetch', 'prescription_draft', 'lab_fetch', 'imaging_linker'
+  configJson: jsonb("config_json").$type<{
+    endpoint?: string;
+    method?: string;
+    parametersSchema?: Record<string, unknown>;
+    responseSchema?: Record<string, unknown>;
+    timeout?: number;
+  }>(),
+  
+  // Parameters schema (JSON Schema format for OpenAI function calling)
+  parametersSchema: jsonb("parameters_schema").$type<Record<string, unknown>>(),
+  
+  // Permissions and access control
+  requiredPermissions: jsonb("required_permissions").$type<string[]>(),
+  allowedRoles: jsonb("allowed_roles").$type<string[]>(), // ['doctor', 'patient']
+  requiresApproval: boolean("requires_approval").default(false), // Human-in-the-loop
+  approvalRole: varchar("approval_role"), // Role that must approve (e.g., 'doctor' for prescriptions)
+  
+  // Status and versioning
+  isEnabled: boolean("is_enabled").default(true),
+  version: integer("version").default(1),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAgentToolSchema = createInsertSchema(agentTools).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentTool = z.infer<typeof insertAgentToolSchema>;
+export type AgentTool = typeof agentTools.$inferSelect;
+
+// Agent-tool assignments (which agents can use which tools)
+export const agentToolAssignments = pgTable("agent_tool_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull().references(() => agents.id),
+  toolId: varchar("tool_id").notNull().references(() => agentTools.id),
+  
+  // Override settings for this agent-tool combination
+  customConfig: jsonb("custom_config").$type<Record<string, unknown>>(),
+  isEnabled: boolean("is_enabled").default(true),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  agentToolIdx: index("agent_tool_idx").on(table.agentId, table.toolId),
+}));
+
+export const insertAgentToolAssignmentSchema = createInsertSchema(agentToolAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAgentToolAssignment = z.infer<typeof insertAgentToolAssignmentSchema>;
+export type AgentToolAssignment = typeof agentToolAssignments.$inferSelect;
+
+// Agent conversations (threads between users and agents, or agent-to-agent)
+export const agentConversations = pgTable("agent_conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Participants
+  participant1Type: varchar("participant1_type").notNull(), // 'user', 'agent'
+  participant1Id: varchar("participant1_id").notNull(),
+  participant2Type: varchar("participant2_type").notNull(), // 'user', 'agent'
+  participant2Id: varchar("participant2_id").notNull(),
+  
+  // Context
+  patientId: varchar("patient_id").references(() => users.id), // If conversation involves a patient
+  doctorId: varchar("doctor_id").references(() => users.id), // If conversation involves a doctor
+  
+  // Conversation metadata
+  title: varchar("title"),
+  status: varchar("status").notNull().default("active"), // 'active', 'archived', 'closed'
+  
+  // Message counts
+  messageCount: integer("message_count").default(0),
+  unreadCount1: integer("unread_count_1").default(0), // Unread for participant1
+  unreadCount2: integer("unread_count_2").default(0), // Unread for participant2
+  
+  // Last activity
+  lastMessageAt: timestamp("last_message_at"),
+  lastMessagePreview: text("last_message_preview"),
+  
+  // OpenAI thread (if using Assistants API)
+  openaiThreadId: varchar("openai_thread_id"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  participant1Idx: index("conv_participant1_idx").on(table.participant1Type, table.participant1Id),
+  participant2Idx: index("conv_participant2_idx").on(table.participant2Type, table.participant2Id),
+  patientIdx: index("conv_patient_idx").on(table.patientId),
+  doctorIdx: index("conv_doctor_idx").on(table.doctorId),
+  lastMessageIdx: index("conv_last_message_idx").on(table.lastMessageAt),
+}));
+
+export const insertAgentConversationSchema = createInsertSchema(agentConversations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentConversation = z.infer<typeof insertAgentConversationSchema>;
+export type AgentConversation = typeof agentConversations.$inferSelect;
+
+// Agent messages with full envelope protocol
+export const agentMessages = pgTable("agent_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  msgId: varchar("msg_id").notNull().unique(), // UUID for message tracking
+  conversationId: varchar("conversation_id").notNull().references(() => agentConversations.id),
+  
+  // Message envelope - From
+  fromType: varchar("from_type").notNull(), // 'agent', 'user', 'system'
+  fromId: varchar("from_id").notNull(),
+  
+  // Message envelope - To (JSON array for multi-recipient)
+  toJson: jsonb("to_json").$type<Array<{ type: string; id: string }>>().notNull(),
+  
+  // Message type and content
+  messageType: varchar("message_type").notNull(), // 'chat', 'command', 'event', 'tool_call', 'ack'
+  content: text("content"),
+  payloadJson: jsonb("payload_json").$type<Record<string, unknown>>(),
+  
+  // Tool call specific fields
+  toolCallId: varchar("tool_call_id"),
+  toolName: varchar("tool_name"),
+  toolInput: jsonb("tool_input").$type<Record<string, unknown>>(),
+  toolOutput: jsonb("tool_output").$type<Record<string, unknown>>(),
+  toolStatus: varchar("tool_status"), // 'pending', 'running', 'completed', 'failed', 'pending_approval'
+  
+  // Human-in-the-loop approval
+  requiresApproval: boolean("requires_approval").default(false),
+  approvalStatus: varchar("approval_status"), // 'pending', 'approved', 'rejected'
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  approvalNotes: text("approval_notes"),
+  
+  // Delivery tracking
+  delivered: boolean("delivered").default(false),
+  deliveredAt: timestamp("delivered_at"),
+  readAt: timestamp("read_at"),
+  
+  // PHI and HIPAA tracking
+  containsPhi: boolean("contains_phi").default(false),
+  phiRedacted: boolean("phi_redacted").default(false),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    clientInfo?: { platform?: string; version?: string };
+    processingTime?: number;
+    modelUsed?: string;
+    tokensUsed?: number;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  conversationIdx: index("msg_conversation_idx").on(table.conversationId),
+  fromIdx: index("msg_from_idx").on(table.fromType, table.fromId),
+  msgIdIdx: index("msg_id_idx").on(table.msgId),
+  createdIdx: index("msg_created_idx").on(table.createdAt),
+  toolCallIdx: index("msg_tool_call_idx").on(table.toolCallId),
+  approvalIdx: index("msg_approval_idx").on(table.requiresApproval, table.approvalStatus),
+}));
+
+export const insertAgentMessageSchema = createInsertSchema(agentMessages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAgentMessage = z.infer<typeof insertAgentMessageSchema>;
+export type AgentMessage = typeof agentMessages.$inferSelect;
+
+// Agent tasks (background jobs, scheduled workflows)
+export const agentTasks = pgTable("agent_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Task ownership
+  agentId: varchar("agent_id").notNull().references(() => agents.id),
+  userId: varchar("user_id").references(() => users.id), // User context if applicable
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  messageId: varchar("message_id").references(() => agentMessages.id),
+  
+  // Task definition
+  taskType: varchar("task_type").notNull(), // 'tool_execution', 'scheduled_checkin', 'medication_reminder', 'workflow', 'inference'
+  taskName: varchar("task_name"),
+  
+  // Scheduling
+  scheduledAt: timestamp("scheduled_at"),
+  recurringPattern: varchar("recurring_pattern"), // Cron expression for recurring tasks
+  timezone: varchar("timezone").default("UTC"),
+  
+  // Execution
+  status: varchar("status").notNull().default("pending"), // 'pending', 'queued', 'running', 'completed', 'failed', 'cancelled'
+  priority: integer("priority").default(5), // 1-10, higher is more important
+  
+  // Payload and results
+  inputPayload: jsonb("input_payload").$type<Record<string, unknown>>(),
+  outputResult: jsonb("output_result").$type<Record<string, unknown>>(),
+  errorMessage: text("error_message"),
+  
+  // Retry logic
+  attempts: integer("attempts").default(0),
+  maxAttempts: integer("max_attempts").default(3),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  nextRetryAt: timestamp("next_retry_at"),
+  
+  // Worker info
+  workerId: varchar("worker_id"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  agentIdx: index("task_agent_idx").on(table.agentId),
+  userIdx: index("task_user_idx").on(table.userId),
+  statusIdx: index("task_status_idx").on(table.status),
+  scheduledIdx: index("task_scheduled_idx").on(table.scheduledAt),
+  typeIdx: index("task_type_idx").on(table.taskType),
+}));
+
+export const insertAgentTaskSchema = createInsertSchema(agentTasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentTask = z.infer<typeof insertAgentTaskSchema>;
+export type AgentTask = typeof agentTasks.$inferSelect;
+
+// Agent memory (short-term and long-term with vector embeddings)
+export const agentMemory = pgTable("agent_memory", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Memory ownership
+  agentId: varchar("agent_id").notNull().references(() => agents.id),
+  patientId: varchar("patient_id").references(() => users.id),
+  userId: varchar("user_id").references(() => users.id),
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  
+  // Memory type and storage
+  memoryType: varchar("memory_type").notNull(), // 'short_term', 'long_term', 'episodic', 'semantic'
+  storageType: varchar("storage_type").notNull(), // 'redis', 'postgres', 'vector'
+  
+  // Content
+  content: text("content").notNull(),
+  summary: text("summary"), // LLM-generated summary for long-term storage
+  
+  // Vector embedding for semantic search (stored as JSON array, to be used with pgvector)
+  embedding: jsonb("embedding").$type<number[]>(),
+  embeddingModel: varchar("embedding_model"),
+  
+  // Source tracking
+  sourceType: varchar("source_type"), // 'message', 'tool_result', 'observation', 'inference'
+  sourceId: varchar("source_id"),
+  
+  // Salience and importance
+  importance: decimal("importance", { precision: 3, scale: 2 }).default("0.5"), // 0-1 scale
+  accessCount: integer("access_count").default(0),
+  lastAccessedAt: timestamp("last_accessed_at"),
+  
+  // TTL for short-term memory
+  expiresAt: timestamp("expires_at"),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    topics?: string[];
+    entities?: string[];
+    sentiment?: string;
+    keywords?: string[];
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  agentIdx: index("memory_agent_idx").on(table.agentId),
+  patientIdx: index("memory_patient_idx").on(table.patientId),
+  typeIdx: index("memory_type_idx").on(table.memoryType),
+  expiresIdx: index("memory_expires_idx").on(table.expiresAt),
+  importanceIdx: index("memory_importance_idx").on(table.importance),
+}));
+
+export const insertAgentMemorySchema = createInsertSchema(agentMemory).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentMemory = z.infer<typeof insertAgentMemorySchema>;
+export type AgentMemory = typeof agentMemory.$inferSelect;
+
+// Agent audit logs (HIPAA-compliant comprehensive logging)
+export const agentAuditLogs = pgTable("agent_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Actor (who performed the action)
+  actorType: varchar("actor_type").notNull(), // 'user', 'agent', 'system', 'worker'
+  actorId: varchar("actor_id").notNull(),
+  actorRole: varchar("actor_role"), // 'doctor', 'patient', 'admin'
+  
+  // Action details
+  action: varchar("action").notNull(), // 'message_sent', 'message_read', 'tool_called', 'phi_accessed', 'approval_granted', etc.
+  actionCategory: varchar("action_category").notNull(), // 'communication', 'data_access', 'clinical_action', 'system'
+  
+  // Object (what was acted upon)
+  objectType: varchar("object_type").notNull(), // 'message', 'conversation', 'patient_record', 'prescription', 'tool'
+  objectId: varchar("object_id").notNull(),
+  
+  // Context
+  patientId: varchar("patient_id").references(() => users.id), // If action involves a patient
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  messageId: varchar("message_id").references(() => agentMessages.id),
+  
+  // PHI access tracking (HIPAA requirement)
+  phiAccessed: boolean("phi_accessed").default(false),
+  phiCategories: jsonb("phi_categories").$type<string[]>(), // Types of PHI accessed
+  accessReason: varchar("access_reason"), // Reason for PHI access
+  
+  // Details
+  details: jsonb("details").$type<Record<string, unknown>>(),
+  previousState: jsonb("previous_state").$type<Record<string, unknown>>(),
+  newState: jsonb("new_state").$type<Record<string, unknown>>(),
+  
+  // Request context
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  sessionId: varchar("session_id"),
+  
+  // Outcome
+  success: boolean("success").default(true),
+  errorCode: varchar("error_code"),
+  errorMessage: text("error_message"),
+  
+  // Timestamps
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  actorIdx: index("audit_actor_idx").on(table.actorType, table.actorId),
+  actionIdx: index("audit_action_idx").on(table.action),
+  objectIdx: index("audit_object_idx").on(table.objectType, table.objectId),
+  patientIdx: index("audit_patient_idx").on(table.patientId),
+  timestampIdx: index("audit_timestamp_idx").on(table.timestamp),
+  phiIdx: index("audit_phi_idx").on(table.phiAccessed),
+}));
+
+export const insertAgentAuditLogSchema = createInsertSchema(agentAuditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAgentAuditLog = z.infer<typeof insertAgentAuditLogSchema>;
+export type AgentAuditLog = typeof agentAuditLogs.$inferSelect;
+
+// User presence tracking for real-time status
+export const userPresence = pgTable("user_presence", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id).unique(),
+  
+  // Connection status
+  isOnline: boolean("is_online").default(false),
+  lastSeenAt: timestamp("last_seen_at"),
+  
+  // Active connections
+  activeConnections: integer("active_connections").default(0),
+  connectionIds: jsonb("connection_ids").$type<string[]>(),
+  
+  // Activity
+  currentActivity: varchar("current_activity"), // 'typing', 'viewing', 'idle'
+  currentConversationId: varchar("current_conversation_id"),
+  
+  // Device info
+  lastDeviceInfo: jsonb("last_device_info").$type<{
+    platform?: string;
+    browser?: string;
+    isMobile?: boolean;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("presence_user_idx").on(table.userId),
+  onlineIdx: index("presence_online_idx").on(table.isOnline),
+}));
+
+export const insertUserPresenceSchema = createInsertSchema(userPresence).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertUserPresence = z.infer<typeof insertUserPresenceSchema>;
+export type UserPresence = typeof userPresence.$inferSelect;
+
+// Message envelope types for TypeScript
+export const messageEnvelopeSchema = z.object({
+  msgId: z.string().uuid(),
+  from: z.object({
+    type: z.enum(["agent", "user", "system"]),
+    id: z.string(),
+  }),
+  to: z.array(z.object({
+    type: z.enum(["agent", "user"]),
+    id: z.string(),
+  })),
+  type: z.enum(["chat", "command", "event", "tool_call", "ack"]),
+  timestamp: z.string().datetime(),
+  payload: z.record(z.unknown()).optional(),
+});
+
+export type MessageEnvelope = z.infer<typeof messageEnvelopeSchema>;

@@ -3306,60 +3306,6 @@ All questions and discussions should be focused on this patient.`;
     }
   });
 
-  // Psychological counseling session routes
-  app.get('/api/counseling/sessions', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user!.id;
-      const sessions = await storage.getCounselingSessions(userId);
-      res.json(sessions);
-    } catch (error) {
-      console.error("Error fetching counseling sessions:", error);
-      res.status(500).json({ message: "Failed to fetch counseling sessions" });
-    }
-  });
-
-  app.post('/api/counseling/sessions', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user!.id;
-      const session = await storage.createCounselingSession({
-        userId,
-        ...req.body,
-      });
-      res.json(session);
-    } catch (error) {
-      console.error("Error creating counseling session:", error);
-      res.status(500).json({ message: "Failed to create counseling session" });
-    }
-  });
-
-  app.patch('/api/counseling/sessions/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const session = await storage.updateCounselingSession(id, req.body);
-      if (!session) {
-        return res.status(404).json({ message: "Session not found" });
-      }
-      res.json(session);
-    } catch (error) {
-      console.error("Error updating counseling session:", error);
-      res.status(500).json({ message: "Failed to update counseling session" });
-    }
-  });
-
-  app.delete('/api/counseling/sessions/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const deleted = await storage.deleteCounselingSession(id);
-      if (!deleted) {
-        return res.status(404).json({ message: "Session not found" });
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error deleting counseling session:", error);
-      res.status(500).json({ message: "Failed to delete counseling session" });
-    }
-  });
-
   // Training dataset routes (doctor only)
   app.get('/api/training/datasets', isAuthenticated, isDoctor, async (req: any, res) => {
     try {
