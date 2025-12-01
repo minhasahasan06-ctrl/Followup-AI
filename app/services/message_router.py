@@ -280,14 +280,44 @@ class MessageRouter:
         consent_service = get_consent_service()
         
         # Build context from envelope payload if not provided
+        payload = envelope.payload or {}
         if not conversation_context:
-            payload = envelope.payload or {}
             conversation_context = {
                 "patient_id": payload.get("patient_id"),
                 "doctor_id": payload.get("doctor_id"),
                 "conversation_id": payload.get("conversation_id"),
                 "conversation_type": payload.get("conversation_type")
             }
+        
+        # Resolve sender role and IDs for consent verification
+        sender_type = envelope.sender.type.value if hasattr(envelope.sender.type, 'value') else str(envelope.sender.type)
+        sender_id = envelope.sender.id
+        resolved_context = await self._resolve_conversation_context(
+            sender_type=sender_type,
+            sender_id=sender_id,
+            recipients=envelope.to,
+            context=conversation_context
+        )
+        
+        # Update conversation_context with resolved IDs
+        conversation_context.update(resolved_context)
+        
+        # For patient↔doctor direct messaging, ensure shared conversation thread
+        if self._is_patient_doctor_direct_message(sender_type, sender_id, envelope.to, conversation_context):
+            patient_id = conversation_context.get("patient_id")
+            doctor_id = conversation_context.get("doctor_id")
+            assignment_id = conversation_context.get("assignment_id")
+            
+            if patient_id and doctor_id:
+                shared_conv_id = await self.find_or_create_patient_doctor_conversation(
+                    patient_id=patient_id,
+                    doctor_id=doctor_id,
+                    assignment_id=assignment_id
+                )
+                if shared_conv_id:
+                    conversation_context["conversation_id"] = shared_conv_id
+                    payload["conversation_id"] = shared_conv_id
+                    envelope.payload = payload
         
         # Verify consent for EACH recipient
         verified_recipients = []
@@ -617,6 +647,119 @@ class MessageRouter:
         except Exception as e:
             logger.warning(f"Failed to get sender display info: {e}")
             return None, None
+    
+    async def _resolve_conversation_context(
+        self,
+        sender_type: str,
+        sender_id: str,
+        recipients: List[Any],
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Resolve patient_id and doctor_id from sender/recipient types.
+        Essential for consent verification in all communication patterns.
+        
+        Returns updated context with resolved patient_id, doctor_id, and assignment_id.
+        """
+        result = {
+            "patient_id": context.get("patient_id"),
+            "doctor_id": context.get("doctor_id"),
+            "assignment_id": context.get("assignment_id")
+        }
+        
+        try:
+            from app.database import SessionLocal
+            from sqlalchemy import text
+            
+            db = SessionLocal()
+            try:
+                # Resolve sender's role if it's a user
+                if sender_type == "user" and sender_id:
+                    user_result = db.execute(
+                        text("SELECT role FROM users WHERE id = :user_id"),
+                        {"user_id": sender_id}
+                    )
+                    row = user_result.fetchone()
+                    if row:
+                        role = row[0]
+                        if role == "doctor":
+                            result["doctor_id"] = sender_id
+                        elif role == "patient":
+                            result["patient_id"] = sender_id
+                
+                # Resolve recipient roles
+                for recipient in recipients:
+                    rec_type = recipient.type.value if hasattr(recipient.type, 'value') else str(recipient.type)
+                    rec_id = recipient.id
+                    
+                    if rec_type == "user" and rec_id:
+                        user_result = db.execute(
+                            text("SELECT role FROM users WHERE id = :user_id"),
+                            {"user_id": rec_id}
+                        )
+                        row = user_result.fetchone()
+                        if row:
+                            role = row[0]
+                            if role == "doctor":
+                                result["doctor_id"] = rec_id
+                            elif role == "patient":
+                                result["patient_id"] = rec_id
+                    
+                    # For agents, try to resolve from conversation context
+                    elif rec_type == "agent":
+                        # If recipient is Lysa, the sender might be a patient
+                        # If recipient is Clona, the sender might be a doctor
+                        pass  # Already resolved from sender
+                
+                # If we have both patient and doctor, look up assignment
+                if result.get("patient_id") and result.get("doctor_id") and not result.get("assignment_id"):
+                    assign_result = db.execute(
+                        text("""
+                            SELECT id FROM doctor_patient_assignments
+                            WHERE doctor_id = :doctor_id
+                            AND patient_id = :patient_id
+                            AND status = 'active'
+                            ORDER BY assigned_at DESC
+                            LIMIT 1
+                        """),
+                        {"doctor_id": result["doctor_id"], "patient_id": result["patient_id"]}
+                    )
+                    assign_row = assign_result.fetchone()
+                    if assign_row:
+                        result["assignment_id"] = assign_row[0]
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Failed to resolve conversation context: {e}")
+        
+        return result
+    
+    def _is_patient_doctor_direct_message(
+        self,
+        sender_type: str,
+        sender_id: str,
+        recipients: List[Any],
+        context: Dict[str, Any]
+    ) -> bool:
+        """
+        Determine if this is a direct Patient↔Doctor message.
+        These must share the same conversation thread.
+        """
+        # Must have both patient and doctor IDs
+        if not context.get("patient_id") or not context.get("doctor_id"):
+            return False
+        
+        # Check if sender is a user (patient or doctor)
+        if sender_type != "user":
+            return False
+        
+        # Check if any recipient is a user
+        for recipient in recipients:
+            rec_type = recipient.type.value if hasattr(recipient.type, 'value') else str(recipient.type)
+            if rec_type == "user":
+                return True
+        
+        return False
     
     async def _log_blocked_communication(
         self,
