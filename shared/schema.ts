@@ -5837,6 +5837,7 @@ export type InsertAgentConversation = z.infer<typeof insertAgentConversationSche
 export type AgentConversation = typeof agentConversations.$inferSelect;
 
 // Agent messages with full envelope protocol
+// CRITICAL: Patient↔Doctor messages tagged with senderRole for proper display
 export const agentMessages = pgTable("agent_messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   msgId: varchar("msg_id").notNull().unique(), // UUID for message tracking
@@ -5845,6 +5846,18 @@ export const agentMessages = pgTable("agent_messages", {
   // Message envelope - From
   fromType: varchar("from_type").notNull(), // 'agent', 'user', 'system'
   fromId: varchar("from_id").notNull(),
+  
+  // Sender role for proper tagging (CRITICAL for Patient↔Doctor conversations)
+  // 'patient' - Message from patient user
+  // 'doctor' - Message from doctor user
+  // 'clona' - Message from Agent Clona (patient's AI)
+  // 'lysa' - Message from Assistant Lysa (doctor's AI)
+  // 'system' - System-generated message
+  senderRole: varchar("sender_role").notNull().default("patient"),
+  
+  // Sender display info (cached for UI performance)
+  senderName: varchar("sender_name"), // e.g., "Dr. Smith" or "John Doe"
+  senderAvatar: varchar("sender_avatar"), // Profile image URL
   
   // Message envelope - To (JSON array for multi-recipient)
   toJson: jsonb("to_json").$type<Array<{ type: string; id: string }>>().notNull(),
@@ -5889,6 +5902,7 @@ export const agentMessages = pgTable("agent_messages", {
 }, (table) => ({
   conversationIdx: index("msg_conversation_idx").on(table.conversationId),
   fromIdx: index("msg_from_idx").on(table.fromType, table.fromId),
+  senderRoleIdx: index("msg_sender_role_idx").on(table.senderRole),
   msgIdIdx: index("msg_id_idx").on(table.msgId),
   createdIdx: index("msg_created_idx").on(table.createdAt),
   toolCallIdx: index("msg_tool_call_idx").on(table.toolCallId),
