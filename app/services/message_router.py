@@ -2,12 +2,13 @@
 Central Message Router Service
 Routes messages between agents, users, and tools
 Integrates with Redis streams for reliable message delivery and persistence
+Enforces consent-based routing for all doctor-patient communications
 """
 
 import os
 import json
 import logging
-from typing import Optional, Dict, Any, List, Set
+from typing import Optional, Dict, Any, List, Set, Tuple
 from datetime import datetime
 import asyncio
 from collections import defaultdict
@@ -19,6 +20,7 @@ from app.models.agent_models import (
     WebSocketMessage
 )
 from app.services.redis_stream_service import get_redis_stream_service, RedisStreamService
+from app.services.consent_service import get_consent_service, ConsentService
 
 logger = logging.getLogger(__name__)
 
