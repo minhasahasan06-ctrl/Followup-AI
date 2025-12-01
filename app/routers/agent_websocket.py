@@ -113,11 +113,8 @@ async def agent_websocket(
                 await websocket.close()
                 return
 
-            # Register connection
-            # Note: We're passing websocket directly since we already accepted it
-            message_router.connection_manager.active_connections[user_info["id"]].add(websocket)
-            message_router.connection_manager.connection_users[websocket] = user_info["id"]
-
+            # Register connection (socket already accepted above)
+            message_router.connection_manager.register_connection(websocket, user_info["id"])
             logger.info(f"User {user_info['id']} authenticated via WebSocket")
 
             # Send authentication success

@@ -34,9 +34,16 @@ class ConnectionManager:
         # user_id -> current activity
         self.typing_status: Dict[str, Dict[str, bool]] = defaultdict(dict)
 
-    async def connect(self, websocket: Any, user_id: str):
-        """Register a new WebSocket connection"""
-        await websocket.accept()
+    async def connect(self, websocket: Any, user_id: str, accept: bool = True):
+        """Register a new WebSocket connection
+        
+        Args:
+            websocket: The WebSocket connection
+            user_id: The user ID to associate with this connection
+            accept: Whether to accept the websocket (set to False if already accepted)
+        """
+        if accept:
+            await websocket.accept()
         self.active_connections[user_id].add(websocket)
         self.connection_users[websocket] = user_id
         
@@ -51,6 +58,26 @@ class ConnectionManager:
         )
         
         logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections[user_id])}")
+    
+    def register_connection(self, websocket: Any, user_id: str):
+        """Register an already-accepted WebSocket connection (synchronous)
+        
+        Use this when the websocket has already been accepted elsewhere.
+        """
+        self.active_connections[user_id].add(websocket)
+        self.connection_users[websocket] = user_id
+        
+        # Update presence
+        self.presence[user_id] = PresenceStatus(
+            user_id=user_id,
+            is_online=True,
+            last_seen_at=datetime.utcnow(),
+            active_connections=len(self.active_connections[user_id]),
+            current_activity=None,
+            current_conversation_id=None
+        )
+        
+        logger.info(f"User {user_id} registered. Total connections: {len(self.active_connections[user_id])}")
 
     async def disconnect(self, websocket: Any):
         """Remove a WebSocket connection"""

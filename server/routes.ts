@@ -12759,6 +12759,140 @@ Provide:
   // END CLINICAL ASSESSMENT PROXY ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // MULTI-AGENT COMMUNICATION SYSTEM PROXY ROUTES
+  // Agent Clona (Patient) and Assistant Lysa (Doctor) AI Agents
+  // =============================================================================
+
+  const PYTHON_AGENT_URL = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+
+  // Agent proxy helper
+  async function agentProxy(req: any, res: any, path: string, method: string = 'GET') {
+    try {
+      const userId = req.session?.passport?.user;
+      const user = userId ? await storage.getUser(userId) : null;
+      
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-User-Id': userId || '',
+        'X-User-Role': user?.role || 'patient',
+      };
+
+      const options: RequestInit = {
+        method,
+        headers,
+      };
+
+      if (method !== 'GET' && req.body) {
+        options.body = JSON.stringify(req.body);
+      }
+
+      const queryString = new URLSearchParams(req.query).toString();
+      const url = `${PYTHON_AGENT_URL}${path}${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await fetch(url, options);
+      const data = await response.json();
+      
+      res.status(response.status).json(data);
+    } catch (error) {
+      console.error(`Agent proxy error for ${path}:`, error);
+      res.status(503).json({ 
+        error: 'Agent service unavailable',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  // Get agent conversations
+  app.get('/api/agent/conversations', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, '/api/agent/conversations', 'GET');
+  });
+
+  // Get messages for a conversation
+  app.get('/api/agent/messages', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, '/api/agent/messages', 'GET');
+  });
+
+  // Send a message to an agent
+  app.post('/api/agent/messages', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, '/api/agent/messages', 'POST');
+  });
+
+  // Get agent info
+  app.get('/api/agent/info/:agentId', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, `/api/agent/info/${req.params.agentId}`, 'GET');
+  });
+
+  // Get agent health status
+  app.get('/api/agent/health', async (req: any, res) => {
+    await agentProxy(req, res, '/api/agent/health', 'GET');
+  });
+
+  // Approve or reject tool call
+  app.post('/api/agent/tool-approval', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, '/api/agent/tool-approval', 'POST');
+  });
+
+  // Get pending approvals
+  app.get('/api/agent/pending-approvals', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, '/api/agent/pending-approvals', 'GET');
+  });
+
+  // Get agent memory (for debugging)
+  app.get('/api/agent/memory/:agentId', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, `/api/agent/memory/${req.params.agentId}`, 'GET');
+  });
+
+  // =============================================================================
+  // END MULTI-AGENT COMMUNICATION SYSTEM PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
+
+  // WebSocket proxy for agent communication
+  // Forward /ws/agent connections to Python FastAPI backend
+  httpServer.on('upgrade', (request, socket, head) => {
+    const pathname = request.url || '';
+    
+    if (pathname.startsWith('/ws/agent')) {
+      // Proxy WebSocket to Python backend
+      const pythonWsUrl = (PYTHON_AGENT_URL || 'http://localhost:8000').replace('http://', 'ws://').replace('https://', 'wss://');
+      const targetUrl = new URL(pathname, pythonWsUrl);
+      
+      import('ws').then(({ default: WebSocket }) => {
+        const targetWs = new WebSocket(targetUrl.toString());
+        
+        targetWs.on('open', () => {
+          // Forward handshake
+          const clientWs = new WebSocket(null as any);
+          (clientWs as any)._socket = socket;
+          
+          // Pipe data between client and target
+          socket.on('data', (data) => {
+            if (targetWs.readyState === WebSocket.OPEN) {
+              targetWs.send(data);
+            }
+          });
+          
+          targetWs.on('message', (data) => {
+            socket.write(data);
+          });
+          
+          targetWs.on('close', () => socket.destroy());
+          socket.on('close', () => targetWs.close());
+        });
+        
+        targetWs.on('error', (err) => {
+          console.error('Agent WebSocket proxy error:', err);
+          socket.destroy();
+        });
+      }).catch((err) => {
+        console.error('Failed to load ws module for proxy:', err);
+        socket.destroy();
+      });
+    }
+    // Let other upgrade requests pass through (handled by Vite or other middlewares)
+  });
+
   return httpServer;
 }
