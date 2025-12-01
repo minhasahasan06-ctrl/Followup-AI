@@ -252,31 +252,109 @@ class MessageRouter:
         self,
         envelope: MessageEnvelope,
         sender_websocket: Any = None,
-        persist: bool = True
+        persist: bool = True,
+        conversation_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Route a message to its recipients
-        Returns delivery status
+        Route a message to its recipients with consent verification.
+        Returns delivery status.
+        
+        CRITICAL: All cross-party communication requires verified doctor-patient consent.
+        Patient↔Doctor messages must share the SAME conversation thread.
         
         Args:
             envelope: The message envelope to route
             sender_websocket: Optional websocket to send ack to
             persist: Whether to persist to Redis stream (default True)
+            conversation_context: Optional context with patient_id, doctor_id, conversation_type
         """
         results = {
             "msg_id": envelope.msg_id,
             "delivered_to": [],
             "pending": [],
-            "failed": []
+            "failed": [],
+            "blocked": []
         }
         
-        # Persist message to Redis stream for reliability (all recipients)
+        # Get consent service
+        consent_service = get_consent_service()
+        
+        # Build context from envelope payload if not provided
+        if not conversation_context:
+            payload = envelope.payload or {}
+            conversation_context = {
+                "patient_id": payload.get("patient_id"),
+                "doctor_id": payload.get("doctor_id"),
+                "conversation_id": payload.get("conversation_id"),
+                "conversation_type": payload.get("conversation_type")
+            }
+        
+        # Verify consent for EACH recipient
+        verified_recipients = []
+        for recipient in envelope.to:
+            # Get sender and recipient types
+            from_type = envelope.sender.type.value if hasattr(envelope.sender.type, 'value') else str(envelope.sender.type)
+            to_type = recipient.type.value if hasattr(recipient.type, 'value') else str(recipient.type)
+            
+            # Check if communication is allowed
+            allowed, reason, connection_info = consent_service.can_communicate(
+                from_type=from_type,
+                from_id=envelope.sender.id,
+                to_type=to_type,
+                to_id=recipient.id,
+                conversation_context=conversation_context
+            )
+            
+            if not allowed:
+                logger.warning(
+                    f"Message blocked: {envelope.sender.id} -> {recipient.id}, reason: {reason}"
+                )
+                results["blocked"].append({
+                    "type": to_type,
+                    "id": recipient.id,
+                    "reason": reason
+                })
+                
+                # Audit log for blocked communication attempt (HIPAA compliance)
+                await self._log_blocked_communication(
+                    envelope=envelope,
+                    recipient=recipient,
+                    reason=reason,
+                    context=conversation_context
+                )
+                continue
+            
+            # Add verified recipient
+            verified_recipients.append({
+                "recipient": recipient,
+                "connection_info": connection_info
+            })
+        
+        # If no verified recipients, return early
+        if not verified_recipients:
+            if sender_websocket:
+                error_message = {
+                    "type": "error",
+                    "payload": {
+                        "msg_id": envelope.msg_id,
+                        "error": "message_blocked",
+                        "blocked": results["blocked"]
+                    }
+                }
+                try:
+                    await sender_websocket.send_json(error_message)
+                except Exception as e:
+                    logger.error(f"Failed to send block notification: {e}")
+            return results
+        
+        # Persist message to Redis stream for reliability (verified recipients only)
         if persist:
             payload = envelope.payload or {}
             if self._redis_stream:
                 try:
-                    # Persist to Redis stream for each recipient
-                    for recipient in envelope.to:
+                    # Persist to Redis stream for each verified recipient
+                    for verified in verified_recipients:
+                        recipient = verified["recipient"]
                         await self._redis_stream.add_message(
                             msg_id=envelope.msg_id,
                             sender_type=envelope.sender.type.value if hasattr(envelope.sender.type, 'value') else str(envelope.sender.type),
@@ -290,12 +368,13 @@ class MessageRouter:
                 except Exception as e:
                     logger.error(f"Failed to persist message to Redis stream: {e}")
                     # Fall through to database fallback
-                    await self._persist_to_database(envelope, payload)
+                    await self._persist_to_database(envelope, payload, conversation_context)
             else:
                 # No Redis available, persist directly to database
-                await self._persist_to_database(envelope, payload)
+                await self._persist_to_database(envelope, payload, conversation_context)
 
-        for recipient in envelope.to:
+        for verified in verified_recipients:
+            recipient = verified["recipient"]
             try:
                 if recipient.type == ActorType.AGENT:
                     # Route to agent
@@ -379,11 +458,13 @@ class MessageRouter:
     async def _persist_to_database(
         self,
         envelope: MessageEnvelope,
-        payload: Dict[str, Any]
+        payload: Dict[str, Any],
+        conversation_context: Optional[Dict[str, Any]] = None
     ):
         """
         Persist message directly to database as fallback when Redis is unavailable.
         This ensures message durability even without Redis.
+        Includes sender_role for proper Patient↔Doctor message tagging.
         """
         try:
             from app.database import SessionLocal
@@ -398,15 +479,27 @@ class MessageRouter:
                     for r in envelope.to
                 ])
                 
-                # Insert message into agent_messages table
+                # Determine sender_role based on sender type and conversation context
+                sender_role = self._determine_sender_role(
+                    sender_type=envelope.sender.type.value if hasattr(envelope.sender.type, 'value') else str(envelope.sender.type),
+                    sender_id=envelope.sender.id,
+                    context=conversation_context
+                )
+                
+                # Get sender display info
+                sender_name, sender_avatar = self._get_sender_display_info(envelope.sender.id, sender_role)
+                
+                # Insert message into agent_messages table with sender_role
                 db.execute(
                     text("""
                         INSERT INTO agent_messages (
                             msg_id, conversation_id, from_type, from_id,
+                            sender_role, sender_name, sender_avatar,
                             to_json, message_type, content, payload_json,
                             delivered, created_at
                         ) VALUES (
                             :msg_id, :conversation_id, :from_type, :from_id,
+                            :sender_role, :sender_name, :sender_avatar,
                             :to_json::jsonb, :message_type, :content, :payload_json::jsonb,
                             false, NOW()
                         )
@@ -417,6 +510,9 @@ class MessageRouter:
                         "conversation_id": payload.get("conversation_id", ""),
                         "from_type": envelope.sender.type.value if hasattr(envelope.sender.type, 'value') else str(envelope.sender.type),
                         "from_id": envelope.sender.id,
+                        "sender_role": sender_role,
+                        "sender_name": sender_name,
+                        "sender_avatar": sender_avatar,
                         "to_json": to_json,
                         "message_type": envelope.type.value if hasattr(envelope.type, 'value') else str(envelope.type),
                         "content": payload.get("content", ""),
@@ -424,11 +520,303 @@ class MessageRouter:
                     }
                 )
                 db.commit()
-                logger.debug(f"Message {envelope.msg_id} persisted to database")
+                logger.debug(f"Message {envelope.msg_id} persisted to database with sender_role={sender_role}")
             finally:
                 db.close()
         except Exception as e:
             logger.error(f"Failed to persist message to database: {e}")
+    
+    def _determine_sender_role(
+        self,
+        sender_type: str,
+        sender_id: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Determine the sender's role for message tagging.
+        Returns: 'patient', 'doctor', 'clona', 'lysa', or 'system'
+        """
+        if sender_type == "agent":
+            if sender_id == "clona":
+                return "clona"
+            elif sender_id == "lysa":
+                return "lysa"
+            return "system"
+        elif sender_type == "system":
+            return "system"
+        elif sender_type == "user":
+            # Look up user role from database
+            try:
+                from app.database import SessionLocal
+                from sqlalchemy import text
+                
+                db = SessionLocal()
+                try:
+                    result = db.execute(
+                        text("SELECT role FROM users WHERE id = :user_id"),
+                        {"user_id": sender_id}
+                    )
+                    row = result.fetchone()
+                    if row and row[0] == "doctor":
+                        return "doctor"
+                    return "patient"
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.warning(f"Failed to lookup user role: {e}")
+                return "patient"
+        return "patient"
+    
+    def _get_sender_display_info(
+        self,
+        sender_id: str,
+        sender_role: str
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Get sender display name and avatar for UI.
+        Returns: (sender_name, sender_avatar)
+        """
+        if sender_role in ["clona", "lysa"]:
+            # Agent display names
+            if sender_role == "clona":
+                return "Agent Clona", None
+            return "Assistant Lysa", None
+        elif sender_role == "system":
+            return "System", None
+        
+        # User display name
+        try:
+            from app.database import SessionLocal
+            from sqlalchemy import text
+            
+            db = SessionLocal()
+            try:
+                result = db.execute(
+                    text("""
+                        SELECT first_name, last_name, profile_image_url, role
+                        FROM users WHERE id = :user_id
+                    """),
+                    {"user_id": sender_id}
+                )
+                row = result.fetchone()
+                if row:
+                    first_name = row[0] or ""
+                    last_name = row[1] or ""
+                    avatar = row[2]
+                    role = row[3]
+                    
+                    if role == "doctor":
+                        name = f"Dr. {last_name}" if last_name else f"Dr. {first_name}"
+                    else:
+                        name = f"{first_name} {last_name}".strip()
+                    
+                    return name or None, avatar
+                return None, None
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Failed to get sender display info: {e}")
+            return None, None
+    
+    async def _log_blocked_communication(
+        self,
+        envelope: MessageEnvelope,
+        recipient: Any,
+        reason: str,
+        context: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Log blocked communication attempt for HIPAA audit trail.
+        This is critical for compliance - all blocked attempts must be logged.
+        """
+        try:
+            from app.database import SessionLocal
+            from sqlalchemy import text
+            import json
+            
+            db = SessionLocal()
+            try:
+                db.execute(
+                    text("""
+                        INSERT INTO agent_audit_logs (
+                            actor_type, actor_id, action_type, resource_type, resource_id,
+                            details, success, created_at
+                        ) VALUES (
+                            :actor_type, :actor_id, :action_type, :resource_type, :resource_id,
+                            :details::jsonb, :success, NOW()
+                        )
+                    """),
+                    {
+                        "actor_type": envelope.sender.type.value if hasattr(envelope.sender.type, 'value') else str(envelope.sender.type),
+                        "actor_id": envelope.sender.id,
+                        "action_type": "message_blocked",
+                        "resource_type": "communication",
+                        "resource_id": envelope.msg_id,
+                        "details": json.dumps({
+                            "recipient_type": recipient.type.value if hasattr(recipient.type, 'value') else str(recipient.type),
+                            "recipient_id": recipient.id,
+                            "reason": reason,
+                            "conversation_context": context,
+                            "timestamp": envelope.timestamp.isoformat() if hasattr(envelope.timestamp, 'isoformat') else str(envelope.timestamp)
+                        }),
+                        "success": False
+                    }
+                )
+                db.commit()
+                logger.info(f"Logged blocked communication: {envelope.sender.id} -> {recipient.id}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Failed to log blocked communication: {e}")
+    
+    async def find_or_create_patient_doctor_conversation(
+        self,
+        patient_id: str,
+        doctor_id: str,
+        assignment_id: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Find or create a SHARED conversation thread for Patient↔Doctor direct messaging.
+        CRITICAL: All messages between this patient and doctor MUST use the same thread.
+        
+        Args:
+            patient_id: The patient user ID
+            doctor_id: The doctor user ID
+            assignment_id: Optional doctor_patient_assignment ID for reference
+            
+        Returns:
+            conversation_id of the shared thread
+        """
+        try:
+            from app.database import SessionLocal
+            from sqlalchemy import text
+            import uuid
+            
+            db = SessionLocal()
+            try:
+                # First, try to find existing patient_doctor conversation
+                result = db.execute(
+                    text("""
+                        SELECT id FROM agent_conversations
+                        WHERE conversation_type = 'patient_doctor'
+                        AND patient_id = :patient_id
+                        AND doctor_id = :doctor_id
+                        AND status = 'active'
+                        LIMIT 1
+                    """),
+                    {"patient_id": patient_id, "doctor_id": doctor_id}
+                )
+                row = result.fetchone()
+                
+                if row:
+                    logger.debug(f"Found existing patient_doctor conversation: {row[0]}")
+                    return row[0]
+                
+                # Create new patient_doctor conversation thread
+                conversation_id = str(uuid.uuid4())
+                
+                # Get patient and doctor names for title
+                names_result = db.execute(
+                    text("""
+                        SELECT u.id, u.first_name, u.last_name, u.role
+                        FROM users u WHERE u.id IN (:patient_id, :doctor_id)
+                    """),
+                    {"patient_id": patient_id, "doctor_id": doctor_id}
+                )
+                names = {row[0]: row for row in names_result.fetchall()}
+                
+                patient_name = ""
+                doctor_name = ""
+                if patient_id in names:
+                    patient_name = f"{names[patient_id][1]} {names[patient_id][2]}".strip()
+                if doctor_id in names:
+                    doctor_name = f"Dr. {names[doctor_id][2]}" if names[doctor_id][2] else f"Dr. {names[doctor_id][1]}"
+                
+                title = f"Chat: {patient_name} & {doctor_name}"
+                
+                # Insert new conversation
+                db.execute(
+                    text("""
+                        INSERT INTO agent_conversations (
+                            id, conversation_type, 
+                            participant1_type, participant1_id,
+                            participant2_type, participant2_id,
+                            patient_id, doctor_id, assignment_id,
+                            title, status, message_count,
+                            unread_counts, created_at, updated_at
+                        ) VALUES (
+                            :id, 'patient_doctor',
+                            'user', :patient_id,
+                            'user', :doctor_id,
+                            :patient_id, :doctor_id, :assignment_id,
+                            :title, 'active', 0,
+                            :unread_counts::jsonb, NOW(), NOW()
+                        )
+                    """),
+                    {
+                        "id": conversation_id,
+                        "patient_id": patient_id,
+                        "doctor_id": doctor_id,
+                        "assignment_id": assignment_id,
+                        "title": title,
+                        "unread_counts": json.dumps({patient_id: 0, doctor_id: 0})
+                    }
+                )
+                db.commit()
+                
+                logger.info(f"Created patient_doctor conversation: {conversation_id} for {patient_id} <-> {doctor_id}")
+                return conversation_id
+                
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Failed to find/create patient_doctor conversation: {e}")
+            return None
+    
+    async def get_conversation_context(
+        self,
+        conversation_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get context for a conversation including patient_id, doctor_id, and type.
+        Used for consent verification.
+        """
+        try:
+            from app.database import SessionLocal
+            from sqlalchemy import text
+            
+            db = SessionLocal()
+            try:
+                result = db.execute(
+                    text("""
+                        SELECT conversation_type, patient_id, doctor_id, assignment_id,
+                               participant1_type, participant1_id,
+                               participant2_type, participant2_id
+                        FROM agent_conversations
+                        WHERE id = :conversation_id
+                    """),
+                    {"conversation_id": conversation_id}
+                )
+                row = result.fetchone()
+                
+                if row:
+                    return {
+                        "conversation_id": conversation_id,
+                        "conversation_type": row[0],
+                        "patient_id": row[1],
+                        "doctor_id": row[2],
+                        "assignment_id": row[3],
+                        "participant1_type": row[4],
+                        "participant1_id": row[5],
+                        "participant2_type": row[6],
+                        "participant2_id": row[7]
+                    }
+                return None
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Failed to get conversation context: {e}")
+            return None
 
     async def send_agent_response(
         self,
