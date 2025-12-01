@@ -101,3 +101,10 @@ waitForPort = 5000
 
 [agent]
 integrations = ["javascript_database:1.0.0", "javascript_websocket:1.0.0", "javascript_openai:1.0.0", "javascript_log_in_with_replit:1.0.0", "javascript_stripe:1.0.0", "resend:1.0.0", "google-drive:1.0.0"]
+
+[userenv]
+
+[userenv.shared]
+VITE_AUTH0_DOMAIN = "${AUTH0_DOMAIN}"
+VITE_AUTH0_CLIENT_ID = "${AUTH0_CLIENT_ID}"
+VITE_AUTH0_API_AUDIENCE = "${AUTH0_API_AUDIENCE}"
