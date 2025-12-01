@@ -61,6 +61,7 @@ from app.routers import (
     medical_nlp,  # ✅ Medical NLP (GPT-4o PHI Detection & Entity Extraction) - PRODUCTION READY
     agent_api,  # ✅ Multi-Agent REST API - Agent Clona & Assistant Lysa
     agent_websocket,  # ✅ Multi-Agent WebSocket - Real-time Communication
+    auth_api,  # ✅ Auth0 Authentication API - PRODUCTION READY
 )
 
 logger = logging.getLogger(__name__)
@@ -244,6 +245,9 @@ app.include_router(medical_nlp.router)
 # Multi-Agent Communication System (Agent Clona & Assistant Lysa) - PRODUCTION READY
 app.include_router(agent_api.router)
 app.include_router(agent_websocket.router)
+
+# Auth0 Authentication API - PRODUCTION READY
+app.include_router(auth_api.router)
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:

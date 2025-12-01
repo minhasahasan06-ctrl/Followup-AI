@@ -10,7 +10,6 @@ from typing import Optional
 from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
 import uuid
 
 from app.models.agent_models import (
@@ -21,6 +20,7 @@ from app.models.agent_models import (
 from app.services.message_router import get_message_router, MessageRouter
 from app.services.agent_engine import get_agent_engine, AgentEngine
 from app.services.memory_service import get_memory_service, MemoryService
+from app.auth.auth0 import authenticate_websocket, TokenPayload
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ws", tags=["Agent WebSocket"])
@@ -28,30 +28,34 @@ router = APIRouter(prefix="/ws", tags=["Agent WebSocket"])
 security = HTTPBearer(auto_error=False)
 
 
-async def verify_token(token: str) -> Optional[dict]:
-    """Verify JWT token and return user info"""
+async def verify_token(token: str, role_hint: str = "patient") -> Optional[dict]:
+    """
+    Verify JWT token using Auth0 and return user info
+    
+    Args:
+        token: JWT token or dev token (format: "dev_<userId>" or "dev_<userId>_doctor")
+        role_hint: Default role if not specified in token
+    """
     try:
-        # In production, verify against Auth0/Cognito
-        # For now, decode without verification in dev mode
-        if os.getenv("DEV_MODE_SECRET"):
-            # Development mode - accept any token
-            try:
-                payload = jwt.decode(token, options={"verify_signature": False})
-                return {
-                    "id": payload.get("sub") or payload.get("id"),
-                    "role": payload.get("role", "patient")
-                }
-            except:
-                # Allow simple tokens in dev mode
-                return {"id": token, "role": "patient"}
+        # Use Auth0 authentication (handles dev mode internally with proper validation)
+        token_payload = await authenticate_websocket(token)
         
-        # Production mode - verify signature
-        secret = os.getenv("SESSION_SECRET", "")
-        payload = jwt.decode(token, secret, algorithms=["HS256"])
-        return {
-            "id": payload.get("sub") or payload.get("id"),
-            "role": payload.get("role", "patient")
-        }
+        if token_payload:
+            # Check for role in permissions or token email hint
+            is_doctor = "doctor" in token_payload.permissions
+            
+            # For dev tokens, check if role is encoded in user_id
+            if not is_doctor and token_payload.user_id and "_doctor" in token_payload.user_id:
+                is_doctor = True
+            
+            return {
+                "id": token_payload.user_id.replace("_doctor", ""),  # Clean ID
+                "email": token_payload.email,
+                "name": token_payload.name,
+                "role": "doctor" if is_doctor else role_hint
+            }
+        
+        return None
     except Exception as e:
         logger.error(f"Token verification failed: {e}")
         return None
@@ -93,17 +97,17 @@ async def agent_websocket(
                 await websocket.close()
                 return
 
-            # Extract and verify token
+            # Extract token from auth message or query param
             auth_token = auth_data.get("payload", {}).get("token") or token
-            user_id = auth_data.get("payload", {}).get("userId")
             user_role = auth_data.get("payload", {}).get("role", "patient")
 
-            # Verify token or use dev mode bypass
+            # SECURITY: All connections must have a valid token
+            # Dev mode is handled in verify_token via "dev_" prefixed tokens
+            # For dev testing, use "dev_<userId>" or "dev_<userId>_doctor" format
             if auth_token:
-                user_info = await verify_token(auth_token)
-            elif os.getenv("DEV_MODE_SECRET") and user_id:
-                # Dev mode bypass
-                user_info = {"id": user_id, "role": user_role}
+                user_info = await verify_token(auth_token, role_hint=user_role)
+            
+            # No fallback bypass - tokens are required for all connections
 
             if not user_info:
                 await websocket.send_json({
