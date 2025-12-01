@@ -115,6 +115,25 @@ The platform features a sophisticated multi-agent system enabling real-time comm
 - Frontend: `client/src/pages/AgentHub.tsx`
 - Schema: `shared/schema.ts` (agent tables)
 
+**Tool Microservices (app/services/agent_tools/):**
+Agent tools are microservices that extend AI agent capabilities with real database operations and HIPAA-compliant audit logging.
+
+- **BaseTool Framework** (`base.py`): Abstract base class with ToolExecutionContext, permission checking, consent verification via ConsentService, parameter validation, and dual audit logging (AuditLogger + agent_audit_logs table)
+- **ToolRegistry**: Singleton registry for tool registration, role-based filtering, OpenAI function definitions, and consent-verified execution
+- **CalendarTool** (`calendar.py`): Appointment scheduling, rescheduling, cancellation, availability queries with conflict detection
+- **MessagingTool** (`messaging.py`): Cross-party messaging, email sending, notifications, reminders, message history
+- **PrescriptionDraftTool** (`prescription_draft.py`): REQUIRES APPROVAL - Draft creation, drug interactions, dosage suggestions, patient medication history
+- **EHRFetchTool** (`ehr_fetch.py`): Patient summary, medical history, vitals, diagnoses, allergies, immunizations, procedures, care plans with PHI audit logging
+- **LabFetchTool** (`lab_fetch.py`): Recent labs, lab history, abnormal results, trends, pending orders, lab panels with PHI audit logging
+- **ImagingLinkerTool** (`imaging_linker.py`): Imaging studies, radiology reports, comparison studies, external study linking with PHI audit logging
+
+Tool Features:
+- JSON schemas for OpenAI function calling
+- Consent verification via doctor_patient_assignments
+- AuditLogger integration for HIPAA PHI access events
+- Role-based access control (doctor-only for clinical tools)
+- Human-in-the-loop approval for prescription drafts
+
 ### Security and Compliance
 The platform is HIPAA-compliant, utilizing AWS Cognito for authentication, BAA verification for integrations, comprehensive audit logging, end-to-end encryption for video, strict PHI handling, and explicit doctor-patient assignment authorization. Positioned as a General Wellness Product.
 
