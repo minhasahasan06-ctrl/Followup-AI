@@ -100,11 +100,12 @@ async def get_current_user(
             print("[AUTH WARNING] Development mode - JWT signature verification disabled")
             payload = jwt.decode(
                 token,
+                "",  # Empty key when not verifying signature
                 options={"verify_signature": False}
             )
         
         # Extract user ID from token
-        user_id: str = payload.get("sub")
+        user_id = payload.get("sub")
         if user_id is None:
             raise credentials_exception
         
