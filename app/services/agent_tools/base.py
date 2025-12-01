@@ -143,13 +143,13 @@ class BaseTool(ABC):
         
         try:
             consent_service = get_consent_service()
-            is_valid, reason, _ = consent_service.verify_connection(
+            is_valid, connection_info = consent_service.verify_connection(
                 doctor_id=doctor_id,
                 patient_id=context.patient_id
             )
             
             if not is_valid:
-                return False, f"No active consent relationship: {reason}"
+                return False, "No active consent relationship"
             
             return True, None
         except Exception as e:

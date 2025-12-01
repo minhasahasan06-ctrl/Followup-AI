@@ -397,42 +397,259 @@ async def get_undelivered_messages(
 
 # ==================== APPROVALS ====================
 
+class ApprovalQueueItem(BaseModel):
+    id: str
+    requestType: str
+    toolName: Optional[str]
+    patientId: Optional[str]
+    patientName: Optional[str]
+    requestSummary: Optional[str]
+    urgency: str
+    riskLevel: Optional[str]
+    status: str
+    createdAt: str
+    expiresAt: Optional[str]
+    requestPayload: dict
+
+
+class ApprovalDecisionRequest(BaseModel):
+    decision: str  # 'approved', 'rejected', 'modified'
+    notes: Optional[str] = None
+    modifiedPayload: Optional[dict] = None
+
+
 @router.get("/approvals/pending")
 async def list_pending_approvals(
     request: Request,
+    urgency: Optional[str] = Query(None),
+    limit: int = Query(50, le=100),
+    offset: int = Query(0),
     user: dict = Depends(get_current_user)
 ):
     """List pending approval requests for the current user (doctors only)"""
     if user["role"] != "doctor":
         raise HTTPException(status_code=403, detail="Only doctors can view approvals")
+    
+    user_id = user["id"]
+    ip_address = request.client.host if request.client else None
+    
+    try:
+        from app.database import SessionLocal
+        from app.services.approval_repository import ApprovalRepository
+        
+        db = SessionLocal()
+        try:
+            repo = ApprovalRepository(db)
+            result = repo.list_pending_approvals(
+                approver_id=user_id,
+                urgency=urgency,
+                limit=limit,
+                offset=offset,
+                ip_address=ip_address
+            )
+            return result
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Failed to list pending approvals: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch approvals")
 
-    # In production, fetch from database
-    approvals = []
 
-    return {
-        "approvals": approvals,
-        "total": len(approvals)
-    }
-
-
-@router.post("/approvals/{message_id}")
-async def submit_approval_decision(
-    message_id: str,
-    body: ApprovalDecision,
+@router.get("/approvals/{approval_id}")
+async def get_approval_details(
+    approval_id: str,
     request: Request,
     user: dict = Depends(get_current_user)
+):
+    """Get detailed information about an approval request"""
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Only doctors can view approvals")
+    
+    user_id = user["id"]
+    ip_address = request.client.host if request.client else None
+    
+    try:
+        from app.database import SessionLocal
+        from app.services.approval_repository import ApprovalRepository
+        
+        db = SessionLocal()
+        try:
+            repo = ApprovalRepository(db)
+            result = repo.get_approval_by_id(
+                approval_id=approval_id,
+                approver_id=user_id,
+                ip_address=ip_address
+            )
+            
+            if not result:
+                raise HTTPException(status_code=404, detail="Approval not found")
+            
+            return result
+            
+        finally:
+            db.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get approval details: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch approval")
+
+
+@router.post("/approvals/{approval_id}/decide")
+async def submit_approval_decision(
+    approval_id: str,
+    body: ApprovalDecisionRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    agent_engine: AgentEngine = Depends(get_agent_engine)
 ):
     """Submit approval decision for a tool call"""
     if user["role"] != "doctor":
         raise HTTPException(status_code=403, detail="Only doctors can approve")
+    
+    user_id = user["id"]
+    ip_address = request.client.host if request.client else None
+    
+    if body.decision not in ["approved", "rejected", "modified"]:
+        raise HTTPException(status_code=400, detail="Invalid decision")
+    
+    try:
+        from app.database import SessionLocal
+        from app.services.approval_repository import ApprovalRepository
+        from sqlalchemy import text
+        import json
+        
+        db = SessionLocal()
+        try:
+            repo = ApprovalRepository(db)
+            
+            # Process decision using repository (prevents SQL injection)
+            result = repo.process_decision(
+                approval_id=approval_id,
+                approver_id=user_id,
+                decision=body.decision,
+                notes=body.notes,
+                modified_payload=body.modifiedPayload,
+                ip_address=ip_address
+            )
+            
+            if not result:
+                raise HTTPException(status_code=404, detail="Approval not found or already processed")
+            
+            execution_result = None
+            
+            # If approved, execute the tool
+            if body.decision in ["approved", "modified"]:
+                payload = body.modifiedPayload if body.decision == "modified" else result.get("requestPayload", {})
+                if payload is None:
+                    payload = {}
+                
+                tool_name = result.get("toolName")
+                if tool_name:
+                    try:
+                        execution_result = await agent_engine.execute_approved_tool(
+                            tool_name=tool_name,
+                            parameters=payload,
+                            approval_id=approval_id,
+                            approver_id=user_id,
+                            user_id=result.get("requesterId", user_id),
+                            user_role="doctor",
+                            patient_id=result.get("patientId"),
+                            doctor_id=user_id,
+                            conversation_id=result.get("conversationId")
+                        )
+                        
+                        # Update with execution result
+                        if execution_result and hasattr(execution_result, 'result') and execution_result.result:
+                            result_json = json.dumps(execution_result.result)
+                            db.execute(text("""
+                                UPDATE approval_queue SET
+                                    execution_result = :result,
+                                    executed_at = NOW()
+                                WHERE id = :approval_id
+                            """), {
+                                "approval_id": approval_id,
+                                "result": result_json
+                            })
+                            db.commit()
+                        
+                    except Exception as e:
+                        logger.error(f"Tool execution after approval failed: {e}")
+                        execution_result = None
+            
+            return {
+                "id": approval_id,
+                "decision": body.decision,
+                "decidedBy": user_id,
+                "decidedAt": datetime.utcnow().isoformat(),
+                "notes": body.notes,
+                "executionResult": execution_result.result if execution_result and hasattr(execution_result, 'result') else None,
+                "success": True
+            }
+            
+        finally:
+            db.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to submit approval decision: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process approval")
 
-    # In production, update database and execute tool if approved
-    return {
-        "messageId": message_id,
-        "approved": body.approved,
-        "approvedBy": user["id"],
-        "approvedAt": datetime.utcnow().isoformat()
-    }
+
+@router.post("/approvals")
+async def create_approval_request(
+    request: Request,
+    body: dict,
+    user: dict = Depends(get_current_user)
+):
+    """Create a new approval request (typically called by agents)"""
+    ip_address = request.client.host if request.client else None
+    
+    try:
+        from app.database import SessionLocal
+        from app.services.approval_repository import ApprovalRepository
+        
+        db = SessionLocal()
+        try:
+            repo = ApprovalRepository(db)
+            
+            result = repo.create_approval(
+                request_type=body.get("requestType", "tool_approval"),
+                requester_id=body.get("requesterId", user["id"]),
+                requester_type=body.get("requesterType", "agent"),
+                request_payload=body.get("requestPayload", {}),
+                approver_id=body.get("approverId"),
+                approver_role=body.get("approverRole", "doctor"),
+                patient_id=body.get("patientId"),
+                conversation_id=body.get("conversationId"),
+                message_id=body.get("messageId"),
+                tool_execution_id=body.get("toolExecutionId"),
+                tool_name=body.get("toolName"),
+                request_summary=body.get("requestSummary"),
+                urgency=body.get("urgency", "normal"),
+                risk_level=body.get("riskLevel"),
+                risk_factors=body.get("riskFactors"),
+                expires_hours=24,
+                ip_address=ip_address
+            )
+            
+            return {
+                "id": result["id"],
+                "status": result["status"],
+                "expiresAt": result["expiresAt"],
+                "createdAt": result["createdAt"]
+            }
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Failed to create approval request: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create approval")
 
 
 # ==================== PRESENCE ====================
@@ -607,14 +824,14 @@ async def get_online_users(
     }
 
 
-@router.get("/presence/{target_user_id}")
-async def get_user_presence(
+@router.get("/presence/user/{target_user_id}")
+async def get_specific_user_presence(
     target_user_id: str,
     request: Request,
     user: dict = Depends(get_current_user),
     message_router: MessageRouter = Depends(get_message_router)
 ):
-    """Get presence status for a specific user"""
+    """Get presence status for a specific user with detailed info"""
     # Get from connection manager first
     presence = message_router.connection_manager.get_presence(target_user_id)
     

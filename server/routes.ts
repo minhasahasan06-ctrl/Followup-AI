@@ -12833,9 +12833,24 @@ Provide:
     await agentProxy(req, res, '/api/agent/tool-approval', 'POST');
   });
 
-  // Get pending approvals
+  // Get pending approvals (legacy)
   app.get('/api/agent/pending-approvals', isAuthenticated, async (req: any, res) => {
     await agentProxy(req, res, '/api/agent/pending-approvals', 'GET');
+  });
+
+  // List pending approvals (new API)
+  app.get('/api/agent/approvals', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, '/approvals/pending', 'GET');
+  });
+
+  // Get approval details
+  app.get('/api/agent/approvals/:approvalId', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, `/approvals/${req.params.approvalId}`, 'GET');
+  });
+
+  // Submit approval decision
+  app.post('/api/agent/approvals/:approvalId/decision', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, `/approvals/${req.params.approvalId}/decide`, 'POST');
   });
 
   // Get agent memory (for debugging)
