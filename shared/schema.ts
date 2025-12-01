@@ -5769,31 +5769,48 @@ export type InsertAgentToolAssignment = z.infer<typeof insertAgentToolAssignment
 export type AgentToolAssignment = typeof agentToolAssignments.$inferSelect;
 
 // Agent conversations (threads between users and agents, or agent-to-agent)
+// CRITICAL: Patient↔Doctor direct messages share the SAME conversation thread
 export const agentConversations = pgTable("agent_conversations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   
-  // Participants
+  // Conversation type determines routing rules
+  // 'patient_clona' - Patient talks to their Clona agent
+  // 'doctor_lysa' - Doctor talks to their Lysa assistant
+  // 'patient_doctor' - Direct messaging between connected patient and doctor (SAME THREAD)
+  // 'patient_lysa' - Patient talks to connected doctor's Lysa
+  // 'doctor_clona' - Doctor talks to connected patient's Clona
+  // 'clona_lysa' - Inter-agent communication between Clona and Lysa
+  conversationType: varchar("conversation_type").notNull().default("patient_clona"),
+  
+  // Participants (supports multi-party in same thread)
   participant1Type: varchar("participant1_type").notNull(), // 'user', 'agent'
   participant1Id: varchar("participant1_id").notNull(),
   participant2Type: varchar("participant2_type").notNull(), // 'user', 'agent'
   participant2Id: varchar("participant2_id").notNull(),
   
-  // Context
-  patientId: varchar("patient_id").references(() => users.id), // If conversation involves a patient
-  doctorId: varchar("doctor_id").references(() => users.id), // If conversation involves a doctor
+  // Additional participants for multi-party (e.g., patient, doctor, and agents in same thread)
+  additionalParticipants: jsonb("additional_participants").$type<Array<{ type: string; id: string; role: string }>>(),
+  
+  // Context - REQUIRED for cross-party communication (consent verification)
+  patientId: varchar("patient_id").references(() => users.id), // Patient in this conversation
+  doctorId: varchar("doctor_id").references(() => users.id), // Doctor in this conversation
+  
+  // Doctor-Patient connection reference (for consent verification)
+  assignmentId: varchar("assignment_id"), // Reference to doctor_patient_assignments.id
   
   // Conversation metadata
   title: varchar("title"),
   status: varchar("status").notNull().default("active"), // 'active', 'archived', 'closed'
   
-  // Message counts
+  // Message counts per participant (using JSON for flexibility)
   messageCount: integer("message_count").default(0),
-  unreadCount1: integer("unread_count_1").default(0), // Unread for participant1
-  unreadCount2: integer("unread_count_2").default(0), // Unread for participant2
+  unreadCounts: jsonb("unread_counts").$type<Record<string, number>>().default({}), // {participantId: unreadCount}
   
   // Last activity
   lastMessageAt: timestamp("last_message_at"),
   lastMessagePreview: text("last_message_preview"),
+  lastMessageSenderId: varchar("last_message_sender_id"), // Who sent the last message
+  lastMessageSenderRole: varchar("last_message_sender_role"), // 'patient', 'doctor', 'clona', 'lysa'
   
   // OpenAI thread (if using Assistants API)
   openaiThreadId: varchar("openai_thread_id"),
@@ -5801,10 +5818,12 @@ export const agentConversations = pgTable("agent_conversations", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
+  conversationTypeIdx: index("conv_type_idx").on(table.conversationType),
   participant1Idx: index("conv_participant1_idx").on(table.participant1Type, table.participant1Id),
   participant2Idx: index("conv_participant2_idx").on(table.participant2Type, table.participant2Id),
   patientIdx: index("conv_patient_idx").on(table.patientId),
   doctorIdx: index("conv_doctor_idx").on(table.doctorId),
+  assignmentIdx: index("conv_assignment_idx").on(table.assignmentId),
   lastMessageIdx: index("conv_last_message_idx").on(table.lastMessageAt),
 }));
 
