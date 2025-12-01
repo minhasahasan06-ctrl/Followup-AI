@@ -6138,6 +6138,133 @@ export const insertUserPresenceSchema = createInsertSchema(userPresence).omit({
 export type InsertUserPresence = z.infer<typeof insertUserPresenceSchema>;
 export type UserPresence = typeof userPresence.$inferSelect;
 
+// Tool execution tracking
+export const toolExecutions = pgTable("tool_executions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Execution context
+  agentId: varchar("agent_id").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  messageId: varchar("message_id").references(() => agentMessages.id),
+  
+  // Tool info
+  toolName: varchar("tool_name").notNull(),
+  toolVersion: integer("tool_version").default(1),
+  
+  // Input/Output
+  inputParameters: jsonb("input_parameters").$type<Record<string, unknown>>().notNull(),
+  outputResult: jsonb("output_result").$type<Record<string, unknown>>(),
+  
+  // Status tracking
+  status: varchar("status").notNull().default("pending"), // 'pending', 'running', 'completed', 'failed', 'pending_approval', 'approved', 'rejected'
+  errorMessage: text("error_message"),
+  errorCode: varchar("error_code"),
+  
+  // Performance metrics
+  executionTimeMs: integer("execution_time_ms"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Patient context (for consent verification)
+  patientId: varchar("patient_id").references(() => users.id),
+  doctorId: varchar("doctor_id").references(() => users.id),
+  
+  // PHI tracking
+  phiAccessed: boolean("phi_accessed").default(false),
+  phiCategories: jsonb("phi_categories").$type<string[]>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  agentIdx: index("tool_exec_agent_idx").on(table.agentId),
+  userIdx: index("tool_exec_user_idx").on(table.userId),
+  toolIdx: index("tool_exec_tool_idx").on(table.toolName),
+  statusIdx: index("tool_exec_status_idx").on(table.status),
+  patientIdx: index("tool_exec_patient_idx").on(table.patientId),
+  createdIdx: index("tool_exec_created_idx").on(table.createdAt),
+}));
+
+export const insertToolExecutionSchema = createInsertSchema(toolExecutions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertToolExecution = z.infer<typeof insertToolExecutionSchema>;
+export type ToolExecution = typeof toolExecutions.$inferSelect;
+
+// Approval queue for human-in-the-loop workflows
+export const approvalQueue = pgTable("approval_queue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Request details
+  requestType: varchar("request_type").notNull(), // 'prescription_draft', 'treatment_change', 'data_export', 'patient_discharge'
+  requesterId: varchar("requester_id").notNull(), // User or agent who initiated
+  requesterType: varchar("requester_type").notNull(), // 'agent', 'user', 'system'
+  
+  // Approval target
+  approverId: varchar("approver_id").references(() => users.id), // Specific approver if assigned
+  approverRole: varchar("approver_role").notNull().default("doctor"), // Role that can approve
+  
+  // Context
+  patientId: varchar("patient_id").references(() => users.id),
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  messageId: varchar("message_id").references(() => agentMessages.id),
+  toolExecutionId: varchar("tool_execution_id").references(() => toolExecutions.id),
+  
+  // Request payload
+  toolName: varchar("tool_name"),
+  requestPayload: jsonb("request_payload").$type<Record<string, unknown>>().notNull(),
+  requestSummary: text("request_summary"), // Human-readable summary
+  
+  // Risk assessment
+  urgency: varchar("urgency").notNull().default("normal"), // 'low', 'normal', 'high', 'urgent'
+  riskLevel: varchar("risk_level"), // 'low', 'medium', 'high'
+  riskFactors: jsonb("risk_factors").$type<string[]>(),
+  
+  // Status tracking
+  status: varchar("status").notNull().default("pending"), // 'pending', 'approved', 'rejected', 'expired', 'cancelled'
+  
+  // Decision
+  decision: varchar("decision"), // 'approved', 'rejected', 'modified'
+  decisionBy: varchar("decision_by").references(() => users.id),
+  decisionAt: timestamp("decision_at"),
+  decisionNotes: text("decision_notes"),
+  modifiedPayload: jsonb("modified_payload").$type<Record<string, unknown>>(), // If modified before approval
+  
+  // Timeout
+  expiresAt: timestamp("expires_at"),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  escalatedAt: timestamp("escalated_at"),
+  escalatedTo: varchar("escalated_to").references(() => users.id),
+  
+  // Execution result
+  executionResult: jsonb("execution_result").$type<Record<string, unknown>>(),
+  executedAt: timestamp("executed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  requesterIdx: index("approval_requester_idx").on(table.requesterId, table.requesterType),
+  approverIdx: index("approval_approver_idx").on(table.approverId),
+  roleIdx: index("approval_role_idx").on(table.approverRole),
+  patientIdx: index("approval_patient_idx").on(table.patientId),
+  statusIdx: index("approval_status_idx").on(table.status),
+  urgencyIdx: index("approval_urgency_idx").on(table.urgency),
+  expiresIdx: index("approval_expires_idx").on(table.expiresAt),
+  createdIdx: index("approval_created_idx").on(table.createdAt),
+}));
+
+export const insertApprovalQueueSchema = createInsertSchema(approvalQueue).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertApprovalQueue = z.infer<typeof insertApprovalQueueSchema>;
+export type ApprovalQueue = typeof approvalQueue.$inferSelect;
+
 // Message envelope types for TypeScript
 export const messageEnvelopeSchema = z.object({
   msgId: z.string().uuid(),

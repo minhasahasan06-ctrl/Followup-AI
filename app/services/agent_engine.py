@@ -18,6 +18,10 @@ from app.models.agent_models import (
     ToolCallRequest, ToolCallResult, ToolStatus,
     MemoryCreate, MemoryType, ApprovalRequest
 )
+from app.services.agent_tools.base import (
+    ToolRegistry, ToolExecutionContext, initialize_tools
+)
+from app.services.audit_logger import AuditLogger, AuditEvent
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +166,14 @@ class AgentEngine:
 
         logger.info("Initializing Agent Engine...")
         
+        # Initialize and register all tools
+        try:
+            initialize_tools()
+            registered_tools = ToolRegistry.get_all()
+            logger.info(f"Registered {len(registered_tools)} agent tools")
+        except Exception as e:
+            logger.warning(f"Failed to initialize tools: {e}")
+        
         # Verify OpenAI API access
         try:
             await self.client.models.list()
@@ -172,6 +184,150 @@ class AgentEngine:
 
         self._initialized = True
         logger.info("Agent Engine initialized successfully")
+    
+    async def execute_tool_calls(
+        self,
+        tool_calls: List[ToolCallRequest],
+        agent_id: str,
+        user_id: str,
+        user_role: str,
+        patient_id: Optional[str] = None,
+        doctor_id: Optional[str] = None,
+        conversation_id: Optional[str] = None
+    ) -> List[ToolCallResult]:
+        """
+        Execute tool calls using the ToolRegistry.
+        Handles consent verification and HIPAA audit logging.
+        
+        Returns list of ToolCallResult for each tool call.
+        """
+        results = []
+        
+        for tool_call in tool_calls:
+            # Skip tools requiring approval - they need human confirmation first
+            if tool_call.requires_approval:
+                results.append(ToolCallResult(
+                    tool_call_id=tool_call.message_id or "",
+                    tool_name=tool_call.tool_name,
+                    status=ToolStatus.PENDING_APPROVAL,
+                    result={
+                        "message": "This action requires doctor approval before execution.",
+                        "parameters": tool_call.parameters
+                    }
+                ))
+                continue
+            
+            # Build execution context
+            context = ToolExecutionContext(
+                user_id=user_id,
+                user_role=user_role,
+                agent_id=agent_id,
+                conversation_id=conversation_id or tool_call.conversation_id,
+                message_id=tool_call.message_id or "",
+                patient_id=patient_id,
+                doctor_id=doctor_id
+            )
+            
+            try:
+                # Execute tool via registry
+                result = await ToolRegistry.execute(
+                    tool_name=tool_call.tool_name,
+                    parameters=tool_call.parameters,
+                    context=context
+                )
+                results.append(result)
+                
+                # Log successful execution
+                AuditLogger.log_event(
+                    event_type="tool_execution",
+                    user_id=user_id,
+                    resource_type="tool",
+                    resource_id=tool_call.tool_name,
+                    action="execute",
+                    status="success" if result.status == ToolStatus.COMPLETED else "failed",
+                    metadata={
+                        "agent_id": agent_id,
+                        "tool_name": tool_call.tool_name,
+                        "patient_id": patient_id,
+                        "execution_time_ms": result.execution_time_ms
+                    }
+                )
+                
+            except Exception as e:
+                logger.error(f"Tool execution failed: {tool_call.tool_name} - {e}")
+                results.append(ToolCallResult(
+                    tool_call_id=tool_call.message_id or "",
+                    tool_name=tool_call.tool_name,
+                    status=ToolStatus.FAILED,
+                    error=str(e)
+                ))
+        
+        return results
+    
+    async def execute_approved_tool(
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any],
+        approval_id: str,
+        approver_id: str,
+        user_id: str,
+        user_role: str,
+        patient_id: Optional[str] = None,
+        doctor_id: Optional[str] = None,
+        conversation_id: Optional[str] = None
+    ) -> ToolCallResult:
+        """
+        Execute a tool that has been approved by a human (doctor).
+        Used for prescription drafts and other sensitive operations.
+        """
+        context = ToolExecutionContext(
+            user_id=user_id,
+            user_role=user_role,
+            agent_id="lysa",  # Approved tools are typically Lysa's
+            conversation_id=conversation_id or "",
+            message_id=approval_id,
+            patient_id=patient_id,
+            doctor_id=doctor_id or approver_id
+        )
+        
+        # Log approval action
+        AuditLogger.log_event(
+            event_type="tool_approval",
+            user_id=approver_id,
+            resource_type="tool",
+            resource_id=tool_name,
+            action="approve",
+            status="success",
+            metadata={
+                "approval_id": approval_id,
+                "tool_name": tool_name,
+                "patient_id": patient_id,
+                "parameters": parameters
+            }
+        )
+        
+        # Get tool and execute without approval check
+        tool = ToolRegistry.get(tool_name)
+        if not tool:
+            return ToolCallResult(
+                tool_call_id=approval_id,
+                tool_name=tool_name,
+                status=ToolStatus.FAILED,
+                error=f"Tool not found: {tool_name}"
+            )
+        
+        try:
+            result = await tool.execute(parameters, context)
+            await tool.log_execution(context, result, parameters)
+            return result
+        except Exception as e:
+            logger.error(f"Approved tool execution failed: {tool_name} - {e}")
+            return ToolCallResult(
+                tool_call_id=approval_id,
+                tool_name=tool_name,
+                status=ToolStatus.FAILED,
+                error=str(e)
+            )
 
     def get_agent(self, agent_id: str) -> Optional[AgentConfig]:
         """Get agent configuration by ID"""
@@ -182,6 +338,10 @@ class AgentEngine:
         if user_role == "doctor":
             return self.agents["lysa"]
         return self.agents["clona"]
+    
+    def get_available_tools(self, user_role: str) -> List[Any]:
+        """Get available tools for a user role from the registry"""
+        return ToolRegistry.get_for_role(user_role)
 
     async def process_message(
         self,

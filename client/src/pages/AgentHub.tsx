@@ -26,6 +26,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ApprovalDialog, ApprovalBadge } from "@/components/ApprovalDialog";
+import { ToolResultDisplay } from "@/components/ToolResultDisplay";
 import { 
   Send, 
   Bot, 
@@ -99,7 +101,12 @@ interface ToolCallApproval {
   reason: string;
   parameters?: Record<string, unknown>;
   timestamp: string;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "modified";
+  patientId?: string;
+  patientName?: string;
+  doctorId?: string;
+  urgency?: "routine" | "urgent" | "stat";
+  expiresAt?: string;
 }
 
 interface ToolCallStatus {
@@ -143,6 +150,27 @@ export default function AgentHub() {
     queryKey: ["/api/agent/messages", selectedConversation],
     enabled: !!selectedConversation,
   });
+
+  // Fetch pending approvals for doctors
+  const { data: apiApprovals = [], refetch: refetchApprovals } = useQuery<ToolCallApproval[]>({
+    queryKey: ["/api/agent/approvals"],
+    enabled: isDoctor,
+    refetchInterval: 10000,
+  });
+
+  // Merge API approvals with WebSocket-received approvals
+  useEffect(() => {
+    if (apiApprovals.length > 0) {
+      setPendingApprovals(prev => {
+        const existingIds = new Set(prev.map(a => a.id));
+        const newApprovals = apiApprovals.filter(a => !existingIds.has(a.id) && a.status === "pending");
+        if (newApprovals.length > 0) {
+          return [...prev, ...newApprovals];
+        }
+        return prev;
+      });
+    }
+  }, [apiApprovals]);
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -499,64 +527,33 @@ export default function AgentHub() {
     }
   };
 
+  // Handler callbacks for the approval dialog
+  const handleApprovalApprove = (id: string, notes?: string) => {
+    setPendingApprovals(prev => prev.filter(a => a.id !== id));
+    refetchApprovals();
+  };
+
+  const handleApprovalReject = (id: string, reason: string) => {
+    setPendingApprovals(prev => prev.filter(a => a.id !== id));
+    refetchApprovals();
+  };
+
+  const handleApprovalModify = (id: string, modifications: Record<string, unknown>) => {
+    setPendingApprovals(prev => prev.filter(a => a.id !== id));
+    refetchApprovals();
+  };
+
   return (
     <>
-    {/* Tool Approval Dialog */}
-    <AlertDialog open={approvalDialogOpen} onOpenChange={setApprovalDialogOpen}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-primary" />
-            Action Approval Required
-          </AlertDialogTitle>
-          <AlertDialogDescription className="space-y-3">
-            <p>{agentName} is requesting permission to perform the following action:</p>
-            {selectedApproval && (
-              <div className="bg-muted rounded-lg p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  {getToolIcon(selectedApproval.toolName)}
-                  <span className="font-medium">{selectedApproval.toolName}</span>
-                </div>
-                <p className="text-sm">{selectedApproval.reason}</p>
-                {selectedApproval.parameters && (
-                  <details className="text-xs">
-                    <summary className="cursor-pointer text-muted-foreground">View details</summary>
-                    <pre className="mt-2 p-2 bg-background rounded text-xs overflow-auto max-h-32">
-                      {JSON.stringify(selectedApproval.parameters, null, 2)}
-                    </pre>
-                  </details>
-                )}
-              </div>
-            )}
-            <p className="text-sm text-muted-foreground">
-              This action requires your explicit approval before proceeding.
-            </p>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel 
-            onClick={() => handleApproval(false)}
-            disabled={approvalMutation.isPending}
-            data-testid="button-reject-approval"
-          >
-            <ThumbsDown className="h-4 w-4 mr-2" />
-            Reject
-          </AlertDialogCancel>
-          <AlertDialogAction 
-            onClick={() => handleApproval(true)}
-            disabled={approvalMutation.isPending}
-            data-testid="button-approve-action"
-          >
-            {approvalMutation.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <ThumbsUp className="h-4 w-4 mr-2" />
-            )}
-            Approve
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    {/* Tool Approval Dialog - Enhanced with approve/reject/modify workflow */}
+    <ApprovalDialog
+      open={approvalDialogOpen}
+      onOpenChange={setApprovalDialogOpen}
+      approval={selectedApproval}
+      onApprove={handleApprovalApprove}
+      onReject={handleApprovalReject}
+      onModify={handleApprovalModify}
+    />
     
     <div className="flex h-[calc(100vh-8rem)] gap-4" data-testid="container-agent-hub">
       {/* Conversations Sidebar */}
@@ -695,6 +692,18 @@ export default function AgentHub() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {isDoctor && pendingApprovals.filter(a => a.status === "pending").length > 0 && (
+                <ApprovalBadge
+                  count={pendingApprovals.filter(a => a.status === "pending").length}
+                  onClick={() => {
+                    const firstPending = pendingApprovals.find(a => a.status === "pending");
+                    if (firstPending) {
+                      setSelectedApproval(firstPending);
+                      setApprovalDialogOpen(true);
+                    }
+                  }}
+                />
+              )}
               <Badge variant="outline" className="gap-1">
                 <Shield className="h-3 w-3" />
                 HIPAA Compliant
