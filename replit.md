@@ -56,6 +56,13 @@ A multi-agent system facilitates real-time communication between AI agents, user
 - **Consent-Verified Approval System:** ORM-based repository with consent verification and HIPAA audit logging for authorization failures.
 - **Database Schema:** Dedicated tables for agents, messages, conversations, tasks, tools, memory (pgvector), and audit logs.
 - **Tool Microservices:** Extend AI agent capabilities with real database operations, permission checking, consent verification, parameter validation, and dual audit logging (e.g., CalendarTool, MessagingTool, PrescriptionDraftTool, EHRFetchTool, LabFetchTool, ImagingLinkerTool).
+- **Memory Persistence:** Centralized memory injection via `ensure_memory_service()` in AgentEngine with idempotent `_memory_initialized` flag guaranteeing consistent memory availability across REST, WebSocket, and worker pathways.
+- **Doctor Patient Overview Panel (My Patients):** HIPAA-compliant patient overview for doctors with:
+  - `/api/agent/patients` - List assigned patients with risk scores, alert counts, medication counts
+  - `/api/agent/patients/{id}/overview` - Comprehensive patient profile (daily followups, health alerts, medications, conditions)
+  - `/api/agent/patients/{id}/conversations` - Lysa conversation history with message previews
+  - Role-based authorization with active doctor-patient assignment verification
+  - Full HIPAA audit logging for PHI access (successful and denied attempts)
 
 ### Security and Compliance
 HIPAA-compliant, utilizing AWS Cognito for authentication, BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, and explicit doctor-patient assignment authorization.
