@@ -1,0 +1,87 @@
+1. Logistic Regression
+✔️ What type of data it needs:
+Structured, tabular, numeric or categorical health data.
+Examples:
+Age, sex, BMI
+Blood pressure, cholesterol
+Lab results (A1C, WBC, creatinine, etc.)
+Comorbidities (diabetes, COPD, CHF)
+Symptoms (coded yes/no)
+Social factors (smoking, alcohol)
+Used for:
+Disease risk prediction (e.g., stroke, sepsis, diabetes)
+Binary classification (stable / unstable, triage yes/no)
+✅ 2. Random Forest
+✔️ Data required:
+Structured clinical data with mixed types — numeric + categorical + binary.
+Examples:
+EHR fields
+Vitals trend snapshots
+Lab results
+Claims/insurance features
+Visit counts, hospitalization history
+Used for:
+Sepsis prediction
+Readmission risk
+Clinical deterioration detection
+✅ 3. XGBoost / LightGBM
+✔️ Data required:
+Same as Random Forest — high-dimensional structured data.
+XGBoost is very good with:
+Sparse hospital data
+Missing values
+High-cardinality features (e.g., ICD codes)
+Common data points:
+Demographics
+Labs & vitals
+Diagnoses & procedures (ICD-10, CPT)
+Medication lists
+Prior admissions
+Clinical scoring systems
+Used for:
+Early warning scores
+Risk stratification
+Claims fraud detection
+Population health models
+✅ 4. SVM (Support Vector Machine)
+✔️ Data required:
+Medium-sized numerical datasets (small to mid-sized cohorts).
+Examples:
+Pathology measurements
+Genomic/molecular features
+Lab-derived numeric vectors
+Clinical feature sets (10–200 variables)
+Used for:
+Cancer prediction on small datasets
+Binary classification with few samples
+Biomarker-based risk models
+SVM is good when data is small but features are informative.
+✅ 5. LSTM / RNN (Time-series models)
+✔️ Needs sequence data — anything that changes over time.
+Examples:
+Vitals time series (HR, BP, RR, SpO₂)
+ICU monitor data (minute-level trends)
+ECG waveforms
+Continuous glucose monitoring (CGM)
+Wearable sensor streams (motion, HRV, sleep stages)
+Medication timing logs
+Respiratory waveforms
+Used for:
+ICU deterioration prediction
+Arrhythmia detection (ECG)
+Time-series forecasting of patient condition
+✅ 6. K-Means / Clustering
+✔️ Needs unlabeled structured data to find patterns.
+Examples:
+EHR data for patient phenotypes
+Behavioral data (app engagement, symptoms over time)
+Lab profiles
+Chronic disease trajectories
+Wearable-use profiles
+Used for:
+Patient segmentation
+Phenotyping (e.g., diabetes subtypes)
+Outlier detection (anomalies)
+K-means requires:
+Numeric features (categorical need to be encoded)
+Preprocessing (scaling/normalization)

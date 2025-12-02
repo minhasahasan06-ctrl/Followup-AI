@@ -62,6 +62,7 @@ from app.routers import (
     agent_api,  # ✅ Multi-Agent REST API - Agent Clona & Assistant Lysa
     agent_websocket,  # ✅ Multi-Agent WebSocket - Real-time Communication
     auth_api,  # ✅ Auth0 Authentication API - PRODUCTION READY
+    ml_prediction_api,  # ✅ ML Prediction API - Disease Risk, Deterioration, Time-Series, Segmentation
 )
 
 logger = logging.getLogger(__name__)
@@ -258,6 +259,9 @@ app.include_router(agent_websocket.router)
 
 # Auth0 Authentication API - PRODUCTION READY
 app.include_router(auth_api.router)
+
+# ML Prediction API (Disease Risk, Deterioration, Time-Series, Segmentation) - PRODUCTION READY
+app.include_router(ml_prediction_api.router)
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:

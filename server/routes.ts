@@ -10911,6 +10911,227 @@ Provide:
     }
   });
 
+  // =====================================================
+  // ML PREDICTION API ENDPOINTS - Proxy to Python FastAPI
+  // Disease risk, deterioration, time-series, segmentation
+  // =====================================================
+
+  // Disease risk prediction (GET)
+  app.get('/api/ml/predict/disease-risk/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/disease-risk/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Disease risk prediction error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Disease risk prediction failed', 
+          detail: error 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching disease risk:', error);
+      res.status(502).json({ 
+        error: 'ML service unavailable for disease risk prediction',
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
+  // Deterioration prediction (GET)
+  app.get('/api/ml/predict/deterioration/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/deterioration/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Deterioration prediction error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Deterioration prediction failed', 
+          detail: error 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching deterioration prediction:', error);
+      res.status(502).json({ 
+        error: 'ML service unavailable for deterioration prediction',
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
+  // Time-series prediction (GET)
+  app.get('/api/ml/predict/time-series/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const sequenceLength = req.query.sequence_length || 14;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/time-series/${patientId}?sequence_length=${sequenceLength}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Time-series prediction error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Time-series prediction failed', 
+          detail: error 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching time-series prediction:', error);
+      res.status(502).json({ 
+        error: 'ML service unavailable for time-series prediction',
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
+  // Patient segmentation (GET)
+  app.get('/api/ml/predict/patient-segments/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/patient-segments/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Patient segmentation error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Patient segmentation failed', 
+          detail: error 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching patient segmentation:', error);
+      res.status(502).json({ 
+        error: 'ML service unavailable for patient segmentation',
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
+  // Comprehensive ML assessment (GET)
+  app.get('/api/ml/predict/comprehensive/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/comprehensive/${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Comprehensive ML assessment error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Comprehensive ML assessment failed', 
+          detail: error 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching comprehensive ML assessment:', error);
+      res.status(502).json({ 
+        error: 'ML service unavailable for comprehensive assessment',
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
   // Proxy questionnaire templates endpoint (public - these are public domain instruments)
   app.all('/api/v1/mental-health/questionnaires*', async (req: any, res) => {
     try {

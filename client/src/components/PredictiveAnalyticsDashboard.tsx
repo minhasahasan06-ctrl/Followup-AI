@@ -23,8 +23,21 @@ import {
   BarChart3,
   LineChart,
   Target,
-  Zap
+  Zap,
+  Users,
+  Layers,
+  PieChart as PieChartIcon,
+  Info
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  Legend
+} from "recharts";
 import { format, subDays } from "date-fns";
 
 interface PatientContext {
@@ -64,6 +77,37 @@ interface PredictiveAlert {
   probability: number;
   timeframe: string;
   recommendedActions: string[];
+}
+
+interface PatientSegment {
+  cluster_id: number;
+  cluster_name: string;
+  cluster_description: string;
+  confidence: number;
+  distance_to_centroid: number;
+  percentile_in_cluster: number;
+  cluster_size: number;
+  characteristics: Array<{
+    feature: string;
+    patient_value: number;
+    cluster_mean: number;
+    deviation: string;
+  }>;
+  similar_patients_count: number;
+  recommended_interventions: string[];
+}
+
+interface PatientSegmentResponse {
+  patient_id: string;
+  segment: PatientSegment;
+  alternative_segments: Array<{
+    cluster_id: number;
+    cluster_name: string;
+    probability: number;
+  }>;
+  phenotype_profile: Record<string, number>;
+  model_version: string;
+  segmented_at: string;
 }
 
 interface PredictiveAnalyticsDashboardProps {
@@ -124,6 +168,19 @@ export function PredictiveAnalyticsDashboard({ patientContext, className }: Pred
       return response.json();
     },
     staleTime: 120000,
+    enabled: !!patientContext.id
+  });
+
+  // K-Means Patient Segmentation Query
+  const { data: segmentData, isLoading: segmentLoading, refetch: refetchSegment } = useQuery<PatientSegmentResponse>({
+    queryKey: ['/api/ml/predict/patient-segments', patientContext.id],
+    queryFn: async () => {
+      const response = await fetch(`/api/ml/predict/patient-segments/${patientContext.id}`, { credentials: 'include' });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    staleTime: 300000, // 5 minutes
+    retry: 1,
     enabled: !!patientContext.id
   });
 
@@ -250,6 +307,10 @@ export function PredictiveAnalyticsDashboard({ patientContext, className }: Pred
           </TabsTrigger>
           <TabsTrigger value="factors" data-testid="tab-factors">
             Risk Factors
+          </TabsTrigger>
+          <TabsTrigger value="segmentation" data-testid="tab-segmentation">
+            <Users className="h-4 w-4 mr-1" />
+            Segmentation
           </TabsTrigger>
         </TabsList>
 
@@ -549,6 +610,232 @@ export function PredictiveAnalyticsDashboard({ patientContext, className }: Pred
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="segmentation" className="mt-4">
+          <div className="space-y-6">
+            <Card data-testid="card-patient-segment">
+              <CardHeader>
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Layers className="h-5 w-5" />
+                      K-Means Patient Segmentation
+                    </CardTitle>
+                    <CardDescription>
+                      AI-powered patient phenotyping and cluster analysis
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refetchSegment()}
+                    disabled={segmentLoading}
+                    data-testid="button-refresh-segment"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${segmentLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {segmentLoading ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-32 w-full" />
+                    <div className="grid gap-4 md:grid-cols-3">
+                      {[1, 2, 3].map(i => <Skeleton key={i} className="h-24" />)}
+                    </div>
+                  </div>
+                ) : segmentData?.segment ? (
+                  <div className="space-y-6">
+                    {/* Primary Segment Display */}
+                    <div className="p-6 rounded-lg border-2 border-primary/30 bg-primary/5">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <Badge variant="default" className="mb-2">Cluster {segmentData.segment.cluster_id}</Badge>
+                          <h3 className="text-xl font-bold">{segmentData.segment.cluster_name}</h3>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {segmentData.segment.cluster_description}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-muted-foreground">Confidence</p>
+                          <p className="text-2xl font-bold text-primary">
+                            {(segmentData.segment.confidence * 100).toFixed(0)}%
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-4 mt-6">
+                        <div className="text-center p-3 rounded-lg bg-background/50">
+                          <p className="text-sm text-muted-foreground">Cluster Size</p>
+                          <p className="text-xl font-bold">{segmentData.segment.cluster_size}</p>
+                          <p className="text-xs text-muted-foreground">patients</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-background/50">
+                          <p className="text-sm text-muted-foreground">Percentile</p>
+                          <p className="text-xl font-bold">{segmentData.segment.percentile_in_cluster}%</p>
+                          <p className="text-xs text-muted-foreground">in cluster</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-background/50">
+                          <p className="text-sm text-muted-foreground">Distance</p>
+                          <p className="text-xl font-bold">{segmentData.segment.distance_to_centroid.toFixed(2)}</p>
+                          <p className="text-xs text-muted-foreground">to centroid</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-background/50">
+                          <p className="text-sm text-muted-foreground">Similar Patients</p>
+                          <p className="text-xl font-bold">{segmentData.segment.similar_patients_count}</p>
+                          <p className="text-xs text-muted-foreground">in network</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Phenotype Radar Chart */}
+                    {segmentData.phenotype_profile && Object.keys(segmentData.phenotype_profile).length > 0 && (
+                      <Card data-testid="card-phenotype-radar">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <PieChartIcon className="h-4 w-4" />
+                            Phenotype Profile
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RadarChart
+                                data={Object.entries(segmentData.phenotype_profile).map(([key, value]) => ({
+                                  feature: key.replace(/_/g, ' '),
+                                  value: value * 100,
+                                  fullMark: 100
+                                }))}
+                              >
+                                <PolarGrid />
+                                <PolarAngleAxis dataKey="feature" tick={{ fontSize: 10 }} />
+                                <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                                <Radar
+                                  name="Patient Profile"
+                                  dataKey="value"
+                                  stroke="#3b82f6"
+                                  fill="#3b82f6"
+                                  fillOpacity={0.3}
+                                />
+                                <Legend />
+                              </RadarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Characteristics Comparison */}
+                    {segmentData.segment.characteristics?.length > 0 && (
+                      <Card data-testid="card-characteristics">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base">Feature Comparison vs Cluster Mean</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            {segmentData.segment.characteristics.map((char, i) => (
+                              <div key={i} className="flex items-center justify-between p-3 rounded-lg border">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium capitalize">{char.feature.replace(/_/g, ' ')}</span>
+                                  <Badge 
+                                    variant={char.deviation === 'high' ? 'destructive' : char.deviation === 'low' ? 'secondary' : 'default'}
+                                  >
+                                    {char.deviation}
+                                  </Badge>
+                                </div>
+                                <div className="flex items-center gap-4 text-sm">
+                                  <span className="text-muted-foreground">
+                                    Patient: <span className="font-medium">{char.patient_value.toFixed(1)}</span>
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    Cluster Mean: <span className="font-medium">{char.cluster_mean.toFixed(1)}</span>
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Alternative Segments */}
+                    {segmentData.alternative_segments?.length > 0 && (
+                      <Card data-testid="card-alternative-segments">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base">Alternative Segment Matches</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid gap-3 md:grid-cols-3">
+                            {segmentData.alternative_segments.map((alt, i) => (
+                              <div key={i} className="p-4 rounded-lg border hover-elevate">
+                                <div className="flex items-center justify-between mb-2">
+                                  <Badge variant="outline">Cluster {alt.cluster_id}</Badge>
+                                  <span className="text-sm font-medium">{(alt.probability * 100).toFixed(0)}%</span>
+                                </div>
+                                <p className="font-medium">{alt.cluster_name}</p>
+                                <Progress value={alt.probability * 100} className="h-1 mt-2" />
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Recommended Interventions */}
+                    {segmentData.segment.recommended_interventions?.length > 0 && (
+                      <Card data-testid="card-interventions">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Target className="h-4 w-4" />
+                            Recommended Interventions for This Phenotype
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <ul className="space-y-2">
+                            {segmentData.segment.recommended_interventions.map((intervention, i) => (
+                              <li key={i} className="flex items-start gap-2 text-sm">
+                                <ChevronRight className="h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                                <span>{intervention}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Model Info Footer */}
+                    <div className="flex items-center justify-between pt-4 border-t text-xs text-muted-foreground">
+                      <span>Model Version: {segmentData.model_version}</span>
+                      <span>
+                        Segmented: {segmentData.segmented_at ? format(new Date(segmentData.segmented_at), 'MMM d, h:mm a') : 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No segmentation data available</p>
+                    <p className="text-sm">Patient segmentation requires sufficient health profile data</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Segmentation Info Alert */}
+            <div className="flex items-start gap-3 p-4 rounded-lg border bg-muted/30">
+              <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-sm">About Patient Segmentation</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  K-Means clustering groups patients with similar health profiles, enabling personalized care pathways 
+                  and evidence-based interventions tailored to each phenotype. The model considers demographics, 
+                  vital signs, lab results, medication burden, and comorbidity patterns.
+                </p>
+              </div>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
