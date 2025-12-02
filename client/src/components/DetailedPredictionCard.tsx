@@ -138,27 +138,53 @@ const getRiskBgColor = (riskLevel: string) => {
   }
 };
 
-function SHAPWaterfallChart({ factors }: { factors: ContributingFactor[] }) {
-  const baseline = 0.15;
+function SHAPWaterfallChart({ 
+  factors, 
+  finalProbability,
+  baselineProbability 
+}: { 
+  factors: ContributingFactor[];
+  finalProbability: number;
+  baselineProbability?: number;
+}) {
+  // Calculate baseline from final probability minus total contributions
+  // This ensures the chart correctly shows the actual model output
+  const totalContribution = factors.reduce((sum, f) => sum + f.contribution, 0);
+  
+  // Use provided baseline or calculate from final probability
+  // SHAP values are in probability space when summed correctly
+  const baseline = baselineProbability !== undefined 
+    ? baselineProbability 
+    : Math.max(0, Math.min(1, finalProbability - totalContribution));
+  
+  // Normalize contributions to ensure they sum to (finalProbability - baseline)
+  // This handles any log-odds vs probability conversion issues
+  const targetDelta = finalProbability - baseline;
+  const contributionSum = Math.abs(totalContribution);
+  const scaleFactor = contributionSum > 0 ? targetDelta / totalContribution : 1;
+  
   let cumulative = baseline;
 
   const chartData = [
     {
       feature: "Baseline",
       contribution: baseline,
+      displayContribution: baseline,
       cumulative: baseline,
       isPositive: true,
       isBaseline: true,
     },
     ...factors.slice(0, 8).map((factor) => {
+      const scaledContribution = factor.contribution * scaleFactor;
       const prev = cumulative;
-      cumulative += factor.contribution;
+      cumulative = Math.max(0, Math.min(1, cumulative + scaledContribution));
       return {
         feature: factor.feature.replace(/_/g, " "),
-        contribution: factor.contribution,
+        contribution: scaledContribution,
+        displayContribution: Math.abs(scaledContribution),
         cumulative: cumulative,
         start: prev,
-        isPositive: factor.contribution > 0,
+        isPositive: scaledContribution > 0,
         value: factor.value,
         baseline: factor.baseline,
         normalRange: factor.normal_range,
@@ -166,8 +192,9 @@ function SHAPWaterfallChart({ factors }: { factors: ContributingFactor[] }) {
     }),
     {
       feature: "Final Risk",
-      contribution: cumulative,
-      cumulative: cumulative,
+      contribution: finalProbability,
+      displayContribution: finalProbability,
+      cumulative: finalProbability,
       isPositive: true,
       isFinal: true,
     },
@@ -235,7 +262,7 @@ function SHAPWaterfallChart({ factors }: { factors: ContributingFactor[] }) {
             }}
           />
           <ReferenceLine x={0.5} stroke="#ef4444" strokeDasharray="3 3" />
-          <Bar dataKey="contribution" radius={[0, 4, 4, 0]}>
+          <Bar dataKey="displayContribution" radius={[0, 4, 4, 0]}>
             {chartData.map((entry, index) => (
               <Cell
                 key={`cell-${index}`}
@@ -592,7 +619,10 @@ export function DetailedPredictionCard({
                 <p className="text-xs text-muted-foreground mb-4">
                   How each factor contributes to the overall risk score. Red bars increase risk, green bars decrease it.
                 </p>
-                <SHAPWaterfallChart factors={prediction.contributing_factors || []} />
+                <SHAPWaterfallChart 
+                  factors={prediction.contributing_factors || []} 
+                  finalProbability={prediction.probability}
+                />
               </CardContent>
             </Card>
 
