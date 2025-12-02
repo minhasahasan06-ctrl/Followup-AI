@@ -159,12 +159,6 @@ const doctorItems = [
     icon: Home,
   },
   {
-    title: "My Patients",
-    url: "/my-patients",
-    icon: Users,
-    badge: "NEW",
-  },
-  {
     title: "Assistant Lysa",
     url: "/agent-hub",
     icon: Headphones,
