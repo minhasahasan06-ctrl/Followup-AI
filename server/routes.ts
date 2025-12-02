@@ -12859,6 +12859,30 @@ Provide:
   });
 
   // =============================================================================
+  // DOCTOR PATIENT OVERVIEW ROUTES
+  // Assistant Lysa patient management and overview panel
+  // =============================================================================
+
+  // Get list of patients assigned to the logged-in doctor
+  app.get('/api/agent/patients', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, '/api/agent/patients', 'GET');
+  });
+
+  // Get comprehensive patient overview (dailies, alerts, meds, conversations)
+  app.get('/api/agent/patients/:patientId/overview', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, `/api/agent/patients/${req.params.patientId}/overview`, 'GET');
+  });
+
+  // Get Lysa conversation history for a specific patient
+  app.get('/api/agent/patients/:patientId/conversations', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, `/api/agent/patients/${req.params.patientId}/conversations`, 'GET');
+  });
+
+  // =============================================================================
+  // END DOCTOR PATIENT OVERVIEW ROUTES
+  // =============================================================================
+
+  // =============================================================================
   // END MULTI-AGENT COMMUNICATION SYSTEM PROXY ROUTES
   // =============================================================================
 
