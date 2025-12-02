@@ -75,6 +75,7 @@ import MentalHealth from "@/pages/MentalHealth";
 import Prescriptions from "@/pages/Prescriptions";
 import DrugInteractions from "@/pages/DrugInteractions";
 import MLMonitoring from "@/pages/MLMonitoring";
+import MyPatients from "@/pages/MyPatients";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
@@ -123,6 +124,7 @@ function DoctorRouter() {
   return (
     <Switch>
       <Route path="/" component={ReceptionistDashboard} />
+      <Route path="/my-patients" component={MyPatients} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/prescriptions" component={Prescriptions} />
       <Route path="/drug-interactions" component={DrugInteractions} />

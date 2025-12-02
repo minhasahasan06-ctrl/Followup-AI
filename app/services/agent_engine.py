@@ -160,6 +160,7 @@ class AgentEngine:
         }
         self.memory_service: Optional[MemoryService] = None
         self._initialized = False
+        self._memory_initialized = False
 
     def set_memory_service(self, memory_service: Optional[MemoryService]):
         """
@@ -173,15 +174,35 @@ class AgentEngine:
             if asyncio.iscoroutine(memory_service) or asyncio.iscoroutinefunction(memory_service):
                 logger.error("FATAL: Attempted to set memory_service with coroutine - memory persistence will fail")
                 self.memory_service = None
+                self._memory_initialized = False
                 return
             if not hasattr(memory_service, 'get_short_term_memories'):
                 logger.error("FATAL: Invalid memory_service instance - missing required methods")
                 self.memory_service = None
+                self._memory_initialized = False
                 return
         
         self.memory_service = memory_service
         if memory_service:
+            self._memory_initialized = True
             logger.info("Memory service connected to Agent Engine via setter")
+
+    async def ensure_memory_service(self) -> bool:
+        """
+        Ensure memory service is available. Called internally before any memory operation.
+        Returns True if memory service is available, False otherwise.
+        """
+        if self.memory_service and self._memory_initialized:
+            return True
+        
+        # Try to get memory service if not already set
+        try:
+            mem_service = await get_memory_service()
+            self.set_memory_service(mem_service)
+            return self.memory_service is not None
+        except Exception as e:
+            logger.warning(f"Could not initialize memory service: {e}")
+            return False
 
     async def initialize(self):
         """Initialize the agent engine (tools and OpenAI verification only)"""
@@ -380,7 +401,10 @@ class AgentEngine:
         Called before processing a message to provide historical context.
         Returns a new context instance to respect Pydantic immutability patterns.
         """
-        if not self.memory_service:
+        # Ensure memory service is available
+        has_memory = await self.ensure_memory_service()
+        if not has_memory:
+            logger.debug("Memory service not available, skipping context enrichment")
             return context
         
         try:
@@ -429,7 +453,10 @@ class AgentEngine:
         Store interaction in short-term memory and optionally long-term memory.
         Called after processing a message to persist the interaction.
         """
-        if not self.memory_service:
+        # Ensure memory service is available
+        has_memory = await self.ensure_memory_service()
+        if not has_memory:
+            logger.warning(f"Memory service not available, conversation {conversation_id} not persisted")
             return
         
         try:
@@ -1072,11 +1099,13 @@ async def get_agent_engine() -> AgentEngine:
         await agent_engine.initialize()
     
     # Ensure memory service is always injected when available
-    if agent_engine.memory_service is None:
+    # Uses _memory_initialized flag to avoid repeated injection attempts
+    if not agent_engine._memory_initialized:
         try:
             memory_service = await get_memory_service()
             agent_engine.set_memory_service(memory_service)
+            logger.info("Memory service auto-injected via get_agent_engine()")
         except Exception as e:
-            logger.warning(f"Could not inject memory service: {e}")
+            logger.warning(f"Could not inject memory service in get_agent_engine: {e}")
     
     return agent_engine
