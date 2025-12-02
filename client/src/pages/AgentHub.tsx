@@ -117,14 +117,37 @@ interface ToolCallStatus {
   error?: string;
 }
 
+interface StreamingMessage {
+  id: string;
+  content: string;
+  isStreaming: boolean;
+  isComplete: boolean;
+  toolCalls?: Array<{
+    toolName: string;
+    parameters: Record<string, unknown>;
+    requiresApproval: boolean;
+  }>;
+  extractedSymptoms?: {
+    symptoms: Array<{
+      name: string;
+      severity?: string;
+      bodyLocation?: string;
+    }>;
+    urgencyLevel: string;
+  };
+}
+
 export default function AgentHub() {
   const { user } = useAuth();
   const isDoctor = user?.role === "doctor";
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState<StreamingMessage | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [agentPresence, setAgentPresence] = useState<PresenceStatus>({ isOnline: true });
   const [pendingApprovals, setPendingApprovals] = useState<ToolCallApproval[]>([]);
@@ -439,9 +462,172 @@ export default function AgentHub() {
     }
   }, [conversations, selectedConversation, isDoctor]);
 
+  // Streaming message handler
+  const sendStreamingMessage = useCallback(async (content: string) => {
+    if (isStreaming) return;
+    
+    const msgId = crypto.randomUUID();
+    setIsStreaming(true);
+    setMessage("");
+    
+    // Initialize streaming message
+    setStreamingMessage({
+      id: msgId,
+      content: "",
+      isStreaming: true,
+      isComplete: false
+    });
+    
+    // Create abort controller for cancellation
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    
+    try {
+      const response = await fetch("/api/agent/chat/stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-ID": user?.id || "",
+          "X-User-Role": user?.role || "patient"
+        },
+        body: JSON.stringify({
+          message: content,
+          conversationId: selectedConversation,
+          includeHealthContext: !isDoctor
+        }),
+        signal: controller.signal
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Stream failed: ${response.status}`);
+      }
+      
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) {
+        throw new Error("No response body");
+      }
+      
+      let fullContent = "";
+      const toolCalls: StreamingMessage["toolCalls"] = [];
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+        
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              switch (data.type) {
+                case "content":
+                  fullContent += data.content;
+                  setStreamingMessage(prev => prev ? {
+                    ...prev,
+                    content: fullContent
+                  } : null);
+                  break;
+                  
+                case "tool_call":
+                  toolCalls.push({
+                    toolName: data.tool_name,
+                    parameters: data.parameters,
+                    requiresApproval: data.requires_approval
+                  });
+                  setStreamingMessage(prev => prev ? {
+                    ...prev,
+                    toolCalls: [...toolCalls]
+                  } : null);
+                  
+                  // If requires approval, show approval dialog
+                  if (data.requires_approval) {
+                    const approval: ToolCallApproval = {
+                      id: crypto.randomUUID(),
+                      toolName: data.tool_name,
+                      reason: `Agent wants to use ${data.tool_name}`,
+                      parameters: data.parameters,
+                      timestamp: new Date().toISOString(),
+                      status: "pending"
+                    };
+                    setPendingApprovals(prev => [...prev, approval]);
+                  }
+                  break;
+                  
+                case "symptoms_extracted":
+                  setStreamingMessage(prev => prev ? {
+                    ...prev,
+                    extractedSymptoms: {
+                      symptoms: data.data.symptoms || [],
+                      urgencyLevel: data.data.urgency_level || "routine"
+                    }
+                  } : null);
+                  break;
+                  
+                case "complete":
+                  setStreamingMessage(prev => prev ? {
+                    ...prev,
+                    isComplete: true,
+                    isStreaming: false
+                  } : null);
+                  break;
+                  
+                case "error":
+                  console.error("Stream error:", data.error);
+                  break;
+                  
+                case "stream_end":
+                  // Finalize stream
+                  setStreamingMessage(prev => prev ? {
+                    ...prev,
+                    isStreaming: false,
+                    isComplete: true
+                  } : null);
+                  break;
+              }
+            } catch (e) {
+              // Skip malformed JSON lines
+            }
+          }
+        }
+      }
+      
+      // Refresh messages after stream completes
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/messages", selectedConversation] });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/conversations"] });
+      
+    } catch (error: unknown) {
+      if ((error as Error).name === "AbortError") {
+        console.log("Stream cancelled");
+      } else {
+        console.error("Streaming error:", error);
+      }
+    } finally {
+      setIsStreaming(false);
+      abortControllerRef.current = null;
+      // Keep the message displayed for a moment before clearing
+      setTimeout(() => {
+        setStreamingMessage(null);
+      }, 500);
+    }
+  }, [isStreaming, user?.id, user?.role, selectedConversation, isDoctor]);
+  
+  // Cancel streaming
+  const cancelStreaming = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setIsStreaming(false);
+      setStreamingMessage(null);
+    }
+  }, []);
+
   const handleSendMessage = () => {
-    if (message.trim() && !sendMessageMutation.isPending) {
-      sendMessageMutation.mutate(message.trim());
+    if (message.trim() && !isStreaming) {
+      sendStreamingMessage(message.trim());
     }
   };
 
@@ -449,6 +635,10 @@ export default function AgentHub() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+    // Allow Escape to cancel streaming
+    if (e.key === "Escape" && isStreaming) {
+      cancelStreaming();
     }
   };
 
@@ -824,6 +1014,106 @@ export default function AgentHub() {
               </div>
             ))}
 
+            {/* Streaming Message */}
+            {streamingMessage && (
+              <div className="flex gap-3" data-testid="streaming-message">
+                <Avatar className="h-8 w-8 flex-shrink-0">
+                  <AvatarFallback className="bg-primary text-primary-foreground">
+                    <AgentIcon className="h-4 w-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col max-w-[70%] items-start">
+                  <div className="rounded-lg px-4 py-2 bg-muted">
+                    {streamingMessage.content ? (
+                      <p className="text-sm whitespace-pre-wrap">{streamingMessage.content}</p>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-sm text-muted-foreground">Thinking...</span>
+                      </div>
+                    )}
+                    {streamingMessage.isStreaming && streamingMessage.content && (
+                      <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />
+                    )}
+                  </div>
+                  
+                  {/* Tool Calls in Streaming */}
+                  {streamingMessage.toolCalls && streamingMessage.toolCalls.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {streamingMessage.toolCalls.map((tc, idx) => (
+                        <div 
+                          key={idx}
+                          className={cn(
+                            "flex items-center gap-2 text-xs px-2 py-1 rounded",
+                            tc.requiresApproval 
+                              ? "bg-yellow-500/10 text-yellow-700" 
+                              : "bg-blue-500/10 text-blue-700"
+                          )}
+                        >
+                          <Wrench className="h-3 w-3" />
+                          <span>{tc.toolName}</span>
+                          {tc.requiresApproval && (
+                            <Badge variant="outline" className="text-[10px] h-4">
+                              Needs Approval
+                            </Badge>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Extracted Symptoms (for patients) */}
+                  {streamingMessage.extractedSymptoms && streamingMessage.extractedSymptoms.symptoms.length > 0 && (
+                    <div className="mt-2 p-2 bg-primary/5 rounded-lg border border-primary/20">
+                      <div className="flex items-center gap-1 text-xs font-medium text-primary mb-1">
+                        <Activity className="h-3 w-3" />
+                        Symptoms Detected
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {streamingMessage.extractedSymptoms.symptoms.map((symptom, idx) => (
+                          <Badge 
+                            key={idx} 
+                            variant="secondary" 
+                            className="text-[10px]"
+                          >
+                            {symptom.name}
+                            {symptom.severity && ` (${symptom.severity})`}
+                          </Badge>
+                        ))}
+                      </div>
+                      {streamingMessage.extractedSymptoms.urgencyLevel !== "routine" && (
+                        <div className={cn(
+                          "mt-1 text-[10px] font-medium",
+                          streamingMessage.extractedSymptoms.urgencyLevel === "emergency" && "text-red-600",
+                          streamingMessage.extractedSymptoms.urgencyLevel === "urgent" && "text-orange-600",
+                          streamingMessage.extractedSymptoms.urgencyLevel === "elevated" && "text-yellow-600"
+                        )}>
+                          Urgency: {streamingMessage.extractedSymptoms.urgencyLevel}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className="text-xs text-muted-foreground">
+                      {streamingMessage.isStreaming ? "Streaming..." : "Just now"}
+                    </span>
+                    {isStreaming && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1 text-xs text-muted-foreground hover:text-destructive"
+                        onClick={cancelStreaming}
+                        data-testid="button-cancel-stream"
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Tool Call Status Indicators */}
             {toolCallStatuses.length > 0 && (
               <div className="space-y-2" data-testid="container-tool-statuses">
@@ -942,12 +1232,12 @@ export default function AgentHub() {
             />
             <Button
               onClick={handleSendMessage}
-              disabled={!message.trim() || sendMessageMutation.isPending}
+              disabled={!message.trim() || isStreaming}
               size="icon"
               className="h-[44px] w-[44px]"
               data-testid="button-send-message"
             >
-              {sendMessageMutation.isPending ? (
+              {isStreaming ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Send className="h-4 w-4" />

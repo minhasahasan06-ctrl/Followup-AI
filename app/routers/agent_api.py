@@ -4,22 +4,27 @@ Handles CRUD operations for agent conversations, messages, and tasks
 """
 
 import os
+import json
 import logging
-from typing import Optional, List
+from typing import Optional, List, AsyncGenerator
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.models.agent_models import (
     ConversationCreate, ConversationResponse,
     MessageCreate, MessageResponse,
     TaskCreate, TaskResponse,
-    PresenceStatus, ApprovalDecision
+    PresenceStatus, ApprovalDecision,
+    MessageEnvelope, MessageParticipant, MessageType, ActorType,
+    AgentDecisionContext
 )
 from app.services.agent_engine import get_agent_engine, AgentEngine
 from app.services.message_router import get_message_router, MessageRouter
 from app.services.memory_service import get_memory_service, MemoryService
 from app.services.delivery_service import get_delivery_service, DeliveryService
+from app.services.audit_logger import AuditLogger, AuditEvent
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["Agent API"])
@@ -229,6 +234,174 @@ async def mark_message_read(
     return {
         "id": message_id,
         "readAt": datetime.utcnow().isoformat()
+    }
+
+
+# ==================== STREAMING CHAT ====================
+
+class StreamingChatRequest(BaseModel):
+    """Request model for streaming chat"""
+    message: str
+    conversationId: Optional[str] = None
+    includeHealthContext: bool = True
+
+
+@router.post("/chat/stream")
+async def stream_chat(
+    request: Request,
+    body: StreamingChatRequest,
+    user: dict = Depends(get_current_user),
+    agent_engine: AgentEngine = Depends(get_agent_engine),
+    memory_service: MemoryService = Depends(get_memory_service)
+):
+    """
+    Stream real-time ChatGPT responses from Agent Clona or Assistant Lysa.
+    Uses Server-Sent Events (SSE) for streaming.
+    """
+    user_id = user["id"]
+    user_role = user["role"]
+    agent_id = "lysa" if user_role == "doctor" else "clona"
+    conversation_id = body.conversationId or f"conv-{agent_id}-{user_id}"
+    
+    async def generate_stream() -> AsyncGenerator[str, None]:
+        try:
+            # Build patient context if health context requested
+            patient_context = None
+            if body.includeHealthContext and user_role == "patient":
+                patient_context = await agent_engine.get_health_context_summary(user_id)
+                patient_context["patient_id"] = user_id
+            
+            # Get short-term memory for context
+            short_term_memory = await memory_service.get_short_term_memories(
+                agent_id=agent_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                limit=5
+            )
+            
+            # Get tools available for user role
+            available_tools = agent_engine.get_available_tools(user_role)
+            
+            # Create message envelope using factory method
+            message = MessageEnvelope.create(
+                sender=MessageParticipant(type=ActorType.USER, id=user_id),
+                to=[MessageParticipant(type=ActorType.AGENT, id=agent_id)],
+                msg_type=MessageType.CHAT,
+                payload={"content": body.message}
+            )
+            
+            # Build context
+            context = AgentDecisionContext(
+                message=message,
+                conversation_id=conversation_id,
+                patient_context=patient_context,
+                short_term_memory=short_term_memory,
+                available_tools=available_tools
+            )
+            
+            # Log the interaction start
+            AuditLogger.log_event(
+                event_type=AuditEvent.PHI_ACCESSED,
+                user_id=user_id,
+                resource_type="agent_chat",
+                resource_id=conversation_id,
+                action="stream_start",
+                status="success",
+                metadata={"agent_id": agent_id, "has_health_context": bool(patient_context)},
+                patient_id=user_id if user_role == "patient" else None
+            )
+            
+            # Stream the response
+            async for chunk in agent_engine.process_message_streaming(agent_id, context):
+                yield f"data: {json.dumps(chunk)}\n\n"
+            
+            # If streaming to a patient with Agent Clona, extract symptoms
+            if agent_id == "clona" and body.message:
+                symptoms = await agent_engine.extract_symptoms_from_message(
+                    body.message,
+                    patient_context
+                )
+                if symptoms.get("symptoms") or symptoms.get("urgency_level") not in ["routine", "unknown"]:
+                    yield f"data: {json.dumps({'type': 'symptoms_extracted', 'data': symptoms})}\n\n"
+            
+            # Store interaction in memory
+            await memory_service.store_short_term(
+                agent_id=agent_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                content=f"User: {body.message}",
+                ttl_hours=2,
+                metadata={"has_symptoms": bool(patient_context)}
+            )
+            
+            yield f"data: {json.dumps({'type': 'stream_end'})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.post("/chat/extract-symptoms")
+async def extract_symptoms(
+    request: Request,
+    body: SendMessageRequest,
+    user: dict = Depends(get_current_user),
+    agent_engine: AgentEngine = Depends(get_agent_engine)
+):
+    """
+    Extract symptoms and health indicators from a patient message.
+    Used for AI-powered symptom tracking.
+    """
+    user_id = user["id"]
+    user_role = user["role"]
+    
+    if user_role != "patient":
+        raise HTTPException(status_code=403, detail="Symptom extraction is for patients only")
+    
+    symptoms = await agent_engine.extract_symptoms_from_message(
+        body.content,
+        {"patient_id": user_id}
+    )
+    
+    return {
+        "extracted": symptoms,
+        "messageId": body.msgId,
+        "processedAt": datetime.utcnow().isoformat()
+    }
+
+
+@router.get("/chat/health-context")
+async def get_health_context(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    agent_engine: AgentEngine = Depends(get_agent_engine)
+):
+    """
+    Get comprehensive health context for a patient.
+    Used to inform Clona's responses with current health status.
+    """
+    user_id = user["id"]
+    user_role = user["role"]
+    
+    if user_role != "patient":
+        raise HTTPException(status_code=403, detail="Health context is for patients only")
+    
+    context = await agent_engine.get_health_context_summary(user_id)
+    
+    return {
+        "context": context,
+        "patientId": user_id,
+        "fetchedAt": datetime.utcnow().isoformat()
     }
 
 

@@ -1,7 +1,7 @@
 # Followup AI - HIPAA-Compliant Health Platform
 
 ## Overview
-Followup AI is a HIPAA-compliant health monitoring platform for immunocompromised patients, offering personalized health tracking, medication management, and wellness activities. It utilizes AI agents (Agent Clona for patient support and Assistant Lysa for doctor assistance) to provide insights, streamline healthcare operations, and act as a comprehensive wellness monitoring and change detection system. The platform aims to enhance patient care through advanced AI and robust health data management.
+Followup AI is a HIPAA-compliant health monitoring platform designed for immunocompromised patients, offering personalized health tracking, medication management, and wellness activities. It leverages AI agents (Agent Clona for patient support and Assistant Lysa for doctor assistance) to provide insights, streamline healthcare operations, and act as a comprehensive wellness monitoring and change detection system. The platform aims to enhance patient care through advanced AI and robust health data management, with a business vision to transform healthcare for immunocompromised individuals.
 
 ## User Preferences
 - **Preferred communication style**: Simple, everyday language
@@ -15,135 +15,57 @@ Followup AI is a HIPAA-compliant health monitoring platform for immunocompromise
 The frontend is built with React, TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, and Tailwind CSS for styling. It uses Radix UI and shadcn/ui for a clinical aesthetic, supporting role-based routing and context-based theming. It routes Python AI endpoints to the FastAPI backend on port 8000 and other endpoints to an Express server on port 5000.
 
 ### Backend
-The backend consists of two services:
-- **Node.js Express Backend (Port 5000)**: Manages the Agent Clona chatbot, appointments, calendar, consultations, pain tracking, symptom journal, voice analysis, baseline calculation, deviation detection, and risk scoring.
-- **Python FastAPI Backend (Port 8000)**: Handles all AI deterioration detection endpoints, guided video/audio examinations, mental health questionnaires, database interactions, and core authentication. It uses an async AI engine initialization with an `AIEngineManager` singleton and loads heavy ML models (TensorFlow, MediaPipe, YAMNet) at startup.
+The backend comprises two services: a Node.js Express server (Port 5000) for chatbot, appointments, calendar, consultations, pain tracking, symptom journaling, and risk scoring, and a Python FastAPI server (Port 8000) for AI deterioration detection, guided examinations, mental health questionnaires, database interactions, and core authentication. The FastAPI backend uses an async AI engine with a singleton manager to load heavy ML models at startup.
 
 ### Core Features & Technical Implementations
-- **AI Integration:** Leverages OpenAI API with a tiered model strategy:
-  - **GPT-4o:** PHI detection, symptom extraction, entity categorization, SOAP notes, email categorization
-  - **o1 (Advanced Clinical Reasoning):** Differential diagnosis, complex drug interactions, clinical decision support (requires BAA/Enterprise)
-  - All AI operations have graceful fallback (o1 → GPT-4o) and comprehensive audit logging
-- **PHI Detection Service (Python):** OpenAI GPT-4o-based HIPAA-compliant PHI detection replacing AWS Comprehend Medical:
-  - Comprehensive detection of HIPAA's 18 PHI identifiers
-  - Medical entity extraction with ICD-10-CM, RxNorm, SNOMED-CT inference
-  - Regex-based fallback when API unavailable
-  - Legacy category mapping for TypeScript compatibility
+- **AI Integration:** Utilizes OpenAI API (GPT-4o for PHI detection, symptom extraction; o1 for advanced clinical reasoning) with graceful fallbacks and audit logging.
+- **PHI Detection Service (Python):** GPT-4o-based HIPAA-compliant PHI detection and medical entity extraction with regex fallbacks.
 - **Real-Time Monitoring:** AI-powered digital biomarker tracking from wearable data.
-- **Voice-Based Followups:** Uses OpenAI Whisper for transcription and GPT-4 for analysis.
-- **Assistant Lysa:** AI-powered appointment management, email categorization, call log transcription, and automated reminders.
-- **Secure Data Sharing:** Patient record sharing with consent management and audit logging.
-- **EHR & Wearable Integration:** FHIR-based integration with EHRs and wearable devices.
+- **Voice-Based Followups:** OpenAI Whisper for transcription and GPT-4 for analysis.
+- **Assistant Lysa:** AI-powered appointment management, email categorization, and reminders.
+- **Secure Data Sharing:** Consent-managed, audit-logged patient record sharing.
+- **EHR & Wearable Integration:** FHIR-based integration.
 - **Video Consultations:** HIPAA-compliant video conferencing.
-- **Home Clinical Exam Coach (HCEC):** AI-powered guided self-examination using OpenAI Vision, extracting metrics like respiratory rate, skin pallor, and nail bed analysis.
-- **Deterioration Prediction System:** Comprehensive health change detection with baseline calculation, Z-score, anomaly detection, Bayesian risk modeling, and time-series trend analysis for a composite risk score.
-- **ML Inference Infrastructure:** Self-hosted system with model registry, Redis caching, async inference, HIPAA-compliant audit logging, and ONNX optimization.
-- **Guided Video Examination:** 4-stage workflow (Eyes, Palm, Tongue, Lips) with clinical-grade LAB color analysis, disease-specific personalization, and S3 encrypted storage. Includes Facial Puffiness Score (FPS) system with MediaPipe Face Mesh and DeepLab V3+ Edema Segmentation.
-- **Guided Audio Examination:** 4-stage workflow (Breathing, Coughing, Speaking, Reading) with YAMNet ML classification, neurological metrics, and S3 encrypted storage.
-- **Trend Prediction Engine:** Calculates baselines, performs Z-score analysis, anomaly detection, Bayesian risk modeling, and time-series trend analysis to generate a composite risk score.
-- **Alert Orchestration Engine:** Multi-channel delivery (dashboard, email, SMS) with rule-based systems.
-- **Behavior AI Analysis System:** Multi-modal deterioration detection via behavioral patterns, digital biomarkers, cognitive testing, and sentiment analysis using ensemble ML models for risk scoring. Includes Gait Analysis (MediaPipe Pose) and Accelerometer Tremor Analysis.
-- **Risk Scoring Dashboard:** Composite risk score (0-15 scale) with weighted factors (respiratory, pain, symptoms) and 7-day history.
-- **Baseline Calculation UI:** 7-day rolling window statistics with quality badges, recalculate functionality, and history visualization.
-- **Google Calendar Sync:** Bidirectional appointment sync for doctors with OAuth, conflict resolution, and HIPAA-compliant PHI handling.
-- **Drug-Drug Interaction Detection:** Medication adherence system with RxNorm integration and real-time interaction detection.
-- **Automatic Drug Normalization:** On-demand medication normalization against RxNorm API, creating standardized drug records.
-- **Clinical Automation (Rx Builder):** AI-assisted prescription system with:
-  - AI SOAP notes generation and ICD-10 code suggestions
-  - AI differential diagnosis based on patient history
-  - Drug-drug interaction checks and contraindication alerts
-  - Auto-dosage recommendations based on patient parameters
-  - Chronic refill automation with adherence threshold (0-100%, default 80%) and days-before-expiry triggers (1-90 days, default 7)
-  - Prescription templates with doctor-specific customization
-  - Schema-level validation with safe defaults for chronic refill settings
-- **Clinical Assessment (Diagnosis Helper):** AI-assisted clinical assessment system with:
-  - Dual authorization flow (doctor_patient_assignments primary, PatientSharingLink fallback)
-  - Patient data aggregation (medical files, health alerts, ML predictions, medications, daily follow-ups)
-  - Access scope enforcement (full/limited/emergency_only) restricting sensitive data appropriately
-  - AI-powered differential diagnosis with GPT-4o based on comprehensive patient data
-  - HIPAA-compliant audit logging supporting both assignment and sharing link contexts
-  - Consent validation with proper access level permissions for each data category
-- **PainTrack Platform:** Chronic pain tracking system with dual-camera video capture, VAS pain slider, and medication tracking.
-- **Mental Health AI Dashboard:** Integrated questionnaires (PHQ-9, GAD-7, PSS-10) with AI-powered GPT-4o analysis, crisis detection, and scoring.
-- **Agent Clona Symptom Extraction:** AI-powered symptom extraction from patient conversations (GPT-4o) identifying symptoms, body locations, intensity, and temporal information.
-- **AI-Powered Habit Tracker (13 Features):** Comprehensive habit management including creation, daily routines, streaks, smart reminders, AI coaching, trigger detection, addiction-mode quit plans, mood tracking, dynamic AI recommendations, social accountability, guided CBT sessions, gamification, and smart journals with AI insights.
-- **Daily Follow-up Dashboard Pattern:** Enforces a 24-hour gating for data display across tabs (Device Data, Symptoms, Video AI, Audio AI, PainTrack, Mental Health), prompting completion if no data for today, while allowing additional entries.
-- **Doctor-Patient Assignment System:** Explicit doctor-patient relationships with authorization via `doctor_patient_assignments` table, auto-assignment, consent tracking, access levels, revocation, and HIPAA audit logging. All patient data endpoints verify active assignment.
-- **Per-Doctor Personal Integrations:** Each doctor can connect their own Gmail (OAuth), WhatsApp Business API, and Twilio VoIP phone accounts for automated communication sync and logging. Features JWT-signed OAuth state tokens for CSRF protection and AES-256-GCM encrypted credential storage for HIPAA compliance. Legacy plaintext tokens are automatically re-encrypted on next update.
+- **Home Clinical Exam Coach (HCEC):** AI-guided self-examinations using OpenAI Vision for metrics like respiratory rate and skin pallor.
+- **Deterioration Prediction System:** Comprehensive health change detection via baseline calculation, Z-score, anomaly detection, Bayesian risk modeling, and time-series analysis for a composite risk score.
+- **ML Inference Infrastructure:** Self-hosted, HIPAA-compliant system with model registry, Redis caching, and ONNX optimization.
+- **Guided Video Examination:** 4-stage workflow (Eyes, Palm, Tongue, Lips) with LAB color analysis and S3 encrypted storage, including Facial Puffiness Score (FPS).
+- **Guided Audio Examination:** 4-stage workflow (Breathing, Coughing, Speaking, Reading) with YAMNet ML classification and S3 encrypted storage.
+- **Alert Orchestration Engine:** Multi-channel (dashboard, email, SMS) rule-based alert delivery.
+- **Behavior AI Analysis System:** Multi-modal deterioration detection using behavioral patterns, digital biomarkers, cognitive testing, and sentiment analysis via ensemble ML models. Includes Gait Analysis and Accelerometer Tremor Analysis.
+- **Risk Scoring Dashboard:** Composite risk score (0-15) with weighted factors and 7-day history.
+- **Baseline Calculation UI:** 7-day rolling window statistics with recalculation and history visualization.
+- **Google Calendar Sync:** Bidirectional doctor appointment sync with OAuth and PHI handling.
+- **Drug-Drug Interaction Detection:** Medication adherence with RxNorm integration.
+- **Automatic Drug Normalization:** On-demand RxNorm API integration for standardized drug records.
+- **Clinical Automation (Rx Builder):** AI-assisted prescription system with SOAP notes, ICD-10 suggestions, differential diagnosis, drug interaction checks, auto-dosage, and chronic refill automation.
+- **Clinical Assessment (Diagnosis Helper):** AI-assisted assessment with dual authorization, patient data aggregation, access scope enforcement, and AI-powered differential diagnosis.
+- **PainTrack Platform:** Chronic pain tracking with dual-camera video, VAS slider, and medication tracking.
+- **Mental Health AI Dashboard:** Integrated questionnaires (PHQ-9, GAD-7, PSS-10) with AI analysis and crisis detection.
+- **Agent Clona Symptom Extraction:** AI-powered symptom extraction from patient conversations.
+- **AI-Powered Habit Tracker:** Comprehensive habit management including routines, reminders, AI coaching, trigger detection, and gamification.
+- **Daily Follow-up Dashboard Pattern:** Enforces 24-hour gating for data display across various health tabs.
+- **Doctor-Patient Assignment System:** Explicit doctor-patient relationships with consent, access levels, and HIPAA audit logging.
+- **Per-Doctor Personal Integrations:** OAuth-based integrations for Gmail, WhatsApp Business API, and Twilio VoIP with encrypted credential storage.
 
 ### Multi-Agent Communication System
-The platform features a sophisticated multi-agent system enabling real-time communication between AI agents, users, and healthcare providers:
-
-**Architecture:**
-- **Agent Clona**: Patient-facing AI health companion for daily check-ins, symptom tracking, medication reminders, and wellness support
-- **Assistant Lysa**: Doctor-facing AI assistant for patient management, scheduling, clinical summaries, and health alert triage
-- **Message Router**: Central routing service handling user↔agent, agent↔agent, and agent↔tool communications
-- **Memory Service**: Dual-layer memory (Redis short-term + PostgreSQL pgvector long-term) with TTL-based expiration
-
-**Message Protocol (MessageEnvelope):**
-```python
-{
-  msg_id: str,           # Unique message identifier
-  sender: {type, id},    # ActorType (agent/user/system) + ID
-  to: [{type, id}],      # Recipients list
-  type: MessageType,     # chat/command/event/tool_call/ack
-  timestamp: datetime,
-  payload: dict          # Message-specific content
-}
-```
-
-**Agent Hub UI Features:**
-- Unified conversation interface for both patients and doctors
-- Real-time WebSocket connection with presence indicators
-- Delivery checkmarks (sent/delivered/read)
-- Tool call status indicators (pending/running/completed/failed)
-- Human-in-the-loop approval dialogs for sensitive operations
-- HIPAA-compliant audit logging of all interactions
-
-**Database Schema (agent tables):**
-- `agents`: Agent configurations (clona, lysa) with personas and tool registries
-- `agent_messages`: Message storage with delivery tracking
-- `agent_conversations`: Conversation management with participant tracking
-- `agent_tasks`: Background task queue for scheduled operations
-- `agent_tools`: Tool registry with permissions and versioning
-- `agent_memory`: Long-term memory with vector embeddings (pgvector)
-- `agent_audit_logs`: HIPAA-compliant comprehensive audit trail
-
-**Files:**
-- Backend: `app/models/agent_models.py`, `app/services/agent_engine.py`, `app/services/message_router.py`, `app/services/memory_service.py`
-- Routes: `app/routers/agent_api.py`, `app/routers/agent_websocket.py`
-- Frontend: `client/src/pages/AgentHub.tsx`
-- Schema: `shared/schema.ts` (agent tables)
-
-**Tool Microservices (app/services/agent_tools/):**
-Agent tools are microservices that extend AI agent capabilities with real database operations and HIPAA-compliant audit logging.
-
-- **BaseTool Framework** (`base.py`): Abstract base class with ToolExecutionContext, permission checking, consent verification via ConsentService, parameter validation, and dual audit logging (AuditLogger + agent_audit_logs table)
-- **ToolRegistry**: Singleton registry for tool registration, role-based filtering, OpenAI function definitions, and consent-verified execution
-- **CalendarTool** (`calendar.py`): Appointment scheduling, rescheduling, cancellation, availability queries with conflict detection
-- **MessagingTool** (`messaging.py`): Cross-party messaging, email sending, notifications, reminders, message history
-- **PrescriptionDraftTool** (`prescription_draft.py`): REQUIRES APPROVAL - Draft creation, drug interactions, dosage suggestions, patient medication history
-- **EHRFetchTool** (`ehr_fetch.py`): Patient summary, medical history, vitals, diagnoses, allergies, immunizations, procedures, care plans with PHI audit logging
-- **LabFetchTool** (`lab_fetch.py`): Recent labs, lab history, abnormal results, trends, pending orders, lab panels with PHI audit logging
-- **ImagingLinkerTool** (`imaging_linker.py`): Imaging studies, radiology reports, comparison studies, external study linking with PHI audit logging
-
-Tool Features:
-- JSON schemas for OpenAI function calling
-- Consent verification via doctor_patient_assignments
-- AuditLogger integration for HIPAA PHI access events
-- Role-based access control (doctor-only for clinical tools)
-- Human-in-the-loop approval for prescription drafts
+A multi-agent system facilitates real-time communication between AI agents, users, and healthcare providers.
+- **Architecture:** Agent Clona (patient-facing), Assistant Lysa (doctor-facing), Message Router, and a dual-layer Memory Service (Redis for short-term, PostgreSQL pgvector for long-term).
+- **Message Protocol:** Standardized `MessageEnvelope` for all communications.
+- **Agent Hub UI:** Unified conversation interface with WebSockets, presence indicators, tool call status, human-in-the-loop approvals, and streaming ChatGPT responses with real-time display and symptom extraction.
+- **Consent-Verified Approval System:** ORM-based repository with consent verification and HIPAA audit logging for authorization failures.
+- **Database Schema:** Dedicated tables for agents, messages, conversations, tasks, tools, memory (pgvector), and audit logs.
+- **Tool Microservices:** Extend AI agent capabilities with real database operations, permission checking, consent verification, parameter validation, and dual audit logging (e.g., CalendarTool, MessagingTool, PrescriptionDraftTool, EHRFetchTool, LabFetchTool, ImagingLinkerTool).
 
 ### Security and Compliance
-The platform is HIPAA-compliant, utilizing AWS Cognito for authentication, BAA verification for integrations, comprehensive audit logging, end-to-end encryption for video, strict PHI handling, and explicit doctor-patient assignment authorization. Positioned as a General Wellness Product.
+HIPAA-compliant, utilizing AWS Cognito for authentication, BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, and explicit doctor-patient assignment authorization.
 
 ## External Dependencies
 
 - **Authentication:** AWS Cognito
 - **Database:** Neon serverless PostgreSQL
-- **AI Services:** OpenAI API (GPT models), TensorFlow.js, PyTorch, HuggingFace Transformers, ONNX Runtime
+- **AI Services:** OpenAI API, TensorFlow.js, PyTorch, HuggingFace Transformers, ONNX Runtime
 - **Caching:** Redis
 - **Communication:** Twilio API, AWS SES
 - **Video Conferencing:** Daily.co
-- **Cloud Services:** AWS S3, AWS Textract, AWS Comprehend Medical, AWS HealthLake, AWS HealthImaging, AWS HealthOmics
-- **Data Integration APIs:** PubMed E-utilities, PhysioNet WFDB, Kaggle API, WHO Global Health Observatory API, OpenWeatherMap API, Biobot Analytics
+- **Cloud Services:** AWS S3, AWS Textract

@@ -510,10 +510,12 @@ class AgentEngine:
         # Create memory update for this interaction
         memory_updates = []
         if context.message.payload and context.message.payload.get("content"):
+            # Get user_id from sender (the 'sender' attribute aliases 'from' in JSON)
+            sender_id = context.message.sender.id if hasattr(context.message, 'sender') and context.message.sender else None
             memory_updates.append(MemoryCreate(
                 agent_id=agent.id,
                 patient_id=context.patient_context.get("patient_id") if context.patient_context else None,
-                user_id=context.message.from_.id if hasattr(context.message, 'from_') else None,
+                user_id=sender_id,
                 conversation_id=context.conversation_id,
                 memory_type=MemoryType.SHORT_TERM,
                 storage_type="redis",
@@ -561,6 +563,292 @@ class AgentEngine:
                 content = content[:500] + "..."
             parts.append(content)
         return "\n---\n".join(parts)
+    
+    async def process_message_streaming(
+        self,
+        agent_id: str,
+        context: AgentDecisionContext,
+        on_chunk: Any = None
+    ):
+        """
+        Stream agent response in real-time for better UX.
+        Yields response chunks as they're generated using async iteration.
+        """
+        agent = self.get_agent(agent_id)
+        if not agent:
+            raise ValueError(f"Unknown agent: {agent_id}")
+        
+        messages = self._build_conversation_messages(agent, context)
+        tools = self._build_tools_list(context.available_tools)
+        
+        full_response = ""
+        tool_calls_data: List[Dict[str, Any]] = []
+        
+        try:
+            create_kwargs: Dict[str, Any] = {
+                "model": agent.openai_model,
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 2000,
+                "stream": True
+            }
+            if tools:
+                create_kwargs["tools"] = tools
+                create_kwargs["tool_choice"] = "auto"
+            
+            # Create the stream - OpenAI returns an async iterator directly
+            stream = await self.client.chat.completions.create(**create_kwargs)  # type: ignore
+            
+            # Iterate over streaming chunks
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                    
+                delta = chunk.choices[0].delta
+                
+                # Handle content streaming
+                if delta and delta.content:
+                    full_response += delta.content
+                    chunk_data = {"type": "content", "content": delta.content}
+                    if on_chunk:
+                        try:
+                            await on_chunk(chunk_data)
+                        except Exception:
+                            pass
+                    yield chunk_data
+                
+                # Handle tool call streaming
+                if delta and delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        if tc.index is not None:
+                            while len(tool_calls_data) <= tc.index:
+                                tool_calls_data.append({"name": "", "arguments": "", "id": None})
+                            
+                            if tc.function:
+                                if tc.function.name:
+                                    tool_calls_data[tc.index]["name"] = tc.function.name
+                                if tc.id:
+                                    tool_calls_data[tc.index]["id"] = tc.id
+                                if tc.function.arguments:
+                                    tool_calls_data[tc.index]["arguments"] += tc.function.arguments
+            
+            # Process any tool calls after stream completes
+            tool_call_requests = []
+            requires_approval = False
+            
+            for tc_data in tool_calls_data:
+                if tc_data.get("name"):
+                    try:
+                        tool_input = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                    except json.JSONDecodeError:
+                        tool_input = {}
+                    
+                    tool_def = next(
+                        (t for t in context.available_tools if t.name == tc_data["name"]),
+                        None
+                    )
+                    
+                    tool_call = ToolCallRequest(
+                        tool_name=tc_data["name"],
+                        parameters=tool_input,
+                        conversation_id=context.conversation_id,
+                        message_id=context.message.msg_id,
+                        requires_approval=tool_def.requires_approval if tool_def else False
+                    )
+                    tool_call_requests.append(tool_call)
+                    
+                    tc_requires_approval = tool_def.requires_approval if tool_def else False
+                    if tc_requires_approval:
+                        requires_approval = True
+                    
+                    # Emit tool call event
+                    yield {
+                        "type": "tool_call",
+                        "tool_name": tc_data["name"],
+                        "parameters": tool_input,
+                        "requires_approval": tc_requires_approval,
+                        "tool_id": tc_data.get("id")
+                    }
+            
+            # Emit final complete event
+            yield {
+                "type": "complete",
+                "response": full_response,
+                "tool_calls": [
+                    {
+                        "tool_name": tc.tool_name,
+                        "parameters": tc.parameters,
+                        "requires_approval": tc.requires_approval
+                    } for tc in tool_call_requests
+                ],
+                "requires_approval": requires_approval
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in streaming agent response: {e}", exc_info=True)
+            yield {
+                "type": "error",
+                "error": str(e)
+            }
+    
+    async def extract_symptoms_from_message(
+        self,
+        message: str,
+        patient_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract symptoms and health indicators from patient message using GPT-4o.
+        Used by Agent Clona for health monitoring.
+        """
+        extraction_prompt = """Analyze the following patient message and extract health-related information.
+
+Return a JSON object with:
+{
+  "symptoms": [
+    {
+      "name": "symptom name",
+      "body_location": "affected area if mentioned",
+      "severity": "mild/moderate/severe or 1-10 if mentioned",
+      "duration": "how long if mentioned",
+      "frequency": "how often if mentioned"
+    }
+  ],
+  "vital_signs": {
+    "temperature": null,
+    "heart_rate": null,
+    "blood_pressure": null,
+    "oxygen_saturation": null
+  },
+  "mood_indicators": ["list of emotional states mentioned"],
+  "medication_mentions": ["medications mentioned"],
+  "concerning_patterns": ["any red flags or concerning patterns"],
+  "urgency_level": "routine/elevated/urgent/emergency",
+  "follow_up_questions": ["suggested follow-up questions to ask"]
+}
+
+Only include fields that are actually present or can be inferred from the message.
+"""
+        
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": extraction_prompt},
+                    {"role": "user", "content": f"Patient message: {message}"}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+            
+            result = json.loads(response.choices[0].message.content or "{}")
+            
+            # Log symptom extraction for audit
+            AuditLogger.log_event(
+                event_type=AuditEvent.PHI_ACCESSED,
+                user_id="system",
+                resource_type="symptom_extraction",
+                resource_id=str(datetime.utcnow().timestamp()),
+                action="extract",
+                status="success",
+                metadata={
+                    "symptoms_found": len(result.get("symptoms", [])),
+                    "urgency_level": result.get("urgency_level", "routine")
+                },
+                patient_id=patient_context.get("patient_id") if patient_context else None,
+                phi_accessed=True,
+                phi_categories=["symptoms", "health_data"]
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Symptom extraction failed: {e}")
+            return {"symptoms": [], "urgency_level": "unknown", "error": str(e)}
+    
+    async def get_health_context_summary(
+        self,
+        patient_id: str
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive health context for a patient to inform Clona's responses.
+        Aggregates data from multiple sources.
+        """
+        try:
+            from app.database import SessionLocal
+            from sqlalchemy import text
+            
+            db = SessionLocal()
+            try:
+                # Get recent symptoms
+                symptoms_result = db.execute(text("""
+                    SELECT symptom_type, severity, recorded_at
+                    FROM symptom_entries
+                    WHERE patient_id = :patient_id
+                    AND recorded_at > NOW() - INTERVAL '7 days'
+                    ORDER BY recorded_at DESC
+                    LIMIT 10
+                """), {"patient_id": patient_id})
+                recent_symptoms = [
+                    {"type": row[0], "severity": row[1], "date": row[2].isoformat() if row[2] else None}
+                    for row in symptoms_result.fetchall()
+                ]
+                
+                # Get current medications
+                meds_result = db.execute(text("""
+                    SELECT medication_name, dosage, frequency
+                    FROM patient_medications
+                    WHERE patient_id = :patient_id
+                    AND status = 'active'
+                """), {"patient_id": patient_id})
+                medications = [
+                    {"name": row[0], "dosage": row[1], "frequency": row[2]}
+                    for row in meds_result.fetchall()
+                ]
+                
+                # Get risk score
+                risk_result = db.execute(text("""
+                    SELECT composite_score, respiratory_score, pain_score
+                    FROM risk_scores
+                    WHERE patient_id = :patient_id
+                    ORDER BY calculated_at DESC
+                    LIMIT 1
+                """), {"patient_id": patient_id})
+                risk_row = risk_result.fetchone()
+                risk_score = {
+                    "composite": risk_row[0] if risk_row else 0,
+                    "respiratory": risk_row[1] if risk_row else 0,
+                    "pain": risk_row[2] if risk_row else 0
+                } if risk_row else None
+                
+                # Get recent health alerts
+                alerts_result = db.execute(text("""
+                    SELECT alert_type, severity, message, created_at
+                    FROM health_alerts
+                    WHERE patient_id = :patient_id
+                    AND created_at > NOW() - INTERVAL '24 hours'
+                    AND status = 'active'
+                    ORDER BY severity DESC, created_at DESC
+                    LIMIT 5
+                """), {"patient_id": patient_id})
+                alerts = [
+                    {"type": row[0], "severity": row[1], "message": row[2]}
+                    for row in alerts_result.fetchall()
+                ]
+                
+                return {
+                    "recent_symptoms": recent_symptoms,
+                    "medications": medications,
+                    "risk_score": risk_score,
+                    "active_alerts": alerts,
+                    "has_concerning_patterns": len(alerts) > 0 or (risk_score and risk_score.get("composite", 0) > 8)
+                }
+                
+            finally:
+                db.close()
+                
+        except Exception as e:
+            logger.error(f"Failed to get health context: {e}")
+            return {"error": str(e)}
 
 
 # Singleton instance
