@@ -667,3 +667,69 @@ async def get_comprehensive_ml_assessment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Assessment failed: {str(e)}"
         )
+
+
+@router.get("/history/{patient_id}/{prediction_type}")
+async def get_prediction_history(
+    patient_id: str,
+    prediction_type: str,
+    days: int = 14,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    GET endpoint for prediction history (frontend-compatible).
+    Returns historical predictions for trending visualization.
+    
+    Args:
+        patient_id: The patient's unique identifier
+        prediction_type: Type of prediction (stroke, sepsis, diabetes, deterioration, etc.)
+        days: Number of days of history to retrieve (default 14)
+    
+    Returns:
+        History array with date, probability, risk_level for each historical prediction
+    """
+    doctor_id = current_user.get("sub")
+    user_role = current_user.get("role", "patient")
+    
+    # Access control
+    if user_role == "doctor":
+        if not verify_doctor_patient_access(db, doctor_id, patient_id):
+            AuditLogger.log_phi_access(
+                db=db,
+                user_id=doctor_id,
+                patient_id=patient_id,
+                action="ml_prediction_history_denied",
+                resource_type="prediction_history",
+                resource_id="unauthorized",
+                phi_categories=["health_metrics", "ml_predictions"],
+                success=False,
+                details={"reason": "No active doctor-patient assignment"}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No authorized access to this patient"
+            )
+    elif user_role == "patient" and doctor_id != patient_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access other patient's data"
+        )
+    
+    try:
+        service = MLPredictionService(db)
+        result = await service.get_prediction_history(
+            patient_id=patient_id,
+            prediction_type=prediction_type,
+            days=min(max(days, 1), 30),
+            doctor_id=doctor_id
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Prediction history retrieval failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"History retrieval failed: {str(e)}"
+        )
