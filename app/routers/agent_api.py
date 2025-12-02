@@ -1660,6 +1660,166 @@ async def get_patient_conversations(
         )
 
 
+@router.get("/conversations/{conversation_id}/messages")
+async def get_conversation_messages(
+    conversation_id: str,
+    request: Request,
+    limit: int = Query(50, le=200),
+    offset: int = Query(0),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get messages for a specific conversation with sender role info.
+    Returns messages with clear AI vs Human identification.
+    """
+    if user["role"] != "doctor":
+        raise HTTPException(
+            status_code=403,
+            detail="Only doctors can access conversation messages"
+        )
+    
+    doctor_id = user["id"]
+    
+    try:
+        from sqlalchemy import text
+        from app.database import get_db
+        from app.services.audit_logger import AuditLogger
+        
+        db = next(get_db())
+        try:
+            # Verify conversation belongs to this doctor
+            conv_info = db.execute(text("""
+                SELECT ac.id, ac.doctor_id, ac.patient_id, ac.title, ac.conversation_type
+                FROM agent_conversations ac
+                WHERE ac.id = :conversation_id
+            """), {"conversation_id": conversation_id}).fetchone()
+            
+            if not conv_info:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            
+            if conv_info[1] != doctor_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Not authorized to view this conversation"
+                )
+            
+            patient_id = conv_info[2]
+            
+            # Log PHI access
+            AuditLogger.log_phi_access(
+                user_id=doctor_id,
+                patient_id=patient_id,
+                resource_type="conversation",
+                resource_id=conversation_id,
+                action="VIEW_CONVERSATION_MESSAGES",
+                phi_categories=["conversation_history", "health_information"],
+                access_reason="Doctor viewing patient conversation history"
+            )
+            
+            # Fetch messages with sender info
+            messages = db.execute(text("""
+                SELECT 
+                    am.id,
+                    am.msg_id,
+                    am.from_type,
+                    am.from_id,
+                    am.sender_role,
+                    am.sender_name,
+                    am.sender_avatar,
+                    am.message_type,
+                    am.content,
+                    am.tool_name,
+                    am.tool_status,
+                    am.requires_approval,
+                    am.approval_status,
+                    am.contains_phi,
+                    am.created_at
+                FROM agent_messages am
+                WHERE am.conversation_id = :conversation_id
+                ORDER BY am.created_at ASC
+                LIMIT :limit OFFSET :offset
+            """), {
+                "conversation_id": conversation_id,
+                "limit": limit,
+                "offset": offset
+            }).fetchall()
+            
+            message_list = []
+            for row in messages:
+                sender_role = row[4] or "unknown"
+                
+                # Determine if sender is AI or Human
+                is_ai = sender_role in ("clona", "lysa", "system")
+                
+                # Get display name based on role
+                if sender_role == "clona":
+                    display_name = "Agent Clona"
+                    display_subtitle = "Patient AI Assistant"
+                elif sender_role == "lysa":
+                    display_name = "Assistant Lysa"
+                    display_subtitle = "Doctor AI Assistant"
+                elif sender_role == "doctor":
+                    display_name = row[5] or "Doctor"
+                    display_subtitle = "Healthcare Provider"
+                elif sender_role == "patient":
+                    display_name = row[5] or "Patient"
+                    display_subtitle = "Patient"
+                elif sender_role == "system":
+                    display_name = "System"
+                    display_subtitle = "Automated Message"
+                else:
+                    display_name = row[5] or "Unknown"
+                    display_subtitle = "Unknown Sender"
+                
+                message_list.append({
+                    "id": row[0],
+                    "msgId": row[1],
+                    "fromType": row[2],
+                    "fromId": row[3],
+                    "senderRole": sender_role,
+                    "senderName": display_name,
+                    "senderSubtitle": display_subtitle,
+                    "senderAvatar": row[6],
+                    "isAI": is_ai,
+                    "isHuman": not is_ai,
+                    "messageType": row[7],
+                    "content": row[8],
+                    "toolName": row[9],
+                    "toolStatus": row[10],
+                    "requiresApproval": row[11],
+                    "approvalStatus": row[12],
+                    "containsPhi": row[13],
+                    "createdAt": row[14].isoformat() if row[14] else None
+                })
+            
+            # Get total count
+            total = db.execute(text("""
+                SELECT COUNT(*) FROM agent_messages
+                WHERE conversation_id = :conversation_id
+            """), {"conversation_id": conversation_id}).scalar() or 0
+            
+            return {
+                "conversationId": conversation_id,
+                "title": conv_info[3] or "Untitled Conversation",
+                "conversationType": conv_info[4],
+                "patientId": patient_id,
+                "messages": message_list,
+                "total": total
+            }
+            
+        finally:
+            db.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch conversation messages: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch messages: {str(e)}"
+        )
+
+
 # ==================== HEALTH ====================
 
 @router.get("/health")

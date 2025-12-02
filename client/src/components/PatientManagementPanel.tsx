@@ -179,6 +179,36 @@ interface PatientOverview {
   }>;
 }
 
+interface ConversationMessage {
+  id: string;
+  msgId: string;
+  fromType: string;
+  fromId: string;
+  senderRole: string;
+  senderName: string;
+  senderSubtitle: string;
+  senderAvatar?: string;
+  isAI: boolean;
+  isHuman: boolean;
+  messageType: string;
+  content: string;
+  toolName?: string;
+  toolStatus?: string;
+  requiresApproval?: boolean;
+  approvalStatus?: string;
+  containsPhi?: boolean;
+  createdAt?: string;
+}
+
+interface ConversationMessagesResponse {
+  conversationId: string;
+  title: string;
+  conversationType: string;
+  patientId: string;
+  messages: ConversationMessage[];
+  total: number;
+}
+
 interface PatientManagementPanelProps {
   onOpenLysa?: (patient: UserType) => void;
   className?: string;
@@ -208,6 +238,7 @@ export function PatientManagementPanel({ onOpenLysa, className }: PatientManagem
   const [monitoringStates, setMonitoringStates] = useState<Record<string, boolean>>({});
   const [detailTab, setDetailTab] = useState("overview");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [expandedConversationId, setExpandedConversationId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data: patients = [], isLoading: patientsLoading } = useQuery<UserType[]>({
@@ -272,6 +303,17 @@ export function PatientManagementPanel({ onOpenLysa, className }: PatientManagem
       return res.json();
     },
     enabled: !!selectedPatient?.id
+  });
+
+  const { data: conversationMessages, isLoading: messagesLoading } = useQuery<ConversationMessagesResponse>({
+    queryKey: ['/api/agent/conversations', expandedConversationId, 'messages'],
+    queryFn: async () => {
+      if (!expandedConversationId) return null;
+      const res = await fetch(`/api/agent/conversations/${expandedConversationId}/messages`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!expandedConversationId
   });
 
   useEffect(() => {
@@ -912,16 +954,140 @@ export function PatientManagementPanel({ onOpenLysa, className }: PatientManagem
           <TabsContent value="conversations" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  Lysa Conversation History
-                </CardTitle>
-                <CardDescription>
-                  View past AI assistant conversations with this patient
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <MessageSquare className="h-5 w-5" />
+                      {expandedConversationId ? "Conversation Details" : "Lysa Conversation History"}
+                    </CardTitle>
+                    <CardDescription>
+                      {expandedConversationId 
+                        ? "View messages with sender identification (AI or Human)" 
+                        : "Click a conversation to view detailed messages"}
+                    </CardDescription>
+                  </div>
+                  {expandedConversationId && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setExpandedConversationId(null);
+                        queryClient.invalidateQueries({ 
+                          queryKey: ["/api/agent/patients", selectedPatientId, "overview"] 
+                        });
+                      }}
+                      data-testid="button-back-to-conversations"
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Back
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
-                {overviewLoading ? (
+                {expandedConversationId ? (
+                  messagesLoading ? (
+                    <div className="space-y-3">
+                      {[1, 2, 3, 4].map((i) => (
+                        <Skeleton key={i} className="h-16" />
+                      ))}
+                    </div>
+                  ) : conversationMessages?.messages && conversationMessages.messages.length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between px-2 py-1 bg-muted/50 rounded-lg mb-4">
+                        <span className="text-sm font-medium">{conversationMessages.title}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">
+                            {conversationMessages.total} messages
+                          </Badge>
+                        </div>
+                      </div>
+                      <ScrollArea className="h-[400px] pr-4">
+                        <div className="space-y-3">
+                          {conversationMessages.messages.map((message) => (
+                            <div 
+                              key={message.id}
+                              className={cn(
+                                "flex gap-3 p-3 rounded-lg border-l-4",
+                                message.isAI 
+                                  ? "bg-purple-100/80 dark:bg-purple-950/60 border-l-purple-500 border border-purple-200 dark:border-purple-700" 
+                                  : "bg-green-100/80 dark:bg-green-950/60 border-l-green-500 border border-green-200 dark:border-green-700"
+                              )}
+                              data-testid={`message-${message.id}`}
+                            >
+                              <div className={cn(
+                                "flex-shrink-0 p-2 rounded-full shadow-sm",
+                                message.isAI 
+                                  ? "bg-purple-200 dark:bg-purple-700" 
+                                  : "bg-green-200 dark:bg-green-700"
+                              )}>
+                                {message.isAI ? (
+                                  <Bot className="h-4 w-4 text-purple-600 dark:text-purple-300" />
+                                ) : (
+                                  <User className="h-4 w-4 text-green-600 dark:text-green-300" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap mb-1">
+                                  <span className="font-medium text-sm">{message.senderName}</span>
+                                  <Badge 
+                                    variant={message.isAI ? "secondary" : "default"} 
+                                    className={cn(
+                                      "text-xs",
+                                      message.isAI 
+                                        ? "bg-purple-200 dark:bg-purple-700 text-purple-800 dark:text-purple-200" 
+                                        : "bg-green-200 dark:bg-green-700 text-green-800 dark:text-green-200"
+                                    )}
+                                  >
+                                    {message.isAI ? "AI Assistant" : "Human"}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {message.senderSubtitle}
+                                  </span>
+                                  {message.containsPhi && (
+                                    <Badge variant="outline" className="text-xs border-red-300 text-red-600">
+                                      PHI
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-sm whitespace-pre-wrap">
+                                  {message.content || (message.toolName ? `[Tool: ${message.toolName}]` : "[No content]")}
+                                </p>
+                                {message.toolName && (
+                                  <div className="flex items-center gap-2 mt-2">
+                                    <Badge variant="outline" className="text-xs">
+                                      Tool: {message.toolName}
+                                    </Badge>
+                                    {message.toolStatus && (
+                                      <Badge 
+                                        variant={message.toolStatus === "completed" ? "default" : "secondary"}
+                                        className="text-xs"
+                                      >
+                                        {message.toolStatus}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                                  <Clock className="h-3 w-3" />
+                                  {safeFormat(message.createdAt, "MMM d, yyyy 'at' h:mm a")}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  ) : (
+                    <div className="py-12 text-center">
+                      <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                      <h3 className="text-lg font-medium mb-2">No Messages</h3>
+                      <p className="text-muted-foreground">
+                        This conversation has no messages yet.
+                      </p>
+                    </div>
+                  )
+                ) : overviewLoading ? (
                   <div className="space-y-3">
                     {[1, 2, 3].map((i) => (
                       <Skeleton key={i} className="h-20" />
@@ -929,10 +1095,21 @@ export function PatientManagementPanel({ onOpenLysa, className }: PatientManagem
                   </div>
                 ) : patientOverview?.conversationHistory && patientOverview.conversationHistory.length > 0 ? (
                   <div className="space-y-3">
+                    <div className="flex items-center gap-4 mb-4 text-sm">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-purple-500" />
+                        <span className="text-muted-foreground">AI Assistant</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-green-500" />
+                        <span className="text-muted-foreground">Human</span>
+                      </div>
+                    </div>
                     {patientOverview.conversationHistory.map((conversation) => (
                       <div 
                         key={conversation.id} 
                         className="flex items-start gap-4 p-4 border rounded-lg hover-elevate cursor-pointer"
+                        onClick={() => setExpandedConversationId(conversation.id)}
                         data-testid={`conversation-${conversation.id}`}
                       >
                         <div className="p-2 rounded-full bg-primary/10">
