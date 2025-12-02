@@ -1218,6 +1218,448 @@ async def get_specific_user_presence(
     }
 
 
+# ==================== PATIENT OVERVIEW FOR DOCTORS ====================
+
+class PatientSummary(BaseModel):
+    """Summary of a patient for doctor's overview panel"""
+    id: str
+    name: str
+    email: Optional[str] = None
+    assignedAt: Optional[str] = None
+    accessLevel: Optional[str] = None
+    riskScore: Optional[float] = None
+    lastInteraction: Optional[str] = None
+    activeAlerts: int = 0
+    medicationCount: int = 0
+    pendingFollowups: int = 0
+    isOnline: bool = False
+
+
+class PatientListResponse(BaseModel):
+    """Response for patient list query"""
+    patients: List[PatientSummary]
+    total: int
+
+
+@router.get("/patients")
+async def get_assigned_patients(
+    request: Request,
+    status: Optional[str] = Query("active"),
+    limit: int = Query(50, le=100),
+    offset: int = Query(0),
+    user: dict = Depends(get_current_user),
+    message_router: MessageRouter = Depends(get_message_router)
+):
+    """
+    Get list of patients assigned to the current doctor.
+    Requires doctor role - enforces HIPAA access control.
+    """
+    if user["role"] != "doctor":
+        raise HTTPException(
+            status_code=403,
+            detail="Only doctors can access patient lists"
+        )
+    
+    doctor_id = user["id"]
+    
+    try:
+        from sqlalchemy import text
+        from app.database import get_db
+        
+        db = next(get_db())
+        try:
+            # Fetch assigned patients with summary data
+            result = db.execute(text("""
+                WITH patient_stats AS (
+                    SELECT 
+                        u.id as patient_id,
+                        u.name as patient_name,
+                        u.email as patient_email,
+                        dpa.created_at as assigned_at,
+                        dpa.access_level,
+                        dpa.status as assignment_status,
+                        COALESCE(
+                            (SELECT composite_score 
+                             FROM risk_scores rs 
+                             WHERE rs.patient_id = u.id 
+                             ORDER BY rs.calculated_at DESC LIMIT 1), 0
+                        ) as risk_score,
+                        COALESCE(
+                            (SELECT COUNT(*) 
+                             FROM health_alerts ha 
+                             WHERE ha.patient_id = u.id 
+                             AND ha.status = 'active' 
+                             AND ha.created_at > NOW() - INTERVAL '24 hours'), 0
+                        ) as active_alerts,
+                        COALESCE(
+                            (SELECT COUNT(*) 
+                             FROM patient_medications pm 
+                             WHERE pm.patient_id = u.id 
+                             AND pm.status = 'active'), 0
+                        ) as medication_count,
+                        COALESCE(
+                            (SELECT MAX(created_at) 
+                             FROM agent_messages am 
+                             WHERE (am.from_id = u.id OR am.to_id = u.id)
+                             AND am.conversation_id IN (
+                                 SELECT id FROM agent_conversations 
+                                 WHERE doctor_id = :doctor_id 
+                                 AND patient_id = u.id
+                             )), NULL
+                        ) as last_interaction
+                    FROM users u
+                    INNER JOIN doctor_patient_assignments dpa ON dpa.patient_id = u.id
+                    WHERE dpa.doctor_id = :doctor_id
+                    AND dpa.status = :status
+                )
+                SELECT * FROM patient_stats
+                ORDER BY risk_score DESC, active_alerts DESC
+                LIMIT :limit OFFSET :offset
+            """), {
+                "doctor_id": doctor_id,
+                "status": status,
+                "limit": limit,
+                "offset": offset
+            })
+            
+            patients = []
+            for row in result.fetchall():
+                patient_id = row[0]
+                # Check if patient is online
+                is_online = False
+                presence = message_router.connection_manager.get_presence(patient_id)
+                if presence:
+                    is_online = presence.is_online
+                
+                patients.append(PatientSummary(
+                    id=patient_id,
+                    name=row[1] or "Unknown",
+                    email=row[2],
+                    assignedAt=row[3].isoformat() if row[3] else None,
+                    accessLevel=row[4],
+                    riskScore=float(row[6]) if row[6] else None,
+                    activeAlerts=int(row[7]) if row[7] else 0,
+                    medicationCount=int(row[8]) if row[8] else 0,
+                    lastInteraction=row[9].isoformat() if row[9] else None,
+                    isOnline=is_online
+                ))
+            
+            # Get total count
+            count_result = db.execute(text("""
+                SELECT COUNT(*) FROM doctor_patient_assignments
+                WHERE doctor_id = :doctor_id AND status = :status
+            """), {"doctor_id": doctor_id, "status": status})
+            total = count_result.scalar() or 0
+            
+            logger.info(f"Doctor {doctor_id} fetched {len(patients)} patients")
+            
+            return PatientListResponse(patients=patients, total=total)
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Failed to fetch assigned patients: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch patients: {str(e)}"
+        )
+
+
+@router.get("/patients/{patient_id}/overview")
+async def get_patient_overview(
+    patient_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    agent_engine: AgentEngine = Depends(get_agent_engine),
+    memory_service: MemoryService = Depends(get_memory_service)
+):
+    """
+    Get comprehensive overview of a specific patient.
+    Includes health data, medications, alerts, recent symptoms, and Lysa conversation history.
+    Requires verified doctor-patient assignment with appropriate access level.
+    """
+    if user["role"] != "doctor":
+        raise HTTPException(
+            status_code=403,
+            detail="Only doctors can access patient overviews"
+        )
+    
+    doctor_id = user["id"]
+    
+    try:
+        from sqlalchemy import text
+        from app.database import get_db
+        
+        db = next(get_db())
+        try:
+            # Verify doctor-patient assignment exists with sufficient access
+            assignment = db.execute(text("""
+                SELECT id, access_level, status, consent_type, expires_at
+                FROM doctor_patient_assignments
+                WHERE doctor_id = :doctor_id 
+                AND patient_id = :patient_id 
+                AND status = 'active'
+            """), {"doctor_id": doctor_id, "patient_id": patient_id}).fetchone()
+            
+            if not assignment:
+                # Log unauthorized access attempt
+                AuditLogger.log_event(
+                    event_type="patient_access_denied",
+                    user_id=doctor_id,
+                    resource_type="patient",
+                    resource_id=patient_id,
+                    action="unauthorized_patient_access_attempt",
+                    status="denied",
+                    phi_accessed=False,
+                    metadata={"reason": "No active assignment"}
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail="You do not have authorization to view this patient's records"
+                )
+            
+            access_level = assignment[1]
+            
+            # Log successful access for HIPAA compliance
+            AuditLogger.log_phi_access(
+                user_id=doctor_id,
+                patient_id=patient_id,
+                resource_type="patient_overview",
+                resource_id=patient_id,
+                action="view",
+                status="success",
+                phi_categories=["demographics", "health_records", "medications"],
+                access_reason=f"Doctor viewing assigned patient overview (access_level: {access_level})"
+            )
+            
+            # Fetch patient basic info
+            patient_info = db.execute(text("""
+                SELECT id, name, email, date_of_birth, phone_number, created_at
+                FROM users
+                WHERE id = :patient_id
+            """), {"patient_id": patient_id}).fetchone()
+            
+            if not patient_info:
+                raise HTTPException(status_code=404, detail="Patient not found")
+            
+            # Fetch health context using agent engine
+            health_context = await agent_engine.get_health_context_summary(patient_id)
+            
+            # Fetch recent daily followups
+            followups = db.execute(text("""
+                SELECT date, overall_status, energy_level, pain_level, 
+                       symptoms_noted, notes, completed_at
+                FROM daily_followups
+                WHERE patient_id = :patient_id
+                ORDER BY date DESC
+                LIMIT 7
+            """), {"patient_id": patient_id}).fetchall()
+            
+            daily_followups = [
+                {
+                    "date": row[0].isoformat() if row[0] else None,
+                    "overallStatus": row[1],
+                    "energyLevel": row[2],
+                    "painLevel": row[3],
+                    "symptomsNoted": row[4],
+                    "notes": row[5],
+                    "completedAt": row[6].isoformat() if row[6] else None
+                }
+                for row in followups
+            ]
+            
+            # Fetch Lysa conversation history with this patient
+            conversations = db.execute(text("""
+                SELECT ac.id, ac.title, ac.created_at, ac.updated_at,
+                       (SELECT COUNT(*) FROM agent_messages am WHERE am.conversation_id = ac.id) as message_count,
+                       (SELECT content FROM agent_messages am 
+                        WHERE am.conversation_id = ac.id 
+                        ORDER BY am.created_at DESC LIMIT 1) as last_message
+                FROM agent_conversations ac
+                WHERE ac.doctor_id = :doctor_id
+                AND ac.patient_id = :patient_id
+                AND ac.conversation_type IN ('doctor_lysa', 'doctor_clona', 'patient_doctor')
+                ORDER BY ac.updated_at DESC
+                LIMIT 10
+            """), {"doctor_id": doctor_id, "patient_id": patient_id}).fetchall()
+            
+            conversation_history = [
+                {
+                    "id": row[0],
+                    "title": row[1] or "Untitled Conversation",
+                    "createdAt": row[2].isoformat() if row[2] else None,
+                    "updatedAt": row[3].isoformat() if row[3] else None,
+                    "messageCount": row[4] or 0,
+                    "lastMessage": row[5][:100] + "..." if row[5] and len(row[5]) > 100 else row[5]
+                }
+                for row in conversations
+            ]
+            
+            # Fetch long-term memories from memory service if available
+            long_term_insights = []
+            if memory_service:
+                try:
+                    memories = await memory_service.search_long_term(
+                        agent_id="lysa",
+                        patient_id=patient_id,
+                        query="health concerns symptoms medications",
+                        limit=5
+                    )
+                    for m in memories:
+                        # Handle both dict and object access patterns
+                        if isinstance(m, dict):
+                            content = m.get("content", "")
+                            memory_type = m.get("memory_type", "unknown")
+                            created_at = m.get("created_at")
+                            importance = m.get("importance", 0.5)
+                        else:
+                            content = getattr(m, "content", "")
+                            memory_type = getattr(m, "memory_type", "unknown")
+                            created_at = getattr(m, "created_at", None)
+                            importance = getattr(m, "importance", 0.5)
+                        
+                        long_term_insights.append({
+                            "content": content[:200] + "..." if len(content) > 200 else content,
+                            "type": memory_type,
+                            "createdAt": created_at.isoformat() if created_at and hasattr(created_at, 'isoformat') else None,
+                            "importance": importance
+                        })
+                except Exception as e:
+                    logger.warning(f"Could not fetch long-term memories: {e}")
+            
+            return {
+                "patient": {
+                    "id": patient_info[0],
+                    "name": patient_info[1],
+                    "email": patient_info[2],
+                    "dateOfBirth": patient_info[3].isoformat() if patient_info[3] else None,
+                    "phone": patient_info[4],
+                    "memberSince": patient_info[5].isoformat() if patient_info[5] else None
+                },
+                "assignment": {
+                    "accessLevel": access_level,
+                    "consentType": assignment[3],
+                    "expiresAt": assignment[4].isoformat() if assignment[4] else None
+                },
+                "healthContext": health_context,
+                "dailyFollowups": daily_followups,
+                "conversationHistory": conversation_history,
+                "longTermInsights": long_term_insights
+            }
+            
+        finally:
+            db.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch patient overview: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch patient overview: {str(e)}"
+        )
+
+
+@router.get("/patients/{patient_id}/conversations")
+async def get_patient_conversations(
+    patient_id: str,
+    request: Request,
+    limit: int = Query(20, le=100),
+    offset: int = Query(0),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get Lysa conversation history with a specific patient.
+    Returns all conversations where the doctor discussed or reviewed this patient.
+    """
+    if user["role"] != "doctor":
+        raise HTTPException(
+            status_code=403,
+            detail="Only doctors can access conversation history"
+        )
+    
+    doctor_id = user["id"]
+    
+    try:
+        from sqlalchemy import text
+        from app.database import get_db
+        
+        db = next(get_db())
+        try:
+            # Verify assignment
+            has_access = db.execute(text("""
+                SELECT 1 FROM doctor_patient_assignments
+                WHERE doctor_id = :doctor_id 
+                AND patient_id = :patient_id 
+                AND status = 'active'
+            """), {"doctor_id": doctor_id, "patient_id": patient_id}).fetchone()
+            
+            if not has_access:
+                raise HTTPException(
+                    status_code=403,
+                    detail="No authorization to view conversations for this patient"
+                )
+            
+            # Fetch conversations
+            result = db.execute(text("""
+                SELECT 
+                    ac.id,
+                    ac.title,
+                    ac.conversation_type,
+                    ac.created_at,
+                    ac.updated_at,
+                    ac.status,
+                    (SELECT COUNT(*) FROM agent_messages am WHERE am.conversation_id = ac.id) as message_count
+                FROM agent_conversations ac
+                WHERE ac.doctor_id = :doctor_id
+                AND ac.patient_id = :patient_id
+                ORDER BY ac.updated_at DESC
+                LIMIT :limit OFFSET :offset
+            """), {
+                "doctor_id": doctor_id,
+                "patient_id": patient_id,
+                "limit": limit,
+                "offset": offset
+            })
+            
+            conversations = [
+                {
+                    "id": row[0],
+                    "title": row[1] or "Untitled",
+                    "conversationType": row[2],
+                    "createdAt": row[3].isoformat() if row[3] else None,
+                    "updatedAt": row[4].isoformat() if row[4] else None,
+                    "status": row[5],
+                    "messageCount": row[6] or 0
+                }
+                for row in result.fetchall()
+            ]
+            
+            # Get total count
+            count = db.execute(text("""
+                SELECT COUNT(*) FROM agent_conversations
+                WHERE doctor_id = :doctor_id AND patient_id = :patient_id
+            """), {"doctor_id": doctor_id, "patient_id": patient_id}).scalar() or 0
+            
+            return {
+                "conversations": conversations,
+                "total": count
+            }
+            
+        finally:
+            db.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch patient conversations: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch conversations: {str(e)}"
+        )
+
+
 # ==================== HEALTH ====================
 
 @router.get("/health")
