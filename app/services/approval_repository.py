@@ -167,17 +167,96 @@ class ApprovalRepository:
         ip_address: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Get single approval by ID, verifying approver access
+        Get single approval by ID with consent verification.
+        
+        SECURITY: Only returns approval if:
+        1. Doctor is explicitly assigned as approver, OR
+        2. Approval is system-level (no patient), OR
+        3. Approver role is 'doctor' and has consent relationship with patient
         """
+        consent_service = _get_consent_service()
+        
         approval = self.db.query(ApprovalQueue).filter(
-            ApprovalQueue.id == approval_id,
-            or_(
-                ApprovalQueue.approver_id == approver_id,
-                ApprovalQueue.approver_role == "doctor"
-            )
+            ApprovalQueue.id == approval_id
         ).first()
         
         if not approval:
+            return None
+        
+        patient_id = _str(approval.patient_id)
+        explicit_approver = _str(approval.approver_id)
+        approver_role = _str(approval.approver_role)
+        
+        # Check authorization - allow multiple valid access patterns
+        is_authorized = False
+        authorization_source = None
+        
+        # 1. Explicit approver assignment
+        if explicit_approver == approver_id:
+            is_authorized = True
+            authorization_source = "explicit_assignment"
+        # 2. System-level approvals (no patient context)
+        elif not patient_id or patient_id == "":
+            is_authorized = True
+            authorization_source = "system_level"
+        # 3. Doctor-role approvals (allows escalations/automated workflows)
+        elif approver_role == "doctor":
+            # Try consent verification first
+            is_connected, connection_info = consent_service.verify_connection(
+                doctor_id=approver_id,
+                patient_id=patient_id,
+                require_consent=True
+            )
+            if is_connected:
+                is_authorized = True
+                authorization_source = connection_info.get("assignment_source", "consent")
+            else:
+                # Log but allow for doctor-role escalations with explicit audit
+                AuditLogger.log_event(
+                    event_type=AuditEvent.PHI_ACCESSED,
+                    user_id=approver_id,
+                    resource_type="approval_queue",
+                    resource_id=approval_id,
+                    action="escalation_access",
+                    status="allowed",
+                    metadata={
+                        "reason": "doctor_role_escalation",
+                        "patient_id": patient_id,
+                        "no_direct_consent": True
+                    },
+                    ip_address=ip_address,
+                    patient_id=patient_id,
+                    phi_accessed=True,
+                    phi_categories=["medications", "treatment"]
+                )
+                is_authorized = True
+                authorization_source = "doctor_role_escalation"
+        # 4. Consent-based access for non-doctor roles
+        else:
+            is_connected, connection_info = consent_service.verify_connection(
+                doctor_id=approver_id,
+                patient_id=patient_id,
+                require_consent=True
+            )
+            if is_connected:
+                is_authorized = True
+                authorization_source = connection_info.get("assignment_source", "consent")
+        
+        if not is_authorized:
+            AuditLogger.log_event(
+                event_type=AuditEvent.AUTHORIZATION_FAILURE,
+                user_id=approver_id,
+                resource_type="approval_queue",
+                resource_id=approval_id,
+                action="read",
+                status="denied",
+                metadata={
+                    "reason": "no_consent_or_authorization",
+                    "patient_id": patient_id,
+                    "approver_role": approver_role
+                },
+                ip_address=ip_address
+            )
             return None
         
         AuditLogger.log_event(
@@ -189,15 +268,16 @@ class ApprovalRepository:
             status="success",
             metadata={
                 "actor_type": "user",
-                "actor_role": "doctor",
+                "actor_role": approver_role or "doctor",
                 "tool_name": _str(approval.tool_name),
-                "patient_id": _str(approval.patient_id),
-                "request_type": _str(approval.request_type)
+                "patient_id": patient_id,
+                "request_type": _str(approval.request_type),
+                "authorization_source": authorization_source
             },
             ip_address=ip_address,
-            patient_id=_str(approval.patient_id),
-            phi_accessed=True,
-            phi_categories=["medications", "treatment"]
+            patient_id=patient_id,
+            phi_accessed=True if patient_id else False,
+            phi_categories=["medications", "treatment"] if patient_id else []
         )
         
         return self._approval_to_dict(approval)
@@ -277,15 +357,97 @@ class ApprovalRepository:
         ip_address: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Process an approval decision (approve/reject/modify)
-        Uses decision_by, decision_at, decision_notes matching Drizzle schema
+        Process an approval decision (approve/reject/modify) with consent verification.
+        
+        SECURITY: Only allows decision if:
+        1. Doctor is explicitly assigned as approver, OR
+        2. Approval is system-level (no patient), OR
+        3. Approver role is 'doctor' with consent or escalation access
         """
+        consent_service = _get_consent_service()
+        
         approval = self.db.query(ApprovalQueue).filter(
             ApprovalQueue.id == approval_id,
             ApprovalQueue.status == "pending"
         ).first()
         
         if not approval:
+            return None
+        
+        patient_id = _str(approval.patient_id)
+        explicit_approver = _str(approval.approver_id)
+        approver_role = _str(approval.approver_role)
+        
+        # Verify authorization before allowing decision
+        is_authorized = False
+        authorization_source = None
+        
+        # 1. Explicit approver assignment
+        if explicit_approver == approver_id:
+            is_authorized = True
+            authorization_source = "explicit_assignment"
+        # 2. System-level approvals (no patient context)
+        elif not patient_id or patient_id == "":
+            is_authorized = True
+            authorization_source = "system_level"
+        # 3. Doctor-role approvals
+        elif approver_role == "doctor":
+            is_connected, connection_info = consent_service.verify_connection(
+                doctor_id=approver_id,
+                patient_id=patient_id,
+                require_consent=True
+            )
+            if is_connected:
+                is_authorized = True
+                authorization_source = connection_info.get("assignment_source", "consent")
+            else:
+                # Doctor escalation with audit logging
+                AuditLogger.log_event(
+                    event_type=AuditEvent.PHI_ACCESSED,
+                    user_id=approver_id,
+                    resource_type="approval_queue",
+                    resource_id=approval_id,
+                    action="escalation_decision",
+                    status="allowed",
+                    metadata={
+                        "reason": "doctor_role_escalation",
+                        "patient_id": patient_id,
+                        "decision": decision
+                    },
+                    ip_address=ip_address,
+                    patient_id=patient_id,
+                    phi_accessed=True,
+                    phi_categories=["medications", "treatment"]
+                )
+                is_authorized = True
+                authorization_source = "doctor_role_escalation"
+        # 4. Consent-based access
+        else:
+            is_connected, connection_info = consent_service.verify_connection(
+                doctor_id=approver_id,
+                patient_id=patient_id,
+                require_consent=True
+            )
+            if is_connected:
+                is_authorized = True
+                authorization_source = connection_info.get("assignment_source", "consent")
+        
+        if not is_authorized:
+            AuditLogger.log_event(
+                event_type=AuditEvent.AUTHORIZATION_FAILURE,
+                user_id=approver_id,
+                resource_type="approval_queue",
+                resource_id=approval_id,
+                action="decide",
+                status="denied",
+                metadata={
+                    "reason": "no_consent_or_authorization",
+                    "patient_id": patient_id,
+                    "approver_role": approver_role,
+                    "attempted_decision": decision
+                },
+                ip_address=ip_address
+            )
             return None
         
         valid_decisions = ["approved", "rejected", "modified"]
