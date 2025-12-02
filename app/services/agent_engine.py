@@ -22,6 +22,7 @@ from app.services.agent_tools.base import (
     ToolRegistry, ToolExecutionContext, initialize_tools
 )
 from app.services.audit_logger import AuditLogger, AuditEvent
+from app.services.memory_service import MemoryService, get_memory_service
 
 logger = logging.getLogger(__name__)
 
@@ -157,10 +158,33 @@ class AgentEngine:
             "clona": AGENT_CLONA_CONFIG,
             "lysa": AGENT_LYSA_CONFIG
         }
+        self.memory_service: Optional[MemoryService] = None
         self._initialized = False
 
+    def set_memory_service(self, memory_service: Optional[MemoryService]):
+        """
+        Set the memory service instance.
+        Called by FastAPI startup or dependency injection to avoid
+        awaiting dependencies during module initialization.
+        """
+        # Runtime validation to prevent coroutine assignment
+        import asyncio
+        if memory_service is not None:
+            if asyncio.iscoroutine(memory_service) or asyncio.iscoroutinefunction(memory_service):
+                logger.error("FATAL: Attempted to set memory_service with coroutine - memory persistence will fail")
+                self.memory_service = None
+                return
+            if not hasattr(memory_service, 'get_short_term_memories'):
+                logger.error("FATAL: Invalid memory_service instance - missing required methods")
+                self.memory_service = None
+                return
+        
+        self.memory_service = memory_service
+        if memory_service:
+            logger.info("Memory service connected to Agent Engine via setter")
+
     async def initialize(self):
-        """Initialize the agent engine"""
+        """Initialize the agent engine (tools and OpenAI verification only)"""
         if self._initialized:
             return
 
@@ -343,17 +367,166 @@ class AgentEngine:
         """Get available tools for a user role from the registry"""
         return ToolRegistry.get_for_role(user_role)
 
+    async def enrich_context_with_memory(
+        self,
+        agent_id: str,
+        user_id: str,
+        conversation_id: str,
+        context: AgentDecisionContext,
+        query: Optional[str] = None
+    ) -> AgentDecisionContext:
+        """
+        Enrich decision context with short-term and long-term memories.
+        Called before processing a message to provide historical context.
+        Returns a new context instance to respect Pydantic immutability patterns.
+        """
+        if not self.memory_service:
+            return context
+        
+        try:
+            # Fetch short-term memories (recent conversation context)
+            short_term = await self.memory_service.get_short_term_memories(
+                agent_id=agent_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                limit=5
+            )
+            
+            # Fetch long-term memories using semantic search if we have a query
+            long_term = []
+            if query:
+                long_term = await self.memory_service.search_long_term(
+                    agent_id=agent_id,
+                    patient_id=user_id,
+                    query=query,
+                    limit=3
+                )
+            
+            # Return a new context with updated memories (Pydantic-safe)
+            enriched_context = context.model_copy(update={
+                "short_term_memory": short_term,
+                "long_term_memory": long_term
+            })
+            
+            logger.debug(f"Enriched context with {len(short_term)} short-term and {len(long_term)} long-term memories")
+            return enriched_context
+            
+        except Exception as e:
+            logger.error(f"Failed to enrich context with memory: {e}")
+            return context
+
+    async def store_interaction_memory(
+        self,
+        agent_id: str,
+        user_id: str,
+        conversation_id: str,
+        user_message: str,
+        agent_response: str,
+        extracted_symptoms: Optional[List[str]] = None,
+        health_indicators: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Store interaction in short-term memory and optionally long-term memory.
+        Called after processing a message to persist the interaction.
+        """
+        if not self.memory_service:
+            return
+        
+        try:
+            # Store in short-term memory (recent context)
+            await self.memory_service.store_short_term(
+                agent_id=agent_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                content=f"User: {user_message}\nAgent: {agent_response[:500]}",
+                ttl_hours=2,
+                metadata={
+                    "has_symptoms": bool(extracted_symptoms),
+                    "symptom_count": len(extracted_symptoms) if extracted_symptoms else 0
+                }
+            )
+            
+            # Store in long-term memory if health-relevant
+            agent = self.get_agent(agent_id)
+            if agent and agent.memory_policy.long_term_enabled:
+                # Determine if this interaction should be persisted long-term
+                should_persist = (
+                    extracted_symptoms or 
+                    health_indicators or
+                    any(keyword in user_message.lower() for keyword in [
+                        "symptom", "pain", "medication", "doctor", "feeling",
+                        "fever", "tired", "sick", "medicine", "prescription"
+                    ])
+                )
+                
+                if should_persist:
+                    # Extract only serializable primitive fields from health_indicators
+                    safe_health_data = None
+                    if health_indicators:
+                        safe_health_data = {
+                            "patient_id": health_indicators.get("patient_id"),
+                            "risk_score": health_indicators.get("risk_score"),
+                            "conditions": health_indicators.get("conditions", []),
+                            "medications": health_indicators.get("medications", []),
+                            "recent_symptoms": health_indicators.get("recent_symptoms", [])
+                        }
+                        # Filter out None values
+                        safe_health_data = {k: v for k, v in safe_health_data.items() if v is not None}
+                    
+                    await self.memory_service.store_long_term(
+                        agent_id=agent_id,
+                        patient_id=user_id,
+                        content=f"Conversation on {datetime.utcnow().strftime('%Y-%m-%d')}:\nPatient: {user_message}\nAgent Clona: {agent_response}",
+                        memory_type="episodic",
+                        source_type="conversation",
+                        source_id=conversation_id,
+                        importance=0.7 if extracted_symptoms else 0.4,
+                        metadata={
+                            "extracted_symptoms": extracted_symptoms,
+                            "health_context": safe_health_data,
+                            "conversation_id": conversation_id
+                        },
+                        auto_summarize=len(user_message + agent_response) > 1000
+                    )
+                    logger.debug(f"Stored health-relevant interaction in long-term memory")
+            
+            logger.debug(f"Stored interaction memory for conversation {conversation_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to store interaction memory: {e}")
+
     async def process_message(
         self,
         agent_id: str,
-        context: AgentDecisionContext
+        context: AgentDecisionContext,
+        user_id: Optional[str] = None
     ) -> AgentDecisionResult:
         """
-        Main agent decision loop - processes incoming message and decides response
+        Main agent decision loop - processes incoming message and decides response.
+        Now includes memory enrichment for full context awareness.
         """
         agent = self.get_agent(agent_id)
         if not agent:
             raise ValueError(f"Unknown agent: {agent_id}")
+
+        # Extract user_id from context if not provided
+        if user_id is None and context.message and context.message.sender:
+            user_id = context.message.sender.id
+        
+        # Extract message content for memory search
+        message_content = None
+        if context.message and context.message.payload:
+            message_content = context.message.payload.get("content")
+        
+        # Enrich context with memory if we have user_id
+        if user_id and self.memory_service:
+            context = await self.enrich_context_with_memory(
+                agent_id=agent_id,
+                user_id=user_id,
+                conversation_id=context.conversation_id,
+                context=context,
+                query=message_content
+            )
 
         # Build conversation history
         messages = self._build_conversation_messages(agent, context)
@@ -376,7 +549,20 @@ class AgentEngine:
             response = await self.client.chat.completions.create(**create_kwargs)  # type: ignore
 
             # Process response
-            return await self._process_response(agent, context, response)
+            result = await self._process_response(agent, context, response)
+            
+            # Store interaction in memory if we have user_id
+            if user_id and self.memory_service and result.response_message:
+                await self.store_interaction_memory(
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    conversation_id=context.conversation_id,
+                    user_message=message_content or "",
+                    agent_response=result.response_message,
+                    health_indicators=context.patient_context
+                )
+            
+            return result
 
         except Exception as e:
             logger.error(f"Error in agent decision loop: {e}")
@@ -568,15 +754,37 @@ class AgentEngine:
         self,
         agent_id: str,
         context: AgentDecisionContext,
-        on_chunk: Any = None
+        on_chunk: Any = None,
+        user_id: Optional[str] = None,
+        skip_memory: bool = False
     ):
         """
         Stream agent response in real-time for better UX.
         Yields response chunks as they're generated using async iteration.
+        Memory enrichment is applied unless skip_memory=True (when caller already enriched).
         """
         agent = self.get_agent(agent_id)
         if not agent:
             raise ValueError(f"Unknown agent: {agent_id}")
+        
+        # Extract user_id from context if not provided
+        if user_id is None and context.message and context.message.sender:
+            user_id = context.message.sender.id
+        
+        # Enrich context with memory if not already done and we have user_id
+        if not skip_memory and user_id and self.memory_service:
+            # Only enrich if context doesn't already have memories
+            if not context.short_term_memory and not context.long_term_memory:
+                message_content = None
+                if context.message and context.message.payload:
+                    message_content = context.message.payload.get("content")
+                context = await self.enrich_context_with_memory(
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    conversation_id=context.conversation_id,
+                    context=context,
+                    query=message_content
+                )
         
         messages = self._build_conversation_messages(agent, context)
         tools = self._build_tools_list(context.available_tools)
@@ -856,7 +1064,19 @@ agent_engine = AgentEngine()
 
 
 async def get_agent_engine() -> AgentEngine:
-    """Get initialized agent engine instance"""
+    """
+    Get initialized agent engine instance.
+    Ensures memory service is injected if available.
+    """
     if not agent_engine._initialized:
         await agent_engine.initialize()
+    
+    # Ensure memory service is always injected when available
+    if agent_engine.memory_service is None:
+        try:
+            memory_service = await get_memory_service()
+            agent_engine.set_memory_service(memory_service)
+        except Exception as e:
+            logger.warning(f"Could not inject memory service: {e}")
+    
     return agent_engine

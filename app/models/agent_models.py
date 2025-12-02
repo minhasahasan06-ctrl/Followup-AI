@@ -63,17 +63,16 @@ class MessageParticipant(BaseModel):
 class MessageEnvelope(BaseModel):
     """Standard message envelope for all agent communications"""
     msg_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    sender: MessageParticipant = Field(alias="from")  # Use 'sender' internally, 'from' for JSON
+    sender: MessageParticipant = Field(alias="from", validation_alias="sender")  # Accept both 'sender' and 'from'
     to: List[MessageParticipant]
     type: MessageType
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     payload: Optional[Dict[str, Any]] = None
 
-    class Config:
-        populate_by_name = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = {
+        "populate_by_name": True,
+        "json_encoders": {datetime: lambda v: v.isoformat()}
+    }
 
     @classmethod
     def create(
@@ -85,7 +84,7 @@ class MessageEnvelope(BaseModel):
         msg_id: Optional[str] = None
     ) -> "MessageEnvelope":
         """Factory method for creating message envelopes"""
-        return cls(
+        return cls.model_construct(
             msg_id=msg_id or str(uuid.uuid4()),
             sender=sender,
             to=to,

@@ -256,28 +256,26 @@ async def stream_chat(
 ):
     """
     Stream real-time ChatGPT responses from Agent Clona or Assistant Lysa.
-    Uses Server-Sent Events (SSE) for streaming.
+    Uses Server-Sent Events (SSE) for streaming with memory integration.
     """
     user_id = user["id"]
     user_role = user["role"]
     agent_id = "lysa" if user_role == "doctor" else "clona"
     conversation_id = body.conversationId or f"conv-{agent_id}-{user_id}"
     
+    # Inject memory service into agent engine to ensure it's available
+    agent_engine.set_memory_service(memory_service)
+    
     async def generate_stream() -> AsyncGenerator[str, None]:
+        full_response = ""
+        extracted_symptoms = None
+        
         try:
             # Build patient context if health context requested
             patient_context = None
             if body.includeHealthContext and user_role == "patient":
                 patient_context = await agent_engine.get_health_context_summary(user_id)
                 patient_context["patient_id"] = user_id
-            
-            # Get short-term memory for context
-            short_term_memory = await memory_service.get_short_term_memories(
-                agent_id=agent_id,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                limit=5
-            )
             
             # Get tools available for user role
             available_tools = agent_engine.get_available_tools(user_role)
@@ -290,13 +288,23 @@ async def stream_chat(
                 payload={"content": body.message}
             )
             
-            # Build context
+            # Build initial context
             context = AgentDecisionContext(
                 message=message,
                 conversation_id=conversation_id,
                 patient_context=patient_context,
-                short_term_memory=short_term_memory,
+                short_term_memory=[],
+                long_term_memory=[],
                 available_tools=available_tools
+            )
+            
+            # Enrich context with short-term and long-term memories
+            context = await agent_engine.enrich_context_with_memory(
+                agent_id=agent_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                context=context,
+                query=body.message  # Use message for semantic search
             )
             
             # Log the interaction start
@@ -307,12 +315,22 @@ async def stream_chat(
                 resource_id=conversation_id,
                 action="stream_start",
                 status="success",
-                metadata={"agent_id": agent_id, "has_health_context": bool(patient_context)},
+                metadata={
+                    "agent_id": agent_id, 
+                    "has_health_context": bool(patient_context),
+                    "short_term_memories": len(context.short_term_memory) if context.short_term_memory else 0,
+                    "long_term_memories": len(context.long_term_memory) if context.long_term_memory else 0
+                },
                 patient_id=user_id if user_role == "patient" else None
             )
             
-            # Stream the response
-            async for chunk in agent_engine.process_message_streaming(agent_id, context):
+            # Stream the response and collect full text (skip_memory=True since we already enriched)
+            async for chunk in agent_engine.process_message_streaming(
+                agent_id, context, skip_memory=True, user_id=user_id
+            ):
+                # Collect content chunks for memory storage
+                if chunk.get("type") == "content" and chunk.get("content"):
+                    full_response += chunk["content"]
                 yield f"data: {json.dumps(chunk)}\n\n"
             
             # If streaming to a patient with Agent Clona, extract symptoms
@@ -321,17 +339,19 @@ async def stream_chat(
                     body.message,
                     patient_context
                 )
+                extracted_symptoms = symptoms.get("symptoms", [])
                 if symptoms.get("symptoms") or symptoms.get("urgency_level") not in ["routine", "unknown"]:
                     yield f"data: {json.dumps({'type': 'symptoms_extracted', 'data': symptoms})}\n\n"
             
-            # Store interaction in memory
-            await memory_service.store_short_term(
+            # Store interaction in both short-term and long-term memory
+            await agent_engine.store_interaction_memory(
                 agent_id=agent_id,
                 user_id=user_id,
                 conversation_id=conversation_id,
-                content=f"User: {body.message}",
-                ttl_hours=2,
-                metadata={"has_symptoms": bool(patient_context)}
+                user_message=body.message,
+                agent_response=full_response,
+                extracted_symptoms=extracted_symptoms,
+                health_indicators=patient_context
             )
             
             yield f"data: {json.dumps({'type': 'stream_end'})}\n\n"
@@ -407,6 +427,16 @@ async def get_health_context(
 
 # ==================== TASKS ====================
 
+class CreateTaskRequest(BaseModel):
+    """Request to create a background task"""
+    taskType: str
+    toolName: Optional[str] = None
+    parameters: Optional[dict] = None
+    priority: str = "normal"
+    scheduledAt: Optional[str] = None
+    patientId: Optional[str] = None
+
+
 @router.get("/tasks")
 async def list_tasks(
     request: Request,
@@ -416,16 +446,101 @@ async def list_tasks(
     offset: int = Query(0),
     user: dict = Depends(get_current_user)
 ):
-    """List agent tasks"""
+    """List agent tasks for the current user"""
+    from app.services.agent_tools.task_worker import get_task_worker, TaskStatus
+    
     user_id = user["id"]
+    
+    try:
+        worker = await get_task_worker()
+        
+        # Filter tasks by user
+        tasks = []
+        for task_id, task in worker.task_status.items():
+            if task.user_id == user_id or task.patient_id == user_id:
+                if status is None or task.status.value == status:
+                    if task_type is None or task.task_type == task_type:
+                        tasks.append(task.to_dict())
+        
+        # Apply pagination
+        total = len(tasks)
+        tasks = tasks[offset:offset + limit]
+        
+        return {
+            "tasks": tasks,
+            "total": total,
+            "hasMore": offset + limit < total
+        }
+    except Exception as e:
+        logger.error(f"Error listing tasks: {e}")
+        return {"tasks": [], "total": 0, "hasMore": False}
 
-    # In production, fetch from database
-    tasks = []
 
-    return {
-        "tasks": tasks,
-        "total": len(tasks)
-    }
+@router.post("/tasks")
+async def create_task(
+    request: Request,
+    body: CreateTaskRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Create a new background task"""
+    from app.services.agent_tools.task_worker import get_task_worker, AgentTask, TaskPriority
+    import uuid
+    
+    user_id = user["id"]
+    user_role = user["role"]
+    
+    try:
+        worker = await get_task_worker()
+        
+        # Map priority string to enum
+        priority_map = {
+            "low": TaskPriority.LOW,
+            "normal": TaskPriority.NORMAL,
+            "high": TaskPriority.HIGH,
+            "critical": TaskPriority.CRITICAL
+        }
+        priority = priority_map.get(body.priority, TaskPriority.NORMAL)
+        
+        # Parse scheduled time if provided
+        scheduled_at = None
+        if body.scheduledAt:
+            scheduled_at = datetime.fromisoformat(body.scheduledAt.replace("Z", "+00:00"))
+        
+        # Create task
+        task = AgentTask(
+            task_id=str(uuid.uuid4()),
+            task_type=body.taskType,
+            tool_name=body.toolName,
+            parameters=body.parameters or {},
+            user_id=user_id,
+            patient_id=body.patientId or (user_id if user_role == "patient" else None),
+            agent_id="clona" if user_role == "patient" else "lysa",
+            priority=priority,
+            scheduled_at=scheduled_at
+        )
+        
+        # Enqueue the task
+        task_id = await worker.enqueue_task(task)
+        
+        AuditLogger.log_event(
+            event_type=AuditEvent.PHI_ACCESSED,
+            user_id=user_id,
+            resource_type="agent_task",
+            resource_id=task_id,
+            action="create",
+            status="success",
+            metadata={"task_type": body.taskType, "tool_name": body.toolName}
+        )
+        
+        return {
+            "taskId": task_id,
+            "status": task.status.value,
+            "createdAt": task.created_at.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error creating task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/tasks/{task_id}")
@@ -434,8 +549,73 @@ async def get_task(
     request: Request,
     user: dict = Depends(get_current_user)
 ):
-    """Get task details"""
-    return {"id": task_id, "status": "not_found"}
+    """Get task details and current status"""
+    from app.services.agent_tools.task_worker import get_task_worker
+    
+    user_id = user["id"]
+    
+    try:
+        worker = await get_task_worker()
+        task = await worker.get_task_status(task_id)
+        
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        # Verify access
+        if task.user_id != user_id and task.patient_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        return task.to_dict()
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/tasks/{task_id}")
+async def cancel_task(
+    task_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user)
+):
+    """Cancel a pending or queued task"""
+    from app.services.agent_tools.task_worker import get_task_worker
+    
+    user_id = user["id"]
+    
+    try:
+        worker = await get_task_worker()
+        task = await worker.get_task_status(task_id)
+        
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        # Verify access
+        if task.user_id != user_id and task.patient_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        cancelled = await worker.cancel_task(task_id)
+        
+        if cancelled:
+            AuditLogger.log_event(
+                event_type=AuditEvent.PHI_ACCESSED,
+                user_id=user_id,
+                resource_type="agent_task",
+                resource_id=task_id,
+                action="cancel",
+                status="success"
+            )
+            return {"taskId": task_id, "status": "cancelled"}
+        else:
+            raise HTTPException(status_code=400, detail="Task cannot be cancelled")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==================== DELIVERY RECEIPTS ====================
