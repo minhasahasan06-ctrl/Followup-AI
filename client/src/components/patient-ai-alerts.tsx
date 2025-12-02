@@ -56,6 +56,48 @@ interface PatientAIAlertsProps {
   patientName?: string;
 }
 
+interface DiseaseRiskPrediction {
+  disease: string;
+  probability: number;
+  risk_level: string;
+  confidence: number;
+  contributing_factors: Array<{
+    feature: string;
+    value: number;
+    contribution: number;
+    direction: string;
+  }>;
+  recommendations: string[];
+}
+
+interface DeteriorationPrediction {
+  prediction_type: string;
+  risk_score: number;
+  severity: string;
+  confidence: number;
+  time_to_action: string;
+  contributing_factors: Array<{
+    feature: string;
+    weight: number;
+    value: number;
+    contribution: number;
+    severity: string;
+  }>;
+  feature_importance: Array<{
+    feature: string;
+    importance: number;
+  }>;
+  recommendations: string[];
+}
+
+interface MLPredictionResponse {
+  patient_id: string;
+  predictions?: Record<string, DiseaseRiskPrediction>;
+  deterioration?: DeteriorationPrediction;
+  predicted_at: string;
+  model_version: string;
+}
+
 interface TrendMetric {
   id: string;
   patient_id: string;
@@ -136,6 +178,30 @@ export function PatientAIAlerts({ patientId, patientName }: PatientAIAlertsProps
       const data = await res.json();
       return data.alerts || [];
     },
+  });
+
+  // Fetch ML disease risk predictions
+  const { data: diseaseRiskData, isLoading: diseaseRiskLoading, refetch: refetchDiseaseRisk } = useQuery<MLPredictionResponse>({
+    queryKey: ['/api/ml/predict/disease-risk', patientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/ml/predict/disease-risk/${patientId}`, { credentials: 'include' });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    retry: 1,
+    staleTime: 60000, // 1 minute
+  });
+
+  // Fetch ML deterioration prediction
+  const { data: deteriorationData, isLoading: deteriorationLoading } = useQuery<MLPredictionResponse>({
+    queryKey: ['/api/ml/predict/deterioration', patientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/ml/predict/deterioration/${patientId}`, { credentials: 'include' });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    retry: 1,
+    staleTime: 60000,
   });
 
   // Compute fresh metrics mutation
@@ -378,6 +444,182 @@ export function PatientAIAlerts({ patientId, patientName }: PatientAIAlertsProps
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ML Disease Risk Predictions */}
+      <Card data-testid="card-disease-risk-predictions">
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="h-5 w-5" />
+                ML Disease Risk Predictions
+              </CardTitle>
+              <CardDescription>AI-powered disease risk assessment using Logistic Regression models</CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchDiseaseRisk()}
+              disabled={diseaseRiskLoading}
+              data-testid="button-refresh-disease-risk"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${diseaseRiskLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {diseaseRiskLoading ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-40" />)}
+            </div>
+          ) : diseaseRiskData?.predictions && Object.keys(diseaseRiskData.predictions).length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {Object.entries(diseaseRiskData.predictions).map(([disease, prediction]) => (
+                <Card key={disease} className="hover-elevate" data-testid={`disease-risk-${disease}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        {disease === 'stroke' && <Brain className="h-5 w-5 text-purple-500" />}
+                        {disease === 'sepsis' && <Droplets className="h-5 w-5 text-red-500" />}
+                        {disease === 'diabetes' && <Activity className="h-5 w-5 text-blue-500" />}
+                        {disease === 'heart_disease' && <Heart className="h-5 w-5 text-pink-500" />}
+                        <span className="font-medium capitalize">{disease.replace('_', ' ')}</span>
+                      </div>
+                      <Badge className={getRiskBgColor(prediction.risk_level)}>
+                        {prediction.risk_level}
+                      </Badge>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-muted-foreground">Risk Probability</span>
+                          <span className={`font-bold ${getRiskColor(prediction.risk_level)}`}>
+                            {(prediction.probability * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        <Progress 
+                          value={prediction.probability * 100} 
+                          className="h-2"
+                        />
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Confidence</span>
+                        <span className="font-medium">{(prediction.confidence * 100).toFixed(0)}%</span>
+                      </div>
+                      
+                      {prediction.contributing_factors?.length > 0 && (
+                        <div className="border-t pt-2 mt-2">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Top Factors:</p>
+                          <div className="space-y-1">
+                            {prediction.contributing_factors.slice(0, 2).map((factor, i) => (
+                              <div key={i} className="flex items-center justify-between text-xs">
+                                <span className="truncate mr-2">{factor.feature.replace('_', ' ')}</span>
+                                <span className={factor.direction === 'positive' ? 'text-red-500' : 'text-green-500'}>
+                                  {factor.direction === 'positive' ? '↑' : '↓'} {(Math.abs(factor.contribution) * 100).toFixed(0)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>No disease risk predictions available</p>
+              <p className="text-sm">Predictions require sufficient patient health data</p>
+            </div>
+          )}
+          
+          {diseaseRiskData?.model_version && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t text-xs text-muted-foreground">
+              <span>Model Version: {diseaseRiskData.model_version}</span>
+              <span>Last Predicted: {diseaseRiskData.predicted_at ? format(new Date(diseaseRiskData.predicted_at), 'MMM d, h:mm a') : 'N/A'}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ML Deterioration Prediction */}
+      {deteriorationData?.deterioration && (
+        <Card data-testid="card-deterioration-prediction">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              ML Deterioration Prediction
+            </CardTitle>
+            <CardDescription>XGBoost/Random Forest ensemble deterioration risk assessment</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {deteriorationLoading ? (
+              <Skeleton className="h-40 w-full" />
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-4xl font-bold ${getRiskColor(deteriorationData.deterioration.severity)}`}>
+                        {deteriorationData.deterioration.risk_score.toFixed(1)}
+                      </span>
+                      <div className="text-sm">
+                        <Badge className={getRiskBgColor(deteriorationData.deterioration.severity)}>
+                          {deteriorationData.deterioration.severity}
+                        </Badge>
+                        <p className="text-muted-foreground mt-1">
+                          Confidence: {(deteriorationData.deterioration.confidence * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {deteriorationData.deterioration.time_to_action}
+                    </p>
+                  </div>
+                </div>
+
+                {deteriorationData.deterioration.feature_importance?.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Feature Importance</p>
+                    <div className="space-y-2">
+                      {deteriorationData.deterioration.feature_importance.slice(0, 5).map((feature, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground w-24 truncate">
+                            {feature.feature.replace('_', ' ')}
+                          </span>
+                          <Progress value={feature.importance * 100} className="flex-1 h-2" />
+                          <span className="text-xs font-medium w-12 text-right">
+                            {(feature.importance * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {deteriorationData.deterioration.recommendations?.length > 0 && (
+                  <div className="border-t pt-4">
+                    <p className="text-sm font-medium mb-2">Recommendations</p>
+                    <ul className="space-y-1">
+                      {deteriorationData.deterioration.recommendations.slice(0, 3).map((rec, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                          <ChevronRight className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                          {rec}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
