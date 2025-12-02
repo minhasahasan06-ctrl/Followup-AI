@@ -29,6 +29,13 @@ The backend comprises two services: a Node.js Express server (Port 5000) for cha
 - **Home Clinical Exam Coach (HCEC):** AI-guided self-examinations using OpenAI Vision for metrics like respiratory rate and skin pallor.
 - **Deterioration Prediction System:** Comprehensive health change detection via baseline calculation, Z-score, anomaly detection, Bayesian risk modeling, and time-series analysis for a composite risk score.
 - **ML Inference Infrastructure:** Self-hosted, HIPAA-compliant system with model registry, Redis caching, and ONNX optimization.
+- **ML Prediction Orchestration Layer:** Production-grade predictive analytics with:
+  - **API Endpoints (FastAPI):** GET/POST for /api/ml/predict/{disease-risk,deterioration,time-series,patient-segments,comprehensive}/{patient_id}
+  - **Express Proxy Routes:** Seamless frontend-to-backend ML prediction routing with JWT auth
+  - **MLPredictionService:** Ensemble models (Logistic Regression, XGBoost, LSTM, K-Means) with SHAP explainability
+  - **FeatureBuilderService:** Multi-source feature aggregation (vitals, labs, wearables, questionnaires) with graceful degradation
+  - **HIPAA Audit Logging:** PHI category tracking for all ML predictions (ml_predictions, health_metrics, etc.)
+  - **Frontend Integration:** AI Alerts tab (disease risk cards), ML Tools tab (LSTM forecasting), Analytics tab (patient segmentation)
 - **Guided Video Examination:** 4-stage workflow (Eyes, Palm, Tongue, Lips) with LAB color analysis and S3 encrypted storage, including Facial Puffiness Score (FPS).
 - **Guided Audio Examination:** 4-stage workflow (Breathing, Coughing, Speaking, Reading) with YAMNet ML classification and S3 encrypted storage.
 - **Alert Orchestration Engine:** Multi-channel (dashboard, email, SMS) rule-based alert delivery.
