@@ -994,9 +994,9 @@ class MessageRouter:
         message = {
             "type": "typing",
             "payload": {
-                "agent_id": agent_id,
-                "conversation_id": conversation_id,
-                "is_typing": is_typing
+                "agentId": agent_id,
+                "conversationId": conversation_id,
+                "isTyping": is_typing
             }
         }
         await self.connection_manager.send_to_user(user_id, message)
@@ -1011,9 +1011,9 @@ class MessageRouter:
         message = {
             "type": "presence",
             "payload": {
-                "agent_id": agent_id,
-                "is_online": is_online,
-                "last_seen": datetime.utcnow().isoformat()
+                "agentId": agent_id,
+                "isOnline": is_online,
+                "lastSeen": datetime.utcnow().isoformat()
             }
         }
         await self.connection_manager.send_to_user(user_id, message)
@@ -1030,8 +1030,8 @@ class MessageRouter:
         message = {
             "type": "tool_update",
             "payload": {
-                "conversation_id": conversation_id,
-                "tool_call_id": tool_call_id,
+                "conversationId": conversation_id,
+                "toolCallId": tool_call_id,
                 "status": status,
                 "result": result
             }
@@ -1051,15 +1051,116 @@ class MessageRouter:
         message = {
             "type": "approval_request",
             "payload": {
-                "message_id": message_id,
-                "patient_id": patient_id,
-                "tool_name": tool_name,
-                "tool_input": tool_input,
+                "messageId": message_id,
+                "patientId": patient_id,
+                "toolName": tool_name,
+                "toolInput": tool_input,
                 "reason": reason,
                 "timestamp": datetime.utcnow().isoformat()
             }
         }
         await self.connection_manager.send_to_user(doctor_id, message)
+    
+    async def send_task_status_update(
+        self,
+        user_id: str,
+        task_id: str,
+        task_type: str,
+        status: str,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+        progress: Optional[int] = None
+    ):
+        """
+        Send task execution status update to user via WebSocket.
+        Used for long-running background operations.
+        """
+        message = {
+            "type": "task_status",
+            "payload": {
+                "taskId": task_id,
+                "taskType": task_type,
+                "status": status,
+                "result": result,
+                "error": error,
+                "progress": progress,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        }
+        await self.connection_manager.send_to_user(user_id, message)
+    
+    async def send_approval_decision(
+        self,
+        user_id: str,
+        approval_id: str,
+        decision: str,
+        tool_name: str,
+        notes: Optional[str] = None
+    ):
+        """
+        Send approval decision notification to user.
+        Notifies when their pending tool request has been approved/rejected.
+        """
+        message = {
+            "type": "approval_decision",
+            "payload": {
+                "approvalId": approval_id,
+                "decision": decision,
+                "toolName": tool_name,
+                "notes": notes,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        }
+        await self.connection_manager.send_to_user(user_id, message)
+    
+    async def send_health_alert(
+        self,
+        doctor_id: str,
+        patient_id: str,
+        alert_type: str,
+        severity: str,
+        message_content: str,
+        alert_id: Optional[str] = None
+    ):
+        """
+        Send health alert notification to doctor via WebSocket.
+        Used for deterioration indicators and urgent health updates.
+        """
+        message = {
+            "type": "health_alert",
+            "payload": {
+                "alertId": alert_id,
+                "patientId": patient_id,
+                "alertType": alert_type,
+                "severity": severity,
+                "message": message_content,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        }
+        await self.connection_manager.send_to_user(doctor_id, message)
+    
+    async def send_medication_reminder(
+        self,
+        patient_id: str,
+        medication_name: str,
+        dosage: str,
+        scheduled_time: str,
+        reminder_id: Optional[str] = None
+    ):
+        """
+        Send medication reminder to patient via WebSocket.
+        """
+        message = {
+            "type": "medication_reminder",
+            "payload": {
+                "reminderId": reminder_id,
+                "medicationName": medication_name,
+                "dosage": dosage,
+                "scheduledTime": scheduled_time,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        }
+        await self.connection_manager.send_to_user(patient_id, message)
 
     async def deliver_pending_messages(self, user_id: str):
         """Deliver any pending messages when user connects"""

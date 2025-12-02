@@ -347,28 +347,35 @@ export default function AgentHub() {
     switch (data.type) {
       case "message":
         refetchMessages();
-        // Send delivery receipt for new message
-        if (data.payload?.msgId) {
-          sendDeliveryReceipt([data.payload.msgId], data.payload?.conversationId);
+        // Send delivery receipt for new message (handle both camelCase and snake_case)
+        const msgId = data.payload?.msgId ?? data.payload?.msg_id;
+        const convId = data.payload?.conversationId ?? data.payload?.conversation_id;
+        if (msgId) {
+          sendDeliveryReceipt([msgId], convId);
         }
         break;
       case "presence":
-        setAgentPresence(data.payload);
+        // Handle both camelCase and snake_case for backwards compatibility
+        setAgentPresence({
+          agentId: data.payload.agentId ?? data.payload.agent_id,
+          isOnline: data.payload.isOnline ?? data.payload.is_online,
+          lastSeen: data.payload.lastSeen ?? data.payload.last_seen
+        });
         break;
       case "typing":
-        setIsTyping(data.payload.isTyping);
+        setIsTyping(data.payload.isTyping ?? data.payload.is_typing);
         break;
       case "ack":
         // Handle delivery acknowledgment
         queryClient.invalidateQueries({ queryKey: ["/api/agent/messages"] });
         break;
       case "approval_required":
-        // Add new approval request
+        // Add new approval request (handle both camelCase and snake_case)
         const approval: ToolCallApproval = {
-          id: data.payload.messageId || crypto.randomUUID(),
-          toolName: data.payload.toolName,
+          id: data.payload.messageId ?? data.payload.message_id ?? crypto.randomUUID(),
+          toolName: data.payload.toolName ?? data.payload.tool_name,
           reason: data.payload.reason,
-          parameters: data.payload.parameters,
+          parameters: data.payload.parameters ?? data.payload.tool_input,
           timestamp: new Date().toISOString(),
           status: "pending"
         };
@@ -376,11 +383,25 @@ export default function AgentHub() {
         setSelectedApproval(approval);
         setApprovalDialogOpen(true);
         break;
+      case "approval_request":
+        // Handle approval request from doctor (camelCase)
+        const approvalRequest: ToolCallApproval = {
+          id: data.payload.messageId ?? data.payload.message_id ?? crypto.randomUUID(),
+          toolName: data.payload.toolName ?? data.payload.tool_name,
+          reason: data.payload.reason,
+          parameters: data.payload.toolInput ?? data.payload.tool_input,
+          timestamp: new Date().toISOString(),
+          status: "pending"
+        };
+        setPendingApprovals(prev => [...prev, approvalRequest]);
+        setSelectedApproval(approvalRequest);
+        setApprovalDialogOpen(true);
+        break;
       case "tool_call":
-        // Update tool call status
+        // Update tool call status (handle both camelCase and snake_case)
         const toolStatus: ToolCallStatus = {
-          id: data.payload.toolCallId || crypto.randomUUID(),
-          toolName: data.payload.toolName,
+          id: data.payload.toolCallId ?? data.payload.tool_call_id ?? crypto.randomUUID(),
+          toolName: data.payload.toolName ?? data.payload.tool_name,
           status: data.payload.status,
           result: data.payload.result,
           error: data.payload.error
@@ -427,8 +448,129 @@ export default function AgentHub() {
         // Handle error message
         console.error("Agent WebSocket error:", data.payload?.message);
         break;
+      case "tool_update":
+        // Tool call update from message router (handle both camelCase and snake_case)
+        const toolUpdate = data.payload;
+        console.log("Tool update received:", toolUpdate);
+        
+        const toolUpdateId = toolUpdate.toolCallId ?? toolUpdate.tool_call_id;
+        setToolCallStatuses(prev => {
+          const existing = prev.find(t => t.id === toolUpdateId);
+          if (existing) {
+            return prev.map(t => t.id === toolUpdateId ? {
+              ...t,
+              status: toolUpdate.status,
+              result: toolUpdate.result
+            } : t);
+          }
+          return prev;
+        });
+        
+        // Remove after completion
+        if (toolUpdate.status === "completed" || toolUpdate.status === "failed") {
+          setTimeout(() => {
+            setToolCallStatuses(prev => prev.filter(t => t.id !== toolUpdateId));
+          }, 5000);
+        }
+        break;
+      case "task_status":
+        // Background task status update (handle both camelCase and snake_case)
+        const taskUpdate = data.payload;
+        console.log("Task status update:", taskUpdate);
+        
+        const taskType = taskUpdate.taskType ?? taskUpdate.task_type;
+        const taskId = taskUpdate.taskId ?? taskUpdate.task_id;
+        
+        // Update tool call statuses for task updates
+        if (taskType) {
+          setToolCallStatuses(prev => {
+            const existing = prev.find(t => t.id === taskId);
+            if (existing) {
+              return prev.map(t => t.id === taskId ? {
+                ...t,
+                status: taskUpdate.status,
+                result: taskUpdate.result,
+                error: taskUpdate.error
+              } : t);
+            }
+            return [...prev, {
+              id: taskId,
+              toolName: taskType,
+              status: taskUpdate.status,
+              result: taskUpdate.result,
+              error: taskUpdate.error
+            }];
+          });
+          
+          // Remove from display after completion
+          if (taskUpdate.status === "completed" || taskUpdate.status === "failed") {
+            setTimeout(() => {
+              setToolCallStatuses(prev => prev.filter(t => t.id !== taskId));
+            }, 5000);
+          }
+        }
+        break;
+      case "approval_decision":
+        // Human-in-the-loop approval decision received (handle both camelCase and snake_case)
+        const decision = data.payload;
+        console.log("Approval decision received:", decision);
+        
+        const approvalId = decision.approvalId ?? decision.approval_id;
+        
+        // Update pending approvals
+        setPendingApprovals(prev => 
+          prev.map(a => a.id === approvalId 
+            ? { ...a, status: decision.decision } 
+            : a
+          )
+        );
+        
+        // Close approval dialog if it was the selected one
+        if (selectedApproval?.id === approvalId) {
+          setApprovalDialogOpen(false);
+          setSelectedApproval(null);
+        }
+        break;
+      case "health_alert":
+        // Health deterioration indicator alert (handle both camelCase and snake_case)
+        const healthAlert = data.payload;
+        console.log("Health alert received:", healthAlert);
+        
+        const alertId = healthAlert.alertId ?? healthAlert.alert_id;
+        const alertType = healthAlert.alertType ?? healthAlert.alert_type;
+        const alertPatientId = healthAlert.patientId ?? healthAlert.patient_id;
+        
+        // Add to tool call statuses to display in UI
+        setToolCallStatuses(prev => [...prev, {
+          id: alertId ?? crypto.randomUUID(),
+          toolName: `Health Alert: ${alertType}`,
+          status: healthAlert.severity === "critical" ? "error" : "warning",
+          result: { message: healthAlert.message, patientId: alertPatientId }
+        }]);
+        break;
+      case "medication_reminder":
+        // Medication reminder notification (handle both camelCase and snake_case)
+        const reminder = data.payload;
+        console.log("Medication reminder received:", reminder);
+        
+        const reminderId = reminder.reminderId ?? reminder.reminder_id;
+        const medicationName = reminder.medicationName ?? reminder.medication_name;
+        const scheduledTime = reminder.scheduledTime ?? reminder.scheduled_time;
+        
+        // Display medication reminder as a tool status
+        setToolCallStatuses(prev => [...prev, {
+          id: reminderId ?? crypto.randomUUID(),
+          toolName: "Medication Reminder",
+          status: "running",
+          result: { 
+            medication: medicationName,
+            dosage: reminder.dosage,
+            scheduledTime: scheduledTime
+          }
+        }]);
+        break;
     }
-  }, [refetchMessages, sendDeliveryReceipt]);
+  }, [refetchMessages, sendDeliveryReceipt, selectedApproval]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
