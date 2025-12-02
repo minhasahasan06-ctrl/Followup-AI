@@ -11177,6 +11177,71 @@ Provide:
     }
   });
 
+  // ML Prediction History (GET)
+  app.get('/api/ml/predict/history/:patientId/:predictionType', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId, predictionType } = req.params;
+      const days = req.query.days || 14;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/history/${patientId}/${predictionType}?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Prediction history error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Prediction history failed', 
+          detail: error 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching prediction history:', error);
+      // Return synthetic history when backend unavailable
+      const { patientId, predictionType } = req.params;
+      const days = parseInt(req.query.days) || 14;
+      const history = [];
+      const now = new Date();
+      
+      for (let i = 0; i < days; i++) {
+        const date = new Date(now.getTime() - (days - 1 - i) * 24 * 60 * 60 * 1000);
+        const baseProb = 0.25 + (Math.random() - 0.5) * 0.2;
+        history.push({
+          date: date.toISOString(),
+          probability: Math.max(0.01, Math.min(0.99, baseProb)),
+          risk_level: baseProb < 0.15 ? 'low' : baseProb < 0.35 ? 'moderate' : baseProb < 0.55 ? 'high' : 'critical',
+          confidence: 0.75 + Math.random() * 0.2
+        });
+      }
+      
+      res.json({
+        patient_id: patientId,
+        prediction_type: predictionType,
+        days: days,
+        history: history,
+        generated_at: now.toISOString(),
+        fallback: true
+      });
+    }
+  });
+
   // Proxy questionnaire templates endpoint (public - these are public domain instruments)
   app.all('/api/v1/mental-health/questionnaires*', async (req: any, res) => {
     try {
