@@ -11002,6 +11002,51 @@ Provide:
     }
   });
 
+  // Time-series forecast prediction (GET) - Frontend uses this route name
+  app.get('/api/ml/predict/time-series-forecast/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const horizonHours = req.query.horizon_hours || 24;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      // Forward to Python backend's time-series endpoint
+      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/time-series/${patientId}?sequence_length=${Math.ceil(horizonHours / 24) * 7}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Time-series forecast error:', response.status, error);
+        return res.status(response.status).json({ 
+          error: 'Time-series forecast failed', 
+          detail: error 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching time-series forecast:', error);
+      res.status(502).json({ 
+        error: 'ML service unavailable for time-series forecast',
+        backend_status: 'unavailable'
+      });
+    }
+  });
+
   // Time-series prediction (GET)
   app.get('/api/ml/predict/time-series/:patientId', isAuthenticated, async (req: any, res) => {
     try {
