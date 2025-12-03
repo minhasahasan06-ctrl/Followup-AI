@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
+import { DetailedPredictionCard } from "@/components/DetailedPredictionCard";
 import {
   Bell,
   CheckCircle2,
@@ -278,6 +279,35 @@ interface BaselineData {
   baseline_quality: string | null;
   is_current: boolean;
   created_at: string;
+}
+
+interface DiseaseRiskPrediction {
+  disease: string;
+  probability: number;
+  risk_level: string;
+  confidence: number;
+  confidence_interval?: { lower: number; upper: number };
+  contributing_factors: Array<{
+    feature: string;
+    value: number;
+    contribution: number;
+    direction: string;
+    baseline?: number;
+    normal_range?: { min: number; max: number };
+  }>;
+  recommendations: string[];
+  time_projections?: {
+    "24h": number;
+    "48h": number;
+    "72h": number;
+  };
+}
+
+interface MLDiseaseRiskResponse {
+  patient_id: string;
+  predictions?: Record<string, DiseaseRiskPrediction>;
+  predicted_at: string;
+  model_version: string;
 }
 
 const CHART_COLORS = {
@@ -1543,6 +1573,20 @@ export default function AIAlertsDashboard() {
     enabled: !!patientId,
   });
 
+  const { data: diseaseRiskData, isLoading: loadingDiseaseRisk, refetch: refetchDiseaseRisk } = useQuery<MLDiseaseRiskResponse>({
+    queryKey: ['/api/ml/predict/disease-risk', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/ml/predict/disease-risk/${patientId}`, { credentials: 'include' });
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return null;
+        throw new Error('Failed to fetch disease risk predictions');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+    staleTime: 60000,
+  });
+
   const recalculateBaselineMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch('/api/v1/baseline/calculate/me', {
@@ -1877,6 +1921,77 @@ export default function AIAlertsDashboard() {
               </Card>
             </div>
           </div>
+
+          <Card data-testid="card-disease-risk-predictions">
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-purple-500" />
+                  <div>
+                    <CardTitle>ML Disease Risk Predictions</CardTitle>
+                    <CardDescription>
+                      AI-powered predictions with SHAP explainability for disease risk assessment
+                    </CardDescription>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchDiseaseRisk()}
+                  disabled={loadingDiseaseRisk}
+                  data-testid="button-refresh-disease-risk"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loadingDiseaseRisk ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingDiseaseRisk ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-48 w-full" />
+                  ))}
+                </div>
+              ) : diseaseRiskData?.predictions && Object.keys(diseaseRiskData.predictions).length > 0 ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {Object.entries(diseaseRiskData.predictions).map(([disease, prediction]) => (
+                      <DetailedPredictionCard
+                        key={disease}
+                        patientId={patientId}
+                        disease={disease}
+                        prediction={prediction}
+                        onRefresh={() => refetchDiseaseRisk()}
+                      />
+                    ))}
+                  </div>
+                  <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+                    <Info className="h-4 w-4 text-blue-500" />
+                    <AlertDescription className="text-xs">
+                      Click on any disease card to view detailed SHAP explanations showing how each factor 
+                      contributes to your risk score. These are AI-assisted wellness insights, not medical diagnoses.
+                    </AlertDescription>
+                  </Alert>
+                  {diseaseRiskData.predicted_at && (
+                    <p className="text-xs text-muted-foreground text-right">
+                      Last updated: {format(new Date(diseaseRiskData.predicted_at), "MMM d, yyyy h:mm a")}
+                      {diseaseRiskData.model_version && ` • Model v${diseaseRiskData.model_version}`}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8" data-testid="empty-disease-risk">
+                  <Brain className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Predictions Available</h3>
+                  <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                    Disease risk predictions require sufficient health data. Continue logging your daily health 
+                    information to enable AI-powered risk analysis.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {dismissedAlerts.length > 0 && (
             <Card data-testid="card-dismissed-alerts">
