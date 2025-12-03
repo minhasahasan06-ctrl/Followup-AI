@@ -75,6 +75,7 @@ import MentalHealth from "@/pages/MentalHealth";
 import Prescriptions from "@/pages/Prescriptions";
 import DrugInteractions from "@/pages/DrugInteractions";
 import MLMonitoring from "@/pages/MLMonitoring";
+import MLInsightsPage from "@/pages/MLInsightsPage";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
@@ -89,6 +90,7 @@ function PatientRouter() {
       <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
+      <Route path="/ml-insights" component={MLInsightsPage} />
       <Route path="/ai-video" component={AIVideoDashboard} />
       <Route path="/ai-audio" component={AIAudioDashboard} />
       <Route path="/guided-exam" component={GuidedVideoExam} />
@@ -129,6 +131,7 @@ function DoctorRouter() {
       <Route path="/calendar-sync" component={CalendarSync} />
       <Route path="/doctor-wellness" component={DoctorWellness} />
       <Route path="/doctor/patient/:id" component={PatientReview} />
+      <Route path="/doctor/patient/:patientId/ml-insights" component={MLInsightsPage} />
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/ml-monitoring" component={MLMonitoring} />
