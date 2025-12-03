@@ -73,6 +73,119 @@ function generateLabTrends(results: any[]): any[] {
   }));
 }
 
+// Intelligent Device Data Routing Service
+// Routes device metrics to appropriate health sections for AI Health Alerts, ML training, and care pathways
+function calculateDeviceRoutingFlags(deviceType: string, readingData: any): Record<string, boolean> {
+  const flags: Record<string, boolean> = {};
+  
+  switch (deviceType) {
+    case 'bp_monitor':
+      flags.routeToHypertension = true;
+      flags.routeToCardiovascular = true;
+      break;
+      
+    case 'glucose_meter':
+      flags.routeToDiabetes = true;
+      break;
+      
+    case 'smart_scale':
+      flags.routeToFitness = true;
+      // Body composition metrics can indicate metabolic health
+      if (readingData.bodyFatPercentage || readingData.visceralFat || readingData.metabolicAge) {
+        flags.routeToDiabetes = true; // Metabolic health tracking
+      }
+      break;
+      
+    case 'thermometer':
+      flags.routeToCardiovascular = true;
+      // Elevated temperature may indicate infection/inflammation
+      if (readingData.temperature && readingData.temperature >= 38.0) {
+        flags.routeToRespiratory = true;
+      }
+      break;
+      
+    case 'stethoscope':
+      flags.routeToCardiovascular = true;
+      flags.routeToRespiratory = true;
+      break;
+      
+    case 'smartwatch':
+      // Heart & Cardiovascular metrics
+      if (readingData.heartRate || readingData.restingHeartRate || readingData.hrv || 
+          readingData.hrvSdnn || readingData.ecgData || readingData.afibDetected || 
+          readingData.irregularRhythmAlert) {
+        flags.routeToCardiovascular = true;
+      }
+      
+      // AFib detection is a critical cardiovascular indicator
+      if (readingData.afibDetected || readingData.irregularRhythmAlert) {
+        flags.routeToHypertension = true; // AFib often co-occurs with hypertension
+      }
+      
+      // Respiratory metrics
+      if (readingData.spo2 || readingData.spo2Min || readingData.respiratoryRate) {
+        flags.routeToRespiratory = true;
+      }
+      
+      // Low SpO2 is critical - ensure proper routing
+      if (readingData.spo2 && readingData.spo2 < 94) {
+        flags.routeToCardiovascular = true;
+      }
+      
+      // Sleep metrics
+      if (readingData.sleepDuration || readingData.sleepScore || readingData.sleepDeepMinutes || 
+          readingData.sleepRemMinutes || readingData.sleepLightMinutes || readingData.sleepAwakeMinutes ||
+          readingData.sleepEfficiency || readingData.sleepConsistency || readingData.sleepDebt ||
+          readingData.sleepNeed) {
+        flags.routeToSleep = true;
+      }
+      
+      // Activity & Fitness metrics
+      if (readingData.steps || readingData.activeMinutes || readingData.caloriesBurned || 
+          readingData.distanceMeters || readingData.floorsClimbed || readingData.standingHours ||
+          readingData.vo2Max || readingData.trainingLoad || readingData.trainingStatus ||
+          readingData.trainingReadiness || readingData.fitnessAge || readingData.lactateThreshold ||
+          readingData.performanceCondition || readingData.runningDynamics) {
+        flags.routeToFitness = true;
+      }
+      
+      // Recovery & Stress metrics → Mental Health
+      if (readingData.stressScore || readingData.recoveryScore || readingData.readinessScore ||
+          readingData.bodyBattery || readingData.strainScore) {
+        flags.routeToMentalHealth = true;
+        flags.routeToFitness = true;
+      }
+      
+      // Women's Health metrics
+      if (readingData.cycleDay || readingData.cyclePhase || readingData.periodLogged ||
+          readingData.predictedOvulation) {
+        flags.routeToWomensHealth = true;
+      }
+      
+      // Skin temperature deviation can indicate hormonal changes or illness
+      // skinTemperature is stored as deviation from baseline (e.g., -0.2, +0.5, +1.2)
+      if (readingData.skinTemperature !== undefined && readingData.skinTemperature !== null) {
+        flags.routeToWomensHealth = true; // BBT tracking for cycle monitoring
+        
+        // Significant positive deviation (>1.0°C above baseline) may indicate fever
+        if (readingData.skinTemperature > 1.0) {
+          flags.routeToCardiovascular = true;
+          flags.routeToRespiratory = true; // Fever often indicates respiratory issues
+        }
+      }
+      
+      // Safety metrics - always route to emergency/high priority
+      if (readingData.fallDetected || readingData.emergencySOSTriggered) {
+        flags.routeToEmergency = true;
+        flags.routeToCardiovascular = true;
+        flags.routeToMentalHealth = true; // Falls can indicate cognitive decline
+      }
+      break;
+  }
+  
+  return flags;
+}
+
 // Mental Health Red Flag Indication Service (GPT-4o)
 // IMPORTANT: This is an INDICATOR system, not a diagnostic tool
 // Provides observational insights requiring professional clinical interpretation
@@ -4283,45 +4396,8 @@ All questions and discussions should be focused on this patient.`;
         });
       }
       
-      // Set routing flags based on device type
-      const routingFlags: Record<string, boolean> = {};
-      switch (deviceType) {
-        case 'bp_monitor':
-          routingFlags.routeToHypertension = true;
-          routingFlags.routeToCardiovascular = true;
-          break;
-        case 'glucose_meter':
-          routingFlags.routeToDiabetes = true;
-          break;
-        case 'smart_scale':
-          routingFlags.routeToFitness = true;
-          break;
-        case 'thermometer':
-          routingFlags.routeToCardiovascular = true;
-          break;
-        case 'stethoscope':
-          routingFlags.routeToCardiovascular = true;
-          routingFlags.routeToRespiratory = true;
-          break;
-        case 'smartwatch':
-          // Smartwatch can route to multiple sections
-          if (readingData.heartRate || readingData.hrv || readingData.ecgData) {
-            routingFlags.routeToCardiovascular = true;
-          }
-          if (readingData.spo2 || readingData.respiratoryRate) {
-            routingFlags.routeToRespiratory = true;
-          }
-          if (readingData.sleepDuration || readingData.sleepScore) {
-            routingFlags.routeToSleep = true;
-          }
-          if (readingData.steps || readingData.caloriesBurned || readingData.vo2Max) {
-            routingFlags.routeToFitness = true;
-          }
-          if (readingData.stressScore) {
-            routingFlags.routeToMentalHealth = true;
-          }
-          break;
-      }
+      // Set routing flags based on device type and metrics
+      const routingFlags = calculateDeviceRoutingFlags(deviceType, readingData);
       
       const reading = await storage.createDeviceReading({
         patientId: userId,
@@ -4355,10 +4431,14 @@ All questions and discussions should be focused on this patient.`;
       
       const createdReadings = [];
       for (const reading of readings) {
+        // Calculate routing flags for each reading
+        const routingFlags = calculateDeviceRoutingFlags(reading.deviceType, reading);
+        
         const created = await storage.createDeviceReading({
           patientId: userId,
           source: 'auto_sync',
           ...reading,
+          ...routingFlags,
           recordedAt: reading.recordedAt ? new Date(reading.recordedAt) : new Date(),
         });
         createdReadings.push(created);
@@ -4390,7 +4470,15 @@ All questions and discussions should be focused on this patient.`;
         return res.status(403).json({ message: "Not authorized to update this reading" });
       }
       
-      const updated = await storage.updateDeviceReading(id, req.body);
+      // Recalculate routing flags if metrics are updated
+      const updateData = { ...req.body };
+      if (Object.keys(updateData).length > 0) {
+        const mergedData = { ...existing, ...updateData };
+        const routingFlags = calculateDeviceRoutingFlags(existing.deviceType, mergedData);
+        Object.assign(updateData, routingFlags);
+      }
+      
+      const updated = await storage.updateDeviceReading(id, updateData);
       res.json(updated);
     } catch (error) {
       console.error("Error updating device reading:", error);
