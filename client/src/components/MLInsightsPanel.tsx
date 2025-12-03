@@ -74,6 +74,24 @@ interface DiseaseRiskPrediction {
     "48h": number;
     "72h": number;
   };
+  formula_type?: "validated" | "simple";
+  method?: string;
+  validation?: {
+    c_statistic?: number;
+    calibration?: string;
+    reference?: string;
+    sensitivity?: string;
+    specificity?: string;
+    auc?: number;
+  };
+  timeframe?: string;
+  percentage?: number;
+  risk_category?: string;
+  qsofa_score?: number;
+  qsofa_positive?: boolean;
+  mortality_estimate?: string;
+  findrisc_score?: number;
+  risk_description?: string;
 }
 
 interface DeteriorationPrediction {
@@ -171,12 +189,48 @@ const getDiseaseIcon = (disease: string) => {
     case "sepsis":
       return <Droplets className="h-5 w-5 text-red-500" />;
     case "diabetes":
+    case "type2_diabetes":
       return <Activity className="h-5 w-5 text-blue-500" />;
     case "heart_disease":
+    case "cardiovascular":
+    case "cardiovascular_ascvd":
       return <Heart className="h-5 w-5 text-pink-500" />;
+    case "stroke_afib":
+      return <Zap className="h-5 w-5 text-amber-500" />;
     default:
       return <Shield className="h-5 w-5" />;
   }
+};
+
+const getFormulaTypeBadge = (formulaType?: string) => {
+  if (formulaType === "validated") {
+    return (
+      <Badge variant="outline" className="gap-1 text-xs border-green-500 text-green-700 dark:text-green-400">
+        <CheckCircle2 className="h-3 w-3" />
+        Validated
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="gap-1 text-xs">
+      <Info className="h-3 w-3" />
+      Simple
+    </Badge>
+  );
+};
+
+const getDiseaseName = (disease: string) => {
+  const names: Record<string, string> = {
+    stroke: "Stroke Risk",
+    sepsis: "Sepsis Risk",
+    diabetes: "Diabetes Risk",
+    type2_diabetes: "Type 2 Diabetes",
+    cardiovascular: "Cardiovascular",
+    cardiovascular_ascvd: "ASCVD Risk",
+    heart_disease: "Heart Disease",
+    stroke_afib: "AFib Stroke Risk",
+  };
+  return names[disease] || disease.replace(/_/g, " ");
 };
 
 function OverviewRiskGauge({ 
@@ -212,8 +266,13 @@ function OverviewRiskGauge({
   const overallRisk = Math.max(maxRisk, deteriorationRisk / 15);
   const overallLevel = overallRisk > 0.75 ? "critical" : overallRisk > 0.5 ? "high" : overallRisk > 0.25 ? "moderate" : "low";
 
+  const cardiovascularRisk = diseaseRisks?.cardiovascular?.probability 
+    ?? diseaseRisks?.heart_disease?.probability 
+    ?? diseaseRisks?.cardiovascular_ascvd?.probability 
+    ?? 0;
+  
   const radarData = [
-    { category: "Cardiovascular", value: (diseaseRisks?.heart_disease?.probability ?? 0) * 100 },
+    { category: "Cardiovascular", value: cardiovascularRisk * 100 },
     { category: "Stroke", value: (diseaseRisks?.stroke?.probability ?? 0) * 100 },
     { category: "Diabetes", value: (diseaseRisks?.diabetes?.probability ?? 0) * 100 },
     { category: "Sepsis", value: (diseaseRisks?.sepsis?.probability ?? 0) * 100 },

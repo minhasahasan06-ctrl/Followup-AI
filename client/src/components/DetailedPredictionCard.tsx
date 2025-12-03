@@ -78,6 +78,24 @@ interface DiseaseRiskPrediction {
     "48h": number;
     "72h": number;
   };
+  formula_type?: "validated" | "simple";
+  method?: string;
+  validation?: {
+    c_statistic?: number;
+    calibration?: string;
+    reference?: string;
+    sensitivity?: string;
+    specificity?: string;
+    auc?: number;
+  };
+  timeframe?: string;
+  percentage?: number;
+  risk_category?: string;
+  qsofa_score?: number;
+  qsofa_positive?: boolean;
+  mortality_estimate?: string;
+  findrisc_score?: number;
+  risk_description?: string;
 }
 
 interface HistoricalPrediction {
@@ -100,12 +118,31 @@ const getDiseaseIcon = (disease: string) => {
     case "sepsis":
       return <Droplets className="h-5 w-5 text-red-500" />;
     case "diabetes":
+    case "type2_diabetes":
       return <Activity className="h-5 w-5 text-blue-500" />;
     case "heart_disease":
+    case "cardiovascular":
+    case "cardiovascular_ascvd":
       return <Heart className="h-5 w-5 text-pink-500" />;
+    case "stroke_afib":
+      return <Zap className="h-5 w-5 text-amber-500" />;
     default:
       return <Shield className="h-5 w-5" />;
   }
+};
+
+const getDiseaseName = (disease: string) => {
+  const names: Record<string, string> = {
+    stroke: "Stroke Risk",
+    sepsis: "Sepsis Risk (qSOFA)",
+    diabetes: "Type 2 Diabetes",
+    type2_diabetes: "Type 2 Diabetes",
+    cardiovascular: "Cardiovascular (ASCVD)",
+    cardiovascular_ascvd: "ASCVD 10-Year Risk",
+    heart_disease: "Heart Disease",
+    stroke_afib: "AFib Stroke Risk",
+  };
+  return names[disease] || disease.replace(/_/g, " ");
 };
 
 const getRiskColor = (riskLevel: string) => {
@@ -485,11 +522,19 @@ export function DetailedPredictionCard({
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-2">
                 {getDiseaseIcon(disease)}
-                <span className="font-medium capitalize">{disease.replace(/_/g, " ")}</span>
+                <span className="font-medium">{getDiseaseName(disease)}</span>
               </div>
-              <Badge className={getRiskBgColor(prediction.risk_level)}>
-                {prediction.risk_level}
-              </Badge>
+              <div className="flex items-center gap-2">
+                {prediction.formula_type === "validated" && (
+                  <Badge variant="outline" className="gap-1 text-xs border-green-500 text-green-700 dark:text-green-400">
+                    <Shield className="h-3 w-3" />
+                    Validated
+                  </Badge>
+                )}
+                <Badge className={getRiskBgColor(prediction.risk_level)}>
+                  {prediction.risk_level}
+                </Badge>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -546,12 +591,60 @@ export function DetailedPredictionCard({
           <div className="flex items-center gap-3">
             {getDiseaseIcon(disease)}
             <div>
-              <SheetTitle className="capitalize">{disease.replace(/_/g, " ")} Risk Analysis</SheetTitle>
+              <SheetTitle>{getDiseaseName(disease)} Analysis</SheetTitle>
               <SheetDescription>
-                Detailed ML prediction with SHAP explanations
+                {prediction.method || "ML prediction with SHAP explanations"}
               </SheetDescription>
             </div>
           </div>
+          {prediction.formula_type === "validated" && prediction.validation && (
+            <div className="mt-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <span className="text-sm font-medium text-green-700 dark:text-green-300">
+                  Validated Clinical Formula
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {prediction.validation.reference && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Reference: </span>
+                    <span className="text-foreground">{prediction.validation.reference}</span>
+                  </div>
+                )}
+                {prediction.validation.c_statistic && (
+                  <div>
+                    <span className="text-muted-foreground">C-Statistic: </span>
+                    <span className="font-medium">{prediction.validation.c_statistic}</span>
+                  </div>
+                )}
+                {prediction.validation.auc && (
+                  <div>
+                    <span className="text-muted-foreground">AUC: </span>
+                    <span className="font-medium">{prediction.validation.auc}</span>
+                  </div>
+                )}
+                {prediction.validation.sensitivity && (
+                  <div>
+                    <span className="text-muted-foreground">Sensitivity: </span>
+                    <span className="font-medium">{prediction.validation.sensitivity}</span>
+                  </div>
+                )}
+                {prediction.validation.specificity && (
+                  <div>
+                    <span className="text-muted-foreground">Specificity: </span>
+                    <span className="font-medium">{prediction.validation.specificity}</span>
+                  </div>
+                )}
+              </div>
+              {prediction.timeframe && (
+                <div className="mt-2 pt-2 border-t border-green-200 dark:border-green-800">
+                  <span className="text-xs text-muted-foreground">Time Horizon: </span>
+                  <span className="text-xs font-medium">{prediction.timeframe}</span>
+                </div>
+              )}
+            </div>
+          )}
         </SheetHeader>
 
         <ScrollArea className="h-[calc(100vh-120px)] mt-4 pr-4">
