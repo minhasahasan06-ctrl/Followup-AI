@@ -177,12 +177,32 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("ℹ️  Lysa Automation Engine disabled (set LYSA_AUTOMATION_ENABLED=true to enable)")
     
+    # Step 6: Start Device Sync Worker (background data synchronization)
+    device_sync_enabled = os.getenv("DEVICE_SYNC_ENABLED", "true").lower() == "true"
+    if device_sync_enabled:
+        logger.info("📱 Starting Device Sync Worker...")
+        try:
+            from app.services.device_sync_worker import start_sync_worker
+            await start_sync_worker()
+        except Exception as e:
+            logger.warning(f"⚠️  Device Sync Worker startup failed: {e}")
+    
     logger.info("🎉 Followup AI Backend startup complete!")
     
     yield
     
-    # Shutdown: Cleanup AI engines and automation
+    # Shutdown: Cleanup AI engines, automation, and device sync
     logger.info("🛑 Shutting down Followup AI Backend...")
+    
+    # Stop Device Sync Worker
+    if device_sync_enabled:
+        try:
+            from app.services.device_sync_worker import stop_sync_worker
+            await stop_sync_worker()
+        except Exception as e:
+            logger.warning(f"⚠️  Device Sync Worker shutdown error: {e}")
+    
+    # Stop Lysa Automation Engine
     if automation_enabled:
         try:
             from app.services.scheduler import stop_automation_services
@@ -190,6 +210,7 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Lysa Automation Engine stopped")
         except Exception as e:
             logger.warning(f"⚠️  Automation Engine shutdown error: {e}")
+    
     await AIEngineManager.cleanup_all()
     logger.info("✅ Shutdown complete")
 

@@ -21,14 +21,14 @@ from dataclasses import dataclass
 from enum import Enum
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from app.services.vendor_adapters import (
     get_vendor_adapter,
     TokenInfo,
     SyncResult,
     NormalizedReading,
+    HealthSection as VendorHealthSection,
 )
 from app.services.health_section_analytics import (
     HealthSectionAnalyticsEngine,
@@ -105,7 +105,7 @@ class DeviceSyncWorker:
             pool_size=10,
             max_overflow=20,
         )
-        self._session_factory = sessionmaker(
+        self._session_factory = async_sessionmaker(
             self._engine, class_=AsyncSession, expire_on_commit=False
         )
     
@@ -117,6 +117,8 @@ class DeviceSyncWorker:
     
     async def get_session(self) -> AsyncSession:
         """Get database session"""
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized. Call initialize() first.")
         return self._session_factory()
     
     async def start(self):
@@ -445,11 +447,11 @@ class DeviceSyncWorker:
         # Group readings by health section
         from app.services.vendor_adapters import DATA_TYPE_TO_SECTIONS
         
-        section_data: Dict[HealthSection, List[Dict]] = {}
+        section_data: Dict[VendorHealthSection, List[Dict]] = {}
         
         for reading in readings:
             data_type = reading.get("data_type")
-            if data_type in DATA_TYPE_TO_SECTIONS:
+            if data_type and data_type in DATA_TYPE_TO_SECTIONS:
                 sections = DATA_TYPE_TO_SECTIONS[data_type]
                 for section in sections:
                     if section not in section_data:
@@ -576,13 +578,34 @@ async def schedule_device_syncs(db: AsyncSession):
         logger.error(f"Failed to schedule device syncs: {e}")
 
 
-# Worker startup function
+# Global worker instance (singleton)
+_sync_worker: Optional[DeviceSyncWorker] = None
+
+
+def get_sync_worker() -> Optional[DeviceSyncWorker]:
+    """Get the global sync worker instance"""
+    return _sync_worker
+
+
 async def start_sync_worker():
     """Start the device sync worker"""
+    global _sync_worker
+    
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         logger.error("DATABASE_URL not set, sync worker not starting")
         return
     
-    worker = DeviceSyncWorker(database_url)
-    await worker.start()
+    _sync_worker = DeviceSyncWorker(database_url)
+    await _sync_worker.start()
+    logger.info("✅ Device Sync Worker started")
+
+
+async def stop_sync_worker():
+    """Stop the device sync worker"""
+    global _sync_worker
+    
+    if _sync_worker:
+        await _sync_worker.shutdown()
+        _sync_worker = None
+        logger.info("✅ Device Sync Worker stopped")
