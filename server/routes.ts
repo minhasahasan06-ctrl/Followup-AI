@@ -186,6 +186,422 @@ function calculateDeviceRoutingFlags(deviceType: string, readingData: any): Reco
   return flags;
 }
 
+// Device Data to AI Health Alerts Integration Service
+// Extracts metrics from device readings and feeds them to the AI Health Alert Engine
+interface MetricIngestPayload {
+  patient_id: string;
+  metric_name: string;
+  metric_value: number;
+  unit: string;
+  timestamp?: string;
+  confidence?: number;
+  source: string;
+  capture_id?: string;
+  metadata?: Record<string, any>;
+}
+
+async function processDeviceReadingForHealthAlerts(
+  patientId: string,
+  deviceType: string,
+  readingData: any,
+  readingId: string
+): Promise<void> {
+  try {
+    const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+    const metrics: MetricIngestPayload[] = [];
+    const timestamp = readingData.recordedAt ? new Date(readingData.recordedAt).toISOString() : new Date().toISOString();
+    
+    // Extract metrics based on device type
+    switch (deviceType) {
+      case 'bp_monitor':
+        if (readingData.systolic !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'bp_systolic',
+            metric_value: readingData.systolic,
+            unit: 'mmHg',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.diastolic !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'bp_diastolic',
+            metric_value: readingData.diastolic,
+            unit: 'mmHg',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.pulse !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'pulse_rate',
+            metric_value: readingData.pulse,
+            unit: 'bpm',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        break;
+        
+      case 'glucose_meter':
+        if (readingData.glucoseLevel !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'blood_glucose',
+            metric_value: readingData.glucoseLevel,
+            unit: readingData.measurementType === 'a1c' ? '%' : 'mg/dL',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { 
+              device_type: deviceType,
+              measurement_type: readingData.measurementType,
+              meal_context: readingData.mealContext 
+            }
+          });
+        }
+        break;
+        
+      case 'smart_scale':
+        if (readingData.weight !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'weight',
+            metric_value: readingData.weight,
+            unit: 'kg',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.bodyFatPercentage !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'body_fat_percentage',
+            metric_value: readingData.bodyFatPercentage,
+            unit: '%',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.muscleMass !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'muscle_mass',
+            metric_value: readingData.muscleMass,
+            unit: 'kg',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.bmi !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'bmi',
+            metric_value: readingData.bmi,
+            unit: 'kg/m²',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        break;
+        
+      case 'thermometer':
+        if (readingData.temperature !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'temperature',
+            metric_value: readingData.temperature,
+            unit: readingData.unit || '°C',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { 
+              device_type: deviceType,
+              measurement_site: readingData.measurementSite 
+            }
+          });
+        }
+        break;
+        
+      case 'stethoscope':
+        if (readingData.heartRate !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'heart_rate',
+            metric_value: readingData.heartRate,
+            unit: 'bpm',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.respiratoryRate !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'respiratory_rate',
+            metric_value: readingData.respiratoryRate,
+            unit: 'breaths/min',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        break;
+        
+      case 'smartwatch':
+        // Heart metrics
+        if (readingData.heartRate !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'heart_rate',
+            metric_value: readingData.heartRate,
+            unit: 'bpm',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.restingHeartRate !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'resting_heart_rate',
+            metric_value: readingData.restingHeartRate,
+            unit: 'bpm',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.hrv !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'hrv',
+            metric_value: readingData.hrv,
+            unit: 'ms',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        
+        // Respiratory metrics
+        if (readingData.spo2 !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'spo2',
+            metric_value: readingData.spo2,
+            unit: '%',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.respiratoryRate !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'respiratory_rate',
+            metric_value: readingData.respiratoryRate,
+            unit: 'breaths/min',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        
+        // Sleep metrics
+        if (readingData.sleepScore !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'sleep_score',
+            metric_value: readingData.sleepScore,
+            unit: 'score',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.sleepDuration !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'sleep_duration',
+            metric_value: readingData.sleepDuration,
+            unit: 'minutes',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        
+        // Activity metrics
+        if (readingData.steps !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'steps',
+            metric_value: readingData.steps,
+            unit: 'steps',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.activeMinutes !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'active_minutes',
+            metric_value: readingData.activeMinutes,
+            unit: 'minutes',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.caloriesBurned !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'calories_burned',
+            metric_value: readingData.caloriesBurned,
+            unit: 'kcal',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.vo2Max !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'vo2_max',
+            metric_value: readingData.vo2Max,
+            unit: 'mL/kg/min',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        
+        // Recovery and stress metrics
+        if (readingData.stressScore !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'stress_score',
+            metric_value: readingData.stressScore,
+            unit: 'score',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.recoveryScore !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'recovery_score',
+            metric_value: readingData.recoveryScore,
+            unit: 'score',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.readinessScore !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'readiness_score',
+            metric_value: readingData.readinessScore,
+            unit: 'score',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        if (readingData.bodyBattery !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'body_battery',
+            metric_value: readingData.bodyBattery,
+            unit: 'score',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        
+        // Temperature deviation (fever indicator)
+        if (readingData.skinTemperature !== undefined) {
+          metrics.push({
+            patient_id: patientId,
+            metric_name: 'skin_temperature_deviation',
+            metric_value: readingData.skinTemperature,
+            unit: '°C',
+            timestamp,
+            source: 'device_reading',
+            capture_id: readingId,
+            metadata: { device_type: deviceType }
+          });
+        }
+        break;
+    }
+    
+    // If no metrics extracted, skip
+    if (metrics.length === 0) {
+      return;
+    }
+    
+    // Send metrics to Python backend's AI Health Alert ingest endpoint
+    try {
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/ingest/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metrics })
+      });
+      
+      if (!response.ok) {
+        console.warn(`AI Health Alert metric ingest returned ${response.status}: ${await response.text()}`);
+      } else {
+        console.log(`[AI Health Alerts] Ingested ${metrics.length} metrics from device reading ${readingId}`);
+      }
+    } catch (fetchError) {
+      // Log but don't fail - this is a background process
+      console.warn('[AI Health Alerts] Unable to connect to Python backend for metric ingest:', fetchError);
+    }
+  } catch (error) {
+    console.error('[AI Health Alerts] Error processing device reading for health alerts:', error);
+    // Don't throw - this is a non-critical background process
+  }
+}
+
 // Mental Health Red Flag Indication Service (GPT-4o)
 // IMPORTANT: This is an INDICATOR system, not a diagnostic tool
 // Provides observational insights requiring professional clinical interpretation
@@ -4408,6 +4824,9 @@ All questions and discussions should be focused on this patient.`;
         ...routingFlags,
       });
       
+      // Process for AI Health Alerts (async, non-blocking)
+      processDeviceReadingForHealthAlerts(userId, deviceType, readingData, reading.id);
+      
       res.status(201).json(reading);
     } catch (error) {
       console.error("Error creating device reading:", error);
@@ -4442,6 +4861,9 @@ All questions and discussions should be focused on this patient.`;
           recordedAt: reading.recordedAt ? new Date(reading.recordedAt) : new Date(),
         });
         createdReadings.push(created);
+        
+        // Process for AI Health Alerts (async, non-blocking)
+        processDeviceReadingForHealthAlerts(userId, reading.deviceType, reading, created.id);
       }
       
       res.status(201).json({ 
@@ -4472,13 +4894,17 @@ All questions and discussions should be focused on this patient.`;
       
       // Recalculate routing flags if metrics are updated
       const updateData = { ...req.body };
+      const mergedData = { ...existing, ...updateData };
       if (Object.keys(updateData).length > 0) {
-        const mergedData = { ...existing, ...updateData };
         const routingFlags = calculateDeviceRoutingFlags(existing.deviceType, mergedData);
         Object.assign(updateData, routingFlags);
       }
       
       const updated = await storage.updateDeviceReading(id, updateData);
+      
+      // Re-process for AI Health Alerts with updated data (async, non-blocking)
+      processDeviceReadingForHealthAlerts(userId, existing.deviceType, mergedData, id);
+      
       res.json(updated);
     } catch (error) {
       console.error("Error updating device reading:", error);
