@@ -3253,6 +3253,206 @@ All questions and discussions should be focused on this patient.`;
     }
   });
 
+  // Zod schema for consent approval with granular permissions
+  const approveConsentSchema = z.object({
+    permissions: z.object({
+      shareHealthData: z.boolean(),
+      confidentialityAgreed: z.boolean(),
+      shareMedicalFiles: z.boolean().optional().default(false),
+      shareMedications: z.boolean().optional().default(true),
+      shareAIMessages: z.boolean().optional().default(false),
+      shareDoctorMessages: z.boolean().optional().default(true),
+      shareDailyFollowups: z.boolean().optional().default(true),
+      shareHealthAlerts: z.boolean().optional().default(true),
+      shareBehavioralInsights: z.boolean().optional().default(false),
+      sharePainTracking: z.boolean().optional().default(true),
+      shareVitalSigns: z.boolean().optional().default(true),
+      consentEpidemiologicalResearch: z.boolean().optional().default(false),
+    }).refine(data => data.shareHealthData && data.confidentialityAgreed, {
+      message: "Health data sharing and confidentiality agreement are required",
+    }),
+    digitalSignature: z.string().min(2, "Digital signature must be at least 2 characters"),
+    signatureMethod: z.enum(["typed", "drawn"]).optional().default("typed"),
+    termsVersion: z.string().optional().default("1.0"),
+  });
+
+  // Approve consent request with granular permissions (new consent terms flow)
+  app.post('/api/patient/consent-requests/:id/approve', isAuthenticated, async (req: any, res) => {
+    const patientId = req.user!.id;
+    const { id } = req.params;
+    
+    try {
+      if (req.user.role !== 'patient') {
+        console.log(`[HIPAA-AUDIT] UNAUTHORIZED: Non-patient ${patientId} attempted to approve consent with permissions for request ${id} at ${new Date().toISOString()}`);
+        return res.status(403).json({ message: "Only patients can approve consent requests" });
+      }
+      
+      // Validate request body with Zod
+      const validationResult = approveConsentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        console.log(`[HIPAA-AUDIT] VALIDATION_FAILED: Patient ${patientId} consent approval validation failed for request ${id}. Errors: ${JSON.stringify(validationResult.error.errors)}. Time: ${new Date().toISOString()}`);
+        return res.status(400).json({ 
+          message: validationResult.error.errors[0]?.message || "Invalid consent data",
+          errors: validationResult.error.errors
+        });
+      }
+      
+      const { permissions, digitalSignature, signatureMethod, termsVersion } = validationResult.data;
+      
+      // Verify the request belongs to this patient
+      const consentRequest = await storage.getConsentRequest(id);
+      if (!consentRequest) {
+        console.log(`[HIPAA-AUDIT] NOT_FOUND: Patient ${patientId} attempted to approve non-existent consent request ${id} at ${new Date().toISOString()}`);
+        return res.status(404).json({ message: "Consent request not found" });
+      }
+      
+      if (consentRequest.patientId !== patientId) {
+        console.log(`[HIPAA-AUDIT] SECURITY: Patient ${patientId} attempted to approve consent request ${id} belonging to patient ${consentRequest.patientId} at ${new Date().toISOString()}`);
+        return res.status(403).json({ message: "You can only respond to your own consent requests" });
+      }
+      
+      if (consentRequest.status !== 'pending') {
+        console.log(`[HIPAA-AUDIT] DUPLICATE_ATTEMPT: Patient ${patientId} attempted to re-approve consent request ${id} (status: ${consentRequest.status}) at ${new Date().toISOString()}`);
+        return res.status(400).json({ message: "This request has already been responded to" });
+      }
+      
+      // Atomic consent approval flow with rollback on failure
+      let assignment;
+      let consentPermissions;
+      
+      try {
+        // Step 1: Update the consent request to approved
+        await storage.respondToConsentRequest(id, true, "Consent granted with full terms agreement");
+        
+        // Step 2: Create the doctor-patient assignment
+        assignment = await storage.createDoctorPatientAssignment({
+          doctorId: consentRequest.doctorId,
+          patientId,
+          assignmentSource: 'patient_consent',
+          assignedBy: patientId,
+          patientConsented: true,
+          consentMethod: 'in_app',
+          consentedAt: new Date(),
+          accessLevel: 'full',
+          isPrimaryProvider: false,
+        });
+        
+        // Step 3: Store the granular consent permissions
+        consentPermissions = {
+          assignmentId: assignment.id,
+          doctorId: consentRequest.doctorId,
+          patientId,
+          shareHealthData: permissions.shareHealthData,
+          confidentialityAgreed: permissions.confidentialityAgreed,
+          shareMedicalFiles: permissions.shareMedicalFiles,
+          shareMedications: permissions.shareMedications,
+          shareAIMessages: permissions.shareAIMessages,
+          shareDoctorMessages: permissions.shareDoctorMessages,
+          shareDailyFollowups: permissions.shareDailyFollowups,
+          shareHealthAlerts: permissions.shareHealthAlerts,
+          shareBehavioralInsights: permissions.shareBehavioralInsights,
+          sharePainTracking: permissions.sharePainTracking,
+          shareVitalSigns: permissions.shareVitalSigns,
+          consentEpidemiologicalResearch: permissions.consentEpidemiologicalResearch,
+          termsVersion,
+          termsAgreedAt: new Date(),
+          digitalSignature,
+          signatureMethod,
+          consentIpAddress: req.ip || req.connection?.remoteAddress,
+          consentUserAgent: req.headers['user-agent'],
+        };
+        
+        await storage.createConsentPermissions(consentPermissions);
+        
+      } catch (flowError) {
+        // Log the failure and attempt rollback
+        console.error(`[HIPAA-AUDIT] CONSENT_FLOW_FAILED: Patient ${patientId} consent approval for request ${id} failed at step. Error: ${flowError}. Time: ${new Date().toISOString()}`);
+        
+        // Try to rollback consent request to pending
+        try {
+          await storage.respondToConsentRequest(id, false, "Consent flow failed - rolled back");
+        } catch (rollbackError) {
+          console.error(`[HIPAA-AUDIT] ROLLBACK_FAILED: Could not rollback consent request ${id}. Error: ${rollbackError}`);
+        }
+        
+        throw flowError;
+      }
+      
+      // Comprehensive HIPAA audit log for successful approval
+      console.log(`[HIPAA-AUDIT] CONSENT_APPROVED_SUCCESS: Patient ${patientId} approved consent request ${id} from doctor ${consentRequest.doctorId}. Assignment ${assignment.id} created. Permissions: shareHealthData=${permissions.shareHealthData}, shareMedicalFiles=${permissions.shareMedicalFiles}, shareAIMessages=${permissions.shareAIMessages}, shareDoctorMessages=${permissions.shareDoctorMessages}, shareDailyFollowups=${permissions.shareDailyFollowups}, shareHealthAlerts=${permissions.shareHealthAlerts}, shareBehavioralInsights=${permissions.shareBehavioralInsights}, sharePainTracking=${permissions.sharePainTracking}, shareVitalSigns=${permissions.shareVitalSigns}, consentEpidemiologicalResearch=${permissions.consentEpidemiologicalResearch}. Signature: "${digitalSignature.substring(0, 20)}..." (${signatureMethod}). Terms v${termsVersion}. IP: ${req.ip}. Time: ${new Date().toISOString()}`);
+      
+      res.json({ 
+        success: true, 
+        message: "Consent granted successfully",
+        assignmentId: assignment.id,
+        permissions: consentPermissions
+      });
+    } catch (error) {
+      console.error(`[HIPAA-AUDIT] CONSENT_ERROR: Patient ${patientId} consent approval for request ${id} failed. Error: ${error}. Time: ${new Date().toISOString()}`);
+      res.status(500).json({ message: "Failed to approve consent request" });
+    }
+  });
+
+  // Zod schema for consent denial
+  const denyConsentSchema = z.object({
+    reason: z.string().optional(),
+  });
+
+  // Deny consent request
+  app.post('/api/patient/consent-requests/:id/deny', isAuthenticated, async (req: any, res) => {
+    const patientId = req.user!.id;
+    const { id } = req.params;
+    
+    try {
+      if (req.user.role !== 'patient') {
+        console.log(`[HIPAA-AUDIT] UNAUTHORIZED: Non-patient ${patientId} attempted to deny consent request ${id} at ${new Date().toISOString()}`);
+        return res.status(403).json({ message: "Only patients can deny consent requests" });
+      }
+      
+      // Validate request body with Zod
+      const validationResult = denyConsentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: validationResult.error.errors[0]?.message || "Invalid denial data"
+        });
+      }
+      
+      const { reason } = validationResult.data;
+      
+      // Verify the request belongs to this patient
+      const consentRequest = await storage.getConsentRequest(id);
+      if (!consentRequest) {
+        console.log(`[HIPAA-AUDIT] NOT_FOUND: Patient ${patientId} attempted to deny non-existent consent request ${id} at ${new Date().toISOString()}`);
+        return res.status(404).json({ message: "Consent request not found" });
+      }
+      
+      if (consentRequest.patientId !== patientId) {
+        console.log(`[HIPAA-AUDIT] SECURITY: Patient ${patientId} attempted to deny consent request ${id} belonging to patient ${consentRequest.patientId} at ${new Date().toISOString()}`);
+        return res.status(403).json({ message: "You can only respond to your own consent requests" });
+      }
+      
+      if (consentRequest.status !== 'pending') {
+        console.log(`[HIPAA-AUDIT] DUPLICATE_ATTEMPT: Patient ${patientId} attempted to re-deny consent request ${id} (status: ${consentRequest.status}) at ${new Date().toISOString()}`);
+        return res.status(400).json({ message: "This request has already been responded to" });
+      }
+      
+      // Update the consent request to denied
+      const updatedRequest = await storage.respondToConsentRequest(id, false, reason || "Consent denied by patient");
+      
+      // HIPAA audit log for denial
+      console.log(`[HIPAA-AUDIT] CONSENT_DENIED_SUCCESS: Patient ${patientId} denied consent request ${id} from doctor ${consentRequest.doctorId}. Reason: ${reason || 'Not provided'}. IP: ${req.ip}. Time: ${new Date().toISOString()}`);
+      
+      res.json({ 
+        success: true, 
+        message: "Consent request denied",
+        request: updatedRequest
+      });
+    } catch (error) {
+      console.error(`[HIPAA-AUDIT] CONSENT_DENIAL_ERROR: Patient ${patientId} denial for request ${id} failed. Error: ${error}. Time: ${new Date().toISOString()}`);
+      res.status(500).json({ message: "Failed to deny consent request" });
+    }
+  });
+
   // Get patient's Followup Patient ID (for sharing)
   app.get('/api/patient/followup-id', isAuthenticated, async (req: any, res) => {
     try {

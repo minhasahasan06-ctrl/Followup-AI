@@ -5163,6 +5163,87 @@ export type InsertPatientConsentRequest = z.infer<typeof insertPatientConsentReq
 export type PatientConsentRequest = typeof patientConsentRequests.$inferSelect;
 
 // =========================================================================
+// DOCTOR-PATIENT CONSENT PERMISSIONS - Granular access control
+// =========================================================================
+
+export const doctorPatientConsentPermissions = pgTable("doctor_patient_consent_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Link to assignment
+  assignmentId: varchar("assignment_id").notNull().references(() => doctorPatientAssignments.id),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // ===== MANDATORY PERMISSIONS (Required for consent) =====
+  // Health Data Sharing
+  shareHealthData: boolean("share_health_data").notNull().default(false),
+  
+  // Doctor-Patient Confidentiality Agreement
+  confidentialityAgreed: boolean("confidentiality_agreed").notNull().default(false),
+  
+  // ===== GRANULAR DATA ACCESS PERMISSIONS =====
+  // Medical Files (lab results, imaging, reports)
+  shareMedicalFiles: boolean("share_medical_files").notNull().default(false),
+  
+  // Medication Records
+  shareMedications: boolean("share_medications").notNull().default(true),
+  
+  // AI Agent Messages (Clona/Lysa conversations)
+  shareAIMessages: boolean("share_ai_messages").notNull().default(false),
+  
+  // Doctor-Patient Messages
+  shareDoctorMessages: boolean("share_doctor_messages").notNull().default(true),
+  
+  // Daily Followup Insights
+  shareDailyFollowups: boolean("share_daily_followups").notNull().default(true),
+  
+  // AI Health Alerts (disease predictions, deterioration)
+  shareHealthAlerts: boolean("share_health_alerts").notNull().default(true),
+  
+  // Behavioral Insights (habits, mental health scores)
+  shareBehavioralInsights: boolean("share_behavioral_insights").notNull().default(false),
+  
+  // Pain Tracking Data
+  sharePainTracking: boolean("share_pain_tracking").notNull().default(true),
+  
+  // Vital Signs History
+  shareVitalSigns: boolean("share_vital_signs").notNull().default(true),
+  
+  // ===== RESEARCH CONSENT =====
+  // Consent to anonymized data for epidemiological research
+  consentEpidemiologicalResearch: boolean("consent_epidemiological_research").notNull().default(false),
+  
+  // ===== TERMS AGREEMENT =====
+  termsVersion: varchar("terms_version").notNull().default("1.0"),
+  termsAgreedAt: timestamp("terms_agreed_at"),
+  
+  // Digital signature (for legal compliance)
+  digitalSignature: text("digital_signature"), // Base64 encoded signature or typed name
+  signatureMethod: varchar("signature_method"), // 'typed', 'drawn', 'biometric'
+  
+  // IP address and device info for audit
+  consentIpAddress: varchar("consent_ip_address"),
+  consentUserAgent: text("consent_user_agent"),
+  
+  // Audit trail
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  modifiedBy: varchar("modified_by").references(() => users.id),
+}, (table) => ({
+  assignmentIdx: index("consent_permissions_assignment_idx").on(table.assignmentId),
+  doctorPatientIdx: index("consent_permissions_doctor_patient_idx").on(table.doctorId, table.patientId),
+}));
+
+export const insertDoctorPatientConsentPermissionsSchema = createInsertSchema(doctorPatientConsentPermissions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorPatientConsentPermissions = z.infer<typeof insertDoctorPatientConsentPermissionsSchema>;
+export type DoctorPatientConsentPermissions = typeof doctorPatientConsentPermissions.$inferSelect;
+
+// =========================================================================
 // LYSA PATIENT MONITORING SYSTEM
 // =========================================================================
 

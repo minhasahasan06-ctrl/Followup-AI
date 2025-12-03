@@ -64,6 +64,7 @@ import {
   appointments,
   consultations,
   doctorPatientAssignments,
+  doctorPatientConsentPermissions,
   doctorAvailability,
   emailThreads,
   emailMessages,
@@ -289,6 +290,12 @@ export interface IStorage {
   respondToConsentRequest(id: string, approved: boolean, responseMessage?: string): Promise<PatientConsentRequest | undefined>;
   generateFollowupPatientId(): Promise<string>;
   getPatientByFollowupId(followupPatientId: string): Promise<User | undefined>;
+  
+  // Consent Permissions operations (granular HIPAA permissions)
+  createConsentPermissions(permissions: any): Promise<any>;
+  getConsentPermissions(assignmentId: string): Promise<any>;
+  getConsentPermissionsByDoctorPatient(doctorId: string, patientId: string): Promise<any>;
+  updateConsentPermissions(assignmentId: string, permissions: any): Promise<any>;
   
   // Daily followup operations
   getDailyFollowup(patientId: string, date: Date): Promise<DailyFollowup | undefined>;
@@ -1264,6 +1271,53 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, profile.userId));
     
     return user;
+  }
+
+  // Consent Permissions operations (granular HIPAA permissions)
+  async createConsentPermissions(permissions: any): Promise<any> {
+    try {
+      const [result] = await db
+        .insert(doctorPatientConsentPermissions)
+        .values(permissions)
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("[Storage] Error creating consent permissions:", error);
+      throw error;
+    }
+  }
+
+  async getConsentPermissions(assignmentId: string): Promise<any> {
+    const [permissions] = await db
+      .select()
+      .from(doctorPatientConsentPermissions)
+      .where(eq(doctorPatientConsentPermissions.assignmentId, assignmentId));
+    return permissions;
+  }
+
+  async getConsentPermissionsByDoctorPatient(doctorId: string, patientId: string): Promise<any> {
+    const [permissions] = await db
+      .select()
+      .from(doctorPatientConsentPermissions)
+      .where(
+        and(
+          eq(doctorPatientConsentPermissions.doctorId, doctorId),
+          eq(doctorPatientConsentPermissions.patientId, patientId)
+        )
+      );
+    return permissions;
+  }
+
+  async updateConsentPermissions(assignmentId: string, permissionUpdates: any): Promise<any> {
+    const [result] = await db
+      .update(doctorPatientConsentPermissions)
+      .set({
+        ...permissionUpdates,
+        updatedAt: new Date(),
+      })
+      .where(eq(doctorPatientConsentPermissions.assignmentId, assignmentId))
+      .returning();
+    return result;
   }
 
   // Daily followup operations

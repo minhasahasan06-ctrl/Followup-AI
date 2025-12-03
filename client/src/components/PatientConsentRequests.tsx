@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
+import { DoctorPatientConsentDialog } from "./DoctorPatientConsentDialog";
 
 type ConsentRequest = {
   id: string;
@@ -73,52 +74,38 @@ export function PatientConsentRequests() {
     queryKey: ["/api/patient/consent-requests/pending"],
   });
 
-  const respondToRequest = useMutation({
-    mutationFn: async (data: { id: string; approved: boolean; responseMessage?: string }) => {
-      const res = await apiRequest("POST", `/api/patient/consent-requests/${data.id}/respond`, {
-        approved: data.approved,
-        responseMessage: data.responseMessage,
+  // Dedicated mutation for denial flow with new /deny endpoint (HIPAA audited)
+  const denyConsentRequest = useMutation({
+    mutationFn: async (data: { id: string; reason?: string }) => {
+      const res = await apiRequest("POST", `/api/patient/consent-requests/${data.id}/deny`, {
+        reason: data.reason,
       });
       return res.json();
     },
-    onSuccess: (_, variables) => {
-      const action = variables.approved ? "approved" : "denied";
+    onSuccess: () => {
       toast({
-        title: `Access ${action.charAt(0).toUpperCase() + action.slice(1)}`,
-        description: variables.approved 
-          ? "The doctor can now view your health records."
-          : "The doctor's request has been denied.",
+        title: "Access Denied",
+        description: "The doctor's request has been denied.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/patient/consent-requests/pending"] });
       setSelectedRequest(null);
-      setShowApproveDialog(false);
       setShowDenyDialog(false);
       setResponseMessage("");
     },
     onError: (error: Error) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to respond to the request.",
+        description: error.message || "Failed to deny the request.",
         variant: "destructive",
       });
     },
   });
 
-  const handleApprove = () => {
-    if (!selectedRequest) return;
-    respondToRequest.mutate({
-      id: selectedRequest.id,
-      approved: true,
-      responseMessage,
-    });
-  };
-
   const handleDeny = () => {
     if (!selectedRequest) return;
-    respondToRequest.mutate({
+    denyConsentRequest.mutate({
       id: selectedRequest.id,
-      approved: false,
-      responseMessage,
+      reason: responseMessage,
     });
   };
 
@@ -238,65 +225,31 @@ export function PatientConsentRequests() {
         </CardContent>
       </Card>
 
-      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-500" />
-              Approve Access
-            </DialogTitle>
-            <DialogDescription>
-              You are about to grant {selectedRequest ? getDoctorName(selectedRequest) : "this doctor"} access 
-              to view your health records.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="bg-muted/50 rounded-lg p-4 text-sm">
-              <h4 className="font-medium mb-2">What this means:</h4>
-              <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                <li>The doctor can view your health history and records</li>
-                <li>They can see your symptom journals and daily followups</li>
-                <li>They can prescribe medications and manage your treatment</li>
-                <li>You can revoke access at any time</li>
-              </ul>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="approveMessage">Optional Message</Label>
-              <Textarea
-                id="approveMessage"
-                placeholder="Add a message for the doctor (optional)..."
-                value={responseMessage}
-                onChange={(e) => setResponseMessage(e.target.value)}
-                rows={2}
-                data-testid="input-approve-message"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowApproveDialog(false);
-                setResponseMessage("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleApprove}
-              disabled={respondToRequest.isPending}
-              data-testid="button-confirm-approve"
-            >
-              {respondToRequest.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <CheckCircle className="h-4 w-4 mr-2" />
-              )}
-              Grant Access
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Doctor-Patient Consent Terms Dialog with full permissions */}
+      {selectedRequest && selectedRequest.doctor && (
+        <DoctorPatientConsentDialog
+          open={showApproveDialog}
+          onOpenChange={setShowApproveDialog}
+          requestId={selectedRequest.id}
+          doctor={{
+            id: selectedRequest.doctorId,
+            firstName: selectedRequest.doctor.firstName || "Unknown",
+            lastName: selectedRequest.doctor.lastName || "Doctor",
+            specialty: selectedRequest.doctorProfile?.specialty || undefined,
+            institution: selectedRequest.doctorProfile?.hospitalAffiliation || undefined,
+          }}
+          requestMessage={selectedRequest.requestMessage || undefined}
+          onConsentGranted={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/patient/consent-requests/pending"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/patient/connected-doctors"] });
+            setSelectedRequest(null);
+          }}
+          onConsentDenied={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/patient/consent-requests/pending"] });
+            setSelectedRequest(null);
+          }}
+        />
+      )}
 
       <AlertDialog open={showDenyDialog} onOpenChange={setShowDenyDialog}>
         <AlertDialogContent>
@@ -326,10 +279,10 @@ export function PatientConsentRequests() {
             <AlertDialogAction
               onClick={handleDeny}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={respondToRequest.isPending}
+              disabled={denyConsentRequest.isPending}
               data-testid="button-confirm-deny"
             >
-              {respondToRequest.isPending ? (
+              {denyConsentRequest.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
                 <XCircle className="h-4 w-4 mr-2" />
