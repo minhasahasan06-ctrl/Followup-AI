@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 import { Link } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,6 +47,8 @@ import {
   Moon,
   Flame,
   RefreshCw,
+  Calculator,
+  Clock,
 } from 'lucide-react';
 import { ExamPrepStep } from '@/components/ExamPrepStep';
 import { VideoRecorder } from '@/components/VideoRecorder';
@@ -108,6 +112,59 @@ interface HealthSectionAnalytics {
   stability_score: number;
   last_updated: string;
   readings_count: number;
+}
+
+interface DeviationRecord {
+  id: number;
+  patient_id: string;
+  baseline_id: number;
+  metric_name: string;
+  measurement_value: number;
+  measurement_date: string;
+  z_score: number;
+  percent_change: number;
+  baseline_mean: number;
+  baseline_std: number;
+  trend_3day_slope: number | null;
+  trend_7day_slope: number | null;
+  trend_direction: string | null;
+  deviation_type: string;
+  severity_level: string;
+  alert_triggered: boolean;
+  alert_message: string | null;
+  created_at: string;
+}
+
+interface DeviationSummary {
+  metric_name: string;
+  total_deviations: number;
+  critical_count: number;
+  moderate_count: number;
+  recent_z_score: number | null;
+  trend_direction: string | null;
+}
+
+interface BaselineStats {
+  mean: number | null;
+  std: number | null;
+  min: number | null;
+  max: number | null;
+  n_samples: number;
+}
+
+interface BaselineInfo {
+  id: number;
+  patient_id: string;
+  baseline_start_date: string;
+  baseline_end_date: string;
+  data_points_count: number;
+  pain_facial: BaselineStats;
+  pain_self_reported: BaselineStats;
+  respiratory_rate: BaselineStats;
+  symptom_severity: BaselineStats;
+  baseline_quality: string | null;
+  is_current: boolean;
+  created_at: string;
 }
 
 interface DeviceHealthData {
@@ -540,6 +597,400 @@ function TremorGaitEdemaInsights24h({ patientId }: { patientId: string }) {
   );
 }
 
+function DeviationAnalysisTab() {
+  const { toast } = useToast();
+
+  const { data: deviationSummary, isLoading: loadingSummary, error: summaryError, refetch: refetchSummary } = useQuery<DeviationSummary[]>({
+    queryKey: ['/api/v1/deviation/summary/me'],
+    queryFn: async () => {
+      const response = await fetch('/api/v1/deviation/summary/me?days=7');
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 403) return [];
+        if (response.status === 502) {
+          throw new Error('Health analysis service temporarily unavailable');
+        }
+        throw new Error('Failed to fetch deviation summary');
+      }
+      return response.json();
+    },
+    retry: 1,
+  });
+
+  const { data: recentDeviations, isLoading: loadingDeviations, error: deviationsError, refetch: refetchDeviations } = useQuery<DeviationRecord[]>({
+    queryKey: ['/api/v1/deviation/me'],
+    queryFn: async () => {
+      const response = await fetch('/api/v1/deviation/me?days=7&alert_only=true');
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 403) return [];
+        if (response.status === 502) {
+          throw new Error('Health analysis service temporarily unavailable');
+        }
+        throw new Error('Failed to fetch deviations');
+      }
+      return response.json();
+    },
+    retry: 1,
+  });
+
+  const { data: currentBaseline, isLoading: loadingBaseline, refetch: refetchBaseline } = useQuery<BaselineInfo | null>({
+    queryKey: ['/api/v1/baseline/current/me'],
+    queryFn: async () => {
+      const response = await fetch('/api/v1/baseline/current/me');
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 403 || response.status === 502) return null;
+        throw new Error('Failed to fetch baseline');
+      }
+      return response.json();
+    },
+    retry: 1,
+  });
+
+  const recalculateBaselineMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/v1/baseline/calculate/me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to recalculate baseline' }));
+        throw new Error(error.message || error.detail || 'Failed to recalculate baseline');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Baseline Recalculated",
+        description: "Your personal health baseline has been updated with the latest data.",
+      });
+      refetchBaseline();
+      refetchSummary();
+      refetchDeviations();
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/deviation'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Recalculation Failed",
+        description: error.message || "Unable to recalculate baseline. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const isLoading = loadingSummary || loadingDeviations || loadingBaseline;
+  const hasError = summaryError || deviationsError;
+  const hasDeviations = deviationSummary && deviationSummary.length > 0;
+  const criticalCount = deviationSummary?.reduce((sum, d) => sum + d.critical_count, 0) || 0;
+  const moderateCount = deviationSummary?.reduce((sum, d) => sum + d.moderate_count, 0) || 0;
+  const totalAlerts = recentDeviations?.filter(d => d.alert_triggered).length || 0;
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity?.toLowerCase()) {
+      case 'critical': return 'text-red-600 bg-red-100 dark:bg-red-900/30';
+      case 'moderate': return 'text-amber-600 bg-amber-100 dark:bg-amber-900/30';
+      case 'mild': return 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30';
+      default: return 'text-muted-foreground bg-muted/50';
+    }
+  };
+
+  const getDeviationTypeIcon = (type: string) => {
+    switch (type?.toLowerCase()) {
+      case 'pain_facial':
+      case 'pain_self_reported':
+        return <Zap className="h-4 w-4 text-orange-500" />;
+      case 'respiratory_rate':
+        return <Wind className="h-4 w-4 text-blue-500" />;
+      case 'heart_rate':
+        return <Heart className="h-4 w-4 text-red-500" />;
+      case 'symptom_severity':
+        return <Activity className="h-4 w-4 text-purple-500" />;
+      case 'temperature':
+        return <Thermometer className="h-4 w-4 text-orange-500" />;
+      default:
+        return <Gauge className="h-4 w-4 text-primary" />;
+    }
+  };
+
+  const formatMetricName = (name: string) => {
+    return name?.replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  const getTrendIcon = (direction: string | null) => {
+    if (!direction) return null;
+    switch (direction.toLowerCase()) {
+      case 'increasing': return <TrendingUp className="h-3 w-3 text-red-500" />;
+      case 'decreasing': return <TrendingDown className="h-3 w-3 text-green-500" />;
+      case 'stable': return <Minus className="h-3 w-3 text-blue-500" />;
+      default: return null;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <Card data-testid="card-deviation-loading">
+        <CardHeader>
+          <Skeleton className="h-6 w-48" data-testid="skeleton-title" />
+          <Skeleton className="h-4 w-64 mt-1" data-testid="skeleton-description" />
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-2" data-testid="skeleton-grid">
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <Card data-testid="card-deviation-error">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-amber-500" />
+            Deviation Analysis
+          </CardTitle>
+          <CardDescription>
+            Unable to load deviation data at this time
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert className="border-amber-500/50 bg-amber-500/5" data-testid="alert-deviation-error">
+            <AlertCircle className="h-4 w-4 text-amber-500" />
+            <AlertTitle className="text-amber-700 dark:text-amber-400">
+              Service Temporarily Unavailable
+            </AlertTitle>
+            <AlertDescription className="text-amber-600 dark:text-amber-300">
+              {(summaryError as Error)?.message || (deviationsError as Error)?.message || 'Unable to load deviation analysis. Please try again later.'}
+            </AlertDescription>
+          </Alert>
+          <div className="mt-4 flex justify-center">
+            <Button variant="outline" onClick={() => refetchSummary()} data-testid="button-retry-deviations">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card data-testid="card-deviation-analysis">
+      <CardHeader>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Deviation Analysis
+              {criticalCount > 0 && (
+                <Badge variant="destructive" data-testid="badge-critical-deviations">
+                  {criticalCount} Critical
+                </Badge>
+              )}
+              {moderateCount > 0 && (
+                <Badge variant="secondary" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" data-testid="badge-moderate-deviations">
+                  {moderateCount} Moderate
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              Comparing your recent metrics to your personal health baseline (7-day window)
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => recalculateBaselineMutation.mutate()} 
+              disabled={recalculateBaselineMutation.isPending}
+              data-testid="button-recalculate-baseline"
+            >
+              {recalculateBaselineMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Calculator className="h-4 w-4 mr-2" />
+              )}
+              Recalculate Baseline
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { refetchSummary(); refetchDeviations(); refetchBaseline(); }} data-testid="button-refresh-deviations">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        {/* Baseline Status Section */}
+        {currentBaseline && (
+          <div className="mt-4 p-3 bg-muted/50 rounded-lg border" data-testid="section-baseline-status">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Current Baseline:</span>
+                <span className="text-sm font-medium" data-testid="text-baseline-dates">
+                  {new Date(currentBaseline.baseline_start_date).toLocaleDateString()} — {new Date(currentBaseline.baseline_end_date).toLocaleDateString()}
+                </span>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span data-testid="text-baseline-datapoints">
+                  {currentBaseline.data_points_count} data points
+                </span>
+                {currentBaseline.baseline_quality && (
+                  <Badge 
+                    variant="outline" 
+                    className={`text-xs ${
+                      currentBaseline.baseline_quality === 'high' ? 'border-green-500 text-green-600' :
+                      currentBaseline.baseline_quality === 'medium' ? 'border-amber-500 text-amber-600' :
+                      'border-muted-foreground'
+                    }`}
+                    data-testid="badge-baseline-quality"
+                  >
+                    {currentBaseline.baseline_quality} quality
+                  </Badge>
+                )}
+                <span data-testid="text-baseline-created">
+                  Last updated: {new Date(currentBaseline.created_at).toLocaleDateString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!currentBaseline && !loadingBaseline && (
+          <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800" data-testid="section-no-baseline">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-500" />
+              <span className="text-sm text-amber-700 dark:text-amber-400">
+                No baseline established yet. Click "Recalculate Baseline" to create your personal health baseline from your recent measurements.
+              </span>
+            </div>
+          </div>
+        )}
+      </CardHeader>
+      <CardContent>
+        {!hasDeviations ? (
+          <div className="flex flex-col items-center justify-center py-8" data-testid="empty-deviation-state">
+            <CheckCircle2 className="h-12 w-12 text-green-500 mb-3" />
+            <h4 className="font-semibold text-lg">All Metrics Within Baseline</h4>
+            <p className="text-sm text-muted-foreground text-center max-w-md mt-1">
+              Your recent health measurements are consistent with your personal baseline.
+              Continue tracking to maintain awareness of your health patterns.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Deviation Summary Grid */}
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {deviationSummary?.map((summary) => (
+                <div
+                  key={summary.metric_name}
+                  className={`p-4 rounded-lg border ${
+                    summary.critical_count > 0 
+                      ? 'border-red-500/50 bg-red-50/50 dark:bg-red-900/20' 
+                      : summary.moderate_count > 0 
+                        ? 'border-amber-500/50 bg-amber-50/50 dark:bg-amber-900/20'
+                        : 'border-border bg-muted/30'
+                  }`}
+                  data-testid={`deviation-metric-${summary.metric_name}`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      {getDeviationTypeIcon(summary.metric_name)}
+                      <span className="font-medium text-sm">{formatMetricName(summary.metric_name)}</span>
+                    </div>
+                    {summary.critical_count > 0 && (
+                      <Badge variant="destructive" className="text-xs">
+                        {summary.critical_count} critical
+                      </Badge>
+                    )}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Total Deviations:</span>
+                      <span className="ml-1 font-semibold">{summary.total_deviations}</span>
+                    </div>
+                    {summary.recent_z_score !== null && (
+                      <div>
+                        <span className="text-muted-foreground">Z-Score:</span>
+                        <span className={`ml-1 font-semibold ${
+                          Math.abs(summary.recent_z_score) > 2 ? 'text-red-600' :
+                          Math.abs(summary.recent_z_score) > 1 ? 'text-amber-600' : ''
+                        }`}>
+                          {summary.recent_z_score.toFixed(2)}σ
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {summary.trend_direction && (
+                    <div className="flex items-center gap-1 text-xs mt-2 pt-2 border-t">
+                      {getTrendIcon(summary.trend_direction)}
+                      <span className="text-muted-foreground capitalize">
+                        Trend: {summary.trend_direction}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Recent Deviation Alerts Timeline */}
+            {recentDeviations && recentDeviations.length > 0 && (
+              <div className="mt-4" data-testid="deviation-timeline">
+                <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                  Recent Deviation Alerts ({totalAlerts})
+                </h4>
+                <div className="max-h-[200px] overflow-y-auto pr-1 space-y-2">
+                  {recentDeviations.filter(d => d.alert_triggered).slice(0, 10).map((deviation) => (
+                    <div
+                      key={deviation.id}
+                      className={`p-3 rounded-lg border ${getSeverityColor(deviation.severity_level)} flex items-start justify-between`}
+                      data-testid={`deviation-alert-${deviation.id}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {getDeviationTypeIcon(deviation.metric_name)}
+                        <div>
+                          <p className="font-medium text-sm">{formatMetricName(deviation.metric_name)}</p>
+                          <p className="text-xs mt-0.5">
+                            {deviation.alert_message || 
+                              `${deviation.percent_change >= 0 ? '+' : ''}${deviation.percent_change.toFixed(1)}% from baseline`
+                            }
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Value: {deviation.measurement_value.toFixed(1)} | 
+                            Baseline: {deviation.baseline_mean.toFixed(1)} ± {deviation.baseline_std.toFixed(1)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <Badge variant="outline" className="text-xs capitalize">
+                          {deviation.severity_level}
+                        </Badge>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {new Date(deviation.measurement_date).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground mt-4 italic text-center">
+          Deviations indicate changes from your personal baseline - not necessarily concerning.
+          Discuss significant changes with your healthcare provider.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function LegalDisclaimer() {
   return (
     <Alert className="border-amber-500/50 bg-amber-500/5">
@@ -776,9 +1227,9 @@ export default function DailyFollowup() {
 
       <LegalDisclaimer />
 
-      {/* Tabs for Examination and Device Data */}
+      {/* Tabs for Examination, Device Data, and Deviations */}
       <Tabs defaultValue="examination" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
+        <TabsList className="grid w-full grid-cols-3 max-w-xl">
           <TabsTrigger value="examination" className="gap-2" data-testid="tab-examination">
             <Video className="h-4 w-4" />
             Examinations
@@ -786,6 +1237,10 @@ export default function DailyFollowup() {
           <TabsTrigger value="devices" className="gap-2" data-testid="tab-devices">
             <Watch className="h-4 w-4" />
             Device Data
+          </TabsTrigger>
+          <TabsTrigger value="deviations" className="gap-2" data-testid="tab-deviations">
+            <BarChart3 className="h-4 w-4" />
+            Deviations
           </TabsTrigger>
         </TabsList>
 
@@ -1078,6 +1533,22 @@ export default function DailyFollowup() {
 
         <TabsContent value="devices" className="mt-6">
           <DeviceDataTab patientId={user?.id || ''} />
+        </TabsContent>
+
+        <TabsContent value="deviations" className="mt-6">
+          <div className="space-y-4">
+            <Alert className="border-blue-500/50 bg-blue-500/5" data-testid="alert-deviation-disclaimer">
+              <Info className="h-4 w-4 text-blue-500" />
+              <AlertTitle className="text-blue-700 dark:text-blue-400 font-semibold">
+                Wellness Pattern Tracking
+              </AlertTitle>
+              <AlertDescription className="text-blue-600 dark:text-blue-300 text-sm">
+                Deviations show how your recent measurements compare to your personal baseline patterns.
+                Changes from baseline are normal and not necessarily concerning. Consult your healthcare provider about any health questions.
+              </AlertDescription>
+            </Alert>
+            <DeviationAnalysisTab />
+          </div>
         </TabsContent>
       </Tabs>
     </div>
