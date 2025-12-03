@@ -11759,6 +11759,215 @@ Provide:
   });
 
   // =====================================================
+  // DEVIATION ANALYSIS ENDPOINTS - Proxy to Python backend
+  // Health deviation detection and baseline comparison
+  // =====================================================
+
+  // Get deviations for logged-in patient
+  app.get('/api/v1/deviation/me', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const days = req.query.days || 7;
+      const alertOnly = req.query.alert_only === 'true' ? 'true' : 'false';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/deviation/me?days=${days}&alert_only=${alertOnly}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 403) {
+          return res.json([]);
+        }
+        const error = await response.text();
+        console.error('Python backend error (deviation/me):', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching deviations:', error);
+      res.json([]);
+    }
+  });
+
+  // Get deviation summary for logged-in patient
+  app.get('/api/v1/deviation/summary/me', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const days = req.query.days || 7;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/deviation/summary/me?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 403) {
+          return res.json([]);
+        }
+        const error = await response.text();
+        console.error('Python backend error (deviation/summary):', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching deviation summary:', error);
+      res.json([]);
+    }
+  });
+
+  // Get deviations for a specific patient (doctor only)
+  app.get('/api/v1/deviation/patient/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const days = req.query.days || 7;
+      const alertOnly = req.query.alert_only === 'true' ? 'true' : 'false';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/deviation/patient/${patientId}?days=${days}&alert_only=${alertOnly}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 403) {
+          return res.json([]);
+        }
+        const error = await response.text();
+        console.error('Python backend error (deviation/patient):', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching patient deviations:', error);
+      res.json([]);
+    }
+  });
+
+  // =====================================================
+  // BASELINE ENDPOINTS - Proxy to Python backend
+  // Personal health baseline calculation and management
+  // =====================================================
+
+  // Get current baseline for logged-in patient
+  app.get('/api/v1/baseline/current/me', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/baseline/current/me`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 403) {
+          return res.json(null);
+        }
+        const error = await response.text();
+        console.error('Python backend error (baseline/current):', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching current baseline:', error);
+      res.json(null);
+    }
+  });
+
+  // Calculate new baseline for logged-in patient
+  app.post('/api/v1/baseline/calculate/me', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/baseline/calculate/me`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Python backend error (baseline/calculate):', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error calculating baseline:', error);
+      res.status(500).json({ message: 'Failed to calculate baseline' });
+    }
+  });
+
+  // =====================================================
   // ML INFERENCE ENDPOINTS - Proxy to Python backend
   // Clinical-BERT NER, deterioration prediction, model management
   // =====================================================
