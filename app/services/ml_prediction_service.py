@@ -489,12 +489,27 @@ class DeteriorationPredictor:
 
 class TimeSeriesPredictor:
     """
-    LSTM-style time-series prediction for vital trend analysis.
+    LSTM-based time-series prediction for vital trend analysis.
     
     Predicts:
-    - 24-hour vital trend forecast
+    - 24h/48h/72h vital sign forecasts
     - Anomaly detection in vital patterns
+    - Risk assessment and trend analysis
     """
+    
+    _lstm_predictor = None
+    
+    @classmethod
+    def _get_lstm_predictor(cls):
+        """Get LSTM predictor instance (lazy loading)."""
+        if cls._lstm_predictor is None:
+            try:
+                from app.services.lstm_vital_predictor import get_lstm_predictor
+                cls._lstm_predictor = get_lstm_predictor()
+            except ImportError as e:
+                logger.warning(f"LSTM predictor not available: {e}")
+                cls._lstm_predictor = None
+        return cls._lstm_predictor
     
     @classmethod
     def predict_vital_trends(
@@ -503,15 +518,57 @@ class TimeSeriesPredictor:
         forecast_hours: int = 24
     ) -> Dict[str, Any]:
         """
-        Predict vital sign trends using simplified LSTM-like analysis.
+        Predict vital sign trends using LSTM neural network.
         
         Args:
             time_series: List of daily feature dictionaries
-            forecast_hours: Hours to forecast ahead
+            forecast_hours: Hours to forecast ahead (supports 24, 48, 72)
         
         Returns:
             Trend predictions with confidence intervals
         """
+        lstm_predictor = cls._get_lstm_predictor()
+        
+        if lstm_predictor is not None:
+            forecast_horizons = [24, 48, 72] if forecast_hours == 24 else [forecast_hours]
+            result = lstm_predictor.predict(time_series, forecast_horizons)
+            
+            if result.get("status") == "success":
+                legacy_predictions = []
+                for pred in result.get("predictions", []):
+                    forecasts = pred.get("forecasts", [])
+                    primary_forecast = forecasts[0] if forecasts else {}
+                    
+                    legacy_predictions.append({
+                        "metric": pred.get("metric"),
+                        "current_value": pred.get("current_value"),
+                        "predicted_value": primary_forecast.get("predicted_value", pred.get("current_value")),
+                        "trend": pred.get("trend", {}).get("direction", "stable"),
+                        "slope": pred.get("trend", {}).get("velocity", 0),
+                        "confidence": primary_forecast.get("confidence", 0.5),
+                        "confidence_interval": primary_forecast.get("confidence_interval", {}),
+                        "is_anomaly": pred.get("anomaly_detection", {}).get("is_anomaly", False),
+                        "z_score": pred.get("anomaly_detection", {}).get("z_score", 0),
+                        "forecasts": forecasts,
+                        "unit": pred.get("unit", "")
+                    })
+                
+                assessment = result.get("overall_assessment", {})
+                return {
+                    "status": "success",
+                    "model_type": result.get("model_type", "LSTM"),
+                    "forecast_hours": forecast_hours,
+                    "data_points_analyzed": result.get("data_points_analyzed", len(time_series)),
+                    "predictions": legacy_predictions,
+                    "overall_trend": assessment.get("trajectory", "stable"),
+                    "risk_level": assessment.get("risk_level", "low"),
+                    "risk_score": assessment.get("risk_score", 0),
+                    "risk_factors": assessment.get("risk_factors", []),
+                    "overall_confidence": assessment.get("confidence", 0.5),
+                    "multi_horizon_forecasts": result.get("predictions", []),
+                    "generated_at": result.get("generated_at")
+                }
+        
         if not time_series or len(time_series) < 3:
             return {
                 "status": "insufficient_data",
@@ -523,25 +580,20 @@ class TimeSeriesPredictor:
         predictions = []
         
         for metric in vital_metrics:
-            # Extract time series for this metric
             values = [ts.get(metric, 0.5) for ts in time_series]
             
             if not any(values):
                 continue
             
-            # Simple trend analysis using linear regression
             x = np.arange(len(values))
             coeffs = np.polyfit(x, values, 1)
             slope = coeffs[0]
             
-            # Forecast next value
             next_value = np.polyval(coeffs, len(values))
             
-            # Calculate confidence based on variance
             variance = np.var(values)
             confidence = max(0.5, 1.0 - variance)
             
-            # Trend direction
             if slope > 0.02:
                 trend = "increasing"
             elif slope < -0.02:
@@ -549,7 +601,6 @@ class TimeSeriesPredictor:
             else:
                 trend = "stable"
             
-            # Anomaly detection (simple z-score)
             mean = np.mean(values)
             std = np.std(values) + 0.001
             latest_z = (values[-1] - mean) / std
@@ -570,7 +621,6 @@ class TimeSeriesPredictor:
                 "z_score": round(float(latest_z), 2)
             })
         
-        # Overall trend assessment
         declining_count = sum(1 for p in predictions if p["trend"] == "increasing" and p["metric"] not in ["spo2"])
         declining_count += sum(1 for p in predictions if p["trend"] == "decreasing" and p["metric"] == "spo2")
         
@@ -583,6 +633,7 @@ class TimeSeriesPredictor:
         
         return {
             "status": "success",
+            "model_type": "statistical_fallback",
             "forecast_hours": forecast_hours,
             "data_points_analyzed": len(time_series),
             "overall_trend": overall_trend,
