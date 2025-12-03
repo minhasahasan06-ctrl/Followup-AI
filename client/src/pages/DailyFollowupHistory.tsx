@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { DeviceDataManager } from '@/components/DeviceDataManager';
 import {
   LineChart,
   Line,
@@ -464,110 +465,129 @@ export default function DailyFollowupHistory() {
         </TabsList>
 
         <TabsContent value="device" className="space-y-4">
-          {deviceLoading ? (
-            <Card><CardContent className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" /></CardContent></Card>
-          ) : filteredDeviceHistory?.length > 0 ? (
-            <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard 
-                  label="Avg Heart Rate" 
-                  value={calculateStats(filteredDeviceHistory, 'heartRate').avg} 
-                  unit="bpm"
-                  icon={Heart}
-                  trend={calculateStats(filteredDeviceHistory, 'heartRate').trend}
-                  color="text-rose-500"
-                />
-                <StatCard 
-                  label="Avg SpO2" 
-                  value={calculateStats(filteredDeviceHistory, 'oxygenSaturation').avg} 
-                  unit="%"
-                  icon={Wind}
-                  trend={calculateStats(filteredDeviceHistory, 'oxygenSaturation').trend}
-                  color="text-blue-500"
-                />
-                <StatCard 
-                  label="Avg Temperature" 
-                  value={calculateStats(filteredDeviceHistory, 'temperature').avg} 
-                  unit="°F"
-                  icon={Thermometer}
-                  trend={calculateStats(filteredDeviceHistory, 'temperature').trend}
-                  color="text-orange-500"
-                />
-                <StatCard 
-                  label="Total Steps" 
-                  value={filteredDeviceHistory.reduce((sum, d) => sum + (d.steps || 0), 0).toLocaleString()} 
-                  icon={Footprints}
-                  color="text-chart-2"
-                />
-              </div>
+          <Tabs defaultValue="medical-devices" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 max-w-md">
+              <TabsTrigger value="medical-devices" data-testid="subtab-medical-devices">
+                <Heart className="h-3 w-3 mr-1" />
+                Medical Devices
+              </TabsTrigger>
+              <TabsTrigger value="wearable-trends" data-testid="subtab-wearable-trends">
+                <BarChart3 className="h-3 w-3 mr-1" />
+                Wearable Trends
+              </TabsTrigger>
+            </TabsList>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5" />
-                    Device Data Trends
-                  </CardTitle>
-                  <CardDescription>
-                    {filteredDeviceHistory.length} data points over {selectedRange.label.toLowerCase()}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={deviceChartData}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis dataKey="date" className="text-xs" />
-                        <YAxis className="text-xs" />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'hsl(var(--card))', 
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '8px'
-                          }} 
-                        />
-                        <Legend />
-                        <Line type="monotone" dataKey="heartRate" name="Heart Rate (bpm)" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="spo2" name="SpO2 (%)" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
+            <TabsContent value="medical-devices" className="mt-4">
+              <DeviceDataManager />
+            </TabsContent>
+
+            <TabsContent value="wearable-trends" className="mt-4 space-y-4">
+              {deviceLoading ? (
+                <Card><CardContent className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" /></CardContent></Card>
+              ) : filteredDeviceHistory?.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <StatCard 
+                      label="Avg Heart Rate" 
+                      value={calculateStats(filteredDeviceHistory, 'heartRate').avg} 
+                      unit="bpm"
+                      icon={Heart}
+                      trend={calculateStats(filteredDeviceHistory, 'heartRate').trend}
+                      color="text-rose-500"
+                    />
+                    <StatCard 
+                      label="Avg SpO2" 
+                      value={calculateStats(filteredDeviceHistory, 'oxygenSaturation').avg} 
+                      unit="%"
+                      icon={Wind}
+                      trend={calculateStats(filteredDeviceHistory, 'oxygenSaturation').trend}
+                      color="text-blue-500"
+                    />
+                    <StatCard 
+                      label="Avg Temperature" 
+                      value={calculateStats(filteredDeviceHistory, 'temperature').avg} 
+                      unit="°F"
+                      icon={Thermometer}
+                      trend={calculateStats(filteredDeviceHistory, 'temperature').trend}
+                      color="text-orange-500"
+                    />
+                    <StatCard 
+                      label="Total Steps" 
+                      value={filteredDeviceHistory.reduce((sum, d) => sum + (d.steps || 0), 0).toLocaleString()} 
+                      icon={Footprints}
+                      color="text-chart-2"
+                    />
                   </div>
-                </CardContent>
-              </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Entries</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[200px]">
-                    <div className="space-y-2">
-                      {filteredDeviceHistory.slice(0, 10).map((entry: any, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                          <div className="flex items-center gap-3">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm">{format(new Date(entry.createdAt || entry.date), 'MMM d, yyyy h:mm a')}</span>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            {entry.heartRate && <span><Heart className="h-3 w-3 inline mr-1 text-rose-500" />{entry.heartRate} bpm</span>}
-                            {entry.oxygenSaturation && <span><Wind className="h-3 w-3 inline mr-1 text-blue-500" />{entry.oxygenSaturation}%</span>}
-                            {entry.steps && <span><Footprints className="h-3 w-3 inline mr-1 text-chart-2" />{entry.steps.toLocaleString()}</span>}
-                          </div>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <BarChart3 className="h-5 w-5" />
+                        Device Data Trends
+                      </CardTitle>
+                      <CardDescription>
+                        {filteredDeviceHistory.length} data points over {selectedRange.label.toLowerCase()}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={deviceChartData}>
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                            <XAxis dataKey="date" className="text-xs" />
+                            <YAxis className="text-xs" />
+                            <Tooltip 
+                              contentStyle={{ 
+                                backgroundColor: 'hsl(var(--card))', 
+                                border: '1px solid hsl(var(--border))',
+                                borderRadius: '8px'
+                              }} 
+                            />
+                            <Legend />
+                            <Line type="monotone" dataKey="heartRate" name="Heart Rate (bpm)" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={false} />
+                            <Line type="monotone" dataKey="spo2" name="SpO2 (%)" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Recent Entries</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-[200px]">
+                        <div className="space-y-2">
+                          {filteredDeviceHistory.slice(0, 10).map((entry: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                              <div className="flex items-center gap-3">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm">{format(new Date(entry.createdAt || entry.date), 'MMM d, yyyy h:mm a')}</span>
+                              </div>
+                              <div className="flex items-center gap-4 text-sm">
+                                {entry.heartRate && <span><Heart className="h-3 w-3 inline mr-1 text-rose-500" />{entry.heartRate} bpm</span>}
+                                {entry.oxygenSaturation && <span><Wind className="h-3 w-3 inline mr-1 text-blue-500" />{entry.oxygenSaturation}%</span>}
+                                {entry.steps && <span><Footprints className="h-3 w-3 inline mr-1 text-chart-2" />{entry.steps.toLocaleString()}</span>}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </>
-          ) : (
-            <EmptyStatePrompt
-              icon={Heart}
-              title="No Device Data Yet"
-              description="Sync your wearable device to start tracking heart rate, SpO2, temperature, and activity levels."
-              actionLabel="Connect Wearable"
-              actionHref="/wearables"
-            />
-          )}
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </>
+              ) : (
+                <EmptyStatePrompt
+                  icon={Heart}
+                  title="No Wearable Data Yet"
+                  description="Sync your wearable device to start tracking heart rate, SpO2, temperature, and activity levels."
+                  actionLabel="Connect Wearable"
+                  actionHref="/wearables"
+                />
+              )}
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent value="symptoms" className="space-y-4">
