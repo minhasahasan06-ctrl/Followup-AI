@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Video,
   Camera,
@@ -37,6 +38,13 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Watch,
+  Heart,
+  Thermometer,
+  Gauge,
+  Moon,
+  Flame,
+  RefreshCw,
 } from 'lucide-react';
 import { ExamPrepStep } from '@/components/ExamPrepStep';
 import { VideoRecorder } from '@/components/VideoRecorder';
@@ -72,6 +80,256 @@ interface EdemaMetrics {
   swelling_severity: string;
   overall_expansion_percent: number;
   analyzed_at: string;
+}
+
+interface DeviceConnection {
+  id: string;
+  vendor_id: string;
+  device_type: string;
+  device_name: string;
+  status: string;
+  last_sync_at: string | null;
+  data_types: string[];
+}
+
+interface DeviceReading {
+  data_type: string;
+  value: number;
+  unit: string;
+  timestamp: string;
+  source_device?: string;
+}
+
+interface HealthSectionAnalytics {
+  section: string;
+  risk_score: number;
+  trend: 'stable' | 'improving' | 'declining' | 'unknown';
+  deterioration_index: number;
+  stability_score: number;
+  last_updated: string;
+  readings_count: number;
+}
+
+interface DeviceHealthData {
+  connections: DeviceConnection[];
+  latest_readings: DeviceReading[];
+  health_analytics: HealthSectionAnalytics[];
+  last_sync: string | null;
+}
+
+function DeviceDataTab({ patientId }: { patientId: string }) {
+  const { data: deviceData, isLoading, error, refetch } = useQuery<DeviceHealthData>({
+    queryKey: ['/api/v1/devices/daily-summary', patientId],
+    queryFn: async () => {
+      const [connectionsRes, analyticsRes] = await Promise.all([
+        fetch('/api/v1/devices/connections'),
+        fetch('/api/v1/devices/health-analytics'),
+      ]);
+      
+      if (connectionsRes.status === 401 || analyticsRes.status === 401) {
+        return {
+          connections: [],
+          latest_readings: [],
+          health_analytics: [],
+          last_sync: null,
+        };
+      }
+      
+      const connections = connectionsRes.ok ? await connectionsRes.json() : { devices: [] };
+      const analytics = analyticsRes.ok ? await analyticsRes.json() : { sections: [] };
+      
+      return {
+        connections: connections.devices || [],
+        latest_readings: [],
+        health_analytics: analytics.sections || [],
+        last_sync: connections.devices?.[0]?.last_sync_at || null,
+      };
+    },
+    enabled: !!patientId,
+    retry: false,
+  });
+
+  const formatValue = (value: number, unit: string) => {
+    if (unit === 'bpm' || unit === 'mmHg' || unit === 'mg/dL') {
+      return `${Math.round(value)} ${unit}`;
+    }
+    if (unit === '%') {
+      return `${value.toFixed(1)}%`;
+    }
+    if (unit === 'steps') {
+      return value.toLocaleString();
+    }
+    return `${value} ${unit}`;
+  };
+
+  const getTrendIcon = (trend: string) => {
+    switch (trend) {
+      case 'improving': return <TrendingUp className="h-4 w-4 text-green-500" />;
+      case 'declining': return <TrendingDown className="h-4 w-4 text-red-500" />;
+      default: return <Minus className="h-4 w-4 text-muted-foreground" />;
+    }
+  };
+
+  const getRiskColor = (score: number) => {
+    if (score < 3) return 'text-green-500';
+    if (score < 6) return 'text-yellow-500';
+    if (score < 9) return 'text-orange-500';
+    return 'text-red-500';
+  };
+
+  const getDeviceIcon = (deviceType: string) => {
+    switch (deviceType) {
+      case 'smartwatch': return <Watch className="h-5 w-5" />;
+      case 'bp_monitor': return <Gauge className="h-5 w-5" />;
+      case 'glucose_meter': return <Droplets className="h-5 w-5" />;
+      case 'thermometer': return <Thermometer className="h-5 w-5" />;
+      case 'pulse_oximeter': return <Heart className="h-5 w-5" />;
+      default: return <Activity className="h-5 w-5" />;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  const hasDevices = deviceData?.connections && deviceData.connections.length > 0;
+  const hasAnalytics = deviceData?.health_analytics && deviceData.health_analytics.length > 0;
+
+  if (!hasDevices) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="p-8 text-center">
+          <Watch className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+          <h3 className="text-lg font-semibold mb-2">No Devices Connected</h3>
+          <p className="text-muted-foreground mb-4">
+            Connect your wearable devices to see real-time health metrics
+          </p>
+          <Link href="/device-connect">
+            <Button data-testid="button-connect-device">
+              <Watch className="h-4 w-4 mr-2" />
+              Connect Device
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Connected Devices</h3>
+          <p className="text-sm text-muted-foreground">
+            {deviceData.connections.length} device{deviceData.connections.length !== 1 ? 's' : ''} synced
+            {deviceData.last_sync && ` • Last sync: ${new Date(deviceData.last_sync).toLocaleTimeString()}`}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-devices">
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Sync Now
+        </Button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {deviceData.connections.map((device) => (
+          <Card key={device.id} className="hover-elevate">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                    {getDeviceIcon(device.device_type)}
+                  </div>
+                  <div>
+                    <p className="font-medium">{device.device_name}</p>
+                    <p className="text-xs text-muted-foreground capitalize">
+                      {device.vendor_id.replace('_', ' ')}
+                    </p>
+                  </div>
+                </div>
+                <Badge variant={device.status === 'active' ? 'default' : 'secondary'}>
+                  {device.status}
+                </Badge>
+              </div>
+              {device.last_sync_at && (
+                <p className="text-xs text-muted-foreground">
+                  Last synced: {new Date(device.last_sync_at).toLocaleString()}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {hasAnalytics && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
+              Health Section Analytics
+            </CardTitle>
+            <CardDescription>
+              AI-powered risk analysis from your device data
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2">
+              {deviceData.health_analytics.map((section) => (
+                <div key={section.section} className="p-4 rounded-lg bg-muted/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium capitalize">{section.section.replace('_', ' ')}</span>
+                    <div className="flex items-center gap-2">
+                      {getTrendIcon(section.trend)}
+                      <span className={`text-sm font-semibold ${getRiskColor(section.risk_score)}`}>
+                        Risk: {section.risk_score.toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Stability:</span>
+                      <span className="ml-1 font-medium">{(section.stability_score * 100).toFixed(0)}%</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Deterioration:</span>
+                      <span className="ml-1 font-medium">{section.deterioration_index.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <Progress value={section.stability_score * 100} className="mt-2 h-1" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h4 className="font-medium">Manage Your Devices</h4>
+              <p className="text-sm text-muted-foreground">
+                Add new devices, update settings, or view detailed metrics
+              </p>
+            </div>
+            <Link href="/device-connect">
+              <Button variant="outline" className="gap-2" data-testid="button-manage-devices">
+                <Watch className="h-4 w-4" />
+                Device Settings
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function TremorGaitEdemaInsights24h({ patientId }: { patientId: string }) {
@@ -518,9 +776,23 @@ export default function DailyFollowup() {
 
       <LegalDisclaimer />
 
-      {/* Today's Metrics or Start Examination */}
-      {hasMetricsToday ? (
-        <div className="space-y-6">
+      {/* Tabs for Examination and Device Data */}
+      <Tabs defaultValue="examination" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsTrigger value="examination" className="gap-2" data-testid="tab-examination">
+            <Video className="h-4 w-4" />
+            Examinations
+          </TabsTrigger>
+          <TabsTrigger value="devices" className="gap-2" data-testid="tab-devices">
+            <Watch className="h-4 w-4" />
+            Device Data
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="examination" className="mt-6">
+          {/* Today's Metrics or Start Examination */}
+          {hasMetricsToday ? (
+            <div className="space-y-6">
           {/* Header with Link to Full Analysis */}
           <Card className="border-primary/20">
             <CardHeader>
@@ -782,26 +1054,32 @@ export default function DailyFollowup() {
         </Card>
       )}
 
-      {/* Link to history page */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <h3 className="font-semibold">View All Health History</h3>
-              <p className="text-sm text-muted-foreground">
-                Access detailed trends across all wellness categories
-              </p>
-            </div>
-            <Link href="/daily-followup">
-              <Button variant="outline" className="gap-2" data-testid="button-health-history">
-                <BarChart3 className="h-4 w-4" />
-                Health History
-                <ExternalLink className="h-3 w-3" />
-              </Button>
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
+          {/* Link to history page */}
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <h3 className="font-semibold">View All Health History</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Access detailed trends across all wellness categories
+                  </p>
+                </div>
+                <Link href="/daily-followup">
+                  <Button variant="outline" className="gap-2" data-testid="button-health-history">
+                    <BarChart3 className="h-4 w-4" />
+                    Health History
+                    <ExternalLink className="h-3 w-3" />
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="devices" className="mt-6">
+          <DeviceDataTab patientId={user?.id || ''} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
