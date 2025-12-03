@@ -30,6 +30,12 @@ from app.services.patient_segmentation_service import (
     get_segmentation_service,
     segment_patient as segment_patient_sklearn
 )
+from app.services.deterioration_ensemble_service import (
+    DeteriorationEnsembleService,
+    get_deterioration_service,
+    predict_deterioration as predict_deterioration_ensemble,
+    predict_readmission as predict_readmission_ensemble
+)
 from app.models.ml_models import MLModel, MLPrediction
 
 logger = logging.getLogger(__name__)
@@ -1093,24 +1099,52 @@ class MLPredictionService:
     async def predict_deterioration(
         self,
         patient_id: str,
-        doctor_id: Optional[str] = None
+        doctor_id: Optional[str] = None,
+        use_ensemble: bool = True,
+        use_news2: bool = True,
+        use_scale2: bool = False
     ) -> Dict[str, Any]:
-        """Predict clinical deterioration and readmission risk."""
-        # Build features
+        """
+        Predict clinical deterioration and readmission risk.
+        
+        Uses production-grade ensemble models:
+        - Random Forest + NEWS2 for deterioration (NEWS2-inspired)
+        - Gradient Boosting + HOSPITAL score for readmission
+        
+        Args:
+            patient_id: Patient identifier
+            doctor_id: Doctor requesting prediction
+            use_ensemble: Use sklearn ensemble (True) or legacy model (False)
+            use_news2: Include NEWS2 early warning score in deterioration
+            use_scale2: Use NEWS2 SpO2 Scale 2 for COPD/hypercapnic patients
+        
+        Returns:
+            Comprehensive deterioration and readmission predictions
+        """
         features, missing = await self.feature_builder.build_features(
             patient_id=patient_id,
             model_type="deterioration",
             doctor_id=doctor_id
         )
         
-        deterioration = DeteriorationPredictor.predict_deterioration(features)
-        readmission = DeteriorationPredictor.predict_readmission_risk(features)
+        if use_ensemble:
+            service = get_deterioration_service()
+            deterioration = service.predict_deterioration(
+                features, use_news2=use_news2, use_scale2=use_scale2
+            )
+            readmission = service.predict_readmission_risk(features)
+        else:
+            deterioration = DeteriorationPredictor.predict_deterioration(features)
+            readmission = DeteriorationPredictor.predict_readmission_risk(features)
         
-        # Log prediction
         self._log_prediction(
             patient_id=patient_id,
             prediction_type="deterioration",
-            input_data={"features_used": len(features)},
+            input_data={
+                "features_used": len(features),
+                "method": "ensemble" if use_ensemble else "legacy",
+                "news2_enabled": use_news2
+            },
             result={"deterioration": deterioration, "readmission": readmission},
             doctor_id=doctor_id
         )
@@ -1121,7 +1155,7 @@ class MLPredictionService:
             "readmission": readmission,
             "missing_features": missing,
             "predicted_at": datetime.utcnow().isoformat(),
-            "model_version": "1.0.0"
+            "model_version": "2.0.0"
         }
     
     async def predict_vital_trends(

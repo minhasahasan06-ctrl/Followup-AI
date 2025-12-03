@@ -58,6 +58,17 @@ The backend comprises two services: a Node.js Express server (Port 5000) for cha
     - 12 features: PHQ-9, GAD-7, PSS-10, daily steps, sleep hours, checkin rate, symptom count, pain level, medication adherence, vital stability, age, comorbidity count
     - 4 clinical phenotypes: Wellness Engaged, Moderate Risk, High Complexity, Critical Needs
     - Graceful fallback to predefined centroids when insufficient data
+  - **Deterioration Ensemble (DeteriorationEnsembleService):**
+    - Random Forest + NEWS2 early warning score for clinical deterioration
+    - Gradient Boosting + HOSPITAL score for 30-day readmission risk
+    - NEWS2 scoring: heart rate, respiratory rate, BP, SpO2, temperature, consciousness, O2 supplementation
+    - NEWS2 Scale 2 support for COPD/hypercapnic patients (target SpO2 88-92%, penalizes high SpO2)
+    - HOSPITAL score: All 7 validated components (hemoglobin, oncology, sodium, procedure, index admission, prior admissions, length of stay)
+    - Combined weighted ensemble (60% NEWS2/40% RF for deterioration, 50/50 for readmission)
+    - Feature importance with SHAP-like contribution analysis
+    - Severity levels: stable, low_risk, moderate_risk, high_risk, critical
+    - Time-to-action recommendations based on severity
+    - API parameters: use_ensemble, use_news2, use_scale2
 - **Guided Video Examination:** 4-stage workflow (Eyes, Palm, Tongue, Lips) with LAB color analysis and S3 encrypted storage, including Facial Puffiness Score (FPS).
 - **Guided Audio Examination:** 4-stage workflow (Breathing, Coughing, Speaking, Reading) with YAMNet ML classification and S3 encrypted storage.
 - **Alert Orchestration Engine:** Multi-channel (dashboard, email, SMS) rule-based alert delivery.
