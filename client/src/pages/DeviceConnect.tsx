@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation, useSearch } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,13 +14,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { 
   Watch, CheckCircle2, XCircle, AlertCircle, Plus, Trash2, RefreshCw, 
   Battery, Activity, Dumbbell, Zap, Smartphone, Stethoscope, Heart,
   Thermometer, Droplets, Scale, Bluetooth, Wifi, Shield, Settings,
   ArrowRight, ExternalLink, Clock, TrendingUp, AlertTriangle, Info,
-  ChevronRight, Check, X, Loader2, Link2, Unlink, BarChart2, FileText
+  ChevronRight, Check, X, Loader2, Link2, Unlink, BarChart2, FileText,
+  QrCode, Webhook, Signal, BatteryWarning, BatteryFull, BatteryLow,
+  Radio, Scan, CheckCheck, WifiOff, RefreshCcw
 } from "lucide-react";
 import { SiApple, SiFitbit, SiGarmin, SiSamsung, SiGoogle } from "react-icons/si";
 
@@ -45,6 +49,8 @@ interface ConnectedDevice {
   trackedMetrics: string[];
   consentGiven: boolean;
   consentTimestamp?: string;
+  autoSync?: boolean;
+  signalStrength?: number;
   healthData?: {
     latestReadings: Record<string, any>;
     dailyAverage: Record<string, number>;
@@ -56,9 +62,37 @@ interface Vendor {
   id: string;
   name: string;
   status: "active" | "coming_soon" | "requires_partnership";
-  pairingMethod: "oauth" | "ble" | "manual" | "qr";
+  pairingMethod: "oauth" | "ble" | "manual" | "qr" | "healthkit" | "google_fit";
   deviceTypes: string[];
   logoComponent?: React.ComponentType<any>;
+  metrics?: string[];
+}
+
+interface BLEDevice {
+  id: string;
+  name: string;
+  rssi: number;
+  serviceUUID?: string;
+}
+
+interface WebhookStatus {
+  vendorId: string;
+  deviceName?: string;
+  lastReceived?: string;
+  lastSyncedAt?: string;
+  lastSyncStatus?: string;
+  status: "active" | "inactive" | "error";
+  eventsToday: number;
+  errorsToday?: number;
+}
+
+interface PairingSession {
+  sessionId: string;
+  status: string;
+  authUrl?: string;
+  bleInstructions?: any;
+  qrCodeData?: string;
+  expiresAt: string;
 }
 
 const DEVICE_CATEGORIES = [
@@ -73,18 +107,20 @@ const DEVICE_CATEGORIES = [
 ];
 
 const VENDORS: Vendor[] = [
-  { id: "apple_health", name: "Apple Health", status: "active", pairingMethod: "manual", deviceTypes: ["smartwatch", "all"], logoComponent: SiApple },
-  { id: "fitbit", name: "Fitbit", status: "active", pairingMethod: "oauth", deviceTypes: ["smartwatch", "scale", "activity_tracker"], logoComponent: SiFitbit },
-  { id: "withings", name: "Withings", status: "active", pairingMethod: "oauth", deviceTypes: ["bp_monitor", "scale", "thermometer", "smartwatch"] },
-  { id: "oura", name: "Oura", status: "active", pairingMethod: "oauth", deviceTypes: ["activity_tracker"] },
-  { id: "google_fit", name: "Google Fit", status: "active", pairingMethod: "oauth", deviceTypes: ["smartwatch", "all"], logoComponent: SiGoogle },
-  { id: "ihealth", name: "iHealth", status: "active", pairingMethod: "oauth", deviceTypes: ["bp_monitor", "glucose_meter", "pulse_oximeter", "scale"] },
-  { id: "garmin", name: "Garmin", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["smartwatch", "activity_tracker"], logoComponent: SiGarmin },
-  { id: "whoop", name: "Whoop", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["activity_tracker"] },
-  { id: "dexcom", name: "Dexcom", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["glucose_meter"] },
-  { id: "samsung", name: "Samsung Health", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["smartwatch"], logoComponent: SiSamsung },
-  { id: "eko", name: "Eko", status: "requires_partnership", pairingMethod: "ble", deviceTypes: ["stethoscope"] },
-  { id: "abbott", name: "Abbott LibreView", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["glucose_meter"] },
+  { id: "apple_healthkit", name: "Apple Health", status: "active", pairingMethod: "healthkit", deviceTypes: ["smartwatch", "all"], logoComponent: SiApple, metrics: ["heart_rate", "hrv", "spo2", "sleep", "steps", "bp", "glucose", "weight", "temperature", "ecg"] },
+  { id: "fitbit", name: "Fitbit", status: "active", pairingMethod: "oauth", deviceTypes: ["smartwatch", "scale", "activity_tracker"], logoComponent: SiFitbit, metrics: ["heart_rate", "hrv", "spo2", "sleep", "steps", "calories", "respiratory_rate", "weight"] },
+  { id: "withings", name: "Withings", status: "active", pairingMethod: "oauth", deviceTypes: ["bp_monitor", "scale", "thermometer", "smartwatch"], metrics: ["bp", "weight", "body_fat", "temperature", "heart_rate", "spo2"] },
+  { id: "oura", name: "Oura", status: "active", pairingMethod: "oauth", deviceTypes: ["activity_tracker", "smartwatch"], metrics: ["heart_rate", "hrv", "spo2", "sleep", "readiness", "activity", "temperature"] },
+  { id: "google_fit", name: "Google Fit", status: "active", pairingMethod: "google_fit", deviceTypes: ["smartwatch", "all"], logoComponent: SiGoogle, metrics: ["heart_rate", "steps", "calories", "sleep", "bp", "glucose", "weight", "spo2"] },
+  { id: "ihealth", name: "iHealth", status: "active", pairingMethod: "oauth", deviceTypes: ["bp_monitor", "glucose_meter", "pulse_oximeter", "scale"], metrics: ["bp", "weight", "spo2", "glucose"] },
+  { id: "garmin", name: "Garmin", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["smartwatch", "activity_tracker"], logoComponent: SiGarmin, metrics: ["heart_rate", "hrv", "spo2", "sleep", "steps", "stress", "body_battery", "vo2_max"] },
+  { id: "whoop", name: "Whoop", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["activity_tracker"], metrics: ["heart_rate", "hrv", "spo2", "sleep", "recovery", "strain"] },
+  { id: "dexcom", name: "Dexcom", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["glucose_meter"], metrics: ["glucose"] },
+  { id: "samsung", name: "Samsung Health", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["smartwatch"], logoComponent: SiSamsung, metrics: ["heart_rate", "spo2", "sleep", "steps", "stress", "bp", "ecg"] },
+  { id: "eko", name: "Eko", status: "requires_partnership", pairingMethod: "ble", deviceTypes: ["stethoscope"], metrics: ["heart_sounds", "lung_sounds", "ecg"] },
+  { id: "abbott", name: "Abbott LibreView", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["glucose_meter"], metrics: ["glucose"] },
+  { id: "omron", name: "Omron", status: "active", pairingMethod: "ble", deviceTypes: ["bp_monitor"], metrics: ["bp", "heart_rate", "afib"] },
+  { id: "generic_ble", name: "Generic BLE Device", status: "active", pairingMethod: "ble", deviceTypes: ["bp_monitor", "pulse_oximeter", "thermometer", "scale", "glucose_meter"], metrics: ["bp", "spo2", "temperature", "weight", "glucose"] },
 ];
 
 const METRIC_LABELS: Record<string, string> = {
@@ -106,6 +142,11 @@ const METRIC_LABELS: Record<string, string> = {
   vo2_max: "VO2 Max",
   active_minutes: "Active Minutes",
   body_battery: "Body Battery",
+  body_fat: "Body Fat",
+  ecg: "ECG",
+  afib: "AFib Detection",
+  heart_sounds: "Heart Sounds",
+  lung_sounds: "Lung Sounds",
 };
 
 const DATA_CONSENT_TYPES = [
@@ -121,21 +162,39 @@ const DATA_CONSENT_TYPES = [
   { id: "stress", label: "Stress & Recovery", description: "Stress levels and recovery scores" },
 ];
 
+const BLE_SERVICE_UUIDS: Record<string, string> = {
+  blood_pressure: "00001810-0000-1000-8000-00805f9b34fb",
+  heart_rate: "0000180d-0000-1000-8000-00805f9b34fb",
+  health_thermometer: "00001809-0000-1000-8000-00805f9b34fb",
+  weight_scale: "0000181d-0000-1000-8000-00805f9b34fb",
+  glucose: "00001808-0000-1000-8000-00805f9b34fb",
+  pulse_oximeter: "00001822-0000-1000-8000-00805f9b34fb",
+};
+
 export default function DeviceConnect() {
   const { toast } = useToast();
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+  
   const [activeTab, setActiveTab] = useState("devices");
   const [showPairingWizard, setShowPairingWizard] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [showDeviceDetails, setShowDeviceDetails] = useState(false);
+  const [showBLEScanModal, setShowBLEScanModal] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<ConnectedDevice | null>(null);
   const [pairingStep, setPairingStep] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedVendor, setSelectedVendor] = useState<string | null>(null);
   const [consentSelections, setConsentSelections] = useState<Record<string, boolean>>({});
-  const [pairingStatus, setPairingStatus] = useState<"idle" | "connecting" | "success" | "error">("idle");
+  const [pairingStatus, setPairingStatus] = useState<"idle" | "connecting" | "scanning" | "success" | "error">("idle");
   const [manualDeviceName, setManualDeviceName] = useState("");
+  const [pairingSession, setPairingSession] = useState<PairingSession | null>(null);
+  const [bleDevices, setBleDevices] = useState<BLEDevice[]>([]);
+  const [selectedBleDevice, setSelectedBleDevice] = useState<BLEDevice | null>(null);
+  const [oauthPolling, setOauthPolling] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { data: devices = [], isLoading: devicesLoading, error: devicesError } = useQuery<ConnectedDevice[]>({
+  const { data: devices = [], isLoading: devicesLoading, error: devicesError, refetch: refetchDevices } = useQuery<ConnectedDevice[]>({
     queryKey: ["/api/v1/devices/connections"],
     retry: false,
   });
@@ -154,32 +213,121 @@ export default function DeviceConnect() {
     retry: false,
   });
 
+  const { data: webhookStatuses } = useQuery<WebhookStatus[]>({
+    queryKey: ["/api/v1/devices/webhook-status"],
+    enabled: devices.length > 0 && isAuthenticated,
+    retry: false,
+    refetchInterval: 60000,
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const paired = params.get("paired");
+    const error = params.get("error");
+    const vendor = params.get("vendor");
+
+    if (paired === "true" && vendor) {
+      const vendorName = VENDORS.find(v => v.id === vendor)?.name || vendor;
+      toast({
+        title: "Device Connected!",
+        description: `Successfully connected to ${vendorName}. Your health data will sync automatically.`,
+      });
+      refetchDevices();
+      setLocation("/wearables", { replace: true });
+    } else if (error === "pairing_failed" && vendor) {
+      const vendorName = VENDORS.find(v => v.id === vendor)?.name || vendor;
+      toast({
+        title: "Connection Failed",
+        description: `Could not connect to ${vendorName}. Please try again.`,
+        variant: "destructive",
+      });
+      setLocation("/wearables", { replace: true });
+    }
+  }, [search, toast, refetchDevices, setLocation]);
+
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
   const startPairingMutation = useMutation({
-    mutationFn: async (data: { vendorId: string; deviceType: string; deviceName?: string }) => {
+    mutationFn: async (data: { vendorId: string; deviceType: string; pairingMethod: string; deviceName?: string }) => {
       return await apiRequest("/api/v1/devices/pair/start", {
         method: "POST",
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          vendor_id: data.vendorId,
+          device_type: data.deviceType,
+          pairing_method: data.pairingMethod,
+          device_model: data.deviceName,
+        }),
       });
     },
     onSuccess: (response: any) => {
-      if (response.pairing_method === "oauth" && response.oauth_url) {
-        window.open(response.oauth_url, "_blank", "width=600,height=700");
+      setPairingSession({
+        sessionId: response.session_id,
+        status: response.status,
+        authUrl: response.auth_url,
+        bleInstructions: response.ble_instructions,
+        qrCodeData: response.qr_code_data,
+        expiresAt: response.expires_at,
+      });
+
+      if (response.pairing_method === "oauth" && response.auth_url) {
+        window.open(response.auth_url, "_blank", "width=600,height=700");
         setPairingStatus("connecting");
-      } else if (response.pairing_method === "manual") {
+        setOauthPolling(true);
+        startOAuthPolling(response.session_id);
+      } else if (response.pairing_method === "ble") {
+        setPairingStatus("idle");
+        setShowBLEScanModal(true);
+      } else if (response.pairing_method === "manual" || response.pairing_method === "healthkit") {
         setPairingStatus("success");
-        toast({
-          title: "Device Added",
-          description: "Your device has been added. Data will sync automatically.",
+        completePairingMutation.mutate({
+          sessionId: response.session_id,
+          consentGranted: true,
+          consentedDataTypes: Object.entries(consentSelections).filter(([_, v]) => v).map(([k]) => k),
         });
-        queryClient.invalidateQueries({ queryKey: ["/api/v1/devices/connections"] });
-        closePairingWizard();
       }
+    },
+    onError: (error: any) => {
+      setPairingStatus("error");
+      toast({
+        title: "Pairing Failed",
+        description: error?.message || "Could not start device pairing. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const completePairingMutation = useMutation({
+    mutationFn: async (data: { sessionId: string; bleDeviceId?: string; consentGranted: boolean; consentedDataTypes: string[] }) => {
+      return await apiRequest("/api/v1/devices/pair/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          session_id: data.sessionId,
+          ble_device_id: data.bleDeviceId,
+          consent_granted: data.consentGranted,
+          consented_data_types: data.consentedDataTypes,
+        }),
+      });
+    },
+    onSuccess: () => {
+      setPairingStatus("success");
+      toast({
+        title: "Device Connected!",
+        description: "Your device has been paired successfully. Data will sync automatically.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/devices/connections"] });
+      setTimeout(() => closePairingWizard(), 1500);
     },
     onError: () => {
       setPairingStatus("error");
       toast({
         title: "Pairing Failed",
-        description: "Could not connect to the device. Please try again.",
+        description: "Could not complete device pairing. Please try again.",
         variant: "destructive",
       });
     },
@@ -191,11 +339,11 @@ export default function DeviceConnect() {
         method: "POST",
       });
     },
-    onSuccess: () => {
+    onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/devices/connections"] });
       toast({
-        title: "Sync Complete",
-        description: "Your health data has been synchronized.",
+        title: "Sync Started",
+        description: response?.job_id ? `Sync job ${response.job_id} queued.` : "Your health data sync has been initiated.",
       });
     },
     onError: () => {
@@ -241,26 +389,153 @@ export default function DeviceConnect() {
     },
   });
 
+  const startOAuthPolling = useCallback((sessionId: string) => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    let attempts = 0;
+    const maxAttempts = 60;
+
+    pollingIntervalRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        clearInterval(pollingIntervalRef.current!);
+        setOauthPolling(false);
+        setPairingStatus("error");
+        toast({
+          title: "Authorization Timeout",
+          description: "OAuth authorization timed out. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        const response = await apiRequest(`/api/v1/devices/pair/status/${sessionId}`);
+        if (response.status === "completed") {
+          clearInterval(pollingIntervalRef.current!);
+          setOauthPolling(false);
+          setPairingStatus("success");
+          queryClient.invalidateQueries({ queryKey: ["/api/v1/devices/connections"] });
+          toast({
+            title: "Device Connected!",
+            description: "Your device has been paired successfully.",
+          });
+          setTimeout(() => closePairingWizard(), 1500);
+        } else if (response.status === "failed") {
+          clearInterval(pollingIntervalRef.current!);
+          setOauthPolling(false);
+          setPairingStatus("error");
+          toast({
+            title: "Authorization Failed",
+            description: response.error_message || "OAuth authorization failed.",
+            variant: "destructive",
+          });
+        }
+      } catch (e) {
+      }
+    }, 3000);
+  }, [toast]);
+
+  const scanForBLEDevices = useCallback(async () => {
+    if (!navigator.bluetooth) {
+      toast({
+        title: "Bluetooth Not Available",
+        description: "Web Bluetooth is only available in Chrome, Edge, and Opera browsers.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPairingStatus("scanning");
+    setBleDevices([]);
+
+    try {
+      const category = selectedCategory || "bp_monitor";
+      let serviceUUID = BLE_SERVICE_UUIDS.heart_rate;
+      
+      if (category === "bp_monitor") {
+        serviceUUID = BLE_SERVICE_UUIDS.blood_pressure;
+      } else if (category === "thermometer") {
+        serviceUUID = BLE_SERVICE_UUIDS.health_thermometer;
+      } else if (category === "scale") {
+        serviceUUID = BLE_SERVICE_UUIDS.weight_scale;
+      } else if (category === "glucose_meter") {
+        serviceUUID = BLE_SERVICE_UUIDS.glucose;
+      } else if (category === "pulse_oximeter") {
+        serviceUUID = BLE_SERVICE_UUIDS.pulse_oximeter;
+      }
+
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [serviceUUID] }],
+        optionalServices: Object.values(BLE_SERVICE_UUIDS),
+      });
+
+      if (device) {
+        const bleDevice: BLEDevice = {
+          id: device.id,
+          name: device.name || "Unknown Device",
+          rssi: -50,
+          serviceUUID,
+        };
+        setBleDevices([bleDevice]);
+        setSelectedBleDevice(bleDevice);
+        setPairingStatus("idle");
+      }
+    } catch (error: any) {
+      if (error.name !== "NotFoundError") {
+        toast({
+          title: "Bluetooth Error",
+          description: error.message || "Could not scan for devices.",
+          variant: "destructive",
+        });
+      }
+      setPairingStatus("idle");
+    }
+  }, [selectedCategory, toast]);
+
+  const connectBLEDevice = useCallback(async () => {
+    if (!selectedBleDevice || !pairingSession) return;
+
+    setPairingStatus("connecting");
+    
+    completePairingMutation.mutate({
+      sessionId: pairingSession.sessionId,
+      bleDeviceId: selectedBleDevice.id,
+      consentGranted: true,
+      consentedDataTypes: Object.entries(consentSelections).filter(([_, v]) => v).map(([k]) => k),
+    });
+  }, [selectedBleDevice, pairingSession, consentSelections, completePairingMutation]);
+
   const closePairingWizard = () => {
     setShowPairingWizard(false);
+    setShowBLEScanModal(false);
     setPairingStep(0);
     setSelectedCategory(null);
     setSelectedVendor(null);
     setConsentSelections({});
     setPairingStatus("idle");
     setManualDeviceName("");
+    setPairingSession(null);
+    setBleDevices([]);
+    setSelectedBleDevice(null);
+    setOauthPolling(false);
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
   };
 
   const handleStartPairing = () => {
     if (!selectedVendor || !selectedCategory) return;
     
-    const consentsArray = Object.entries(consentSelections)
-      .filter(([_, enabled]) => enabled)
-      .map(([id]) => id);
-    
+    const vendor = VENDORS.find(v => v.id === selectedVendor);
+    if (!vendor) return;
+
     startPairingMutation.mutate({
       vendorId: selectedVendor,
       deviceType: selectedCategory,
+      pairingMethod: vendor.pairingMethod,
       deviceName: manualDeviceName || undefined,
     });
   };
@@ -300,10 +575,11 @@ export default function DeviceConnect() {
 
   const getBatteryIcon = (level?: number) => {
     if (!level) return null;
+    const Icon = level > 50 ? BatteryFull : level > 20 ? Battery : BatteryLow;
     const color = level > 50 ? "text-green-600" : level > 20 ? "text-yellow-600" : "text-red-600";
     return (
       <div className="flex items-center gap-1">
-        <Battery className={`h-4 w-4 ${color}`} />
+        <Icon className={`h-4 w-4 ${color}`} />
         <span className="text-xs text-muted-foreground">{level}%</span>
       </div>
     );
@@ -322,8 +598,24 @@ export default function DeviceConnect() {
     return `${Math.floor(diffMins / 1440)}d ago`;
   };
 
+  const getWebhookStatusBadge = (status?: WebhookStatus) => {
+    if (!status) return null;
+    switch (status.status) {
+      case "active":
+        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs"><Webhook className="h-3 w-3 mr-1" />Active</Badge>;
+      case "inactive":
+        return <Badge variant="secondary" className="text-xs"><WifiOff className="h-3 w-3 mr-1" />Inactive</Badge>;
+      case "error":
+        return <Badge variant="destructive" className="text-xs"><AlertCircle className="h-3 w-3 mr-1" />Error</Badge>;
+      default:
+        return null;
+    }
+  };
+
   const connectedDevices = devices.filter((d: ConnectedDevice) => d.connectionStatus === "connected");
   const pendingDevices = devices.filter((d: ConnectedDevice) => d.connectionStatus === "pending");
+  const totalMetrics = connectedDevices.reduce((acc, d) => acc + (d.trackedMetrics?.length || 0), 0);
+  const activeConsents = connectedDevices.filter(d => d.consentGiven).length;
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -334,10 +626,16 @@ export default function DeviceConnect() {
             Connect your health devices to enable continuous monitoring and AI-powered insights
           </p>
         </div>
-        <Button onClick={() => setShowPairingWizard(true)} data-testid="button-add-device">
-          <Plus className="mr-2 h-4 w-4" />
-          Add Device
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => refetchDevices()} data-testid="button-refresh-devices">
+            <RefreshCcw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+          <Button onClick={() => setShowPairingWizard(true)} data-testid="button-add-device">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Device
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -362,9 +660,7 @@ export default function DeviceConnect() {
                 <BarChart2 className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold" data-testid="text-metrics-count">
-                  {connectedDevices.reduce((acc, d) => acc + (d.trackedMetrics?.length || 0), 0)}
-                </p>
+                <p className="text-2xl font-bold" data-testid="text-metrics-count">{totalMetrics}</p>
                 <p className="text-sm text-muted-foreground">Active Metrics</p>
               </div>
             </div>
@@ -397,15 +693,61 @@ export default function DeviceConnect() {
                 <Shield className="h-5 w-5 text-amber-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold" data-testid="text-consent-status">
-                  {connectedDevices.filter(d => d.consentGiven).length}/{connectedDevices.length}
-                </p>
+                <p className="text-2xl font-bold" data-testid="text-consent-status">{activeConsents}/{connectedDevices.length}</p>
                 <p className="text-sm text-muted-foreground">Consents Active</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {webhookStatuses && webhookStatuses.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Webhook className="h-5 w-5 text-muted-foreground" />
+              <CardTitle className="text-base">Data Sync Status</CardTitle>
+            </div>
+            <CardDescription>Real-time data sync status from connected vendors</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3">
+              {webhookStatuses.map((webhook) => (
+                <TooltipProvider key={webhook.vendorId}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 cursor-default">
+                        {getVendorLogo(webhook.vendorId)}
+                        <span className="text-sm font-medium">
+                          {webhook.deviceName || VENDORS.find(v => v.id === webhook.vendorId)?.name || webhook.vendorId}
+                        </span>
+                        {getWebhookStatusBadge(webhook)}
+                        {webhook.eventsToday > 0 && (
+                          <Badge variant="outline" className="text-xs">{webhook.eventsToday} syncs</Badge>
+                        )}
+                        {(webhook.errorsToday ?? 0) > 0 && (
+                          <Badge variant="destructive" className="text-xs">{webhook.errorsToday} errors</Badge>
+                        )}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <div className="text-xs space-y-1">
+                        <p>Last activity: {webhook.lastReceived ? new Date(webhook.lastReceived).toLocaleString() : "Never"}</p>
+                        {webhook.lastSyncedAt && (
+                          <p>Last sync: {new Date(webhook.lastSyncedAt).toLocaleString()}</p>
+                        )}
+                        {webhook.lastSyncStatus && (
+                          <p>Sync status: {webhook.lastSyncStatus}</p>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
@@ -483,6 +825,13 @@ export default function DeviceConnect() {
                       </div>
                       {getBatteryIcon(device.batteryLevel)}
                     </div>
+                    
+                    {device.signalStrength && (
+                      <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                        <Signal className="h-4 w-4" />
+                        <span>Signal: {device.signalStrength}%</span>
+                      </div>
+                    )}
                     
                     <div className="mt-3 flex flex-wrap gap-1">
                       {device.trackedMetrics?.slice(0, 4).map(metric => (
@@ -613,11 +962,11 @@ export default function DeviceConnect() {
                           "bg-blue-100 dark:bg-blue-900/30"
                         }`}>
                           {event.status === "success" ? (
-                            <Check className="h-4 w-4 text-green-600" />
+                            <CheckCheck className="h-4 w-4 text-green-600" />
                           ) : event.status === "error" ? (
                             <X className="h-4 w-4 text-red-600" />
                           ) : (
-                            <RefreshCw className="h-4 w-4 text-blue-600" />
+                            <RefreshCw className="h-4 w-4 text-blue-600 animate-spin" />
                           )}
                         </div>
                         <div className="flex-1">
@@ -724,8 +1073,9 @@ export default function DeviceConnect() {
                         <div>
                           <p className="font-medium">{vendor.name}</p>
                           <p className="text-xs text-muted-foreground capitalize">
-                            {vendor.pairingMethod === "oauth" ? "OAuth Connection" : 
-                             vendor.pairingMethod === "ble" ? "Bluetooth" : "Manual Entry"}
+                            {vendor.pairingMethod === "oauth" || vendor.pairingMethod === "google_fit" ? "OAuth Connection" : 
+                             vendor.pairingMethod === "ble" ? "Bluetooth" : 
+                             vendor.pairingMethod === "healthkit" ? "Apple HealthKit" : "Manual Entry"}
                           </p>
                         </div>
                       </div>
@@ -808,110 +1158,225 @@ export default function DeviceConnect() {
 
           {pairingStep === 3 && (
             <div className="space-y-6">
-              {VENDORS.find(v => v.id === selectedVendor)?.pairingMethod === "manual" && (
-                <div className="space-y-4">
-                  <Label htmlFor="device-name">Device Name (Optional)</Label>
-                  <Input
-                    id="device-name"
-                    placeholder="My Apple Watch"
-                    value={manualDeviceName}
-                    onChange={(e) => setManualDeviceName(e.target.value)}
-                    data-testid="input-device-name"
-                  />
-                  <div className="p-4 rounded-lg bg-muted">
-                    <h4 className="font-medium mb-2">How to sync your data:</h4>
-                    <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-                      <li>Open the Health app on your iPhone</li>
-                      <li>Tap your profile icon, then "Export All Health Data"</li>
-                      <li>Share the exported file with Followup AI</li>
-                      <li>Or use our iOS Shortcuts integration for automatic syncing</li>
-                    </ol>
-                  </div>
-                </div>
-              )}
+              {(() => {
+                const vendor = VENDORS.find(v => v.id === selectedVendor);
+                if (!vendor) return null;
 
-              {VENDORS.find(v => v.id === selectedVendor)?.pairingMethod === "oauth" && (
-                <div className="text-center space-y-4">
-                  {pairingStatus === "idle" && (
-                    <>
-                      <div className="p-4 rounded-lg bg-muted inline-block mx-auto">
-                        {VENDORS.find(v => v.id === selectedVendor)?.logoComponent ? (
-                          (() => {
-                            const Logo = VENDORS.find(v => v.id === selectedVendor)!.logoComponent!;
-                            return <Logo className="h-12 w-12" />;
-                          })()
-                        ) : (
-                          <Link2 className="h-12 w-12" />
+                if (vendor.pairingMethod === "healthkit") {
+                  return (
+                    <div className="space-y-4">
+                      <div className="text-center">
+                        <div className="p-4 rounded-full bg-muted inline-block mx-auto">
+                          <SiApple className="h-12 w-12" />
+                        </div>
+                      </div>
+                      <Label htmlFor="device-name">Device Name (Optional)</Label>
+                      <Input
+                        id="device-name"
+                        placeholder="My Apple Watch"
+                        value={manualDeviceName}
+                        onChange={(e) => setManualDeviceName(e.target.value)}
+                        data-testid="input-device-name"
+                      />
+                      <div className="p-4 rounded-lg bg-muted">
+                        <h4 className="font-medium mb-2">How to sync your Apple Health data:</h4>
+                        <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+                          <li>Open the Health app on your iPhone</li>
+                          <li>Tap your profile icon, then tap "Apps"</li>
+                          <li>Find and enable Followup AI for data access</li>
+                          <li>Alternatively, use "Export All Health Data" and upload</li>
+                          <li>Or use our iOS Shortcuts integration for automatic syncing</li>
+                        </ol>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (vendor.pairingMethod === "oauth" || vendor.pairingMethod === "google_fit") {
+                  return (
+                    <div className="text-center space-y-4">
+                      {pairingStatus === "idle" && (
+                        <>
+                          <div className="p-4 rounded-lg bg-muted inline-block mx-auto">
+                            {vendor.logoComponent ? (
+                              <vendor.logoComponent className="h-12 w-12" />
+                            ) : (
+                              <Link2 className="h-12 w-12" />
+                            )}
+                          </div>
+                          <p className="text-muted-foreground">
+                            Click "Connect" to authorize access to your {vendor.name} account
+                          </p>
+                          <Alert>
+                            <Info className="h-4 w-4" />
+                            <AlertDescription>
+                              You'll be redirected to {vendor.name} to securely authorize data access. No passwords are shared with us.
+                            </AlertDescription>
+                          </Alert>
+                        </>
+                      )}
+
+                      {pairingStatus === "connecting" && (
+                        <>
+                          <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
+                          <p className="font-medium">Waiting for authorization...</p>
+                          <p className="text-sm text-muted-foreground">
+                            Complete the authorization in the popup window
+                          </p>
+                          <Progress value={undefined} className="w-full" />
+                          <Button variant="outline" size="sm" onClick={() => {
+                            setPairingStatus("idle");
+                            setOauthPolling(false);
+                            if (pollingIntervalRef.current) {
+                              clearInterval(pollingIntervalRef.current);
+                            }
+                          }}>
+                            Cancel
+                          </Button>
+                        </>
+                      )}
+
+                      {pairingStatus === "success" && (
+                        <>
+                          <div className="p-4 rounded-full bg-green-100 dark:bg-green-900/30 inline-block">
+                            <CheckCircle2 className="h-12 w-12 text-green-600" />
+                          </div>
+                          <p className="font-medium text-green-600">Successfully connected!</p>
+                          <p className="text-sm text-muted-foreground">
+                            Your data will begin syncing automatically.
+                          </p>
+                        </>
+                      )}
+
+                      {pairingStatus === "error" && (
+                        <>
+                          <div className="p-4 rounded-full bg-red-100 dark:bg-red-900/30 inline-block">
+                            <XCircle className="h-12 w-12 text-red-600" />
+                          </div>
+                          <p className="font-medium text-red-600">Connection failed</p>
+                          <p className="text-sm text-muted-foreground">
+                            Please try again or contact support if the issue persists.
+                          </p>
+                          <Button variant="outline" onClick={() => setPairingStatus("idle")}>
+                            Try Again
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (vendor.pairingMethod === "ble") {
+                  return (
+                    <div className="text-center space-y-4">
+                      <div className="p-4 rounded-full bg-blue-100 dark:bg-blue-900/30 inline-block">
+                        <Bluetooth className="h-12 w-12 text-blue-600" />
+                      </div>
+                      <p className="font-medium">Bluetooth Pairing</p>
+                      <p className="text-muted-foreground">
+                        Make sure your device is in pairing mode and nearby
+                      </p>
+                      
+                      {!navigator.bluetooth && (
+                        <Alert variant="destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertTitle>Browser Not Supported</AlertTitle>
+                          <AlertDescription>
+                            Web Bluetooth is only available in Chrome, Edge, and Opera. Please use one of these browsers.
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {pairingStatus === "scanning" && (
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <span>Scanning for devices...</span>
+                        </div>
+                      )}
+
+                      {bleDevices.length > 0 && (
+                        <div className="space-y-2 text-left">
+                          <Label>Found Devices:</Label>
+                          {bleDevices.map(device => (
+                            <Card 
+                              key={device.id}
+                              className={`cursor-pointer hover-elevate ${
+                                selectedBleDevice?.id === device.id ? "ring-2 ring-primary" : ""
+                              }`}
+                              onClick={() => setSelectedBleDevice(device)}
+                            >
+                              <CardContent className="py-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <Bluetooth className="h-5 w-5 text-blue-600" />
+                                    <span className="font-medium">{device.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Signal className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm text-muted-foreground">{device.rssi} dBm</span>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <div className="flex gap-2 justify-center">
+                        <Button 
+                          onClick={scanForBLEDevices}
+                          disabled={pairingStatus === "scanning" || !navigator.bluetooth}
+                          data-testid="button-scan-bluetooth"
+                        >
+                          {pairingStatus === "scanning" ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Scan className="mr-2 h-4 w-4" />
+                          )}
+                          Scan for Devices
+                        </Button>
+                        {selectedBleDevice && (
+                          <Button 
+                            onClick={connectBLEDevice}
+                            disabled={pairingStatus === "connecting"}
+                          >
+                            {pairingStatus === "connecting" ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Link2 className="mr-2 h-4 w-4" />
+                            )}
+                            Connect
+                          </Button>
                         )}
                       </div>
-                      <p className="text-muted-foreground">
-                        Click "Connect" to authorize access to your{" "}
-                        {VENDORS.find(v => v.id === selectedVendor)?.name} account
-                      </p>
-                    </>
-                  )}
+                    </div>
+                  );
+                }
 
-                  {pairingStatus === "connecting" && (
-                    <>
-                      <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
-                      <p>Waiting for authorization...</p>
+                return (
+                  <div className="space-y-4">
+                    <Label htmlFor="device-name">Device Name</Label>
+                    <Input
+                      id="device-name"
+                      placeholder="My Device"
+                      value={manualDeviceName}
+                      onChange={(e) => setManualDeviceName(e.target.value)}
+                      data-testid="input-device-name"
+                    />
+                    <div className="p-4 rounded-lg bg-muted">
+                      <h4 className="font-medium mb-2">Manual Entry Mode</h4>
                       <p className="text-sm text-muted-foreground">
-                        Complete the authorization in the popup window
+                        You can manually enter readings from your device in the Daily Follow-up section.
                       </p>
-                    </>
-                  )}
-
-                  {pairingStatus === "success" && (
-                    <>
-                      <div className="p-4 rounded-full bg-green-100 dark:bg-green-900/30 inline-block">
-                        <CheckCircle2 className="h-12 w-12 text-green-600" />
-                      </div>
-                      <p className="font-medium text-green-600">Successfully connected!</p>
-                    </>
-                  )}
-
-                  {pairingStatus === "error" && (
-                    <>
-                      <div className="p-4 rounded-full bg-red-100 dark:bg-red-900/30 inline-block">
-                        <XCircle className="h-12 w-12 text-red-600" />
-                      </div>
-                      <p className="font-medium text-red-600">Connection failed</p>
-                      <p className="text-sm text-muted-foreground">
-                        Please try again or contact support
-                      </p>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {VENDORS.find(v => v.id === selectedVendor)?.pairingMethod === "ble" && (
-                <div className="text-center space-y-4">
-                  <div className="p-4 rounded-full bg-blue-100 dark:bg-blue-900/30 inline-block">
-                    <Bluetooth className="h-12 w-12 text-blue-600" />
+                    </div>
                   </div>
-                  <p className="font-medium">Bluetooth Pairing</p>
-                  <p className="text-muted-foreground">
-                    Make sure your device is in pairing mode and nearby
-                  </p>
-                  <Button 
-                    onClick={() => {
-                      toast({
-                        title: "Bluetooth Pairing",
-                        description: "Web Bluetooth is available in Chrome. Scanning for devices...",
-                      });
-                    }}
-                    data-testid="button-scan-bluetooth"
-                  >
-                    <Bluetooth className="mr-2 h-4 w-4" />
-                    Scan for Devices
-                  </Button>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
 
           <DialogFooter className="gap-2">
-            {pairingStep > 0 && (
+            {pairingStep > 0 && pairingStatus === "idle" && (
               <Button 
                 variant="outline" 
                 onClick={() => setPairingStep(prev => prev - 1)}
@@ -936,10 +1401,10 @@ export default function DeviceConnect() {
               </Button>
             )}
             
-            {pairingStep === 3 && (
+            {pairingStep === 3 && pairingStatus === "idle" && (
               <Button 
                 onClick={handleStartPairing}
-                disabled={startPairingMutation.isPending || pairingStatus === "connecting"}
+                disabled={startPairingMutation.isPending}
                 data-testid="button-connect-device"
               >
                 {startPairingMutation.isPending ? (
@@ -1011,11 +1476,23 @@ export default function DeviceConnect() {
                   <span>Data Sharing Consent</span>
                 </div>
                 {selectedDevice.consentGiven ? (
-                  <Badge className="bg-green-100 text-green-800">Active</Badge>
+                  <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Active</Badge>
                 ) : (
                   <Badge variant="secondary">Not Configured</Badge>
                 )}
               </div>
+
+              {selectedDevice.autoSync !== undefined && (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="h-5 w-5" />
+                    <span>Auto Sync</span>
+                  </div>
+                  <Badge variant={selectedDevice.autoSync ? "default" : "secondary"}>
+                    {selectedDevice.autoSync ? "Enabled" : "Disabled"}
+                  </Badge>
+                </div>
+              )}
 
               <Separator />
 
@@ -1050,7 +1527,7 @@ export default function DeviceConnect() {
                 variant="destructive" 
                 className="w-full"
                 onClick={() => {
-                  if (confirm("Are you sure you want to disconnect this device?")) {
+                  if (confirm("Are you sure you want to disconnect this device? All synced data will remain in your account.")) {
                     disconnectDeviceMutation.mutate(selectedDevice.id);
                   }
                 }}
@@ -1076,15 +1553,13 @@ export default function DeviceConnect() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-            <div className="flex gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-              <p className="text-sm text-amber-800 dark:text-amber-200">
-                Your data sharing preferences are protected under HIPAA regulations. 
-                Changes are logged for compliance and audit purposes.
-              </p>
-            </div>
-          </div>
+          <Alert className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-800 dark:text-amber-200">
+              Your data sharing preferences are protected under HIPAA regulations. 
+              Changes are logged for compliance and audit purposes.
+            </AlertDescription>
+          </Alert>
 
           <ScrollArea className="h-[300px]">
             <div className="space-y-2">

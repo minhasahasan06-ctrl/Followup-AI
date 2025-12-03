@@ -13756,6 +13756,154 @@ Provide:
   });
 
   // =============================================================================
+  // DEVICE CONNECT API PROXY ROUTES
+  // Full device pairing, sync, and management proxied to Python FastAPI backend
+  // =============================================================================
+
+  // Helper function for Device Connect proxy requests
+  const deviceConnectProxy = async (req: any, res: any, path: string, method: string = 'GET') => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      // Build query string from request query params
+      const queryParams = new URLSearchParams(req.query as Record<string, string>);
+      const queryString = queryParams.toString();
+      const url = `${pythonBackendUrl}${path}${queryString ? '?' + queryString : ''}`;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const fetchOptions: RequestInit = {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      };
+      
+      if (method !== 'GET' && method !== 'HEAD' && req.body) {
+        fetchOptions.body = JSON.stringify(req.body);
+      }
+      
+      const response = await fetch(url, fetchOptions);
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Device Connect proxy error (${path}):`, response.status, error);
+        return res.status(response.status).json({ message: error || 'Request failed' });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error(`Device Connect proxy error (${path}):`, error);
+      res.status(502).json({ error: 'Device Connect service unavailable' });
+    }
+  };
+
+  // Device vendors list
+  app.get('/api/v1/devices/vendors', async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/vendors', 'GET');
+  });
+
+  // Device models list
+  app.get('/api/v1/devices/models', async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/models', 'GET');
+  });
+
+  // Supported device types
+  app.get('/api/v1/devices/supported-types', async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/supported-types', 'GET');
+  });
+
+  // Start device pairing
+  app.post('/api/v1/devices/pair/start', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/pair/start', 'POST');
+  });
+
+  // Complete device pairing
+  app.post('/api/v1/devices/pair/complete', async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/pair/complete', 'POST');
+  });
+
+  // Get pairing status (for OAuth polling)
+  app.get('/api/v1/devices/pair/status/:sessionId', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, `/api/v1/devices/pair/status/${req.params.sessionId}`, 'GET');
+  });
+
+  // Connected devices list
+  app.get('/api/v1/devices/connections', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/connections', 'GET');
+  });
+
+  // Device health status
+  app.get('/api/v1/devices/health/:connectionId', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, `/api/v1/devices/health/${req.params.connectionId}`, 'GET');
+  });
+
+  // Trigger device sync
+  app.post('/api/v1/devices/sync/:connectionId', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, `/api/v1/devices/sync/${req.params.connectionId}`, 'POST');
+  });
+
+  // Sync specific device by ID
+  app.post('/api/v1/devices/:deviceId/sync', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, `/api/v1/devices/${req.params.deviceId}/sync`, 'POST');
+  });
+
+  // Delete/disconnect device
+  app.delete('/api/v1/devices/:deviceId', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, `/api/v1/devices/${req.params.deviceId}`, 'DELETE');
+  });
+
+  // Update device consent
+  app.patch('/api/v1/devices/:deviceId/consent', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, `/api/v1/devices/${req.params.deviceId}/consent`, 'PATCH');
+  });
+
+  // Ingest device data
+  app.post('/api/v1/devices/data/ingest', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/data/ingest', 'POST');
+  });
+
+  // HealthKit data sync
+  app.post('/api/v1/devices/healthkit/sync', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/healthkit/sync', 'POST');
+  });
+
+  // Webhook status
+  app.get('/api/v1/devices/webhook-status', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/webhook-status', 'GET');
+  });
+
+  // BLE services info
+  app.get('/api/v1/devices/ble/services', async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/ble/services', 'GET');
+  });
+
+  // Health analytics
+  app.get('/api/v1/devices/health-analytics', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/health-analytics', 'GET');
+  });
+
+  // Sync history
+  app.get('/api/v1/devices/sync-history', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/sync-history', 'GET');
+  });
+
+  // Daily followup device data
+  app.get('/api/v1/devices/daily-followup/device-data', isAuthenticated, async (req: any, res) => {
+    await deviceConnectProxy(req, res, '/api/v1/devices/daily-followup/device-data', 'GET');
+  });
+
+  // =============================================================================
   // AI-POWERED HABIT TRACKER PROXY ROUTES (13 Features)
   // =============================================================================
 
