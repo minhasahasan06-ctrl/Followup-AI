@@ -105,6 +105,12 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import tremor_api: {e}")
 
+try:
+    from app.routers import device_connect
+    _optional_routers.append(('device_connect', device_connect))
+except ImportError as e:
+    logger.warning(f"❌ Could not import device_connect: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

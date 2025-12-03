@@ -7027,3 +7027,534 @@ export const messageEnvelopeSchema = z.object({
 });
 
 export type MessageEnvelope = z.infer<typeof messageEnvelopeSchema>;
+
+// ============================================
+// DEVICE CONNECT SYSTEM - Production Grade
+// Supports: Smart BP, Glucose, Scale, Thermometer, Stethoscope, Smartwatch, Pulse Oximeter, Activity Trackers
+// Vendors: Fitbit, Withings, Oura, Google Fit, iHealth (public), Dexcom, Garmin, Whoop, Samsung, Eko, Abbott (private)
+// ============================================
+
+// Device Models Catalog - Registry of all supported device types and capabilities
+export const deviceModels = pgTable("device_models", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Device identification
+  vendorId: varchar("vendor_id").notNull(), // 'fitbit', 'withings', 'garmin', 'whoop', 'oura', 'dexcom', 'omron', 'ihealth', 'eko', 'abbott', 'apple', 'google', 'samsung', 'generic_ble'
+  vendorName: varchar("vendor_name").notNull(), // Display name
+  modelName: varchar("model_name").notNull(), // e.g., "Charge 5", "BPM Connect", "G7"
+  modelNumber: varchar("model_number"), // Manufacturer model number
+  
+  // Device type and category
+  deviceType: varchar("device_type").notNull(), // 'smartwatch', 'bp_monitor', 'glucose_meter', 'scale', 'thermometer', 'stethoscope', 'pulse_oximeter', 'activity_tracker', 'cgm'
+  deviceCategory: varchar("device_category").notNull(), // 'wearable', 'medical_device', 'home_health'
+  
+  // Capabilities - what metrics this device can provide
+  capabilities: jsonb("capabilities").$type<{
+    metrics: string[]; // ['heart_rate', 'hrv', 'spo2', 'sleep', 'steps', 'bp', 'glucose', 'weight', 'temperature', 'ecg', 'afib', 'respiratory_rate', 'stress', 'recovery', 'skin_temp']
+    features: string[]; // ['continuous_monitoring', 'on_demand', 'auto_sync', 'manual_entry', 'audio_recording', 'ecg_recording']
+    syncMethods: string[]; // ['oauth', 'ble', 'healthkit', 'google_fit', 'manual', 'webhook']
+  }>().notNull(),
+  
+  // Pairing methods supported
+  pairingMethods: jsonb("pairing_methods").$type<{
+    oauth?: { authUrl: string; scopes: string[]; };
+    ble?: { serviceUuids: string[]; characteristicUuids: string[]; };
+    healthkit?: { dataTypes: string[]; };
+    googleFit?: { dataTypes: string[]; };
+    webhook?: { endpoint: string; };
+    manual?: boolean;
+  }>().notNull(),
+  
+  // Vendor API configuration (PHI: contains API endpoints)
+  apiConfig: jsonb("api_config").$type<{
+    baseUrl?: string;
+    authEndpoint?: string;
+    tokenEndpoint?: string;
+    dataEndpoints?: Record<string, string>;
+    webhookSecret?: string;
+    rateLimit?: { requests: number; period: string; };
+  }>(),
+  
+  // BAA and compliance
+  baaRequired: boolean("baa_required").default(false),
+  baaStatus: varchar("baa_status"), // 'not_required', 'pending', 'active', 'expired'
+  hipaaCompliant: boolean("hipaa_compliant").default(false),
+  fdaCleared: boolean("fda_cleared").default(false),
+  fdaClearanceNumber: varchar("fda_clearance_number"),
+  
+  // Documentation
+  setupInstructions: text("setup_instructions"),
+  troubleshootingGuide: text("troubleshooting_guide"),
+  docsUrl: varchar("docs_url"),
+  supportUrl: varchar("support_url"),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  isPublicApi: boolean("is_public_api").default(false), // true for Fitbit, Withings, Oura, etc.
+  requiresPartnership: boolean("requires_partnership").default(false), // true for Dexcom, Garmin, Whoop, etc.
+  
+  // Metadata
+  imageUrl: varchar("image_url"),
+  metadata: jsonb("metadata").$type<{
+    releaseDate?: string;
+    discontinuedDate?: string;
+    batteryType?: string;
+    waterResistance?: string;
+    connectivity?: string[];
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  vendorIdx: index("device_models_vendor_idx").on(table.vendorId),
+  typeIdx: index("device_models_type_idx").on(table.deviceType),
+  activeIdx: index("device_models_active_idx").on(table.isActive),
+}));
+
+export const insertDeviceModelSchema = createInsertSchema(deviceModels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeviceModel = z.infer<typeof insertDeviceModelSchema>;
+export type DeviceModel = typeof deviceModels.$inferSelect;
+
+// Vendor Accounts - OAuth tokens and credentials for vendor APIs (PHI: encrypted tokens)
+export const vendorAccounts = pgTable("vendor_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Vendor identification
+  vendorId: varchar("vendor_id").notNull(), // 'fitbit', 'withings', 'garmin', etc.
+  vendorName: varchar("vendor_name").notNull(),
+  
+  // OAuth tokens (PHI: must be encrypted at rest)
+  accessToken: text("access_token"), // Encrypted
+  refreshToken: text("refresh_token"), // Encrypted
+  tokenType: varchar("token_type").default("Bearer"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  tokenScope: text("token_scope"), // Granted scopes
+  
+  // Vendor user ID
+  vendorUserId: varchar("vendor_user_id"), // User ID in vendor's system
+  vendorUsername: varchar("vendor_username"), // Display name from vendor
+  
+  // Connection status
+  connectionStatus: varchar("connection_status").default("pending"), // 'pending', 'connected', 'disconnected', 'expired', 'revoked', 'error'
+  lastAuthAt: timestamp("last_auth_at"),
+  lastRefreshAt: timestamp("last_refresh_at"),
+  lastRefreshError: text("last_refresh_error"),
+  refreshAttempts: integer("refresh_attempts").default(0),
+  
+  // Sync settings
+  autoSync: boolean("auto_sync").default(true),
+  syncFrequency: varchar("sync_frequency").default("hourly"), // 'real_time', 'hourly', 'daily', 'manual'
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: varchar("last_sync_status"), // 'success', 'partial', 'failed'
+  lastSyncError: text("last_sync_error"),
+  syncedDataTypes: jsonb("synced_data_types").$type<string[]>(), // What data types are being synced
+  
+  // Webhook configuration
+  webhookId: varchar("webhook_id"), // Vendor's webhook subscription ID
+  webhookSecret: text("webhook_secret"), // Encrypted
+  webhookActive: boolean("webhook_active").default(false),
+  
+  // Consent tracking
+  consentGrantedAt: timestamp("consent_granted_at"),
+  consentVersion: varchar("consent_version"),
+  consentDataTypes: jsonb("consent_data_types").$type<string[]>(), // What data user consented to share
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    profileData?: Record<string, unknown>;
+    subscriptionId?: string;
+    apiVersion?: string;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userVendorIdx: index("vendor_accounts_user_vendor_idx").on(table.userId, table.vendorId),
+  statusIdx: index("vendor_accounts_status_idx").on(table.connectionStatus),
+  expiryIdx: index("vendor_accounts_expiry_idx").on(table.tokenExpiresAt),
+}));
+
+export const insertVendorAccountSchema = createInsertSchema(vendorAccounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertVendorAccount = z.infer<typeof insertVendorAccountSchema>;
+export type VendorAccount = typeof vendorAccounts.$inferSelect;
+
+// Device Health - Real-time device status and health metrics
+export const deviceHealth = pgTable("device_health", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceConnectionId: varchar("device_connection_id").notNull().references(() => wearableIntegrations.id),
+  
+  // Device status
+  status: varchar("status").notNull().default("unknown"), // 'online', 'offline', 'pairing', 'syncing', 'error', 'low_battery', 'unknown'
+  statusMessage: text("status_message"),
+  lastSeenAt: timestamp("last_seen_at"),
+  
+  // Battery
+  batteryLevel: integer("battery_level"), // 0-100%
+  batteryStatus: varchar("battery_status"), // 'charging', 'discharging', 'full', 'low', 'critical'
+  estimatedBatteryLife: varchar("estimated_battery_life"), // e.g., "2 days"
+  
+  // Connectivity
+  signalStrength: integer("signal_strength"), // RSSI or signal quality 0-100
+  connectionType: varchar("connection_type"), // 'ble', 'wifi', 'cellular', 'usb'
+  lastConnectionAt: timestamp("last_connection_at"),
+  connectionErrors: integer("connection_errors").default(0),
+  
+  // Firmware
+  firmwareVersion: varchar("firmware_version"),
+  firmwareUpdateAvailable: boolean("firmware_update_available").default(false),
+  latestFirmwareVersion: varchar("latest_firmware_version"),
+  
+  // Sync health
+  syncSuccessRate: decimal("sync_success_rate", { precision: 5, scale: 2 }), // Last 30 days
+  avgSyncLatency: integer("avg_sync_latency"), // Milliseconds
+  lastSuccessfulSync: timestamp("last_successful_sync"),
+  consecutiveFailures: integer("consecutive_failures").default(0),
+  
+  // Data quality
+  dataQualityScore: integer("data_quality_score"), // 0-100
+  missingDataTypes: jsonb("missing_data_types").$type<string[]>(),
+  dataGaps: jsonb("data_gaps").$type<{ start: string; end: string; reason?: string; }[]>(),
+  
+  // Alerts
+  healthAlerts: jsonb("health_alerts").$type<{
+    type: string; // 'low_battery', 'sync_failed', 'firmware_update', 'connection_lost', 'data_quality'
+    severity: string; // 'info', 'warning', 'critical'
+    message: string;
+    timestamp: string;
+    acknowledged: boolean;
+  }[]>(),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    wearPosition?: string;
+    calibrationDate?: string;
+    sensorHealth?: Record<string, unknown>;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  deviceIdx: index("device_health_device_idx").on(table.deviceConnectionId),
+  statusIdx: index("device_health_status_idx").on(table.status),
+  lastSeenIdx: index("device_health_last_seen_idx").on(table.lastSeenAt),
+}));
+
+export const insertDeviceHealthSchema = createInsertSchema(deviceHealth).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeviceHealth = z.infer<typeof insertDeviceHealthSchema>;
+export type DeviceHealth = typeof deviceHealth.$inferSelect;
+
+// Device Pairing Sessions - Track pairing flows with audit trail
+export const devicePairingSessions = pgTable("device_pairing_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Device being paired
+  deviceModelId: varchar("device_model_id").references(() => deviceModels.id),
+  deviceType: varchar("device_type").notNull(),
+  vendorId: varchar("vendor_id").notNull(),
+  
+  // Pairing method
+  pairingMethod: varchar("pairing_method").notNull(), // 'oauth', 'ble', 'healthkit', 'google_fit', 'manual', 'qr_code'
+  
+  // Session state
+  sessionStatus: varchar("session_status").notNull().default("initiated"), // 'initiated', 'pending_auth', 'pending_ble', 'pending_consent', 'completed', 'failed', 'expired', 'cancelled'
+  
+  // OAuth flow data
+  oauthState: varchar("oauth_state"), // CSRF protection
+  oauthCodeVerifier: text("oauth_code_verifier"), // PKCE
+  oauthRedirectUri: varchar("oauth_redirect_uri"),
+  
+  // BLE pairing data
+  bleDeviceId: varchar("ble_device_id"),
+  bleServiceUuid: varchar("ble_service_uuid"),
+  blePairingCode: varchar("ble_pairing_code"),
+  
+  // QR code pairing
+  qrCodeToken: varchar("qr_code_token"),
+  qrCodeExpiresAt: timestamp("qr_code_expires_at"),
+  
+  // Result
+  resultDeviceConnectionId: varchar("result_device_connection_id").references(() => wearableIntegrations.id),
+  resultVendorAccountId: varchar("result_vendor_account_id").references(() => vendorAccounts.id),
+  
+  // Error tracking
+  errorCode: varchar("error_code"),
+  errorMessage: text("error_message"),
+  errorDetails: jsonb("error_details"),
+  
+  // Consent
+  consentCaptured: boolean("consent_captured").default(false),
+  consentTimestamp: timestamp("consent_timestamp"),
+  consentVersion: varchar("consent_version"),
+  consentedDataTypes: jsonb("consented_data_types").$type<string[]>(),
+  
+  // Session timing
+  startedAt: timestamp("started_at").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Audit trail
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    stepHistory?: { step: string; timestamp: string; success: boolean; }[];
+    deviceInfo?: Record<string, unknown>;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("device_pairing_user_idx").on(table.userId),
+  statusIdx: index("device_pairing_status_idx").on(table.sessionStatus),
+  oauthStateIdx: index("device_pairing_oauth_state_idx").on(table.oauthState),
+  expiryIdx: index("device_pairing_expiry_idx").on(table.expiresAt),
+}));
+
+export const insertDevicePairingSessionSchema = createInsertSchema(devicePairingSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDevicePairingSession = z.infer<typeof insertDevicePairingSessionSchema>;
+export type DevicePairingSession = typeof devicePairingSessions.$inferSelect;
+
+// Device Sync Jobs - Track background sync operations
+export const deviceSyncJobs = pgTable("device_sync_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Job identification
+  jobType: varchar("job_type").notNull(), // 'scheduled_sync', 'on_demand_sync', 'webhook_process', 'token_refresh', 'health_check'
+  
+  // Target
+  vendorAccountId: varchar("vendor_account_id").references(() => vendorAccounts.id),
+  deviceConnectionId: varchar("device_connection_id").references(() => wearableIntegrations.id),
+  userId: varchar("user_id").references(() => users.id),
+  
+  // Job state
+  status: varchar("status").notNull().default("pending"), // 'pending', 'running', 'completed', 'failed', 'retrying', 'cancelled'
+  priority: integer("priority").default(5), // 1-10, higher = more urgent
+  
+  // Execution
+  scheduledFor: timestamp("scheduled_for"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Retry logic
+  attempts: integer("attempts").default(0),
+  maxAttempts: integer("max_attempts").default(3),
+  nextRetryAt: timestamp("next_retry_at"),
+  
+  // Results
+  recordsProcessed: integer("records_processed").default(0),
+  recordsFailed: integer("records_failed").default(0),
+  dataTypes: jsonb("data_types").$type<string[]>(), // What data types were synced
+  dateRange: jsonb("date_range").$type<{ start: string; end: string; }>(),
+  
+  // Error tracking
+  errorCode: varchar("error_code"),
+  errorMessage: text("error_message"),
+  errorStack: text("error_stack"),
+  
+  // Worker info
+  workerId: varchar("worker_id"),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    triggerSource?: string; // 'schedule', 'user', 'webhook', 'system'
+    webhookPayload?: Record<string, unknown>;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusIdx: index("device_sync_jobs_status_idx").on(table.status),
+  scheduledIdx: index("device_sync_jobs_scheduled_idx").on(table.scheduledFor),
+  vendorIdx: index("device_sync_jobs_vendor_idx").on(table.vendorAccountId),
+}));
+
+export const insertDeviceSyncJobSchema = createInsertSchema(deviceSyncJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeviceSyncJob = z.infer<typeof insertDeviceSyncJobSchema>;
+export type DeviceSyncJob = typeof deviceSyncJobs.$inferSelect;
+
+// Device Data Audit Log - HIPAA-compliant audit trail for all device data access
+export const deviceDataAuditLog = pgTable("device_data_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Actor
+  actorId: varchar("actor_id").notNull(), // User or system ID
+  actorType: varchar("actor_type").notNull(), // 'patient', 'clinician', 'system', 'vendor_webhook'
+  actorRole: varchar("actor_role"), // 'patient', 'doctor', 'nurse', 'admin'
+  
+  // Action
+  action: varchar("action").notNull(), // 'device_paired', 'device_unpaired', 'data_synced', 'data_viewed', 'data_exported', 'consent_granted', 'consent_revoked', 'token_refreshed'
+  actionCategory: varchar("action_category").notNull(), // 'device_management', 'data_access', 'consent', 'sync'
+  
+  // Resource
+  resourceType: varchar("resource_type").notNull(), // 'device_connection', 'vendor_account', 'device_reading', 'device_health'
+  resourceId: varchar("resource_id"),
+  patientId: varchar("patient_id"), // PHI: patient whose data was accessed
+  
+  // Details
+  eventDetails: jsonb("event_details").$type<{
+    deviceType?: string;
+    vendorId?: string;
+    dataTypes?: string[];
+    recordCount?: number;
+    dateRange?: { start: string; end: string; };
+    previousValue?: Record<string, unknown>;
+    newValue?: Record<string, unknown>;
+  }>(),
+  
+  // Request context
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  sessionId: varchar("session_id"),
+  requestId: varchar("request_id"),
+  
+  // Result
+  success: boolean("success").default(true),
+  errorMessage: text("error_message"),
+  
+  // PHI flag
+  phiAccessed: boolean("phi_accessed").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  actorIdx: index("device_audit_actor_idx").on(table.actorId),
+  actionIdx: index("device_audit_action_idx").on(table.action),
+  resourceIdx: index("device_audit_resource_idx").on(table.resourceType, table.resourceId),
+  patientIdx: index("device_audit_patient_idx").on(table.patientId),
+  createdIdx: index("device_audit_created_idx").on(table.createdAt),
+}));
+
+export const insertDeviceDataAuditLogSchema = createInsertSchema(deviceDataAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDeviceDataAuditLog = z.infer<typeof insertDeviceDataAuditLogSchema>;
+export type DeviceDataAuditLog = typeof deviceDataAuditLog.$inferSelect;
+
+// Health Section Analytics - Per-section health metrics derived from device data
+export const healthSectionAnalytics = pgTable("health_section_analytics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Section identification
+  healthSection: varchar("health_section").notNull(), // 'hypertension', 'diabetes', 'cardiovascular', 'respiratory', 'sleep', 'mental_health', 'fitness'
+  
+  // Time window
+  analysisDate: timestamp("analysis_date").notNull(),
+  windowStart: timestamp("window_start").notNull(),
+  windowEnd: timestamp("window_end").notNull(),
+  windowDays: integer("window_days").default(7),
+  
+  // Data sources used
+  deviceTypes: jsonb("device_types").$type<string[]>(), // Which device types contributed
+  readingCount: integer("reading_count").default(0),
+  
+  // ML Predictions
+  mlPrediction: jsonb("ml_prediction").$type<{
+    predictedOutcome: string; // 'stable', 'improving', 'declining', 'at_risk', 'critical'
+    confidence: number; // 0-1
+    modelVersion: string;
+    features: Record<string, number>;
+  }>(),
+  
+  // Deterioration Index (0-100, higher = worse)
+  deteriorationIndex: decimal("deterioration_index", { precision: 5, scale: 2 }),
+  deteriorationTrend: varchar("deterioration_trend"), // 'improving', 'stable', 'worsening'
+  deteriorationChangeRate: decimal("deterioration_change_rate", { precision: 5, scale: 2 }), // % change from previous
+  
+  // Risk Score (0-100)
+  riskScore: decimal("risk_score", { precision: 5, scale: 2 }),
+  riskLevel: varchar("risk_level"), // 'low', 'moderate', 'high', 'critical'
+  riskFactors: jsonb("risk_factors").$type<{ factor: string; contribution: number; value: number; }[]>(),
+  
+  // Trend Analysis
+  trendDirection: varchar("trend_direction"), // 'improving', 'stable', 'declining'
+  trendStrength: decimal("trend_strength", { precision: 5, scale: 2 }), // 0-1
+  trendMetrics: jsonb("trend_metrics").$type<{
+    metric: string;
+    values: number[];
+    slope: number;
+    r_squared: number;
+    forecast: number[];
+  }[]>(),
+  
+  // Stability Score (0-100, higher = more stable)
+  stabilityScore: decimal("stability_score", { precision: 5, scale: 2 }),
+  variabilityIndex: decimal("variability_index", { precision: 5, scale: 2 }),
+  stabilityMetrics: jsonb("stability_metrics").$type<{
+    metric: string;
+    mean: number;
+    std: number;
+    cv: number; // Coefficient of variation
+    range: { min: number; max: number; };
+  }[]>(),
+  
+  // Alerts generated
+  alertsGenerated: jsonb("alerts_generated").$type<{
+    alertId: string;
+    alertType: string;
+    severity: string;
+    message: string;
+    triggeredAt: string;
+    acknowledged: boolean;
+  }[]>(),
+  activeAlertCount: integer("active_alert_count").default(0),
+  
+  // Section-specific metrics (JSON for flexibility)
+  sectionMetrics: jsonb("section_metrics").$type<Record<string, unknown>>(),
+  
+  // Baseline comparison
+  baselineDeviation: decimal("baseline_deviation", { precision: 5, scale: 2 }), // % deviation from personal baseline
+  baselineStatus: varchar("baseline_status"), // 'within_normal', 'elevated', 'concerning', 'critical'
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    processingTime?: number;
+    dataQuality?: number;
+    missingDataTypes?: string[];
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientSectionIdx: index("health_analytics_patient_section_idx").on(table.patientId, table.healthSection),
+  dateIdx: index("health_analytics_date_idx").on(table.analysisDate),
+  riskIdx: index("health_analytics_risk_idx").on(table.riskLevel),
+}));
+
+export const insertHealthSectionAnalyticsSchema = createInsertSchema(healthSectionAnalytics).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHealthSectionAnalytics = z.infer<typeof insertHealthSectionAnalyticsSchema>;
+export type HealthSectionAnalytics = typeof healthSectionAnalytics.$inferSelect;
