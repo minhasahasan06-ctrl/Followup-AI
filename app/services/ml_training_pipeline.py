@@ -36,6 +36,19 @@ class ConsentedDataTypes:
     wearable_data: bool = False
     lab_results: bool = False
     imaging_data: bool = False
+    daily_followup: bool = False
+    habits: bool = False
+    wellness: bool = False
+    connected_apps: bool = False
+    wearable_devices: bool = False
+    wearable_heart: bool = False
+    wearable_activity: bool = False
+    wearable_sleep: bool = False
+    wearable_oxygen: bool = False
+    wearable_stress: bool = False
+    environmental_risk: bool = False
+    medical_history: bool = False
+    current_conditions: bool = False
 
 
 @dataclass
@@ -166,12 +179,18 @@ class ConsentVerificationService:
         rows = result.fetchall()
         
         consented = []
+        
+        def snake_to_camel(s: str) -> str:
+            """Convert snake_case to camelCase"""
+            parts = s.split('_')
+            return parts[0] + ''.join(p.capitalize() for p in parts[1:])
+        
         for row in rows:
             data_types = row.data_types or {}
             
             has_required = all(
-                data_types.get(dt.replace('_', '').title().replace(' ', ''), False) or
-                data_types.get(dt, False)
+                data_types.get(dt, False) or
+                data_types.get(snake_to_camel(dt), False)
                 for dt in required_data_types
             )
             
@@ -193,6 +212,11 @@ class ConsentVerificationService:
     ) -> bool:
         """Verify if a specific patient has consented to a data type"""
         
+        def snake_to_camel(s: str) -> str:
+            """Convert snake_case to camelCase"""
+            parts = s.split('_')
+            return parts[0] + ''.join(p.capitalize() for p in parts[1:])
+        
         query = text("""
             SELECT data_types
             FROM ml_training_consent
@@ -208,7 +232,7 @@ class ConsentVerificationService:
             return False
         
         data_types = row.data_types or {}
-        return data_types.get(data_type, False)
+        return data_types.get(data_type, False) or data_types.get(snake_to_camel(data_type), False)
 
 
 class PatientDataExtractor:
@@ -507,6 +531,810 @@ class PatientDataExtractor:
         
         return {"features": aggregated, "count": len(rows)}
 
+    async def extract_daily_followup_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract comprehensive daily followup features"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                fatigue_level,
+                pain_level,
+                mood_level,
+                appetite_level,
+                sleep_quality,
+                overall_wellness,
+                symptoms,
+                notes,
+                created_at
+            FROM daily_followups
+            WHERE patient_id = :patient_id
+            AND created_at BETWEEN :start_date AND :end_date
+            ORDER BY created_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        features = {
+            'fatigue': [],
+            'pain': [],
+            'mood': [],
+            'appetite': [],
+            'sleep': [],
+            'wellness': []
+        }
+        
+        for row in rows:
+            if row.fatigue_level is not None:
+                features['fatigue'].append(float(row.fatigue_level))
+            if row.pain_level is not None:
+                features['pain'].append(float(row.pain_level))
+            if row.mood_level is not None:
+                features['mood'].append(float(row.mood_level))
+            if row.appetite_level is not None:
+                features['appetite'].append(float(row.appetite_level))
+            if row.sleep_quality is not None:
+                features['sleep'].append(float(row.sleep_quality))
+            if hasattr(row, 'overall_wellness') and row.overall_wellness is not None:
+                features['wellness'].append(float(row.overall_wellness))
+        
+        aggregated = {
+            'followup_count': len(rows),
+            'followup_consistency': len(rows) / max((end_date - start_date).days, 1)
+        }
+        
+        for name, values in features.items():
+            if values:
+                arr = np.array(values)
+                aggregated[f'daily_{name}_mean'] = float(np.mean(arr))
+                aggregated[f'daily_{name}_std'] = float(np.std(arr))
+                aggregated[f'daily_{name}_trend'] = float(np.polyfit(range(len(arr)), arr, 1)[0]) if len(arr) > 1 else 0.0
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_habit_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract habit tracker features"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                h.id,
+                h.name,
+                h.category,
+                h.frequency,
+                h.target_value,
+                h.current_streak,
+                h.longest_streak,
+                h.total_completions,
+                h.created_at
+            FROM habits h
+            WHERE h.patient_id = :patient_id
+            AND h.created_at <= :end_date
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        total_habits = len(rows)
+        current_streaks = []
+        longest_streaks = []
+        total_completions = []
+        categories = {}
+        
+        for row in rows:
+            if hasattr(row, 'current_streak') and row.current_streak:
+                current_streaks.append(int(row.current_streak))
+            if hasattr(row, 'longest_streak') and row.longest_streak:
+                longest_streaks.append(int(row.longest_streak))
+            if hasattr(row, 'total_completions') and row.total_completions:
+                total_completions.append(int(row.total_completions))
+            if hasattr(row, 'category') and row.category:
+                categories[row.category] = categories.get(row.category, 0) + 1
+        
+        aggregated = {
+            'total_habits': total_habits,
+            'habit_categories_count': len(categories),
+            'avg_current_streak': float(np.mean(current_streaks)) if current_streaks else 0.0,
+            'avg_longest_streak': float(np.mean(longest_streaks)) if longest_streaks else 0.0,
+            'total_habit_completions': sum(total_completions),
+            'avg_completions_per_habit': float(np.mean(total_completions)) if total_completions else 0.0
+        }
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_wellness_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract wellness activity features"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                activity_type,
+                duration_minutes,
+                intensity,
+                calories_burned,
+                notes,
+                created_at
+            FROM wellness_activities
+            WHERE patient_id = :patient_id
+            AND created_at BETWEEN :start_date AND :end_date
+            ORDER BY created_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        durations = []
+        intensities = []
+        calories = []
+        activity_types = {}
+        
+        for row in rows:
+            if hasattr(row, 'duration_minutes') and row.duration_minutes:
+                durations.append(float(row.duration_minutes))
+            if hasattr(row, 'intensity') and row.intensity:
+                intensities.append(float(row.intensity))
+            if hasattr(row, 'calories_burned') and row.calories_burned:
+                calories.append(float(row.calories_burned))
+            if hasattr(row, 'activity_type') and row.activity_type:
+                activity_types[row.activity_type] = activity_types.get(row.activity_type, 0) + 1
+        
+        aggregated = {
+            'wellness_activity_count': len(rows),
+            'wellness_activity_types': len(activity_types),
+            'avg_duration_minutes': float(np.mean(durations)) if durations else 0.0,
+            'total_duration_minutes': float(sum(durations)) if durations else 0.0,
+            'avg_intensity': float(np.mean(intensities)) if intensities else 0.0,
+            'total_calories': float(sum(calories)) if calories else 0.0
+        }
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_connected_apps_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract features from connected health apps"""
+        
+        query = text("""
+            SELECT 
+                app_name,
+                app_type,
+                last_sync_at,
+                data_types_synced,
+                is_active
+            FROM connected_apps
+            WHERE patient_id = :patient_id
+        """)
+        
+        try:
+            result = await self.db.execute(query, {"patient_id": patient_id})
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        active_apps = sum(1 for row in rows if hasattr(row, 'is_active') and row.is_active)
+        app_types = set()
+        
+        for row in rows:
+            if hasattr(row, 'app_type') and row.app_type:
+                app_types.add(row.app_type)
+        
+        aggregated = {
+            'total_connected_apps': len(rows),
+            'active_connected_apps': active_apps,
+            'app_types_count': len(app_types)
+        }
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_wearable_device_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract wearable device metadata features"""
+        
+        query = text("""
+            SELECT 
+                device_type,
+                device_name,
+                last_sync_at,
+                is_active
+            FROM wearable_devices
+            WHERE patient_id = :patient_id
+        """)
+        
+        try:
+            result = await self.db.execute(query, {"patient_id": patient_id})
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        device_types = set()
+        active_devices = 0
+        
+        for row in rows:
+            if hasattr(row, 'device_type') and row.device_type:
+                device_types.add(row.device_type)
+            if hasattr(row, 'is_active') and row.is_active:
+                active_devices += 1
+        
+        aggregated = {
+            'total_wearable_devices': len(rows),
+            'active_wearable_devices': active_devices,
+            'wearable_device_types': len(device_types)
+        }
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_wearable_heart_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract heart and cardiovascular features from wearables"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                heart_rate,
+                heart_rate_variability,
+                resting_heart_rate,
+                recorded_at
+            FROM wearable_data
+            WHERE patient_id = :patient_id
+            AND recorded_at BETWEEN :start_date AND :end_date
+            AND (heart_rate IS NOT NULL OR heart_rate_variability IS NOT NULL)
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        heart_rates = []
+        hrvs = []
+        resting_hrs = []
+        
+        for row in rows:
+            if hasattr(row, 'heart_rate') and row.heart_rate:
+                heart_rates.append(float(row.heart_rate))
+            if hasattr(row, 'heart_rate_variability') and row.heart_rate_variability:
+                hrvs.append(float(row.heart_rate_variability))
+            if hasattr(row, 'resting_heart_rate') and row.resting_heart_rate:
+                resting_hrs.append(float(row.resting_heart_rate))
+        
+        aggregated = {}
+        if heart_rates:
+            aggregated['wearable_hr_mean'] = float(np.mean(heart_rates))
+            aggregated['wearable_hr_std'] = float(np.std(heart_rates))
+            aggregated['wearable_hr_min'] = float(np.min(heart_rates))
+            aggregated['wearable_hr_max'] = float(np.max(heart_rates))
+        if hrvs:
+            aggregated['wearable_hrv_mean'] = float(np.mean(hrvs))
+            aggregated['wearable_hrv_std'] = float(np.std(hrvs))
+        if resting_hrs:
+            aggregated['wearable_rhr_mean'] = float(np.mean(resting_hrs))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_wearable_activity_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract activity and movement features from wearables"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                steps,
+                distance,
+                active_minutes,
+                calories_burned,
+                floors_climbed,
+                recorded_at
+            FROM wearable_data
+            WHERE patient_id = :patient_id
+            AND recorded_at BETWEEN :start_date AND :end_date
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        steps = []
+        distances = []
+        active_mins = []
+        calories = []
+        
+        for row in rows:
+            if hasattr(row, 'steps') and row.steps:
+                steps.append(float(row.steps))
+            if hasattr(row, 'distance') and row.distance:
+                distances.append(float(row.distance))
+            if hasattr(row, 'active_minutes') and row.active_minutes:
+                active_mins.append(float(row.active_minutes))
+            if hasattr(row, 'calories_burned') and row.calories_burned:
+                calories.append(float(row.calories_burned))
+        
+        aggregated = {}
+        if steps:
+            aggregated['wearable_steps_mean'] = float(np.mean(steps))
+            aggregated['wearable_steps_total'] = float(sum(steps))
+        if distances:
+            aggregated['wearable_distance_mean'] = float(np.mean(distances))
+        if active_mins:
+            aggregated['wearable_active_mins_mean'] = float(np.mean(active_mins))
+        if calories:
+            aggregated['wearable_calories_mean'] = float(np.mean(calories))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_wearable_sleep_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract sleep data features from wearables"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                sleep_hours,
+                sleep_quality,
+                deep_sleep_hours,
+                rem_sleep_hours,
+                light_sleep_hours,
+                awake_time_minutes,
+                recorded_at
+            FROM wearable_data
+            WHERE patient_id = :patient_id
+            AND recorded_at BETWEEN :start_date AND :end_date
+            AND sleep_hours IS NOT NULL
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        sleep_hours = []
+        sleep_quality = []
+        deep_sleep = []
+        rem_sleep = []
+        
+        for row in rows:
+            if hasattr(row, 'sleep_hours') and row.sleep_hours:
+                sleep_hours.append(float(row.sleep_hours))
+            if hasattr(row, 'sleep_quality') and row.sleep_quality:
+                sleep_quality.append(float(row.sleep_quality))
+            if hasattr(row, 'deep_sleep_hours') and row.deep_sleep_hours:
+                deep_sleep.append(float(row.deep_sleep_hours))
+            if hasattr(row, 'rem_sleep_hours') and row.rem_sleep_hours:
+                rem_sleep.append(float(row.rem_sleep_hours))
+        
+        aggregated = {}
+        if sleep_hours:
+            aggregated['wearable_sleep_hours_mean'] = float(np.mean(sleep_hours))
+            aggregated['wearable_sleep_hours_std'] = float(np.std(sleep_hours))
+        if sleep_quality:
+            aggregated['wearable_sleep_quality_mean'] = float(np.mean(sleep_quality))
+        if deep_sleep:
+            aggregated['wearable_deep_sleep_mean'] = float(np.mean(deep_sleep))
+        if rem_sleep:
+            aggregated['wearable_rem_sleep_mean'] = float(np.mean(rem_sleep))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_wearable_oxygen_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract blood oxygen and respiratory features from wearables"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                spo2,
+                respiratory_rate,
+                recorded_at
+            FROM wearable_data
+            WHERE patient_id = :patient_id
+            AND recorded_at BETWEEN :start_date AND :end_date
+            AND (spo2 IS NOT NULL OR respiratory_rate IS NOT NULL)
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        spo2_values = []
+        resp_rates = []
+        
+        for row in rows:
+            if hasattr(row, 'spo2') and row.spo2:
+                spo2_values.append(float(row.spo2))
+            if hasattr(row, 'respiratory_rate') and row.respiratory_rate:
+                resp_rates.append(float(row.respiratory_rate))
+        
+        aggregated = {}
+        if spo2_values:
+            aggregated['wearable_spo2_mean'] = float(np.mean(spo2_values))
+            aggregated['wearable_spo2_min'] = float(np.min(spo2_values))
+        if resp_rates:
+            aggregated['wearable_resp_rate_mean'] = float(np.mean(resp_rates))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_wearable_stress_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract stress and recovery features from wearables"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                stress_level,
+                recovery_score,
+                body_battery,
+                readiness_score,
+                recorded_at
+            FROM wearable_data
+            WHERE patient_id = :patient_id
+            AND recorded_at BETWEEN :start_date AND :end_date
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        stress = []
+        recovery = []
+        battery = []
+        readiness = []
+        
+        for row in rows:
+            if hasattr(row, 'stress_level') and row.stress_level:
+                stress.append(float(row.stress_level))
+            if hasattr(row, 'recovery_score') and row.recovery_score:
+                recovery.append(float(row.recovery_score))
+            if hasattr(row, 'body_battery') and row.body_battery:
+                battery.append(float(row.body_battery))
+            if hasattr(row, 'readiness_score') and row.readiness_score:
+                readiness.append(float(row.readiness_score))
+        
+        aggregated = {}
+        if stress:
+            aggregated['wearable_stress_mean'] = float(np.mean(stress))
+            aggregated['wearable_stress_max'] = float(np.max(stress))
+        if recovery:
+            aggregated['wearable_recovery_mean'] = float(np.mean(recovery))
+        if battery:
+            aggregated['wearable_body_battery_mean'] = float(np.mean(battery))
+        if readiness:
+            aggregated['wearable_readiness_mean'] = float(np.mean(readiness))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_environmental_risk_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract environmental risk features"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                air_quality_index,
+                pollen_count,
+                uv_index,
+                temperature,
+                humidity,
+                allergen_alerts,
+                recorded_at
+            FROM environmental_data
+            WHERE patient_id = :patient_id
+            AND recorded_at BETWEEN :start_date AND :end_date
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        aqi = []
+        pollen = []
+        uv = []
+        
+        for row in rows:
+            if hasattr(row, 'air_quality_index') and row.air_quality_index:
+                aqi.append(float(row.air_quality_index))
+            if hasattr(row, 'pollen_count') and row.pollen_count:
+                pollen.append(float(row.pollen_count))
+            if hasattr(row, 'uv_index') and row.uv_index:
+                uv.append(float(row.uv_index))
+        
+        aggregated = {
+            'environmental_data_points': len(rows)
+        }
+        if aqi:
+            aggregated['env_aqi_mean'] = float(np.mean(aqi))
+            aggregated['env_aqi_max'] = float(np.max(aqi))
+        if pollen:
+            aggregated['env_pollen_mean'] = float(np.mean(pollen))
+        if uv:
+            aggregated['env_uv_mean'] = float(np.mean(uv))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_medical_history_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract medical history features"""
+        
+        query = text("""
+            SELECT 
+                condition_name,
+                condition_type,
+                diagnosis_date,
+                resolved_date,
+                severity,
+                is_chronic
+            FROM medical_history
+            WHERE patient_id = :patient_id
+        """)
+        
+        try:
+            result = await self.db.execute(query, {"patient_id": patient_id})
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        total_conditions = len(rows)
+        chronic_conditions = sum(1 for row in rows if hasattr(row, 'is_chronic') and row.is_chronic)
+        resolved_conditions = sum(1 for row in rows if hasattr(row, 'resolved_date') and row.resolved_date)
+        condition_types = set()
+        
+        for row in rows:
+            if hasattr(row, 'condition_type') and row.condition_type:
+                condition_types.add(row.condition_type)
+        
+        aggregated = {
+            'total_historical_conditions': total_conditions,
+            'chronic_condition_count': chronic_conditions,
+            'resolved_condition_count': resolved_conditions,
+            'condition_type_diversity': len(condition_types)
+        }
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_current_conditions_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract current conditions and active diagnoses features"""
+        
+        query = text("""
+            SELECT 
+                condition_name,
+                condition_type,
+                diagnosis_date,
+                severity,
+                treatment_status,
+                is_primary
+            FROM current_conditions
+            WHERE patient_id = :patient_id
+            AND is_active = true
+        """)
+        
+        try:
+            result = await self.db.execute(query, {"patient_id": patient_id})
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        active_count = len(rows)
+        primary_conditions = sum(1 for row in rows if hasattr(row, 'is_primary') and row.is_primary)
+        severities = []
+        
+        for row in rows:
+            if hasattr(row, 'severity') and row.severity:
+                severity_map = {'mild': 1, 'moderate': 2, 'severe': 3, 'critical': 4}
+                sev_value = severity_map.get(str(row.severity).lower(), 2)
+                severities.append(sev_value)
+        
+        aggregated = {
+            'active_condition_count': active_count,
+            'primary_condition_count': primary_conditions,
+            'avg_condition_severity': float(np.mean(severities)) if severities else 0.0,
+            'max_condition_severity': float(np.max(severities)) if severities else 0.0
+        }
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_lab_results_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract lab results features (anonymized)"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                test_name,
+                test_category,
+                result_value,
+                result_unit,
+                reference_range_low,
+                reference_range_high,
+                is_abnormal,
+                test_date
+            FROM lab_results
+            WHERE patient_id = :patient_id
+            AND test_date BETWEEN :start_date AND :end_date
+            ORDER BY test_date
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        total_tests = len(rows)
+        abnormal_count = sum(1 for row in rows if hasattr(row, 'is_abnormal') and row.is_abnormal)
+        test_categories = set()
+        
+        for row in rows:
+            if hasattr(row, 'test_category') and row.test_category:
+                test_categories.add(row.test_category)
+        
+        aggregated = {
+            'lab_test_count': total_tests,
+            'abnormal_lab_count': abnormal_count,
+            'abnormal_lab_rate': abnormal_count / total_tests if total_tests > 0 else 0.0,
+            'lab_category_count': len(test_categories)
+        }
+        
+        return {"features": aggregated, "count": len(rows)}
+
 
 class FeatureEngineeringPipeline:
     """Feature engineering and preprocessing pipeline"""
@@ -545,7 +1373,12 @@ class FeatureEngineeringPipeline:
         
         feature_order = [
             'vitals', 'symptoms', 'mental_health',
-            'medications', 'wearable'
+            'medications', 'wearable', 'lab_results',
+            'daily_followup', 'habits', 'wellness',
+            'connected_apps', 'wearable_devices',
+            'wearable_heart', 'wearable_activity', 'wearable_sleep',
+            'wearable_oxygen', 'wearable_stress',
+            'environmental_risk', 'medical_history', 'current_conditions'
         ]
         
         for category in feature_order:
@@ -716,7 +1549,7 @@ class MLTrainingPipeline:
                         extracted['symptoms'] = result
                         record_counts['symptoms'] = result['count']
                 
-                if data_types.get('mentalHealth', False):
+                if data_types.get('mentalHealth', False) or data_types.get('mental_health', False):
                     result = await self.data_extractor.extract_mental_health_features(
                         patient['patient_id'], date_range
                     )
@@ -732,13 +1565,125 @@ class MLTrainingPipeline:
                         extracted['medications'] = result
                         record_counts['medications'] = result['count']
                 
-                if data_types.get('wearableData', False):
+                if data_types.get('wearableData', False) or data_types.get('wearable', False):
                     result = await self.data_extractor.extract_wearable_features(
                         patient['patient_id'], date_range
                     )
                     if result['features']:
                         extracted['wearable'] = result
                         record_counts['wearable'] = result['count']
+                
+                if data_types.get('daily_followup', False):
+                    result = await self.data_extractor.extract_daily_followup_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['daily_followup'] = result
+                        record_counts['daily_followup'] = result['count']
+                
+                if data_types.get('habits', False):
+                    result = await self.data_extractor.extract_habit_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['habits'] = result
+                        record_counts['habits'] = result['count']
+                
+                if data_types.get('wellness', False):
+                    result = await self.data_extractor.extract_wellness_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['wellness'] = result
+                        record_counts['wellness'] = result['count']
+                
+                if data_types.get('connected_apps', False):
+                    result = await self.data_extractor.extract_connected_apps_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['connected_apps'] = result
+                        record_counts['connected_apps'] = result['count']
+                
+                if data_types.get('wearable_devices', False):
+                    result = await self.data_extractor.extract_wearable_device_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['wearable_devices'] = result
+                        record_counts['wearable_devices'] = result['count']
+                
+                if data_types.get('wearable_heart', False):
+                    result = await self.data_extractor.extract_wearable_heart_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['wearable_heart'] = result
+                        record_counts['wearable_heart'] = result['count']
+                
+                if data_types.get('wearable_activity', False):
+                    result = await self.data_extractor.extract_wearable_activity_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['wearable_activity'] = result
+                        record_counts['wearable_activity'] = result['count']
+                
+                if data_types.get('wearable_sleep', False):
+                    result = await self.data_extractor.extract_wearable_sleep_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['wearable_sleep'] = result
+                        record_counts['wearable_sleep'] = result['count']
+                
+                if data_types.get('wearable_oxygen', False):
+                    result = await self.data_extractor.extract_wearable_oxygen_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['wearable_oxygen'] = result
+                        record_counts['wearable_oxygen'] = result['count']
+                
+                if data_types.get('wearable_stress', False):
+                    result = await self.data_extractor.extract_wearable_stress_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['wearable_stress'] = result
+                        record_counts['wearable_stress'] = result['count']
+                
+                if data_types.get('environmental_risk', False):
+                    result = await self.data_extractor.extract_environmental_risk_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['environmental_risk'] = result
+                        record_counts['environmental_risk'] = result['count']
+                
+                if data_types.get('medical_history', False):
+                    result = await self.data_extractor.extract_medical_history_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['medical_history'] = result
+                        record_counts['medical_history'] = result['count']
+                
+                if data_types.get('current_conditions', False):
+                    result = await self.data_extractor.extract_current_conditions_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['current_conditions'] = result
+                        record_counts['current_conditions'] = result['count']
+                
+                if data_types.get('lab_results', False) or data_types.get('labResults', False):
+                    result = await self.data_extractor.extract_lab_results_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['lab_results'] = result
+                        record_counts['lab_results'] = result['count']
                 
                 if extracted:
                     feature_vector, feature_names = self.feature_pipeline.create_feature_vector(extracted)
@@ -749,9 +1694,23 @@ class MLTrainingPipeline:
                         data_types=ConsentedDataTypes(
                             vitals=data_types.get('vitals', False),
                             symptoms=data_types.get('symptoms', False),
-                            mental_health=data_types.get('mentalHealth', False),
+                            mental_health=data_types.get('mentalHealth', False) or data_types.get('mental_health', False),
                             medications=data_types.get('medications', False),
-                            wearable_data=data_types.get('wearableData', False)
+                            wearable_data=data_types.get('wearableData', False) or data_types.get('wearable', False),
+                            lab_results=data_types.get('labResults', False) or data_types.get('lab_results', False),
+                            daily_followup=data_types.get('daily_followup', False),
+                            habits=data_types.get('habits', False),
+                            wellness=data_types.get('wellness', False),
+                            connected_apps=data_types.get('connected_apps', False),
+                            wearable_devices=data_types.get('wearable_devices', False),
+                            wearable_heart=data_types.get('wearable_heart', False),
+                            wearable_activity=data_types.get('wearable_activity', False),
+                            wearable_sleep=data_types.get('wearable_sleep', False),
+                            wearable_oxygen=data_types.get('wearable_oxygen', False),
+                            wearable_stress=data_types.get('wearable_stress', False),
+                            environmental_risk=data_types.get('environmental_risk', False),
+                            medical_history=data_types.get('medical_history', False),
+                            current_conditions=data_types.get('current_conditions', False)
                         ),
                         anonymization_level=patient['anonymization_level'] or 'full',
                         record_counts=record_counts,

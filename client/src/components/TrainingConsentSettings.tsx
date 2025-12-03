@@ -37,7 +37,20 @@ import {
   Pill,
   Activity,
   History,
-  AlertTriangle
+  AlertTriangle,
+  Calendar,
+  CheckSquare,
+  Sparkles,
+  Smartphone,
+  Watch,
+  Waves,
+  CloudSun,
+  FileText,
+  Stethoscope,
+  Footprints,
+  Moon,
+  Zap,
+  Thermometer
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -62,44 +75,143 @@ interface ContributionRecord {
   status: string;
 }
 
-const DATA_TYPE_OPTIONS = [
-  { 
-    id: "vitals", 
-    label: "Vital Signs", 
-    description: "Heart rate, blood pressure, temperature, SpO2, respiratory rate",
-    icon: HeartPulse
+const DATA_TYPE_CATEGORIES = [
+  {
+    category: "Daily Health Tracking",
+    options: [
+      { 
+        id: "daily_followup", 
+        label: "Daily Followup", 
+        description: "Daily check-ins, wellness scores, activity summaries, and health status updates",
+        icon: Calendar
+      },
+      { 
+        id: "vitals", 
+        label: "Vital Signs", 
+        description: "Heart rate, blood pressure, temperature, SpO2, respiratory rate",
+        icon: HeartPulse
+      },
+      { 
+        id: "symptoms", 
+        label: "Symptom Reports", 
+        description: "Daily symptom check-ins, severity ratings, and symptom patterns",
+        icon: Activity
+      },
+    ]
   },
-  { 
-    id: "symptoms", 
-    label: "Symptom Reports", 
-    description: "Daily symptom check-ins and severity ratings",
-    icon: Activity
+  {
+    category: "Lifestyle & Wellness",
+    options: [
+      { 
+        id: "habits", 
+        label: "Habit Tracker", 
+        description: "Routines, streaks, habit completion patterns, and behavioral trends",
+        icon: CheckSquare
+      },
+      { 
+        id: "wellness", 
+        label: "Wellness Activities", 
+        description: "Wellness events, lifestyle activities, exercise, and self-care routines",
+        icon: Sparkles
+      },
+      { 
+        id: "mental_health", 
+        label: "Mental Health Scores", 
+        description: "PHQ-9, GAD-7, PSS-10 assessment results (anonymized)",
+        icon: Brain
+      },
+    ]
   },
-  { 
-    id: "mental_health", 
-    label: "Mental Health Scores", 
-    description: "PHQ-9, GAD-7, PSS-10 assessment results (anonymized)",
-    icon: Brain
+  {
+    category: "Wearable Devices",
+    options: [
+      { 
+        id: "wearable_devices", 
+        label: "Wearable Devices", 
+        description: "Smartwatch, fitness tracker, CGM, pulse oximeter, and other connected devices",
+        icon: Watch
+      },
+      { 
+        id: "wearable_heart", 
+        label: "Heart & Cardiovascular", 
+        description: "Heart rate, HRV, ECG readings, and cardiovascular metrics from wearables",
+        icon: HeartPulse
+      },
+      { 
+        id: "wearable_activity", 
+        label: "Activity & Movement", 
+        description: "Steps, distance, calories burned, activity zones, and exercise data",
+        icon: Footprints
+      },
+      { 
+        id: "wearable_sleep", 
+        label: "Sleep Data", 
+        description: "Sleep duration, sleep stages, sleep quality scores, and sleep patterns",
+        icon: Moon
+      },
+      { 
+        id: "wearable_oxygen", 
+        label: "Blood Oxygen & Respiratory", 
+        description: "SpO2 levels, breathing rate, and respiratory health metrics",
+        icon: Waves
+      },
+      { 
+        id: "wearable_stress", 
+        label: "Stress & Recovery", 
+        description: "Stress scores, recovery metrics, body battery, and readiness data",
+        icon: Zap
+      },
+    ]
   },
-  { 
-    id: "medications", 
-    label: "Medication Adherence", 
-    description: "Medication schedules and adherence patterns",
-    icon: Pill
+  {
+    category: "Connected Apps & External Data",
+    options: [
+      { 
+        id: "connected_apps", 
+        label: "Connected Apps", 
+        description: "Data synced from external health apps (Apple Health, Google Fit, etc.)",
+        icon: Smartphone
+      },
+      { 
+        id: "environmental_risk", 
+        label: "Environmental Risk", 
+        description: "Location-based health risks, air quality, allergens, and weather impacts",
+        icon: CloudSun
+      },
+    ]
   },
-  { 
-    id: "wearable", 
-    label: "Wearable Device Data", 
-    description: "Steps, sleep patterns, activity levels from connected devices",
-    icon: Activity
-  },
-  { 
-    id: "lab_results", 
-    label: "Lab Results (Anonymized)", 
-    description: "Blood work and test results with all identifiers removed",
-    icon: Database
+  {
+    category: "Medical Records",
+    options: [
+      { 
+        id: "medications", 
+        label: "Medication Adherence", 
+        description: "Medication schedules, adherence patterns, and drug interactions",
+        icon: Pill
+      },
+      { 
+        id: "lab_results", 
+        label: "Lab Results (Anonymized)", 
+        description: "Blood work and test results with all identifiers removed",
+        icon: Database
+      },
+      { 
+        id: "medical_history", 
+        label: "Medical History", 
+        description: "Previous conditions, surgeries, hospitalizations, and past treatments",
+        icon: FileText
+      },
+      { 
+        id: "current_conditions", 
+        label: "Current Conditions", 
+        description: "Active diagnoses, ongoing treatments, and current health status",
+        icon: Stethoscope
+      },
+    ]
   },
 ];
+
+const DATA_TYPE_OPTIONS = DATA_TYPE_CATEGORIES.flatMap(cat => cat.options);
 
 export default function TrainingConsentSettings() {
   const { toast } = useToast();
@@ -256,43 +368,86 @@ export default function TrainingConsentSettings() {
               <Separator />
               
               <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                  <h4 className="font-medium">Data Types to Contribute</h4>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                    <h4 className="font-medium">Data Types to Contribute</h4>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const allIds = DATA_TYPE_OPTIONS.map(o => o.id);
+                        setPendingChanges({ ...currentData, consentedDataTypes: allIds, isActive: true });
+                      }}
+                      data-testid="button-select-all"
+                    >
+                      Select All
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setPendingChanges({ ...currentData, consentedDataTypes: [], isActive: false });
+                      }}
+                      data-testid="button-clear-all"
+                    >
+                      Clear All
+                    </Button>
+                  </div>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Select which types of your health data can be used for training. All data is anonymized before use.
                 </p>
                 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {DATA_TYPE_OPTIONS.map((option) => {
-                    const Icon = option.icon;
-                    const isChecked = consentedTypes.includes(option.id);
+                <div className="space-y-6">
+                  {DATA_TYPE_CATEGORIES.map((category) => {
+                    const categoryOptions = category.options;
+                    const selectedCount = categoryOptions.filter(o => consentedTypes.includes(o.id)).length;
                     
                     return (
-                      <div 
-                        key={option.id}
-                        className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
-                          isChecked ? "border-primary bg-primary/5" : "border-border"
-                        }`}
-                      >
-                        <Checkbox
-                          id={`data-type-${option.id}`}
-                          checked={isChecked}
-                          onCheckedChange={(checked) => handleDataTypeToggle(option.id, checked as boolean)}
-                          data-testid={`checkbox-data-type-${option.id}`}
-                        />
-                        <div className="flex-1">
-                          <Label 
-                            htmlFor={`data-type-${option.id}`}
-                            className="flex items-center gap-2 cursor-pointer"
-                          >
-                            <Icon className="h-4 w-4 text-muted-foreground" />
-                            {option.label}
-                          </Label>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {option.description}
-                          </p>
+                      <div key={category.category} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-sm font-medium text-muted-foreground">{category.category}</h5>
+                          <Badge variant="secondary" className="text-xs" data-testid={`badge-category-${category.category.toLowerCase().replace(/\s+/g, '-')}`}>
+                            {selectedCount}/{categoryOptions.length} selected
+                          </Badge>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          {categoryOptions.map((option) => {
+                            const Icon = option.icon;
+                            const isChecked = consentedTypes.includes(option.id);
+                            
+                            return (
+                              <div 
+                                key={option.id}
+                                className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+                                  isChecked ? "border-primary bg-primary/5" : "border-border"
+                                }`}
+                                data-testid={`card-data-type-${option.id}`}
+                              >
+                                <Checkbox
+                                  id={`data-type-${option.id}`}
+                                  checked={isChecked}
+                                  onCheckedChange={(checked) => handleDataTypeToggle(option.id, checked as boolean)}
+                                  data-testid={`checkbox-data-type-${option.id}`}
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <Label 
+                                    htmlFor={`data-type-${option.id}`}
+                                    className="flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                    <span className="truncate">{option.label}</span>
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                    {option.description}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
