@@ -42,6 +42,14 @@ The backend comprises two services: a Node.js Express server (Port 5000) for cha
     - qSOFA (Sepsis-3) for sepsis risk (requires respiratory rate, systolic BP)
     - FINDRISC (Finnish Diabetes Risk Score) for diabetes risk (requires age, BMI)
     - Per-disease validation gates with automatic fallback to simple logistic regression when required inputs missing
+  - **LSTM Time-Series Forecasting (LSTMVitalPredictor):**
+    - PyTorch 2-layer Bidirectional LSTM for vital sign prediction
+    - Multi-horizon forecasting: 24h/48h/72h predictions
+    - Vital signs supported: heart rate, BP systolic/diastolic, SpO2, respiratory rate
+    - Confidence intervals with uncertainty quantification
+    - Anomaly detection with z-score analysis
+    - Statistical fallback when PyTorch unavailable
+    - Risk assessment with trajectory analysis (stable/concerning/deteriorating)
 - **Guided Video Examination:** 4-stage workflow (Eyes, Palm, Tongue, Lips) with LAB color analysis and S3 encrypted storage, including Facial Puffiness Score (FPS).
 - **Guided Audio Examination:** 4-stage workflow (Breathing, Coughing, Speaking, Reading) with YAMNet ML classification and S3 encrypted storage.
 - **Alert Orchestration Engine:** Multi-channel (dashboard, email, SMS) rule-based alert delivery.
