@@ -69,6 +69,16 @@ The backend comprises two services: a Node.js Express server (Port 5000) for cha
     - Severity levels: stable, low_risk, moderate_risk, high_risk, critical
     - Time-to-action recommendations based on severity
     - API parameters: use_ensemble, use_news2, use_scale2
+  - **ML Model Infrastructure (ml_inference.py):**
+    - Production-grade model version registry with semantic versioning
+    - A/B testing support via version routing and activation
+    - Automatic rollback to previous version on failure
+    - ONNX export for optimized inference (PyTorch to ONNX)
+    - Joblib serialization for sklearn models with compression
+    - Batch inference support for efficiency
+    - Redis caching with TTL for prediction results
+    - Performance tracking with inference statistics
+    - HIPAA-compliant prediction logging
 - **Guided Video Examination:** 4-stage workflow (Eyes, Palm, Tongue, Lips) with LAB color analysis and S3 encrypted storage, including Facial Puffiness Score (FPS).
 - **Guided Audio Examination:** 4-stage workflow (Breathing, Coughing, Speaking, Reading) with YAMNet ML classification and S3 encrypted storage.
 - **Alert Orchestration Engine:** Multi-channel (dashboard, email, SMS) rule-based alert delivery.
@@ -97,6 +107,16 @@ A multi-agent system facilitates real-time communication between AI agents, user
 - **Database Schema:** Dedicated tables for agents, messages, conversations, tasks, tools, memory (pgvector), and audit logs.
 - **Tool Microservices:** Extend AI agent capabilities with real database operations, permission checking, consent verification, parameter validation, and dual audit logging (e.g., CalendarTool, MessagingTool, PrescriptionDraftTool, EHRFetchTool, LabFetchTool, ImagingLinkerTool).
 - **Memory Persistence:** Centralized memory injection via `ensure_memory_service()` in AgentEngine with idempotent `_memory_initialized` flag guaranteeing consistent memory availability across REST, WebSocket, and worker pathways.
+- **Clinical Urgency Assessment (Agent Clona):**
+  - Multi-factor urgency scoring combining extracted symptoms, historical data, and active alerts
+  - Automatic escalation triggers for emergency symptoms (chest pain, breathing difficulty, confusion)
+  - Urgency levels: low, moderate, high, critical with recommended actions
+  - Integration with risk scores and health alerts for comprehensive assessment
+- **Doctor-Patient Context (Assistant Lysa):**
+  - Consent-aware patient access verification
+  - Permission-based data access (symptoms, vitals, medications, AI analysis)
+  - Patient prioritization by alert severity and count
+  - Active assignment validation with access level enforcement
 - **Doctor Patient Overview Panel (My Patients):** HIPAA-compliant patient overview for doctors with:
   - `/api/agent/patients` - List assigned patients with risk scores, alert counts, medication counts
   - `/api/agent/patients/{id}/overview` - Comprehensive patient profile (daily followups, health alerts, medications, conditions)

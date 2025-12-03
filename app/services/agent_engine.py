@@ -1086,6 +1086,238 @@ Only include fields that are actually present or can be inferred from the messag
             return {"error": str(e)}
 
 
+    async def assess_clinical_urgency(
+        self,
+        patient_id: str,
+        current_message: str,
+        extracted_symptoms: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Assess clinical urgency combining extracted symptoms with historical data.
+        Used to determine if immediate escalation is needed.
+        
+        Returns urgency assessment with recommended actions.
+        """
+        try:
+            AuditLogger.log_event(
+                event_type=AuditEvent.PHI_ACCESSED,
+                user_id=user_id or "agent_clona",
+                resource_type="clinical_urgency_assessment",
+                resource_id=patient_id,
+                action="assess",
+                status="initiated",
+                patient_id=patient_id,
+                phi_accessed=True,
+                phi_categories=["symptoms", "health_alerts", "risk_scores"]
+            )
+            
+            health_context = await self.get_health_context_summary(patient_id)
+            
+            if not extracted_symptoms:
+                extracted_symptoms = await self.extract_symptoms_from_message(
+                    current_message,
+                    {"patient_id": patient_id}
+                )
+            
+            urgent_symptoms = [
+                s for s in extracted_symptoms.get("symptoms", [])
+                if s.get("severity") in ["severe", "9", "10"] or 
+                   s.get("name", "").lower() in [
+                       "chest pain", "difficulty breathing", "confusion",
+                       "severe bleeding", "fainting", "seizure"
+                   ]
+            ]
+            
+            concerning_patterns = extracted_symptoms.get("concerning_patterns", [])
+            base_urgency = extracted_symptoms.get("urgency_level", "routine")
+            risk_score = health_context.get("risk_score", {})
+            active_alerts = health_context.get("active_alerts", [])
+            
+            urgency_score = 0
+            reasons = []
+            
+            if base_urgency == "emergency":
+                urgency_score += 10
+                reasons.append("Emergency-level symptoms detected")
+            elif base_urgency == "urgent":
+                urgency_score += 7
+                reasons.append("Urgent symptoms requiring prompt attention")
+            elif base_urgency == "elevated":
+                urgency_score += 4
+                reasons.append("Elevated concern level")
+            
+            if urgent_symptoms:
+                urgency_score += len(urgent_symptoms) * 3
+                reasons.append(f"{len(urgent_symptoms)} severe/critical symptoms")
+            
+            if concerning_patterns:
+                urgency_score += len(concerning_patterns) * 2
+                reasons.append(f"{len(concerning_patterns)} concerning patterns")
+            
+            if risk_score and risk_score.get("composite", 0) > 10:
+                urgency_score += 3
+                reasons.append("High baseline risk score")
+            
+            high_severity_alerts = [a for a in active_alerts if a.get("severity") in ["high", "critical"]]
+            if high_severity_alerts:
+                urgency_score += len(high_severity_alerts) * 2
+                reasons.append(f"{len(high_severity_alerts)} high-severity active alerts")
+            
+            if urgency_score >= 10:
+                urgency_level = "critical"
+                action = "immediate_escalation"
+            elif urgency_score >= 7:
+                urgency_level = "high"
+                action = "urgent_notification"
+            elif urgency_score >= 4:
+                urgency_level = "moderate"
+                action = "schedule_followup"
+            else:
+                urgency_level = "low"
+                action = "continue_monitoring"
+            
+            return {
+                "urgency_level": urgency_level,
+                "urgency_score": min(urgency_score, 15),
+                "recommended_action": action,
+                "reasons": reasons,
+                "urgent_symptoms": urgent_symptoms,
+                "should_escalate": urgency_score >= 7,
+                "escalation_priority": "immediate" if urgency_score >= 10 else "soon" if urgency_score >= 7 else "routine"
+            }
+            
+        except Exception as e:
+            logger.error(f"Clinical urgency assessment failed: {e}")
+            return {
+                "urgency_level": "unknown",
+                "urgency_score": 0,
+                "recommended_action": "manual_review",
+                "error": str(e)
+            }
+    
+    async def get_doctor_patient_context(
+        self,
+        doctor_id: str,
+        patient_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get context for Assistant Lysa about a doctor's patients.
+        Includes assigned patients, pending alerts, and consent status.
+        HIPAA-compliant with audit logging.
+        """
+        try:
+            from app.database import SessionLocal
+            from sqlalchemy import text
+            
+            AuditLogger.log_event(
+                event_type=AuditEvent.PHI_ACCESSED,
+                user_id=doctor_id,
+                resource_type="doctor_patient_context",
+                resource_id=patient_id or "all_patients",
+                action="query",
+                status="initiated",
+                patient_id=patient_id,
+                phi_accessed=patient_id is not None,
+                phi_categories=["assignments", "alerts", "consent"]
+            )
+            
+            db = SessionLocal()
+            try:
+                if patient_id:
+                    assignment_result = db.execute(text("""
+                        SELECT 
+                            dpa.status,
+                            dpa.access_level,
+                            dpa.consent_given,
+                            dpc.share_symptoms,
+                            dpc.share_vitals,
+                            dpc.share_medications,
+                            dpc.allow_ai_analysis
+                        FROM doctor_patient_assignments dpa
+                        LEFT JOIN doctor_patient_consent dpc 
+                            ON dpa.doctor_id = dpc.doctor_id 
+                            AND dpa.patient_id = dpc.patient_id
+                        WHERE dpa.doctor_id = :doctor_id
+                        AND dpa.patient_id = :patient_id
+                        AND dpa.status = 'active'
+                    """), {"doctor_id": doctor_id, "patient_id": patient_id})
+                    row = assignment_result.fetchone()
+                    
+                    if not row:
+                        return {
+                            "has_access": False,
+                            "error": "No active assignment for this patient"
+                        }
+                    
+                    permissions = {
+                        "share_symptoms": row[3] if row[3] is not None else False,
+                        "share_vitals": row[4] if row[4] is not None else False,
+                        "share_medications": row[5] if row[5] is not None else False,
+                        "allow_ai_analysis": row[6] if row[6] is not None else False
+                    }
+                    
+                    alerts_result = db.execute(text("""
+                        SELECT COUNT(*), 
+                               SUM(CASE WHEN severity IN ('high', 'critical') THEN 1 ELSE 0 END)
+                        FROM health_alerts
+                        WHERE patient_id = :patient_id
+                        AND status = 'active'
+                    """), {"patient_id": patient_id})
+                    alert_row = alerts_result.fetchone()
+                    
+                    return {
+                        "has_access": True,
+                        "access_level": row[1],
+                        "consent_given": row[2],
+                        "permissions": permissions,
+                        "pending_alerts": alert_row[0] if alert_row else 0,
+                        "high_priority_alerts": alert_row[1] if alert_row else 0
+                    }
+                
+                else:
+                    patients_result = db.execute(text("""
+                        SELECT 
+                            dpa.patient_id,
+                            u.name as patient_name,
+                            dpa.access_level,
+                            COUNT(DISTINCT ha.id) as alert_count,
+                            MAX(CASE WHEN ha.severity IN ('high', 'critical') THEN 1 ELSE 0 END) as has_critical
+                        FROM doctor_patient_assignments dpa
+                        JOIN users u ON u.id = dpa.patient_id
+                        LEFT JOIN health_alerts ha ON ha.patient_id = dpa.patient_id AND ha.status = 'active'
+                        WHERE dpa.doctor_id = :doctor_id
+                        AND dpa.status = 'active'
+                        GROUP BY dpa.patient_id, u.name, dpa.access_level
+                        ORDER BY has_critical DESC, alert_count DESC
+                    """), {"doctor_id": doctor_id})
+                    
+                    patients = [
+                        {
+                            "patient_id": row[0],
+                            "patient_name": row[1],
+                            "access_level": row[2],
+                            "alert_count": row[3],
+                            "has_critical_alerts": bool(row[4])
+                        }
+                        for row in patients_result.fetchall()
+                    ]
+                    
+                    return {
+                        "total_patients": len(patients),
+                        "patients_with_alerts": sum(1 for p in patients if p["alert_count"] > 0),
+                        "patients_with_critical": sum(1 for p in patients if p["has_critical_alerts"]),
+                        "patients": patients[:20]
+                    }
+                    
+            finally:
+                db.close()
+                
+        except Exception as e:
+            logger.error(f"Failed to get doctor-patient context: {e}")
+            return {"error": str(e)}
+
+
 # Singleton instance
 agent_engine = AgentEngine()
 
