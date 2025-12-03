@@ -573,6 +573,17 @@ export default function DeviceConnect() {
     }
   };
 
+  const getDataFreshnessBadge = (lastSyncAt?: string, showFresh: boolean = false) => {
+    if (!lastSyncAt) return showFresh ? <Badge variant="secondary" className="text-xs">No Data</Badge> : null;
+    const hoursSinceSync = (Date.now() - new Date(lastSyncAt).getTime()) / (1000 * 60 * 60);
+    if (hoursSinceSync > 48) {
+      return <Badge variant="destructive" className="text-xs">Stale</Badge>;
+    } else if (hoursSinceSync > 24) {
+      return <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 text-xs">Needs Sync</Badge>;
+    }
+    return showFresh ? <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs">Fresh</Badge> : null;
+  };
+
   const getBatteryIcon = (level?: number) => {
     if (!level) return null;
     const Icon = level > 50 ? BatteryFull : level > 20 ? Battery : BatteryLow;
@@ -814,7 +825,10 @@ export default function DeviceConnect() {
                           </CardDescription>
                         </div>
                       </div>
-                      {getStatusBadge(device.connectionStatus)}
+                      <div className="flex flex-col items-end gap-1">
+                        {getStatusBadge(device.connectionStatus)}
+                        {getDataFreshnessBadge(device.lastSyncAt)}
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="pb-3">
@@ -847,23 +861,41 @@ export default function DeviceConnect() {
                     </div>
                   </CardContent>
                   <CardFooter className="pt-3 border-t gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        syncDeviceMutation.mutate(device.id);
-                      }}
-                      disabled={syncDeviceMutation.isPending}
-                      data-testid={`button-sync-${device.id}`}
-                    >
-                      {syncDeviceMutation.isPending ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                      )}
-                      Sync
-                    </Button>
+                    {device.connectionStatus === "disconnected" ? (
+                      <Button 
+                        size="sm" 
+                        variant="default"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedCategory(device.deviceType);
+                          setSelectedVendor(device.vendorId);
+                          setPairingStep(3);
+                          setShowPairingWizard(true);
+                        }}
+                        data-testid={`button-reconnect-${device.id}`}
+                      >
+                        <Link2 className="mr-2 h-4 w-4" />
+                        Reconnect
+                      </Button>
+                    ) : (
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          syncDeviceMutation.mutate(device.id);
+                        }}
+                        disabled={syncDeviceMutation.isPending}
+                        data-testid={`button-sync-${device.id}`}
+                      >
+                        {syncDeviceMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        Sync
+                      </Button>
+                    )}
                     <Button 
                       size="sm" 
                       variant="ghost"
@@ -1431,8 +1463,9 @@ export default function DeviceConnect() {
               {selectedDevice && getDeviceIcon(selectedDevice.deviceType)}
               {selectedDevice?.deviceName}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="flex items-center gap-2">
               {VENDORS.find(v => v.id === selectedDevice?.vendorId)?.name}
+              {getDataFreshnessBadge(selectedDevice?.lastSyncAt, true)}
             </DialogDescription>
           </DialogHeader>
 
@@ -1445,8 +1478,13 @@ export default function DeviceConnect() {
                 </div>
                 <div className="p-3 rounded-lg bg-muted">
                   <p className="text-sm text-muted-foreground">Battery</p>
-                  <p className="font-medium mt-1">
-                    {selectedDevice.batteryLevel ? `${selectedDevice.batteryLevel}%` : "N/A"}
+                  <p className="font-medium mt-1 flex items-center gap-2">
+                    {selectedDevice.batteryLevel ? (
+                      <>
+                        {getBatteryIcon(selectedDevice.batteryLevel)}
+                        {selectedDevice.batteryLevel}%
+                      </>
+                    ) : "N/A"}
                   </p>
                 </div>
                 <div className="p-3 rounded-lg bg-muted">
@@ -1458,6 +1496,35 @@ export default function DeviceConnect() {
                   <p className="font-medium mt-1">{selectedDevice.firmwareVersion || "N/A"}</p>
                 </div>
               </div>
+
+              {selectedDevice.healthData?.latestReadings && Object.keys(selectedDevice.healthData.latestReadings).length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2 flex items-center gap-2">
+                    <Activity className="h-4 w-4" />
+                    Latest Readings
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(selectedDevice.healthData.latestReadings).slice(0, 6).map(([key, value]) => (
+                      <div key={key} className="p-2 rounded-lg bg-muted/50 text-sm">
+                        <p className="text-xs text-muted-foreground">{METRIC_LABELS[key] || key}</p>
+                        <p className="font-medium">
+                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                        </p>
+                        {selectedDevice.healthData?.trends?.[key] && (
+                          <p className={`text-xs ${
+                            selectedDevice.healthData.trends[key] === 'up' ? 'text-green-600' :
+                            selectedDevice.healthData.trends[key] === 'down' ? 'text-red-600' :
+                            'text-muted-foreground'
+                          }`}>
+                            {selectedDevice.healthData.trends[key] === 'up' ? '↑ Increasing' :
+                             selectedDevice.healthData.trends[key] === 'down' ? '↓ Decreasing' : '→ Stable'}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <h4 className="font-medium mb-2">Tracked Metrics</h4>
@@ -1497,19 +1564,36 @@ export default function DeviceConnect() {
               <Separator />
 
               <div className="flex gap-2">
-                <Button 
-                  className="flex-1"
-                  onClick={() => syncDeviceMutation.mutate(selectedDevice.id)}
-                  disabled={syncDeviceMutation.isPending}
-                  data-testid="button-detail-sync"
-                >
-                  {syncDeviceMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                  )}
-                  Sync Now
-                </Button>
+                {selectedDevice.connectionStatus === "disconnected" ? (
+                  <Button 
+                    className="flex-1"
+                    onClick={() => {
+                      setSelectedCategory(selectedDevice.deviceType);
+                      setSelectedVendor(selectedDevice.vendorId);
+                      setPairingStep(3);
+                      setShowDeviceDetails(false);
+                      setShowPairingWizard(true);
+                    }}
+                    data-testid="button-reconnect-device"
+                  >
+                    <Link2 className="mr-2 h-4 w-4" />
+                    Reconnect Device
+                  </Button>
+                ) : (
+                  <Button 
+                    className="flex-1"
+                    onClick={() => syncDeviceMutation.mutate(selectedDevice.id)}
+                    disabled={syncDeviceMutation.isPending}
+                    data-testid="button-detail-sync"
+                  >
+                    {syncDeviceMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                    )}
+                    Sync Now
+                  </Button>
+                )}
                 <Button 
                   variant="outline"
                   onClick={() => {
