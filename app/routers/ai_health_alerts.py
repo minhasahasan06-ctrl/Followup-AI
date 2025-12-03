@@ -27,6 +27,18 @@ from sqlalchemy import text, desc, func
 
 from app.database import get_db
 
+# Health Section Analytics integration
+try:
+    from app.services.health_section_analytics import (
+        HealthSectionAnalyticsEngine,
+        HealthSection,
+        TrendDirection,
+        RiskLevel,
+    )
+    HEALTH_SECTION_ANALYTICS_AVAILABLE = True
+except ImportError:
+    HEALTH_SECTION_ANALYTICS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai-health-alerts", tags=["AI Health Alerts"])
@@ -3082,3 +3094,344 @@ def _prediction_is_stale(prediction: Dict[str, Any], max_age_hours: int = 6) -> 
     
     age = datetime.utcnow() - computed_at.replace(tzinfo=None)
     return age.total_seconds() > max_age_hours * 3600
+
+
+# ============================================
+# DEVICE DATA → HEALTH ALERTS PIPELINE
+# ============================================
+
+class SectionAlertResponse(BaseModel):
+    """Response model for section-based health alerts"""
+    section: str
+    deterioration_index: float
+    risk_score: float
+    risk_level: str
+    trend: str
+    stability_score: float
+    alert_triggered: bool
+    alert_reason: Optional[str] = None
+    data_coverage: float
+    anomalies_detected: int
+    recommendations: List[str] = []
+
+
+class DeviceAlertPipelineResponse(BaseModel):
+    """Response model for device data → alerts pipeline"""
+    patient_id: str
+    generated_at: str
+    overall_risk_score: float
+    overall_trend: str
+    sections: List[SectionAlertResponse]
+    critical_alerts: List[Dict[str, Any]]
+    alerts_generated: int
+    new_alerts: List[Dict[str, Any]]
+
+
+@router.post("/device-data-pipeline/{patient_id}")
+async def run_device_data_alert_pipeline(
+    patient_id: str,
+    days: int = Query(default=7, ge=1, le=30),
+    db: Session = Depends(get_db)
+) -> DeviceAlertPipelineResponse:
+    """
+    Run the complete device data → health alerts pipeline.
+    
+    This endpoint:
+    1. Fetches device readings from wearables/medical devices
+    2. Analyzes each health section (cardiovascular, respiratory, etc.)
+    3. Computes deterioration indices, risk scores, and trends
+    4. Generates alerts based on threshold violations
+    5. Creates alert records for clinician review
+    
+    Args:
+        patient_id: Patient's user ID
+        days: Number of days to analyze (default 7)
+    
+    Returns:
+        Comprehensive pipeline results with section analytics and generated alerts
+    """
+    if not HEALTH_SECTION_ANALYTICS_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Health Section Analytics engine not available"
+        )
+    
+    try:
+        # Initialize analytics engine with async session
+        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+        from sqlalchemy.orm import sessionmaker
+        import asyncio
+        
+        database_url = os.environ.get("DATABASE_URL", "")
+        if database_url.startswith("postgresql://"):
+            async_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif database_url.startswith("postgres://"):
+            async_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+        else:
+            async_url = database_url
+        
+        async_engine = create_async_engine(async_url, echo=False)
+        AsyncSessionLocal = sessionmaker(
+            async_engine, class_=AsyncSession, expire_on_commit=False
+        )
+        
+        async def analyze_and_generate_alerts():
+            async with AsyncSessionLocal() as async_session:
+                analytics_engine = HealthSectionAnalyticsEngine(async_session)
+                profile = await analytics_engine.analyze_patient(patient_id, days=days)
+                return profile
+        
+        # Run async analysis
+        profile = asyncio.get_event_loop().run_until_complete(analyze_and_generate_alerts())
+        
+        # Convert section results to response format
+        section_responses = []
+        alerts_to_create = []
+        
+        for section, analytics in profile.sections.items():
+            section_data = SectionAlertResponse(
+                section=section.value,
+                deterioration_index=analytics.deterioration_index,
+                risk_score=analytics.risk_score,
+                risk_level=analytics.risk_level.value,
+                trend=analytics.trend.value,
+                stability_score=analytics.stability_score,
+                alert_triggered=analytics.alert_triggered,
+                alert_reason=analytics.alert_reason,
+                data_coverage=analytics.data_coverage,
+                anomalies_detected=analytics.anomalies_detected,
+                recommendations=analytics.recommendations,
+            )
+            section_responses.append(section_data)
+            
+            # If alert triggered, prepare alert record
+            if analytics.alert_triggered:
+                severity = "critical" if analytics.risk_score >= 13 else \
+                          "high" if analytics.risk_score >= 10 else \
+                          "moderate" if analytics.risk_score >= 5 else "low"
+                priority = int(min(10, max(1, analytics.risk_score)))
+                
+                alerts_to_create.append({
+                    "patient_id": patient_id,
+                    "alert_type": "device_analytics",
+                    "alert_category": f"section_{section.value}",
+                    "severity": severity,
+                    "priority": priority,
+                    "title": f"{section.value.replace('_', ' ').title()} Alert",
+                    "message": analytics.alert_reason or f"Health section {section.value} requires attention",
+                    "disclaimer": COMPLIANCE_DISCLAIMER,
+                    "contributing_metrics": [
+                        {"metric": f.get("factor"), "value": f.get("value"), "impact": f.get("impact")}
+                        for f in analytics.risk_factors
+                    ],
+                    "trigger_rule": "device_analytics_threshold",
+                    "trigger_threshold": 10.0,
+                    "trigger_value": analytics.deterioration_index,
+                })
+        
+        # Create alert records in database
+        created_alerts = []
+        for alert_data in alerts_to_create:
+            try:
+                import uuid
+                alert_id = str(uuid.uuid4())
+                
+                db.execute(
+                    text("""
+                        INSERT INTO ai_health_alerts (
+                            id, patient_id, alert_type, alert_category, severity, priority,
+                            title, message, disclaimer, contributing_metrics,
+                            trigger_rule, status, created_at
+                        ) VALUES (
+                            :id, :patient_id, :alert_type, :alert_category, :severity, :priority,
+                            :title, :message, :disclaimer, :contributing_metrics,
+                            :trigger_rule, 'active', NOW()
+                        )
+                    """),
+                    {
+                        "id": alert_id,
+                        "patient_id": alert_data["patient_id"],
+                        "alert_type": alert_data["alert_type"],
+                        "alert_category": alert_data["alert_category"],
+                        "severity": alert_data["severity"],
+                        "priority": alert_data["priority"],
+                        "title": alert_data["title"],
+                        "message": alert_data["message"],
+                        "disclaimer": alert_data["disclaimer"],
+                        "contributing_metrics": None,  # JSON would need proper handling
+                        "trigger_rule": alert_data["trigger_rule"],
+                    }
+                )
+                db.commit()
+                
+                created_alerts.append({
+                    "id": alert_id,
+                    "section": alert_data["alert_category"].replace("section_", ""),
+                    "severity": alert_data["severity"],
+                    "priority": alert_data["priority"],
+                    "title": alert_data["title"],
+                })
+            except Exception as e:
+                logger.warning(f"Could not create alert record: {e}")
+                db.rollback()
+        
+        # Log HIPAA audit event
+        try:
+            db.execute(
+                text("""
+                    INSERT INTO audit_logs (
+                        id, user_id, action, resource_type, resource_id,
+                        details, timestamp
+                    ) VALUES (
+                        gen_random_uuid(), :user_id, 'device_data_pipeline_run',
+                        'health_alerts', :patient_id,
+                        :details, NOW()
+                    )
+                """),
+                {
+                    "user_id": patient_id,
+                    "patient_id": patient_id,
+                    "details": f'{{"sections_analyzed": {len(section_responses)}, "alerts_generated": {len(created_alerts)}}}',
+                }
+            )
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Could not log audit event: {e}")
+        
+        return DeviceAlertPipelineResponse(
+            patient_id=patient_id,
+            generated_at=profile.generated_at,
+            overall_risk_score=profile.overall_risk_score,
+            overall_trend=profile.overall_trend.value,
+            sections=section_responses,
+            critical_alerts=profile.critical_alerts,
+            alerts_generated=len(created_alerts),
+            new_alerts=created_alerts,
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in device data alert pipeline: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/device-analytics/{patient_id}")
+async def get_device_analytics(
+    patient_id: str,
+    section: Optional[str] = Query(default=None, description="Specific section to analyze"),
+    days: int = Query(default=7, ge=1, le=30),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get device-based health analytics for a patient without generating alerts.
+    
+    Use this endpoint for read-only analytics viewing.
+    For alert generation, use /device-data-pipeline/{patient_id}
+    
+    Args:
+        patient_id: Patient's user ID
+        section: Optional specific section (cardiovascular, respiratory, etc.)
+        days: Number of days to analyze
+    
+    Returns:
+        Health section analytics with risk scores, trends, and predictions
+    """
+    if not HEALTH_SECTION_ANALYTICS_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Health Section Analytics engine not available"
+        )
+    
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+        from sqlalchemy.orm import sessionmaker
+        import asyncio
+        
+        database_url = os.environ.get("DATABASE_URL", "")
+        if database_url.startswith("postgresql://"):
+            async_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif database_url.startswith("postgres://"):
+            async_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+        else:
+            async_url = database_url
+        
+        async_engine = create_async_engine(async_url, echo=False)
+        AsyncSessionLocal = sessionmaker(
+            async_engine, class_=AsyncSession, expire_on_commit=False
+        )
+        
+        async def run_analysis():
+            async with AsyncSessionLocal() as async_session:
+                analytics_engine = HealthSectionAnalyticsEngine(async_session)
+                
+                if section:
+                    try:
+                        health_section = HealthSection(section)
+                        result = await analytics_engine.analyze_section(
+                            patient_id, health_section, days=days
+                        )
+                        return {"single_section": result}
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid section: {section}. Valid options: {[s.value for s in HealthSection]}"
+                        )
+                else:
+                    profile = await analytics_engine.analyze_patient(patient_id, days=days)
+                    return {"profile": profile}
+        
+        result = asyncio.get_event_loop().run_until_complete(run_analysis())
+        
+        if "single_section" in result:
+            analytics = result["single_section"]
+            return {
+                "patient_id": patient_id,
+                "section": analytics.section.value,
+                "analysis": {
+                    "deterioration_index": analytics.deterioration_index,
+                    "risk_score": analytics.risk_score,
+                    "risk_level": analytics.risk_level.value,
+                    "trend": analytics.trend.value,
+                    "trend_slope": analytics.trend_slope,
+                    "trend_confidence": analytics.trend_confidence,
+                    "stability_score": analytics.stability_score,
+                    "data_coverage": analytics.data_coverage,
+                    "data_points": analytics.data_points,
+                    "anomalies_detected": analytics.anomalies_detected,
+                    "anomaly_details": analytics.anomaly_details,
+                    "risk_factors": analytics.risk_factors,
+                    "predictions": analytics.predictions,
+                    "recommendations": analytics.recommendations,
+                    "alert_triggered": analytics.alert_triggered,
+                    "alert_reason": analytics.alert_reason,
+                    "timestamp": analytics.timestamp,
+                }
+            }
+        else:
+            profile = result["profile"]
+            return {
+                "patient_id": profile.patient_id,
+                "generated_at": profile.generated_at,
+                "overall_risk_score": profile.overall_risk_score,
+                "overall_trend": profile.overall_trend.value,
+                "critical_alerts": profile.critical_alerts,
+                "recommendations": profile.recommendations,
+                "sections": {
+                    section.value: {
+                        "deterioration_index": analytics.deterioration_index,
+                        "risk_score": analytics.risk_score,
+                        "risk_level": analytics.risk_level.value,
+                        "trend": analytics.trend.value,
+                        "stability_score": analytics.stability_score,
+                        "data_coverage": analytics.data_coverage,
+                        "anomalies_detected": analytics.anomalies_detected,
+                        "alert_triggered": analytics.alert_triggered,
+                    }
+                    for section, analytics in profile.sections.items()
+                }
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in device analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
