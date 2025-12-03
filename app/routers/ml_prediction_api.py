@@ -36,7 +36,11 @@ class DiseaseRiskRequest(BaseModel):
     patient_id: str = Field(..., description="Patient identifier")
     diseases: Optional[List[str]] = Field(
         None,
-        description="List of diseases to predict (stroke, sepsis, diabetes). Default: all"
+        description="List of diseases to predict (stroke, sepsis, diabetes, cardiovascular). Default: all"
+    )
+    formula_type: Optional[str] = Field(
+        "auto",
+        description="Formula type: 'validated' (ASCVD/qSOFA/FINDRISC), 'simple' (logistic regression), or 'auto' (validated when data available)"
     )
 
 
@@ -97,19 +101,25 @@ async def predict_disease_risk(
     db: Session = Depends(get_db)
 ):
     """
-    Predict disease risks using Logistic Regression models.
+    Predict disease risks using validated clinical formulas or logistic regression.
+    
+    Formula Types:
+    - validated: Peer-reviewed formulas (ASCVD, qSOFA, FINDRISC, CHA₂DS₂-VASc)
+    - simple: Logistic regression with simplified coefficients
+    - auto: Validated when data available, fallback to simple
     
     Diseases available:
+    - cardiovascular: ASCVD 10-year risk (validated formula)
     - stroke: Cardiovascular stroke risk
-    - sepsis: Infection/sepsis risk  
-    - diabetes: Type 2 diabetes risk
+    - sepsis: qSOFA sepsis screening (validated formula)
+    - diabetes: FINDRISC Type 2 diabetes risk (validated formula)
     
-    Returns probability, risk level, confidence, and contributing factors.
+    Returns probability, risk level, confidence, contributing factors, and recommendations.
     """
     doctor_id = current_user.get("sub")
     patient_id = request.patient_id
+    formula_type = request.formula_type or "auto"
     
-    # Verify access for doctor role
     if current_user.get("role") == "doctor":
         if not verify_doctor_patient_access(db, doctor_id, patient_id):
             AuditLogger.log_phi_access(
@@ -133,7 +143,8 @@ async def predict_disease_risk(
         result = await service.predict_disease_risks(
             patient_id=patient_id,
             diseases=request.diseases,
-            doctor_id=doctor_id
+            doctor_id=doctor_id,
+            formula_type=formula_type
         )
         
         return result

@@ -24,6 +24,7 @@ import json
 
 from app.services.feature_builder_service import FeatureBuilderService
 from app.services.audit_logger import AuditLogger
+from app.services.clinical_risk_formulas import ClinicalRiskFormulaService
 from app.models.ml_models import MLModel, MLPrediction
 
 logger = logging.getLogger(__name__)
@@ -809,44 +810,129 @@ class MLPredictionService:
         self,
         patient_id: str,
         diseases: List[str] = None,
-        doctor_id: Optional[str] = None
+        doctor_id: Optional[str] = None,
+        formula_type: str = "auto"
     ) -> Dict[str, Any]:
         """
-        Predict risk for multiple diseases.
+        Predict risk for multiple diseases using validated clinical formulas or simple models.
         
         Args:
             patient_id: Patient identifier
             diseases: List of diseases to predict (default: all)
             doctor_id: Doctor requesting prediction
+            formula_type: 'validated' (ASCVD/qSOFA/FINDRISC), 'simple' (logistic coefficients), 
+                          or 'auto' (validated when data available, else simple)
         
         Returns:
             Dictionary with predictions for each disease
         """
         if diseases is None:
-            diseases = ["stroke", "sepsis", "diabetes"]
+            diseases = ["stroke", "sepsis", "diabetes", "cardiovascular"]
         
-        # Build features
         features, missing = await self.feature_builder.build_features(
             patient_id=patient_id,
-            model_type="disease_risk_stroke",  # Uses comprehensive feature set
+            model_type="disease_risk_stroke",
+            doctor_id=doctor_id
+        )
+        
+        validated_features = await self.feature_builder.build_validated_formula_features(
+            patient_id=patient_id,
             doctor_id=doctor_id
         )
         
         predictions = {}
+        formula_type_used = formula_type
+        
+        use_validated = formula_type in ["validated", "auto"]
         
         for disease in diseases:
-            if disease == "stroke":
-                predictions["stroke"] = DiseaseRiskPredictor.predict_stroke_risk(features)
-            elif disease == "sepsis":
-                predictions["sepsis"] = DiseaseRiskPredictor.predict_sepsis_risk(features)
-            elif disease == "diabetes":
-                predictions["diabetes"] = DiseaseRiskPredictor.predict_diabetes_risk(features)
+            disease_has_validated_data = self._has_validated_formula_data(validated_features, disease)
+            
+            if formula_type == "auto":
+                use_validated_for_disease = disease_has_validated_data
+            elif formula_type == "validated":
+                use_validated_for_disease = disease_has_validated_data
+                if not disease_has_validated_data:
+                    logger.warning(f"Insufficient data for validated {disease} formula for patient {patient_id}, falling back to simple")
+            else:
+                use_validated_for_disease = False
+            
+            if use_validated_for_disease:
+                if disease == "cardiovascular":
+                    result = ClinicalRiskFormulaService.calculate_cardiovascular_risk(validated_features)
+                    predictions["cardiovascular"] = {
+                        **result,
+                        "disease": "cardiovascular",
+                        "formula_type": "validated",
+                        "method": "ACC/AHA ASCVD Pooled Cohort Equations"
+                    }
+                elif disease == "stroke":
+                    result = ClinicalRiskFormulaService.calculate_stroke_afib_risk(validated_features)
+                    predictions["stroke"] = {
+                        **result,
+                        "disease": "stroke",
+                        "formula_type": "validated",
+                        "method": "CHA₂DS₂-VASc Score (AFib Stroke Risk)"
+                    }
+                elif disease == "sepsis":
+                    result = ClinicalRiskFormulaService.calculate_sepsis_risk(validated_features)
+                    result_mapped = self._map_qsofa_to_standard_format(result)
+                    predictions["sepsis"] = {
+                        **result_mapped,
+                        "formula_type": "validated",
+                        "method": "qSOFA (Sepsis-3)"
+                    }
+                elif disease == "diabetes":
+                    result = ClinicalRiskFormulaService.calculate_diabetes_risk(validated_features)
+                    result_mapped = self._map_findrisc_to_standard_format(result)
+                    predictions["diabetes"] = {
+                        **result_mapped,
+                        "formula_type": "validated",
+                        "method": "FINDRISC (Finnish Diabetes Risk Score)"
+                    }
+            else:
+                if disease == "stroke":
+                    result = DiseaseRiskPredictor.predict_stroke_risk(features)
+                    predictions["stroke"] = {
+                        **result,
+                        "disease": "stroke",
+                        "formula_type": "simple",
+                        "method": "Logistic Regression (simplified coefficients)"
+                    }
+                elif disease == "cardiovascular":
+                    result = DiseaseRiskPredictor.predict_stroke_risk(features)
+                    predictions["cardiovascular"] = {
+                        **result,
+                        "disease": "cardiovascular",
+                        "formula_type": "simple",
+                        "method": "Logistic Regression (simplified coefficients)"
+                    }
+                elif disease == "sepsis":
+                    result = DiseaseRiskPredictor.predict_sepsis_risk(features)
+                    predictions["sepsis"] = {
+                        **result,
+                        "disease": "sepsis",
+                        "formula_type": "simple",
+                        "method": "Logistic Regression (simplified coefficients)"
+                    }
+                elif disease == "diabetes":
+                    result = DiseaseRiskPredictor.predict_diabetes_risk(features)
+                    predictions["diabetes"] = {
+                        **result,
+                        "disease": "diabetes",
+                        "formula_type": "simple",
+                        "method": "Logistic Regression (simplified coefficients)"
+                    }
         
-        # Log prediction for audit
         self._log_prediction(
             patient_id=patient_id,
             prediction_type="disease_risk",
-            input_data={"diseases": diseases, "features_used": len(features)},
+            input_data={
+                "diseases": diseases, 
+                "features_used": len(features),
+                "formula_type_requested": formula_type,
+                "formula_type_used": formula_type_used
+            },
             result=predictions,
             doctor_id=doctor_id
         )
@@ -854,9 +940,98 @@ class MLPredictionService:
         return {
             "patient_id": patient_id,
             "predictions": predictions,
+            "formula_type_requested": formula_type,
+            "formula_type_used": formula_type_used,
             "missing_features": missing,
+            "validated_features_available": has_validated_data,
             "predicted_at": datetime.utcnow().isoformat(),
-            "model_version": "1.0.0"
+            "model_version": "2.0.0"
+        }
+    
+    def _has_validated_formula_data(self, features: Dict[str, Any], disease: str = None) -> bool:
+        """Check if sufficient data exists for validated clinical formulas.
+        
+        Args:
+            features: Patient features dictionary
+            disease: Optional disease to check specific requirements for
+            
+        Returns:
+            True if required data available for the specified disease (or any if disease=None)
+        """
+        required_for_ascvd = ["age", "sex", "total_cholesterol", "hdl_cholesterol", "systolic_bp"]
+        ascvd_available = all(features.get(f) is not None for f in required_for_ascvd)
+        
+        required_for_qsofa = ["respiratory_rate", "systolic_bp"]
+        qsofa_available = all(features.get(f) is not None for f in required_for_qsofa)
+        
+        required_for_findrisc = ["age", "bmi"]
+        findrisc_available = all(features.get(f) is not None for f in required_for_findrisc)
+        
+        required_for_chadsvasc = ["age", "sex"]
+        chadsvasc_available = all(features.get(f) is not None for f in required_for_chadsvasc)
+        has_afib = features.get("has_atrial_fibrillation", False)
+        stroke_afib_available = chadsvasc_available and has_afib
+        
+        if disease == "cardiovascular":
+            return ascvd_available
+        elif disease == "stroke":
+            return stroke_afib_available
+        elif disease == "sepsis":
+            return qsofa_available
+        elif disease == "diabetes":
+            return findrisc_available
+        else:
+            return ascvd_available or qsofa_available or findrisc_available
+    
+    def _map_qsofa_to_standard_format(self, qsofa_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Map qSOFA result to standard disease risk format."""
+        score_to_prob = {0: 0.01, 1: 0.03, 2: 0.10, 3: 0.25}
+        probability = score_to_prob.get(qsofa_result.get("score", 0), 0.01)
+        
+        return {
+            "disease": "sepsis",
+            "probability": probability,
+            "risk_level": qsofa_result.get("risk_level", "low"),
+            "confidence": qsofa_result.get("confidence", 0.85),
+            "qsofa_score": qsofa_result.get("score", 0),
+            "qsofa_positive": qsofa_result.get("positive", False),
+            "mortality_estimate": qsofa_result.get("mortality_estimate", "<1%"),
+            "contributing_factors": [
+                {
+                    "feature": c.get("criterion"),
+                    "value": c.get("value"),
+                    "threshold": c.get("threshold"),
+                    "contribution": c.get("points", 0),
+                    "direction": "increases" if c.get("met") else "decreases"
+                }
+                for c in qsofa_result.get("components", [])
+            ],
+            "recommendations": qsofa_result.get("recommendations", []),
+            "validation": qsofa_result.get("validation", {})
+        }
+    
+    def _map_findrisc_to_standard_format(self, findrisc_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Map FINDRISC result to standard disease risk format."""
+        return {
+            "disease": "diabetes",
+            "probability": findrisc_result.get("probability", 0),
+            "risk_level": findrisc_result.get("risk_level", "low"),
+            "confidence": findrisc_result.get("confidence", 0.85),
+            "findrisc_score": findrisc_result.get("score", 0),
+            "risk_description": findrisc_result.get("risk_description", ""),
+            "timeframe": findrisc_result.get("timeframe", "10 years"),
+            "contributing_factors": [
+                {
+                    "feature": c.get("factor"),
+                    "value": c.get("value"),
+                    "contribution": c.get("points", 0),
+                    "max_contribution": c.get("max_points", 0),
+                    "direction": "increases" if c.get("points", 0) > 0 else "neutral"
+                }
+                for c in findrisc_result.get("components", [])
+            ],
+            "recommendations": findrisc_result.get("recommendations", []),
+            "validation": findrisc_result.get("validation", {})
         }
     
     async def predict_deterioration(

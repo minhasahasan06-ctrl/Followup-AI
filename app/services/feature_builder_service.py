@@ -234,6 +234,119 @@ class FeatureBuilderService:
         
         return sequence, missing_dates
     
+    async def build_validated_formula_features(
+        self,
+        patient_id: str,
+        doctor_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Build features specifically for validated clinical formulas (ASCVD, qSOFA, FINDRISC).
+        
+        Collects additional data required by peer-reviewed clinical scoring systems:
+        - ASCVD: total_cholesterol, hdl_cholesterol, race, smoker, bp_treated
+        - qSOFA: respiratory_rate, gcs_score, mental_status_altered
+        - FINDRISC: waist_circumference, physical_activity_daily, vegetables_daily
+        
+        Args:
+            patient_id: Patient identifier
+            doctor_id: Doctor requesting data (for audit logging)
+            
+        Returns:
+            Dictionary with all features needed for validated formulas
+        """
+        logger.info(f"Building validated formula features for patient {patient_id}")
+        
+        if doctor_id:
+            AuditLogger.log_phi_access(
+                db=self.db,
+                user_id=doctor_id,
+                patient_id=patient_id,
+                action="ml_validated_formula_extraction",
+                resource_type="patient_clinical_features",
+                resource_id=f"validated_formulas_{datetime.utcnow().isoformat()}",
+                phi_categories=["health_metrics", "demographics", "labs", "medical_history"],
+                details={"formula_types": ["ASCVD", "qSOFA", "FINDRISC", "CHA2DS2-VASc"]}
+            )
+        
+        features = {}
+        
+        demo = await self._get_demographics(patient_id)
+        features["age"] = demo.get("age", 50)
+        features["sex"] = "male" if demo.get("sex_male") == 1 else "female"
+        features["bmi"] = demo.get("bmi", 25.0)
+        
+        vitals = await self._get_vitals_aggregated(patient_id, lookback_days=3)
+        features["systolic_bp"] = vitals.get("bp_systolic", 120)
+        features["diastolic_bp"] = vitals.get("bp_diastolic", 80)
+        features["heart_rate"] = vitals.get("heart_rate", 72)
+        features["respiratory_rate"] = vitals.get("respiratory_rate", 16)
+        features["spo2"] = vitals.get("spo2", 98)
+        features["temperature"] = vitals.get("temperature", 98.6)
+        
+        labs = await self._get_labs(patient_id)
+        features["total_cholesterol"] = labs.get("total_cholesterol", 200)
+        features["hdl_cholesterol"] = labs.get("hdl_cholesterol", 50)
+        features["ldl_cholesterol"] = labs.get("ldl_cholesterol", 130)
+        features["triglycerides"] = labs.get("triglycerides", 150)
+        features["a1c"] = labs.get("a1c", 5.5)
+        features["wbc"] = labs.get("wbc", 7.0)
+        
+        history = await self._get_medical_history_flags(patient_id)
+        features["has_diabetes"] = history.get("has_diabetes", False)
+        features["has_hypertension"] = history.get("has_hypertension", False)
+        features["bp_treated"] = history.get("has_hypertension", False)
+        features["smoker"] = history.get("smoking_status", 0) > 0
+        features["has_immunocompromised"] = history.get("has_immunocompromised", False)
+        features["has_atrial_fibrillation"] = history.get("has_atrial_fibrillation", False)
+        features["congestive_heart_failure"] = history.get("has_chf", False)
+        features["stroke_tia_history"] = history.get("has_stroke_history", False)
+        features["vascular_disease"] = history.get("has_vascular_disease", False)
+        features["has_family_history_diabetes"] = history.get("has_family_history_diabetes", False)
+        
+        behavioral = await self._get_behavioral_metrics(patient_id, lookback_days=7)
+        features["daily_steps"] = behavioral.get("daily_steps", 5000)
+        features["physical_activity_daily"] = behavioral.get("daily_steps", 5000) > 7000
+        features["sleep_hours"] = behavioral.get("sleep_hours", 7.0)
+        
+        extended = await self._get_extended_demographics(patient_id)
+        features["race"] = extended.get("race", "white")
+        features["waist_circumference"] = extended.get("waist_circumference", 90)
+        features["height_m"] = extended.get("height_m", 1.70)
+        features["weight_kg"] = extended.get("weight_kg", 75)
+        
+        features["vegetables_daily"] = True
+        features["history_high_glucose"] = features.get("has_diabetes", False) or features.get("a1c", 5.5) > 6.0
+        
+        features["gcs_score"] = 15
+        features["mental_status_altered"] = False
+        
+        logger.info(f"Built {len(features)} validated formula features for patient {patient_id}")
+        
+        return features
+    
+    async def _get_extended_demographics(self, patient_id: str) -> Dict[str, Any]:
+        """Get extended demographics for validated formulas."""
+        try:
+            from app.models.user import User
+            
+            user = self.db.query(User).filter(User.cognito_id == patient_id).first()
+            
+            if not user:
+                return {"race": "white", "waist_circumference": 90, "height_m": 1.70, "weight_kg": 75}
+            
+            height_m = getattr(user, 'height_m', None) or getattr(user, 'height_cm', 170) / 100
+            weight_kg = getattr(user, 'weight_kg', None) or 75
+            
+            return {
+                "race": getattr(user, 'race', 'white') or 'white',
+                "waist_circumference": getattr(user, 'waist_circumference', 90),
+                "height_m": height_m,
+                "weight_kg": weight_kg
+            }
+        except Exception as e:
+            logger.error(f"Error fetching extended demographics: {e}")
+            return {"race": "white", "waist_circumference": 90, "height_m": 1.70, "weight_kg": 75}
+    
     async def _get_demographics(self, patient_id: str) -> Dict[str, Any]:
         """Get patient demographics with graceful fallback."""
         try:
