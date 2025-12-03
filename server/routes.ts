@@ -13587,6 +13587,252 @@ Provide:
   // END MULTI-AGENT COMMUNICATION SYSTEM PROXY ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // ML TRAINING CONSENT ROUTES
+  // Patient data contribution consent for ML model training
+  // =============================================================================
+
+  // Get current consent settings for the logged-in patient
+  app.get('/api/ml/training/consent', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ error: 'Only patients can manage training consent' });
+      }
+
+      const consent = await db
+        .select()
+        .from(schema.mlTrainingConsent)
+        .where(eq(schema.mlTrainingConsent.patientId, req.user.id))
+        .limit(1);
+
+      if (consent.length === 0) {
+        // Return default consent state for new patients
+        return res.json({
+          patientId: req.user.id,
+          isActive: false,
+          consentedDataTypes: [],
+          anonymizationLevel: 'full',
+          researchUseOnly: true,
+          optInDate: null,
+          withdrawalDate: null,
+        });
+      }
+
+      // Transform to frontend format
+      const c = consent[0];
+      const dataTypes = c.dataTypes || {};
+      const consentedDataTypes: string[] = [];
+      
+      if (dataTypes.vitals) consentedDataTypes.push('vitals');
+      if (dataTypes.symptoms) consentedDataTypes.push('symptoms');
+      if (dataTypes.medications) consentedDataTypes.push('medications');
+      if (dataTypes.mentalHealth) consentedDataTypes.push('mental_health');
+      if (dataTypes.behavioralData) consentedDataTypes.push('behavioral');
+      if (dataTypes.wearableData) consentedDataTypes.push('wearable');
+      if (dataTypes.labResults) consentedDataTypes.push('lab_results');
+
+      res.json({
+        id: c.id,
+        patientId: c.patientId,
+        isActive: c.consentEnabled,
+        consentedDataTypes,
+        anonymizationLevel: c.anonymizationLevel || 'full',
+        researchUseOnly: true,
+        optInDate: c.consentSignedAt?.toISOString() || null,
+        withdrawalDate: c.consentWithdrawnAt?.toISOString() || null,
+      });
+    } catch (error) {
+      console.error('Error fetching ML training consent:', error);
+      res.status(500).json({ error: 'Failed to fetch consent settings' });
+    }
+  });
+
+  // Update consent settings
+  app.post('/api/ml/training/consent', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ error: 'Only patients can manage training consent' });
+      }
+
+      const { isActive, consentedDataTypes = [], anonymizationLevel = 'full' } = req.body;
+
+      // Convert frontend format to database format
+      const dataTypes = {
+        vitals: consentedDataTypes.includes('vitals'),
+        symptoms: consentedDataTypes.includes('symptoms'),
+        medications: consentedDataTypes.includes('medications'),
+        mentalHealth: consentedDataTypes.includes('mental_health'),
+        behavioralData: consentedDataTypes.includes('behavioral'),
+        wearableData: consentedDataTypes.includes('wearable'),
+        labResults: consentedDataTypes.includes('lab_results'),
+        imagingData: false, // Not exposed in UI yet
+      };
+
+      // Check if consent record exists
+      const existing = await db
+        .select()
+        .from(schema.mlTrainingConsent)
+        .where(eq(schema.mlTrainingConsent.patientId, req.user.id))
+        .limit(1);
+
+      let result;
+      if (existing.length > 0) {
+        // Update existing consent
+        result = await db
+          .update(schema.mlTrainingConsent)
+          .set({
+            consentEnabled: isActive,
+            dataTypes,
+            anonymizationLevel,
+            consentSignedAt: isActive && !existing[0].consentEnabled ? new Date() : existing[0].consentSignedAt,
+            consentWithdrawnAt: !isActive && existing[0].consentEnabled ? new Date() : null,
+            lastModifiedBy: req.user.id,
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent'),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.mlTrainingConsent.patientId, req.user.id))
+          .returning();
+      } else {
+        // Create new consent record
+        result = await db
+          .insert(schema.mlTrainingConsent)
+          .values({
+            patientId: req.user.id,
+            consentEnabled: isActive,
+            dataTypes,
+            anonymizationLevel,
+            consentVersion: '1.0',
+            consentSignedAt: isActive ? new Date() : null,
+            lastModifiedBy: req.user.id,
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent'),
+          })
+          .returning();
+      }
+
+      // Log consent change for HIPAA audit
+      console.log(`[HIPAA_AUDIT] ML Training consent ${isActive ? 'granted' : 'updated'} by patient ${req.user.id}`);
+
+      // Transform response
+      const c = result[0];
+      const responseDataTypes: string[] = [];
+      if (c.dataTypes?.vitals) responseDataTypes.push('vitals');
+      if (c.dataTypes?.symptoms) responseDataTypes.push('symptoms');
+      if (c.dataTypes?.medications) responseDataTypes.push('medications');
+      if (c.dataTypes?.mentalHealth) responseDataTypes.push('mental_health');
+      if (c.dataTypes?.behavioralData) responseDataTypes.push('behavioral');
+      if (c.dataTypes?.wearableData) responseDataTypes.push('wearable');
+      if (c.dataTypes?.labResults) responseDataTypes.push('lab_results');
+
+      res.json({
+        id: c.id,
+        patientId: c.patientId,
+        isActive: c.consentEnabled,
+        consentedDataTypes: responseDataTypes,
+        anonymizationLevel: c.anonymizationLevel,
+        researchUseOnly: true,
+        optInDate: c.consentSignedAt?.toISOString() || null,
+        withdrawalDate: c.consentWithdrawnAt?.toISOString() || null,
+      });
+    } catch (error) {
+      console.error('Error updating ML training consent:', error);
+      res.status(500).json({ error: 'Failed to update consent settings' });
+    }
+  });
+
+  // Withdraw all consent
+  app.post('/api/ml/training/consent/withdraw', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ error: 'Only patients can manage training consent' });
+      }
+
+      const { reason } = req.body;
+
+      const result = await db
+        .update(schema.mlTrainingConsent)
+        .set({
+          consentEnabled: false,
+          consentWithdrawnAt: new Date(),
+          withdrawalReason: reason || 'User requested withdrawal',
+          dataTypes: {
+            vitals: false,
+            symptoms: false,
+            medications: false,
+            mentalHealth: false,
+            behavioralData: false,
+            wearableData: false,
+            labResults: false,
+            imagingData: false,
+          },
+          lastModifiedBy: req.user.id,
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent'),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.mlTrainingConsent.patientId, req.user.id))
+        .returning();
+
+      // Log withdrawal for HIPAA audit
+      console.log(`[HIPAA_AUDIT] ML Training consent WITHDRAWN by patient ${req.user.id}`);
+
+      if (result.length === 0) {
+        return res.json({ success: true, message: 'No active consent to withdraw' });
+      }
+
+      res.json({ success: true, message: 'Consent withdrawn successfully' });
+    } catch (error) {
+      console.error('Error withdrawing ML training consent:', error);
+      res.status(500).json({ error: 'Failed to withdraw consent' });
+    }
+  });
+
+  // Get contribution history for the logged-in patient
+  app.get('/api/ml/training/contributions', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ error: 'Only patients can view their contributions' });
+      }
+
+      // Create a hash of patient ID for lookup (in production, use proper hashing)
+      const patientIdHash = `patient_${req.user.id.substring(0, 8)}`;
+
+      const contributions = await db
+        .select({
+          id: schema.mlTrainingContributions.id,
+          trainingJobId: schema.mlTrainingContributions.trainingJobId,
+          dataTypesContributed: schema.mlTrainingContributions.dataTypesContributed,
+          recordCount: schema.mlTrainingContributions.recordCount,
+          contributedAt: schema.mlTrainingContributions.contributedAt,
+          status: schema.mlTrainingContributions.status,
+        })
+        .from(schema.mlTrainingContributions)
+        .where(eq(schema.mlTrainingContributions.patientIdHash, patientIdHash))
+        .orderBy(desc(schema.mlTrainingContributions.contributedAt))
+        .limit(20);
+
+      // Get model names for contributions
+      const contributionsWithModels = contributions.map(c => ({
+        id: c.id,
+        modelName: c.trainingJobId ? `Model Training #${c.trainingJobId.substring(0, 8)}` : 'Unknown Model',
+        dataTypesContributed: c.dataTypesContributed || [],
+        recordCount: c.recordCount,
+        contributedAt: c.contributedAt?.toISOString() || '',
+        status: c.status || 'included',
+      }));
+
+      res.json(contributionsWithModels);
+    } catch (error) {
+      console.error('Error fetching ML training contributions:', error);
+      res.status(500).json({ error: 'Failed to fetch contributions' });
+    }
+  });
+
+  // =============================================================================
+  // END ML TRAINING CONSENT ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
 
   // WebSocket proxy for agent communication

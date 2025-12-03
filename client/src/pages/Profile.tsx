@@ -7,12 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Shield, Bell, Heart } from "lucide-react";
+import { User, Shield, Bell, Heart, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { PatientProfile, DoctorProfile } from "@shared/schema";
 import PhoneVerification from "@/components/PhoneVerification";
+import TrainingConsentSettings from "@/components/TrainingConsentSettings";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -123,6 +124,12 @@ export default function Profile() {
             <Bell className="h-4 w-4 mr-2" />
             Notifications
           </TabsTrigger>
+          {isPatient && (
+            <TabsTrigger value="privacy" data-testid="tab-privacy">
+              <Lock className="h-4 w-4 mr-2" />
+              Privacy & ML
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="account">
@@ -287,6 +294,12 @@ export default function Profile() {
             </Card>
           </div>
         </TabsContent>
+
+        {isPatient && (
+          <TabsContent value="privacy">
+            <TrainingConsentSettings />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
