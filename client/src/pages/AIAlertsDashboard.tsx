@@ -334,6 +334,43 @@ interface DeviceAnalyticsData {
   sections: Record<string, DeviceHealthSection>;
 }
 
+interface SectionAlertData {
+  section: string;
+  deterioration_index: number;
+  risk_score: number;
+  risk_level: string;
+  trend: string;
+  stability_score: number;
+  alert_triggered: boolean;
+  alert_reason: string | null;
+  data_coverage: number;
+  anomalies_detected: number;
+  recommendations: string[];
+}
+
+interface GeneratedAlertData {
+  id: string;
+  patient_id: string;
+  alert_type: string;
+  alert_category: string;
+  severity: string;
+  priority: number;
+  title: string;
+  message: string;
+  created_at: string;
+}
+
+interface DevicePipelineResponse {
+  patient_id: string;
+  generated_at: string;
+  overall_risk_score: number;
+  overall_trend: string;
+  sections: SectionAlertData[];
+  critical_alerts: Array<{ message: string; section: string; severity: string }>;
+  alerts_generated: number;
+  new_alerts: GeneratedAlertData[];
+}
+
 const HEALTH_SECTION_CONFIG: Record<string, { 
   label: string; 
   icon: typeof Heart; 
@@ -1623,7 +1660,7 @@ function DeviceHealthSectionPanel({
           const { icon: TrendIconComponent, color: trendColor } = getTrendIcon(section.trend);
 
           return (
-            <Card key={sectionKey} className="hover-elevate" data-testid={`section-card-${sectionKey}`}>
+            <Card key={sectionKey} id={`section-${sectionKey}`} className="hover-elevate" data-testid={`section-card-${sectionKey}`}>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -1954,6 +1991,41 @@ export default function AIAlertsDashboard() {
     },
   });
 
+  const [pipelineResult, setPipelineResult] = useState<DevicePipelineResponse | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("alerts");
+
+  const runPipelineMutation = useMutation<DevicePipelineResponse>({
+    mutationFn: async () => {
+      const response = await fetch(`/api/ai-health-alerts/device-data-pipeline/${patientId}?days=7`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || 'Failed to run device data pipeline');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setPipelineResult(data);
+      toast({
+        title: "Pipeline Complete",
+        description: `Analyzed ${data.sections.length} health sections. ${data.alerts_generated} alert(s) generated.`,
+      });
+      refetchAlerts();
+      refetchDeviceAnalytics();
+      refetchOverview();
+      queryClient.invalidateQueries({ queryKey: ['/api/ai-health-alerts'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Pipeline Failed",
+        description: error.message || "Unable to run device data pipeline. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const acknowledgeMutation = useMutation({
     mutationFn: async (alertId: string) => {
       const response = await fetch(`/api/ai-health-alerts/alerts/${alertId}?clinician_id=${patientId}`, {
@@ -2159,7 +2231,7 @@ export default function AIAlertsDashboard() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="alerts" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="alerts" className="flex items-center gap-2" data-testid="tab-alerts">
             <Bell className="h-4 w-4" />
@@ -2392,6 +2464,170 @@ export default function AIAlertsDashboard() {
         </TabsContent>
 
         <TabsContent value="devices" className="space-y-4 mt-4">
+          <Card data-testid="card-pipeline-trigger">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-primary/10">
+                    <Zap className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold">Device Data Analysis Pipeline</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Analyze device data and generate health alerts based on thresholds
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => runPipelineMutation.mutate()}
+                    disabled={runPipelineMutation.isPending}
+                    data-testid="button-run-pipeline"
+                  >
+                    {runPipelineMutation.isPending ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-4 w-4 mr-2" />
+                        Run Analysis Pipeline
+                      </>
+                    )}
+                  </Button>
+                  <Button asChild variant="outline" size="sm" data-testid="button-manage-devices-header">
+                    <Link href="/device-connect">
+                      <Link2 className="h-4 w-4 mr-1" />
+                      Manage Devices
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {runPipelineMutation.isPending && (
+            <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200" data-testid="alert-pipeline-processing">
+              <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />
+              <AlertTitle>Pipeline Running</AlertTitle>
+              <AlertDescription>
+                Analyzing device data across all health sections. This may take a moment...
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {pipelineResult && (
+            <Card data-testid="card-pipeline-results">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    <CardTitle className="text-base">Pipeline Results</CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    {format(new Date(pipelineResult.generated_at), 'MMM d, h:mm a')}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <p className="text-2xl font-bold">{pipelineResult.sections.length}</p>
+                    <p className="text-xs text-muted-foreground">Sections Analyzed</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <p className="text-2xl font-bold">{(pipelineResult.overall_risk_score * 100).toFixed(0)}%</p>
+                    <p className="text-xs text-muted-foreground">Overall Risk</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <p className="text-2xl font-bold capitalize">{pipelineResult.overall_trend}</p>
+                    <p className="text-xs text-muted-foreground">Overall Trend</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <p className={`text-2xl font-bold ${pipelineResult.alerts_generated > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                      {pipelineResult.alerts_generated}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Alerts Generated</p>
+                  </div>
+                </div>
+
+                {pipelineResult.new_alerts && pipelineResult.new_alerts.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-orange-500" />
+                      New Alerts Generated
+                    </h4>
+                    <div className="space-y-2">
+                      {pipelineResult.new_alerts.map((alert, idx) => (
+                        <div
+                          key={alert.id || idx}
+                          className="flex items-center justify-between p-3 rounded-lg border"
+                          data-testid={`new-alert-${idx}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Badge variant={
+                              alert.severity === 'critical' ? 'destructive' :
+                              alert.severity === 'high' ? 'default' :
+                              'secondary'
+                            }>
+                              {alert.severity}
+                            </Badge>
+                            <div>
+                              <p className="text-sm font-medium">{alert.title}</p>
+                              <p className="text-xs text-muted-foreground">{alert.message}</p>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {alert.alert_category?.replace('section_', '')}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium">Section Analysis Summary</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {pipelineResult.sections.map((section) => {
+                      const config = HEALTH_SECTION_CONFIG[section.section] || {
+                        label: section.section,
+                        icon: Activity,
+                        color: 'text-primary'
+                      };
+                      const SectionIcon = config.icon;
+                      
+                      return (
+                        <div
+                          key={section.section}
+                          className={`flex items-center justify-between p-2 rounded-lg border ${
+                            section.alert_triggered ? 'border-red-300 bg-red-50 dark:bg-red-900/20' : 'bg-muted/30'
+                          }`}
+                          data-testid={`section-summary-${section.section}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <SectionIcon className={`h-4 w-4 ${config.color}`} />
+                            <span className="text-sm">{config.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {section.alert_triggered && (
+                              <AlertCircle className="h-4 w-4 text-red-500" />
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {section.risk_level}
+                            </Badge>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card data-testid="card-device-health">
             <CardHeader>
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -2404,24 +2640,16 @@ export default function AIAlertsDashboard() {
                     Health metrics derived from your connected medical devices
                   </CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => refetchDeviceAnalytics()}
-                    disabled={loadingDeviceAnalytics}
-                    data-testid="button-refresh-device-analytics"
-                  >
-                    <RefreshCw className={`h-4 w-4 mr-1 ${loadingDeviceAnalytics ? 'animate-spin' : ''}`} />
-                    Refresh
-                  </Button>
-                  <Button asChild size="sm" data-testid="button-manage-devices">
-                    <Link href="/device-connect">
-                      <Link2 className="h-4 w-4 mr-1" />
-                      Manage Devices
-                    </Link>
-                  </Button>
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchDeviceAnalytics()}
+                  disabled={loadingDeviceAnalytics}
+                  data-testid="button-refresh-device-analytics"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-1 ${loadingDeviceAnalytics ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -2431,6 +2659,109 @@ export default function AIAlertsDashboard() {
               />
             </CardContent>
           </Card>
+
+          {(() => {
+            const deviceAlerts = (alerts || []).filter(a => 
+              a.alert_type === 'device_analytics' || 
+              (a.alert_category && a.alert_category.startsWith('section_'))
+            );
+            
+            if (deviceAlerts.length === 0) return null;
+            
+            return (
+              <Card data-testid="card-device-alert-history">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <History className="h-5 w-5 text-primary" />
+                        Device Alert History
+                        <Badge variant="outline" className="ml-2">{deviceAlerts.length}</Badge>
+                      </CardTitle>
+                      <CardDescription>
+                        Past alerts generated from device data analysis
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {deviceAlerts.slice(0, 20).map((alert) => {
+                      const sectionName = alert.alert_category?.replace('section_', '') || '';
+                      const sectionConfig = HEALTH_SECTION_CONFIG[sectionName];
+                      const SectionIcon = sectionConfig?.icon || Activity;
+                      
+                      const handleScrollToSection = () => {
+                        if (sectionName) {
+                          const element = document.getElementById(`section-${sectionName}`);
+                          if (element) {
+                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            element.classList.add('ring-2', 'ring-primary');
+                            setTimeout(() => {
+                              element.classList.remove('ring-2', 'ring-primary');
+                            }, 2000);
+                          }
+                        }
+                      };
+                      
+                      return (
+                        <div
+                          key={alert.id}
+                          onClick={sectionConfig ? handleScrollToSection : undefined}
+                          className={`flex items-center justify-between p-3 rounded-lg border bg-muted/30 hover-elevate ${sectionConfig ? 'cursor-pointer' : ''}`}
+                          data-testid={`device-alert-history-${alert.id}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Badge variant={
+                              alert.severity === 'critical' ? 'destructive' :
+                              alert.severity === 'high' ? 'default' :
+                              'secondary'
+                            } className="text-xs">
+                              {alert.severity}
+                            </Badge>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium">{alert.title}</p>
+                                {sectionConfig && (
+                                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                    <SectionIcon className={`h-3 w-3 ${sectionConfig.color}`} />
+                                    <span>{sectionConfig.label}</span>
+                                    <ChevronRight className="h-3 w-3 ml-1" />
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(alert.created_at), 'MMM d, h:mm a')}
+                              </p>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {alert.status}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {deviceAlerts.length > 20 && (
+                    <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t">
+                      <p className="text-xs text-muted-foreground">
+                        Showing 20 of {deviceAlerts.length} alerts.
+                      </p>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-xs"
+                        onClick={() => setActiveTab("alerts")}
+                        data-testid="button-view-all-device-alerts"
+                      >
+                        View all in Alerts tab
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
         </TabsContent>
 
         <TabsContent value="risk" className="space-y-4 mt-4">
