@@ -6346,6 +6346,412 @@ export const insertApprovalQueueSchema = createInsertSchema(approvalQueue).omit(
 export type InsertApprovalQueue = z.infer<typeof insertApprovalQueueSchema>;
 export type ApprovalQueue = typeof approvalQueue.$inferSelect;
 
+// ============================================================================
+// ML Training System Tables
+// ============================================================================
+
+// ML Training Consent - Patient's consent for using their data in ML training
+export const mlTrainingConsent = pgTable("ml_training_consent", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Overall consent status
+  consentEnabled: boolean("consent_enabled").notNull().default(false),
+  
+  // Granular data type permissions
+  dataTypes: jsonb("data_types").$type<{
+    vitals: boolean;
+    symptoms: boolean;
+    medications: boolean;
+    mentalHealth: boolean;
+    behavioralData: boolean;
+    wearableData: boolean;
+    labResults: boolean;
+    imagingData: boolean;
+  }>().default({
+    vitals: true,
+    symptoms: true,
+    medications: false,
+    mentalHealth: false,
+    behavioralData: true,
+    wearableData: true,
+    labResults: false,
+    imagingData: false,
+  }),
+  
+  // Data anonymization preferences
+  anonymizationLevel: varchar("anonymization_level").default("full"), // 'full', 'partial', 'minimal'
+  
+  // Consent tracking
+  consentVersion: varchar("consent_version").default("1.0"),
+  consentSignedAt: timestamp("consent_signed_at"),
+  consentWithdrawnAt: timestamp("consent_withdrawn_at"),
+  withdrawalReason: text("withdrawal_reason"),
+  
+  // Data deletion request
+  requestedDataDeletion: boolean("requested_data_deletion").default(false),
+  dataDeletionRequestedAt: timestamp("data_deletion_requested_at"),
+  dataDeletionCompletedAt: timestamp("data_deletion_completed_at"),
+  
+  // Audit trail
+  lastModifiedBy: varchar("last_modified_by"),
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("ml_consent_patient_idx").on(table.patientId),
+  enabledIdx: index("ml_consent_enabled_idx").on(table.consentEnabled),
+}));
+
+export const insertMlTrainingConsentSchema = createInsertSchema(mlTrainingConsent).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMlTrainingConsent = z.infer<typeof insertMlTrainingConsentSchema>;
+export type MlTrainingConsent = typeof mlTrainingConsent.$inferSelect;
+
+// ML Models Registry - Track all trained models with versioning
+export const mlModels = pgTable("ml_models", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Model identification
+  modelName: varchar("model_name").notNull(), // 'vital_lstm', 'patient_segmentation', 'deterioration_ensemble', 'disease_risk'
+  modelType: varchar("model_type").notNull(), // 'lstm', 'kmeans', 'random_forest', 'gradient_boosting', 'ensemble'
+  version: varchar("version").notNull(), // Semantic versioning: '1.0.0'
+  
+  // Model status
+  status: varchar("status").notNull().default("training"), // 'training', 'evaluating', 'active', 'deprecated', 'failed'
+  isActive: boolean("is_active").default(false),
+  
+  // Training configuration
+  trainingConfig: jsonb("training_config").$type<{
+    epochs?: number;
+    batchSize?: number;
+    learningRate?: number;
+    layers?: number[];
+    dropout?: number;
+    optimizer?: string;
+    lossFunction?: string;
+    earlyStopping?: boolean;
+    nClusters?: number; // For K-Means
+    maxIterations?: number;
+    nEstimators?: number; // For ensemble
+    maxDepth?: number;
+  }>(),
+  
+  // Training data info
+  trainingDataSources: jsonb("training_data_sources").$type<{
+    publicDatasets: string[];
+    patientDataCount: number;
+    totalRecords: number;
+    dateRange: { start: string; end: string };
+  }>(),
+  
+  // Performance metrics
+  metrics: jsonb("metrics").$type<{
+    accuracy?: number;
+    precision?: number;
+    recall?: number;
+    f1Score?: number;
+    auc?: number;
+    rmse?: number;
+    mae?: number;
+    silhouetteScore?: number;
+    inertia?: number;
+    r2Score?: number;
+    calibrationError?: number;
+  }>(),
+  
+  // Model artifacts
+  modelPath: varchar("model_path"), // Path to saved model file
+  modelFormat: varchar("model_format").default("onnx"), // 'onnx', 'pytorch', 'joblib', 'tensorflow'
+  modelSizeBytes: integer("model_size_bytes"),
+  
+  // Feature information
+  featureNames: jsonb("feature_names").$type<string[]>(),
+  featureImportance: jsonb("feature_importance").$type<Record<string, number>>(),
+  
+  // Training metadata
+  trainedBy: varchar("trained_by"), // 'system', 'admin', user_id
+  trainingStartedAt: timestamp("training_started_at"),
+  trainingCompletedAt: timestamp("training_completed_at"),
+  trainingDurationSeconds: integer("training_duration_seconds"),
+  
+  // Deployment info
+  deployedAt: timestamp("deployed_at"),
+  deprecatedAt: timestamp("deprecated_at"),
+  deprecationReason: text("deprecation_reason"),
+  
+  // Comparison with previous version
+  previousVersionId: varchar("previous_version_id"),
+  improvementOverPrevious: jsonb("improvement_over_previous").$type<Record<string, number>>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  modelNameIdx: index("ml_models_name_idx").on(table.modelName),
+  versionIdx: index("ml_models_version_idx").on(table.modelName, table.version),
+  statusIdx: index("ml_models_status_idx").on(table.status),
+  activeIdx: index("ml_models_active_idx").on(table.isActive),
+}));
+
+export const insertMlModelSchema = createInsertSchema(mlModels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMlModel = z.infer<typeof insertMlModelSchema>;
+export type MlModel = typeof mlModels.$inferSelect;
+
+// ML Training Jobs - Track training job execution
+export const mlTrainingJobs = pgTable("ml_training_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Job identification
+  jobName: varchar("job_name").notNull(),
+  modelName: varchar("model_name").notNull(),
+  targetVersion: varchar("target_version").notNull(),
+  
+  // Job status
+  status: varchar("status").notNull().default("queued"), // 'queued', 'preparing', 'training', 'evaluating', 'completed', 'failed', 'cancelled'
+  priority: integer("priority").default(5), // 1-10, higher = more priority
+  
+  // Data sources
+  dataSources: jsonb("data_sources").$type<{
+    publicDatasets: Array<{
+      id: string;
+      name: string;
+      source: string;
+      recordCount: number;
+    }>;
+    patientData: {
+      enabled: boolean;
+      patientCount: number;
+      recordCount: number;
+      dataTypes: string[];
+    };
+  }>(),
+  
+  // Training configuration
+  trainingConfig: jsonb("training_config").$type<Record<string, unknown>>(),
+  
+  // Progress tracking
+  currentPhase: varchar("current_phase"), // 'data_loading', 'preprocessing', 'feature_engineering', 'training', 'evaluation', 'saving'
+  progressPercent: integer("progress_percent").default(0),
+  progressMessage: text("progress_message"),
+  
+  // Resource usage
+  resourceUsage: jsonb("resource_usage").$type<{
+    cpuPercent?: number;
+    memoryMb?: number;
+    gpuPercent?: number;
+    gpuMemoryMb?: number;
+  }>(),
+  
+  // Timing
+  queuedAt: timestamp("queued_at").defaultNow(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  estimatedCompletionAt: timestamp("estimated_completion_at"),
+  
+  // Results
+  resultModelId: varchar("result_model_id").references(() => mlModels.id),
+  errorMessage: text("error_message"),
+  errorDetails: jsonb("error_details").$type<{
+    phase: string;
+    stackTrace?: string;
+    recoverable: boolean;
+  }>(),
+  
+  // Notifications
+  notifyOnCompletion: boolean("notify_on_completion").default(true),
+  notificationEmail: varchar("notification_email"),
+  
+  // Initiated by
+  initiatedBy: varchar("initiated_by"), // 'system', 'scheduler', user_id
+  
+  // Logs path
+  logsPath: varchar("logs_path"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusIdx: index("ml_jobs_status_idx").on(table.status),
+  modelIdx: index("ml_jobs_model_idx").on(table.modelName),
+  priorityIdx: index("ml_jobs_priority_idx").on(table.priority, table.queuedAt),
+}));
+
+export const insertMlTrainingJobSchema = createInsertSchema(mlTrainingJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMlTrainingJob = z.infer<typeof insertMlTrainingJobSchema>;
+export type MlTrainingJob = typeof mlTrainingJobs.$inferSelect;
+
+// ML Training Contributions - Track patient data contributions (anonymized)
+export const mlTrainingContributions = pgTable("ml_training_contributions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Patient reference (hashed for privacy)
+  patientIdHash: varchar("patient_id_hash").notNull(), // SHA-256 hash of patient ID
+  consentId: varchar("consent_id").notNull().references(() => mlTrainingConsent.id),
+  
+  // Contribution details
+  trainingJobId: varchar("training_job_id").references(() => mlTrainingJobs.id),
+  modelId: varchar("model_id").references(() => mlModels.id),
+  
+  // Data contributed (counts only, no actual data)
+  dataTypesContributed: jsonb("data_types_contributed").$type<string[]>(),
+  recordCount: integer("record_count").notNull(),
+  dateRangeStart: timestamp("date_range_start"),
+  dateRangeEnd: timestamp("date_range_end"),
+  
+  // Anonymization applied
+  anonymizationLevel: varchar("anonymization_level").notNull(),
+  
+  // Contribution status
+  status: varchar("status").default("included"), // 'included', 'excluded', 'withdrawn'
+  
+  // Timestamp
+  contributedAt: timestamp("contributed_at").defaultNow(),
+  withdrawnAt: timestamp("withdrawn_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientHashIdx: index("ml_contrib_patient_idx").on(table.patientIdHash),
+  jobIdx: index("ml_contrib_job_idx").on(table.trainingJobId),
+  modelIdx: index("ml_contrib_model_idx").on(table.modelId),
+}));
+
+export const insertMlTrainingContributionSchema = createInsertSchema(mlTrainingContributions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMlTrainingContribution = z.infer<typeof insertMlTrainingContributionSchema>;
+export type MlTrainingContribution = typeof mlTrainingContributions.$inferSelect;
+
+// Public Dataset Registry - Enhanced tracking for MIMIC-III, PhysioNet, etc.
+export const publicDatasetRegistry = pgTable("public_dataset_registry", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Dataset identification
+  datasetName: varchar("dataset_name").notNull().unique(),
+  source: varchar("source").notNull(), // 'mimic_iii', 'mimic_iv', 'physionet', 'eicu', 'kaggle'
+  version: varchar("version"),
+  
+  // Access information
+  requiresCredentials: boolean("requires_credentials").default(true),
+  credentialsConfigured: boolean("credentials_configured").default(false),
+  accessUrl: varchar("access_url"),
+  documentationUrl: varchar("documentation_url"),
+  
+  // Dataset metadata
+  description: text("description"),
+  recordCount: integer("record_count"),
+  patientCount: integer("patient_count"),
+  dateRange: jsonb("date_range").$type<{ start: string; end: string }>(),
+  
+  // Data types available
+  dataTypes: jsonb("data_types").$type<string[]>(), // ['vitals', 'lab_results', 'medications', 'diagnoses', 'procedures']
+  
+  // File information
+  totalSizeGb: decimal("total_size_gb", { precision: 10, scale: 2 }),
+  fileFormats: jsonb("file_formats").$type<string[]>(), // ['csv', 'parquet', 'json']
+  
+  // Download/processing status
+  downloadStatus: varchar("download_status").default("not_started"), // 'not_started', 'downloading', 'downloaded', 'processing', 'ready', 'failed'
+  downloadProgress: integer("download_progress").default(0),
+  localPath: varchar("local_path"),
+  
+  // Processing metadata
+  preprocessedAt: timestamp("preprocessed_at"),
+  preprocessingConfig: jsonb("preprocessing_config").$type<Record<string, unknown>>(),
+  
+  // Usage tracking
+  usedInModels: jsonb("used_in_models").$type<string[]>(),
+  lastUsedAt: timestamp("last_used_at"),
+  
+  // License information
+  license: varchar("license"),
+  citationRequired: boolean("citation_required").default(true),
+  citation: text("citation"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  sourceIdx: index("public_dataset_source_idx").on(table.source),
+  statusIdx: index("public_dataset_status_idx").on(table.downloadStatus),
+}));
+
+export const insertPublicDatasetRegistrySchema = createInsertSchema(publicDatasetRegistry).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPublicDatasetRegistry = z.infer<typeof insertPublicDatasetRegistrySchema>;
+export type PublicDatasetRegistry = typeof publicDatasetRegistry.$inferSelect;
+
+// ML Training Audit Log - HIPAA-compliant audit trail for all ML operations
+export const mlTrainingAuditLog = pgTable("ml_training_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Event identification
+  eventType: varchar("event_type").notNull(), // 'consent_granted', 'consent_withdrawn', 'data_extracted', 'training_started', 'model_deployed', 'data_deleted'
+  eventCategory: varchar("event_category").notNull(), // 'consent', 'training', 'model', 'data_access'
+  
+  // Actor
+  actorId: varchar("actor_id"), // User ID or 'system'
+  actorType: varchar("actor_type").notNull(), // 'patient', 'admin', 'system', 'scheduler'
+  
+  // Resource affected
+  resourceType: varchar("resource_type").notNull(), // 'consent', 'training_job', 'model', 'patient_data'
+  resourceId: varchar("resource_id"),
+  
+  // Patient data involvement (PHI tracking)
+  patientIdHash: varchar("patient_id_hash"), // Hashed patient ID if patient data involved
+  phiAccessed: boolean("phi_accessed").default(false),
+  phiCategories: jsonb("phi_categories").$type<string[]>(),
+  
+  // Event details
+  eventDetails: jsonb("event_details").$type<Record<string, unknown>>(),
+  previousState: jsonb("previous_state").$type<Record<string, unknown>>(),
+  newState: jsonb("new_state").$type<Record<string, unknown>>(),
+  
+  // Request metadata
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  sessionId: varchar("session_id"),
+  
+  // Status
+  success: boolean("success").default(true),
+  errorMessage: text("error_message"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  eventTypeIdx: index("ml_audit_event_idx").on(table.eventType),
+  actorIdx: index("ml_audit_actor_idx").on(table.actorId),
+  resourceIdx: index("ml_audit_resource_idx").on(table.resourceType, table.resourceId),
+  patientIdx: index("ml_audit_patient_idx").on(table.patientIdHash),
+  createdIdx: index("ml_audit_created_idx").on(table.createdAt),
+}));
+
+export const insertMlTrainingAuditLogSchema = createInsertSchema(mlTrainingAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMlTrainingAuditLog = z.infer<typeof insertMlTrainingAuditLogSchema>;
+export type MlTrainingAuditLog = typeof mlTrainingAuditLog.$inferSelect;
+
 // Message envelope types for TypeScript
 export const messageEnvelopeSchema = z.object({
   msgId: z.string().uuid(),
