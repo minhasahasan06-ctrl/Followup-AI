@@ -12,6 +12,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "wouter";
+import { DoctorConsentCard } from "@/components/DoctorConsentCard";
+import type { DoctorPatientConsentPermissions } from "@shared/schema";
 import {
   MapPin,
   Building2,
@@ -30,6 +32,7 @@ import {
   AlertCircle,
   Clock,
   User,
+  Shield,
 } from "lucide-react";
 import {
   Dialog,
@@ -122,7 +125,18 @@ export default function MyDoctors() {
     enabled: user?.role === "patient",
   });
 
+  // Patient consent permissions query
+  const { data: consentPermissions, isLoading: isLoadingConsents } = useQuery<DoctorPatientConsentPermissions[]>({
+    queryKey: ["/api/patient/doctors/consents"],
+    enabled: user?.role === "patient",
+  });
+
   const connectedDoctors = myDoctorsData?.connections.map(c => c.doctor) || [];
+  
+  // Get consent permissions for a specific doctor
+  const getConsentForDoctor = (doctorId: string) => {
+    return consentPermissions?.find(c => c.doctorId === doctorId) || null;
+  };
 
   const createRequestMutation = useMutation({
     mutationFn: async (data: {
@@ -378,10 +392,14 @@ export default function MyDoctors() {
         </div>
 
         <Tabs defaultValue="connected" className="space-y-6">
-          <TabsList className="grid w-full max-w-2xl grid-cols-3">
+          <TabsList className="grid w-full max-w-3xl grid-cols-4">
             <TabsTrigger value="connected" data-testid="tab-connected-doctors">
               <Users className="h-4 w-4 mr-2" />
               Connected
+            </TabsTrigger>
+            <TabsTrigger value="data-sharing" data-testid="tab-data-sharing">
+              <Shield className="h-4 w-4 mr-2" />
+              Data Sharing
             </TabsTrigger>
             <TabsTrigger value="search" data-testid="tab-find-doctors">
               <Search className="h-4 w-4 mr-2" />
@@ -429,6 +447,57 @@ export default function MyDoctors() {
                     })
                   )}
                 </div>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Data Sharing Tab - Consent Management */}
+          <TabsContent value="data-sharing" className="space-y-4">
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Manage Your Health Data Sharing
+                </CardTitle>
+                <CardDescription>
+                  Control what health information each of your doctors can access. 
+                  You can grant or revoke specific permissions at any time.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+
+            {isLoadingConsents && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            )}
+
+            {!isLoadingConsents && connectedDoctors.length === 0 && (
+              <Card>
+                <CardContent className="py-12 text-center space-y-4">
+                  <Shield className="h-12 w-12 mx-auto text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">No connected doctors</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Connect with a healthcare provider to manage data sharing settings
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {!isLoadingConsents && connectedDoctors.length > 0 && (
+              <div className="space-y-4">
+                {connectedDoctors.map((doctor) => (
+                  <DoctorConsentCard
+                    key={doctor.id}
+                    doctor={doctor}
+                    consentPermissions={getConsentForDoctor(doctor.id)}
+                    onConsentUpdated={() => {
+                      queryClient.invalidateQueries({ queryKey: ["/api/patient/doctors/consents"] });
+                    }}
+                  />
+                ))}
               </div>
             )}
           </TabsContent>

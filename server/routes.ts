@@ -3453,6 +3453,176 @@ All questions and discussions should be focused on this patient.`;
     }
   });
 
+  // Get consent permissions for doctor-patient relationship
+  app.get('/api/doctor/patients/:patientId/consent-permissions', isAuthenticated, isDoctor, async (req: any, res) => {
+    const doctorId = req.user!.id;
+    const { patientId } = req.params;
+    
+    try {
+      // Verify doctor has access to this patient
+      const assignment = await storage.getDoctorPatientAssignment(doctorId, patientId);
+      if (!assignment || assignment.status !== 'active') {
+        console.log(`[HIPAA-AUDIT] CONSENT_PERMISSIONS_DENIED: Doctor ${doctorId} attempted to access consent permissions for patient ${patientId} without active assignment at ${new Date().toISOString()}`);
+        return res.status(403).json({ message: "No active assignment with this patient" });
+      }
+      
+      // Fetch consent permissions
+      const permissions = await storage.getConsentPermissionsByDoctorPatient(doctorId, patientId);
+      if (!permissions) {
+        console.log(`[HIPAA-AUDIT] CONSENT_PERMISSIONS_NOT_FOUND: No consent permissions found for doctor ${doctorId} and patient ${patientId} at ${new Date().toISOString()}`);
+        return res.status(404).json({ message: "Consent permissions not found" });
+      }
+      
+      // HIPAA audit log for successful access
+      console.log(`[HIPAA-AUDIT] CONSENT_PERMISSIONS_ACCESSED: Doctor ${doctorId} accessed consent permissions for patient ${patientId} at ${new Date().toISOString()}`);
+      
+      res.json(permissions);
+    } catch (error) {
+      console.error(`[HIPAA-AUDIT] CONSENT_PERMISSIONS_ERROR: Doctor ${doctorId} failed to access consent for patient ${patientId}. Error: ${error}. Time: ${new Date().toISOString()}`);
+      res.status(500).json({ message: "Failed to fetch consent permissions" });
+    }
+  });
+
+  // Patient: Get consent permissions for a specific doctor
+  app.get('/api/patient/doctors/:doctorId/consent', isAuthenticated, async (req: any, res) => {
+    const patientId = req.user!.id;
+    const { doctorId } = req.params;
+    
+    try {
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ message: "Only patients can access their consent settings" });
+      }
+      
+      const permissions = await storage.getConsentPermissionsByDoctorPatient(doctorId, patientId);
+      if (!permissions) {
+        return res.status(404).json({ message: "No consent record found for this doctor" });
+      }
+      
+      console.log(`[HIPAA-AUDIT] PATIENT_CONSENT_VIEWED: Patient ${patientId} viewed consent permissions for doctor ${doctorId} at ${new Date().toISOString()}`);
+      res.json(permissions);
+    } catch (error) {
+      console.error(`[HIPAA-AUDIT] PATIENT_CONSENT_VIEW_ERROR: Patient ${patientId} failed to view consent for doctor ${doctorId}. Error: ${error}. Time: ${new Date().toISOString()}`);
+      res.status(500).json({ message: "Failed to fetch consent permissions" });
+    }
+  });
+
+  // Patient: Get all consent permissions for connected doctors
+  app.get('/api/patient/doctors/consents', isAuthenticated, async (req: any, res) => {
+    const patientId = req.user!.id;
+    
+    try {
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ message: "Only patients can access their consent settings" });
+      }
+      
+      const consents = await storage.getPatientConsentPermissions(patientId);
+      
+      console.log(`[HIPAA-AUDIT] PATIENT_ALL_CONSENTS_VIEWED: Patient ${patientId} viewed all consent permissions at ${new Date().toISOString()}`);
+      res.json(consents || []);
+    } catch (error) {
+      console.error(`[HIPAA-AUDIT] PATIENT_ALL_CONSENTS_ERROR: Patient ${patientId} failed to view all consents. Error: ${error}. Time: ${new Date().toISOString()}`);
+      res.status(500).json({ message: "Failed to fetch consent permissions" });
+    }
+  });
+
+  // Patient: Update specific consent permissions for a doctor
+  app.patch('/api/patient/doctors/:doctorId/consent', isAuthenticated, async (req: any, res) => {
+    const patientId = req.user!.id;
+    const { doctorId } = req.params;
+    const updates = req.body;
+    
+    try {
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ message: "Only patients can update their consent settings" });
+      }
+      
+      // Verify doctor-patient relationship exists
+      const assignment = await storage.getDoctorPatientAssignment(doctorId, patientId);
+      if (!assignment) {
+        console.log(`[HIPAA-AUDIT] CONSENT_UPDATE_DENIED: Patient ${patientId} attempted to update consent for non-connected doctor ${doctorId} at ${new Date().toISOString()}`);
+        return res.status(404).json({ message: "No relationship with this doctor" });
+      }
+      
+      // Get existing permissions
+      const existingPermissions = await storage.getConsentPermissionsByDoctorPatient(doctorId, patientId);
+      if (!existingPermissions) {
+        return res.status(404).json({ message: "No consent record found for this doctor" });
+      }
+      
+      // Update permissions using assignmentId
+      const updatedPermissions = await storage.updateConsentPermissions(existingPermissions.assignmentId, updates);
+      
+      // Log each permission change for HIPAA compliance
+      const changedFields = Object.keys(updates).filter(key => updates[key] !== existingPermissions[key as keyof typeof existingPermissions]);
+      console.log(`[HIPAA-AUDIT] CONSENT_PERMISSIONS_UPDATED: Patient ${patientId} updated consent for doctor ${doctorId}. Changed fields: ${changedFields.join(', ')}. IP: ${req.ip}. Time: ${new Date().toISOString()}`);
+      
+      res.json({ 
+        success: true, 
+        message: "Consent permissions updated",
+        permissions: updatedPermissions 
+      });
+    } catch (error) {
+      console.error(`[HIPAA-AUDIT] CONSENT_UPDATE_ERROR: Patient ${patientId} failed to update consent for doctor ${doctorId}. Error: ${error}. Time: ${new Date().toISOString()}`);
+      res.status(500).json({ message: "Failed to update consent permissions" });
+    }
+  });
+
+  // Patient: Withdraw all consent from a doctor
+  app.post('/api/patient/doctors/:doctorId/withdraw-consent', isAuthenticated, async (req: any, res) => {
+    const patientId = req.user!.id;
+    const { doctorId } = req.params;
+    const { reason } = req.body;
+    
+    try {
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ message: "Only patients can withdraw their consent" });
+      }
+      
+      // Verify doctor-patient relationship exists
+      const assignment = await storage.getDoctorPatientAssignment(doctorId, patientId);
+      if (!assignment) {
+        console.log(`[HIPAA-AUDIT] CONSENT_WITHDRAW_DENIED: Patient ${patientId} attempted to withdraw consent for non-connected doctor ${doctorId} at ${new Date().toISOString()}`);
+        return res.status(404).json({ message: "No relationship with this doctor" });
+      }
+      
+      // Get existing permissions
+      const existingPermissions = await storage.getConsentPermissionsByDoctorPatient(doctorId, patientId);
+      if (!existingPermissions) {
+        return res.status(404).json({ message: "No consent record found for this doctor" });
+      }
+      
+      // Revoke all permissions using assignmentId
+      const revokedPermissions = await storage.updateConsentPermissions(existingPermissions.assignmentId, {
+        shareHealthData: false,
+        shareMedicalFiles: false,
+        shareAIMessages: false,
+        shareDoctorMessages: false,
+        shareDailyFollowups: false,
+        shareHealthAlerts: false,
+        shareBehavioralInsights: false,
+        sharePainTracking: false,
+        shareVitalSigns: false,
+        shareMedications: false,
+        shareLabResults: false,
+        consentEpidemiologicalResearch: false,
+        consentRevokedAt: new Date(),
+        consentRevokedReason: reason || "Consent withdrawn by patient",
+      });
+      
+      // HIPAA audit log for consent withdrawal
+      console.log(`[HIPAA-AUDIT] CONSENT_WITHDRAWN: Patient ${patientId} withdrew ALL consent from doctor ${doctorId}. Reason: ${reason || 'Not provided'}. IP: ${req.ip}. Time: ${new Date().toISOString()}`);
+      
+      res.json({ 
+        success: true, 
+        message: "All consent has been withdrawn",
+        permissions: revokedPermissions 
+      });
+    } catch (error) {
+      console.error(`[HIPAA-AUDIT] CONSENT_WITHDRAW_ERROR: Patient ${patientId} failed to withdraw consent from doctor ${doctorId}. Error: ${error}. Time: ${new Date().toISOString()}`);
+      res.status(500).json({ message: "Failed to withdraw consent" });
+    }
+  });
+
   // Get patient's Followup Patient ID (for sharing)
   app.get('/api/patient/followup-id', isAuthenticated, async (req: any, res) => {
     try {
