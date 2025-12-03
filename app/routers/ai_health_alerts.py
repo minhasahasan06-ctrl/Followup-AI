@@ -3435,3 +3435,493 @@ async def get_device_analytics(
     except Exception as e:
         logger.error(f"Error in device analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========================================================================
+# CORRELATION INSIGHTS ENDPOINTS
+# ========================================================================
+
+class CorrelationPair(BaseModel):
+    """Individual correlation between two metrics"""
+    metric_a: str
+    metric_a_label: str
+    metric_b: str
+    metric_b_label: str
+    correlation_coefficient: float
+    p_value: float
+    is_significant: bool
+    strength: str  # strong, moderate, weak, none
+    direction: str  # positive, negative
+    sample_size: int
+    category: str
+
+
+class CorrelationCategory(BaseModel):
+    """Category of correlations"""
+    category_name: str
+    category_label: str
+    category_description: str
+    correlations: List[CorrelationPair]
+    total_correlations: int
+    significant_correlations: int
+
+
+class CorrelationInsightsResponse(BaseModel):
+    """Comprehensive correlation insights for a patient"""
+    patient_id: str
+    generated_at: datetime
+    categories: List[CorrelationCategory]
+    summary: Dict[str, Any]
+    recommendations: List[str]
+
+
+def _calculate_correlation_strength(r: float, p_value: float) -> str:
+    """Determine correlation strength based on coefficient"""
+    if p_value > 0.05:
+        return "none"
+    abs_r = abs(r)
+    if abs_r >= 0.7:
+        return "strong"
+    elif abs_r >= 0.4:
+        return "moderate"
+    elif abs_r >= 0.2:
+        return "weak"
+    return "none"
+
+
+def _compute_pearson_correlation(x: List[float], y: List[float]) -> Dict[str, Any]:
+    """Compute Pearson correlation with statistical significance"""
+    if len(x) < 5 or len(y) < 5 or len(x) != len(y):
+        return {
+            "r": 0.0,
+            "p_value": 1.0,
+            "is_significant": False,
+            "sample_size": min(len(x), len(y))
+        }
+    
+    try:
+        x_arr = np.array(x, dtype=float)
+        y_arr = np.array(y, dtype=float)
+        
+        # Remove NaN values
+        mask = ~(np.isnan(x_arr) | np.isnan(y_arr))
+        x_clean = x_arr[mask]
+        y_clean = y_arr[mask]
+        
+        if len(x_clean) < 5:
+            return {
+                "r": 0.0,
+                "p_value": 1.0,
+                "is_significant": False,
+                "sample_size": len(x_clean)
+            }
+        
+        r, p_value = stats.pearsonr(x_clean, y_clean)
+        
+        return {
+            "r": float(r) if not np.isnan(r) else 0.0,
+            "p_value": float(p_value) if not np.isnan(p_value) else 1.0,
+            "is_significant": p_value < 0.05 if not np.isnan(p_value) else False,
+            "sample_size": len(x_clean)
+        }
+    except Exception as e:
+        logger.warning(f"Error computing correlation: {e}")
+        return {
+            "r": 0.0,
+            "p_value": 1.0,
+            "is_significant": False,
+            "sample_size": 0
+        }
+
+
+@router.get("/correlation-insights/{patient_id}")
+async def get_correlation_insights(
+    patient_id: str,
+    days: int = Query(30, ge=7, le=90, description="Days of data to analyze"),
+    db: Session = Depends(get_db)
+) -> CorrelationInsightsResponse:
+    """
+    Get comprehensive correlation insights for a patient.
+    
+    Analyzes correlations across:
+    - Symptom-Medication: Temporal patterns between medications and symptoms
+    - Activity-Sleep: Relationships between physical activity and sleep quality
+    - Environmental-Health: Environmental factors affecting health metrics
+    - Device Metrics: Cross-metric correlations from connected devices
+    
+    Returns correlation coefficients with statistical significance.
+    """
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        categories = []
+        total_significant = 0
+        total_correlations = 0
+        
+        # ========= SYMPTOM-MEDICATION CORRELATIONS =========
+        med_symptom_correlations = []
+        
+        # Query medication-symptom correlation data from stored records
+        med_query = text("""
+            SELECT 
+                sec.medication_name,
+                sec.symptom_name,
+                sec.confidence_score,
+                sec.correlation_strength,
+                sec.time_to_onset_hours
+            FROM side_effect_correlations sec
+            JOIN medication_timeline mt ON mt.id = sec.medication_timeline_id
+            WHERE mt.patient_id = :patient_id
+            AND sec.analysis_date >= :cutoff
+            ORDER BY sec.confidence_score DESC
+            LIMIT 20
+        """)
+        
+        try:
+            med_results = db.execute(med_query, {"patient_id": patient_id, "cutoff": cutoff_date}).fetchall()
+            
+            for row in med_results:
+                strength = row[3] if row[3] else "unknown"
+                confidence = float(row[2]) if row[2] else 0.5
+                
+                med_symptom_correlations.append(CorrelationPair(
+                    metric_a=f"med_{row[0].lower().replace(' ', '_')}" if row[0] else "unknown_med",
+                    metric_a_label=row[0] or "Unknown Medication",
+                    metric_b=f"symptom_{row[1].lower().replace(' ', '_')}" if row[1] else "unknown_symptom",
+                    metric_b_label=row[1] or "Unknown Symptom",
+                    correlation_coefficient=confidence,
+                    p_value=0.05 if confidence > 0.6 else 0.1,
+                    is_significant=confidence > 0.6,
+                    strength=strength.lower() if strength else "unknown",
+                    direction="positive",
+                    sample_size=int(row[4]) if row[4] else 1,
+                    category="symptom_medication"
+                ))
+        except Exception as e:
+            logger.warning(f"Could not fetch medication correlations: {e}")
+        
+        if med_symptom_correlations:
+            sig_count = sum(1 for c in med_symptom_correlations if c.is_significant)
+            categories.append(CorrelationCategory(
+                category_name="symptom_medication",
+                category_label="Symptom-Medication Correlations",
+                category_description="Temporal patterns between medication changes and symptom onset",
+                correlations=med_symptom_correlations,
+                total_correlations=len(med_symptom_correlations),
+                significant_correlations=sig_count
+            ))
+            total_correlations += len(med_symptom_correlations)
+            total_significant += sig_count
+        
+        # ========= ACTIVITY-SLEEP CORRELATIONS =========
+        activity_sleep_correlations = []
+        
+        # Query activity and sleep data
+        sleep_activity_query = text("""
+            SELECT 
+                dr.recorded_at::date as record_date,
+                dr.heart_rate,
+                dr.steps,
+                dr.sleep_score,
+                dr.respiratory_rate,
+                dr.spo2
+            FROM device_readings dr
+            WHERE dr.patient_id = :patient_id
+            AND dr.recorded_at >= :cutoff
+            ORDER BY dr.recorded_at
+        """)
+        
+        try:
+            device_results = db.execute(sleep_activity_query, {"patient_id": patient_id, "cutoff": cutoff_date}).fetchall()
+            
+            if device_results and len(device_results) >= 5:
+                # Extract data for correlation
+                steps_data = [float(r[2]) for r in device_results if r[2] is not None]
+                sleep_data = [float(r[3]) for r in device_results if r[3] is not None]
+                hr_data = [float(r[1]) for r in device_results if r[1] is not None]
+                rr_data = [float(r[4]) for r in device_results if r[4] is not None]
+                spo2_data = [float(r[5]) for r in device_results if r[5] is not None]
+                
+                # Steps vs Sleep Quality
+                if len(steps_data) >= 5 and len(sleep_data) >= 5:
+                    min_len = min(len(steps_data), len(sleep_data))
+                    corr = _compute_pearson_correlation(steps_data[:min_len], sleep_data[:min_len])
+                    
+                    activity_sleep_correlations.append(CorrelationPair(
+                        metric_a="daily_steps",
+                        metric_a_label="Daily Steps",
+                        metric_b="sleep_score",
+                        metric_b_label="Sleep Quality Score",
+                        correlation_coefficient=corr["r"],
+                        p_value=corr["p_value"],
+                        is_significant=corr["is_significant"],
+                        strength=_calculate_correlation_strength(corr["r"], corr["p_value"]),
+                        direction="positive" if corr["r"] > 0 else "negative",
+                        sample_size=corr["sample_size"],
+                        category="activity_sleep"
+                    ))
+                
+                # Heart Rate vs Sleep Quality
+                if len(hr_data) >= 5 and len(sleep_data) >= 5:
+                    min_len = min(len(hr_data), len(sleep_data))
+                    corr = _compute_pearson_correlation(hr_data[:min_len], sleep_data[:min_len])
+                    
+                    activity_sleep_correlations.append(CorrelationPair(
+                        metric_a="resting_heart_rate",
+                        metric_a_label="Resting Heart Rate",
+                        metric_b="sleep_score",
+                        metric_b_label="Sleep Quality Score",
+                        correlation_coefficient=corr["r"],
+                        p_value=corr["p_value"],
+                        is_significant=corr["is_significant"],
+                        strength=_calculate_correlation_strength(corr["r"], corr["p_value"]),
+                        direction="positive" if corr["r"] > 0 else "negative",
+                        sample_size=corr["sample_size"],
+                        category="activity_sleep"
+                    ))
+                
+                # Steps vs Respiratory Rate
+                if len(steps_data) >= 5 and len(rr_data) >= 5:
+                    min_len = min(len(steps_data), len(rr_data))
+                    corr = _compute_pearson_correlation(steps_data[:min_len], rr_data[:min_len])
+                    
+                    activity_sleep_correlations.append(CorrelationPair(
+                        metric_a="daily_steps",
+                        metric_a_label="Daily Steps",
+                        metric_b="respiratory_rate",
+                        metric_b_label="Respiratory Rate",
+                        correlation_coefficient=corr["r"],
+                        p_value=corr["p_value"],
+                        is_significant=corr["is_significant"],
+                        strength=_calculate_correlation_strength(corr["r"], corr["p_value"]),
+                        direction="positive" if corr["r"] > 0 else "negative",
+                        sample_size=corr["sample_size"],
+                        category="activity_sleep"
+                    ))
+        except Exception as e:
+            logger.warning(f"Could not compute activity-sleep correlations: {e}")
+        
+        if activity_sleep_correlations:
+            sig_count = sum(1 for c in activity_sleep_correlations if c.is_significant)
+            categories.append(CorrelationCategory(
+                category_name="activity_sleep",
+                category_label="Activity-Sleep Correlations",
+                category_description="Relationships between physical activity patterns and sleep quality",
+                correlations=activity_sleep_correlations,
+                total_correlations=len(activity_sleep_correlations),
+                significant_correlations=sig_count
+            ))
+            total_correlations += len(activity_sleep_correlations)
+            total_significant += sig_count
+        
+        # ========= ENVIRONMENTAL-HEALTH CORRELATIONS =========
+        env_health_correlations = []
+        
+        # Query environmental risk data if available
+        env_query = text("""
+            SELECT 
+                er.recorded_at::date,
+                er.aqi_value,
+                er.pollen_level,
+                er.temperature,
+                er.humidity
+            FROM environmental_risks er
+            WHERE er.patient_id = :patient_id
+            AND er.recorded_at >= :cutoff
+            ORDER BY er.recorded_at
+        """)
+        
+        try:
+            env_results = db.execute(env_query, {"patient_id": patient_id, "cutoff": cutoff_date}).fetchall()
+            
+            # Query symptom severity data for same period
+            symptom_severity_query = text("""
+                SELECT 
+                    DATE(reported_at) as report_date,
+                    AVG(severity) as avg_severity
+                FROM symptom_logs
+                WHERE patient_id = :patient_id
+                AND reported_at >= :cutoff
+                GROUP BY DATE(reported_at)
+                ORDER BY report_date
+            """)
+            
+            symptom_results = db.execute(symptom_severity_query, {"patient_id": patient_id, "cutoff": cutoff_date}).fetchall()
+            
+            if env_results and symptom_results and len(env_results) >= 5 and len(symptom_results) >= 5:
+                # Match dates and compute correlations
+                env_by_date = {r[0]: r for r in env_results}
+                symptom_by_date = {r[0]: r[1] for r in symptom_results}
+                
+                common_dates = set(env_by_date.keys()) & set(symptom_by_date.keys())
+                
+                if len(common_dates) >= 5:
+                    sorted_dates = sorted(common_dates)
+                    aqi_values = [float(env_by_date[d][1]) for d in sorted_dates if env_by_date[d][1] is not None]
+                    severity_values = [float(symptom_by_date[d]) for d in sorted_dates]
+                    
+                    if len(aqi_values) >= 5 and len(severity_values) >= 5:
+                        min_len = min(len(aqi_values), len(severity_values))
+                        corr = _compute_pearson_correlation(aqi_values[:min_len], severity_values[:min_len])
+                        
+                        env_health_correlations.append(CorrelationPair(
+                            metric_a="air_quality_index",
+                            metric_a_label="Air Quality Index",
+                            metric_b="symptom_severity",
+                            metric_b_label="Average Symptom Severity",
+                            correlation_coefficient=corr["r"],
+                            p_value=corr["p_value"],
+                            is_significant=corr["is_significant"],
+                            strength=_calculate_correlation_strength(corr["r"], corr["p_value"]),
+                            direction="positive" if corr["r"] > 0 else "negative",
+                            sample_size=corr["sample_size"],
+                            category="environmental_health"
+                        ))
+        except Exception as e:
+            logger.warning(f"Could not compute environmental correlations: {e}")
+        
+        if env_health_correlations:
+            sig_count = sum(1 for c in env_health_correlations if c.is_significant)
+            categories.append(CorrelationCategory(
+                category_name="environmental_health",
+                category_label="Environmental-Health Correlations",
+                category_description="Impact of environmental factors on health symptoms",
+                correlations=env_health_correlations,
+                total_correlations=len(env_health_correlations),
+                significant_correlations=sig_count
+            ))
+            total_correlations += len(env_health_correlations)
+            total_significant += sig_count
+        
+        # ========= DEVICE METRIC CORRELATIONS =========
+        device_correlations = []
+        
+        try:
+            if device_results and len(device_results) >= 5:
+                # Heart Rate vs SpO2
+                if len(hr_data) >= 5 and len(spo2_data) >= 5:
+                    min_len = min(len(hr_data), len(spo2_data))
+                    corr = _compute_pearson_correlation(hr_data[:min_len], spo2_data[:min_len])
+                    
+                    device_correlations.append(CorrelationPair(
+                        metric_a="heart_rate",
+                        metric_a_label="Heart Rate",
+                        metric_b="spo2",
+                        metric_b_label="Blood Oxygen (SpO2)",
+                        correlation_coefficient=corr["r"],
+                        p_value=corr["p_value"],
+                        is_significant=corr["is_significant"],
+                        strength=_calculate_correlation_strength(corr["r"], corr["p_value"]),
+                        direction="positive" if corr["r"] > 0 else "negative",
+                        sample_size=corr["sample_size"],
+                        category="device_metrics"
+                    ))
+                
+                # Heart Rate vs Respiratory Rate
+                if len(hr_data) >= 5 and len(rr_data) >= 5:
+                    min_len = min(len(hr_data), len(rr_data))
+                    corr = _compute_pearson_correlation(hr_data[:min_len], rr_data[:min_len])
+                    
+                    device_correlations.append(CorrelationPair(
+                        metric_a="heart_rate",
+                        metric_a_label="Heart Rate",
+                        metric_b="respiratory_rate",
+                        metric_b_label="Respiratory Rate",
+                        correlation_coefficient=corr["r"],
+                        p_value=corr["p_value"],
+                        is_significant=corr["is_significant"],
+                        strength=_calculate_correlation_strength(corr["r"], corr["p_value"]),
+                        direction="positive" if corr["r"] > 0 else "negative",
+                        sample_size=corr["sample_size"],
+                        category="device_metrics"
+                    ))
+                
+                # SpO2 vs Respiratory Rate
+                if len(spo2_data) >= 5 and len(rr_data) >= 5:
+                    min_len = min(len(spo2_data), len(rr_data))
+                    corr = _compute_pearson_correlation(spo2_data[:min_len], rr_data[:min_len])
+                    
+                    device_correlations.append(CorrelationPair(
+                        metric_a="spo2",
+                        metric_a_label="Blood Oxygen (SpO2)",
+                        metric_b="respiratory_rate",
+                        metric_b_label="Respiratory Rate",
+                        correlation_coefficient=corr["r"],
+                        p_value=corr["p_value"],
+                        is_significant=corr["is_significant"],
+                        strength=_calculate_correlation_strength(corr["r"], corr["p_value"]),
+                        direction="positive" if corr["r"] > 0 else "negative",
+                        sample_size=corr["sample_size"],
+                        category="device_metrics"
+                    ))
+        except Exception as e:
+            logger.warning(f"Could not compute device metric correlations: {e}")
+        
+        if device_correlations:
+            sig_count = sum(1 for c in device_correlations if c.is_significant)
+            categories.append(CorrelationCategory(
+                category_name="device_metrics",
+                category_label="Device Metric Correlations",
+                category_description="Cross-metric correlations from connected medical devices",
+                correlations=device_correlations,
+                total_correlations=len(device_correlations),
+                significant_correlations=sig_count
+            ))
+            total_correlations += len(device_correlations)
+            total_significant += sig_count
+        
+        # Generate recommendations based on significant correlations
+        recommendations = []
+        
+        for category in categories:
+            for corr in category.correlations:
+                if corr.is_significant and corr.strength in ["strong", "moderate"]:
+                    if corr.category == "symptom_medication":
+                        recommendations.append(
+                            f"Monitor {corr.metric_b_label} closely when taking {corr.metric_a_label} - "
+                            f"a {corr.strength} correlation was detected."
+                        )
+                    elif corr.category == "activity_sleep":
+                        direction_text = "increases" if corr.direction == "positive" else "decreases"
+                        recommendations.append(
+                            f"Your {corr.metric_a_label} {direction_text} with {corr.metric_b_label}. "
+                            f"Consider tracking both metrics together."
+                        )
+                    elif corr.category == "environmental_health":
+                        if "aqi" in corr.metric_a.lower() or "air" in corr.metric_a.lower():
+                            recommendations.append(
+                                "Air quality significantly impacts your symptoms. "
+                                "Consider checking air quality before outdoor activities."
+                            )
+                    elif corr.category == "device_metrics":
+                        recommendations.append(
+                            f"{corr.metric_a_label} and {corr.metric_b_label} show a {corr.strength} correlation. "
+                            "This relationship may be clinically relevant."
+                        )
+        
+        # Limit recommendations
+        recommendations = recommendations[:5]
+        
+        if not recommendations:
+            recommendations = [
+                "Continue collecting health data to improve correlation analysis.",
+                "Consistent daily tracking helps identify meaningful patterns."
+            ]
+        
+        return CorrelationInsightsResponse(
+            patient_id=patient_id,
+            generated_at=datetime.utcnow(),
+            categories=categories,
+            summary={
+                "total_correlations": total_correlations,
+                "significant_correlations": total_significant,
+                "categories_analyzed": len(categories),
+                "analysis_period_days": days
+            },
+            recommendations=recommendations
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error computing correlation insights: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
