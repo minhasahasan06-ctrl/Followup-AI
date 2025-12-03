@@ -13604,6 +13604,44 @@ Provide:
     }
   });
 
+  // Device Analytics (Health Section Analytics from connected devices)
+  app.get('/api/ai-health-alerts/device-analytics/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const days = req.query.days || 7;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/device-analytics/${patientId}?days=${days}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (device-analytics): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching device analytics:', error);
+      res.status(502).json({ error: 'Failed to connect to device analytics service' });
+    }
+  });
+
   // ============================================================================
   // V2 ML PREDICTION ROUTES
   // ============================================================================
