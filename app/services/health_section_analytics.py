@@ -259,27 +259,43 @@ class HealthSectionAnalyticsEngine:
         days: int,
         section: Optional[HealthSection] = None,
     ) -> List[Dict[str, Any]]:
-        """Fetch device readings from database"""
+        """Fetch device readings from database with proper column mapping"""
         start_date = datetime.utcnow() - timedelta(days=days)
-        
-        # Build metric filter
-        metric_filter = ""
-        if section and section in SECTION_METRICS:
-            metrics = SECTION_METRICS[section]
-            metric_list = "'" + "','".join(metrics) + "'"
-            metric_filter = f"AND data_type IN ({metric_list})"
         
         try:
             result = await self.db.execute(
-                text(f"""
+                text("""
                     SELECT 
-                        id, user_id, device_id, reading_type, data_type,
-                        value, unit, timestamp, source, quality_score, metadata
+                        id, patient_id, device_type, device_brand, source,
+                        wearable_integration_id, recorded_at,
+                        -- Blood Pressure
+                        bp_systolic, bp_diastolic, bp_pulse, bp_irregular_heartbeat,
+                        -- Glucose
+                        glucose_value, glucose_context,
+                        -- Weight/Body Composition
+                        weight, bmi, body_fat_percentage,
+                        -- Temperature
+                        temperature, temperature_unit,
+                        -- Cardiovascular
+                        heart_rate, resting_heart_rate, hrv, hrv_sdnn, spo2, spo2_min,
+                        respiratory_rate, afib_detected, irregular_rhythm_alert,
+                        -- Sleep
+                        sleep_duration, sleep_deep_minutes, sleep_rem_minutes,
+                        sleep_light_minutes, sleep_awake_minutes, sleep_score, sleep_efficiency,
+                        -- Stress/Recovery
+                        recovery_score, readiness_score, body_battery, strain_score, stress_score,
+                        -- Activity/Fitness
+                        steps, active_minutes, calories_burned, distance_meters,
+                        vo2_max, training_load, training_status,
+                        -- Routing flags
+                        route_to_hypertension, route_to_diabetes, route_to_cardiovascular,
+                        route_to_respiratory, route_to_sleep, route_to_mental_health, route_to_fitness,
+                        -- Metadata
+                        metadata
                     FROM device_readings
-                    WHERE user_id = :patient_id
-                    AND timestamp >= :start_date
-                    {metric_filter}
-                    ORDER BY timestamp DESC
+                    WHERE patient_id = :patient_id
+                    AND recorded_at >= :start_date
+                    ORDER BY recorded_at DESC
                 """),
                 {"patient_id": patient_id, "start_date": start_date}
             )
@@ -287,20 +303,91 @@ class HealthSectionAnalyticsEngine:
             rows = result.fetchall()
             readings = []
             for row in rows:
-                readings.append({
+                # Convert row to normalized readings format
+                base_data = {
                     "id": row.id,
-                    "user_id": row.user_id,
-                    "device_id": row.device_id,
-                    "reading_type": row.reading_type,
-                    "data_type": row.data_type,
-                    "value": row.value,
-                    "unit": row.unit,
-                    "timestamp": row.timestamp.isoformat() if row.timestamp else None,
-                    "source": row.source,
-                    "quality_score": row.quality_score,
+                    "patient_id": row.patient_id,
+                    "device_type": row.device_type,
+                    "device_brand": row.device_brand,
+                    "source": row.source or row.device_brand,
+                    "timestamp": row.recorded_at.isoformat() if row.recorded_at else None,
                     "metadata": row.metadata,
-                })
+                }
+                
+                # Create separate reading entries for each non-null metric
+                # Cardiovascular
+                if row.heart_rate is not None:
+                    readings.append({**base_data, "data_type": "heart_rate", "value": row.heart_rate})
+                if row.resting_heart_rate is not None:
+                    readings.append({**base_data, "data_type": "resting_heart_rate", "value": row.resting_heart_rate})
+                if row.hrv is not None:
+                    readings.append({**base_data, "data_type": "hrv", "value": row.hrv})
+                if row.spo2 is not None:
+                    readings.append({**base_data, "data_type": "spo2", "value": row.spo2})
+                if row.respiratory_rate is not None:
+                    readings.append({**base_data, "data_type": "respiratory_rate", "value": row.respiratory_rate})
+                
+                # Blood Pressure (compound value)
+                if row.bp_systolic is not None or row.bp_diastolic is not None:
+                    readings.append({**base_data, "data_type": "blood_pressure", "value": {
+                        "systolic": row.bp_systolic,
+                        "diastolic": row.bp_diastolic,
+                        "pulse": row.bp_pulse,
+                    }})
+                
+                # Glucose
+                if row.glucose_value is not None:
+                    readings.append({**base_data, "data_type": "glucose", "value": row.glucose_value})
+                
+                # Temperature
+                if row.temperature is not None:
+                    readings.append({**base_data, "data_type": "temperature", "value": row.temperature, "unit": row.temperature_unit})
+                
+                # Weight/Body Composition
+                if row.weight is not None:
+                    readings.append({**base_data, "data_type": "weight", "value": row.weight})
+                if row.bmi is not None:
+                    readings.append({**base_data, "data_type": "bmi", "value": row.bmi})
+                if row.body_fat_percentage is not None:
+                    readings.append({**base_data, "data_type": "body_fat_percentage", "value": row.body_fat_percentage})
+                
+                # Sleep metrics
+                if row.sleep_duration is not None:
+                    readings.append({**base_data, "data_type": "sleep_duration", "value": row.sleep_duration})
+                if row.sleep_score is not None:
+                    readings.append({**base_data, "data_type": "sleep_score", "value": row.sleep_score})
+                if row.sleep_efficiency is not None:
+                    readings.append({**base_data, "data_type": "sleep_efficiency", "value": row.sleep_efficiency})
+                if row.sleep_deep_minutes is not None:
+                    readings.append({**base_data, "data_type": "sleep_deep_minutes", "value": row.sleep_deep_minutes})
+                if row.sleep_rem_minutes is not None:
+                    readings.append({**base_data, "data_type": "sleep_rem_minutes", "value": row.sleep_rem_minutes})
+                
+                # Stress/Recovery
+                if row.stress_score is not None:
+                    readings.append({**base_data, "data_type": "stress_score", "value": row.stress_score})
+                if row.recovery_score is not None:
+                    readings.append({**base_data, "data_type": "recovery_score", "value": row.recovery_score})
+                if row.readiness_score is not None:
+                    readings.append({**base_data, "data_type": "readiness_score", "value": row.readiness_score})
+                if row.body_battery is not None:
+                    readings.append({**base_data, "data_type": "body_battery", "value": row.body_battery})
+                if row.strain_score is not None:
+                    readings.append({**base_data, "data_type": "strain_score", "value": row.strain_score})
+                
+                # Fitness/Activity
+                if row.steps is not None:
+                    readings.append({**base_data, "data_type": "steps", "value": row.steps})
+                if row.active_minutes is not None:
+                    readings.append({**base_data, "data_type": "active_minutes", "value": row.active_minutes})
+                if row.calories_burned is not None:
+                    readings.append({**base_data, "data_type": "calories_burned", "value": row.calories_burned})
+                if row.vo2_max is not None:
+                    readings.append({**base_data, "data_type": "vo2_max", "value": row.vo2_max})
+                if row.distance_meters is not None:
+                    readings.append({**base_data, "data_type": "distance_meters", "value": row.distance_meters})
             
+            logger.info(f"Fetched {len(readings)} readings for patient {patient_id}")
             return readings
             
         except Exception as e:

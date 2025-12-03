@@ -1714,8 +1714,8 @@ async def get_ble_services():
 # DEVICE CONNECTIONS LIST
 # ============================================
 
-class DeviceConnectionResponse(BaseModel):
-    """Response model for device connection"""
+class DeviceConnectionListResponse(BaseModel):
+    """Response model for device connection list item"""
     id: str
     deviceType: str
     deviceName: str
@@ -1729,7 +1729,7 @@ class DeviceConnectionResponse(BaseModel):
     consentTimestamp: Optional[str] = None
 
 
-@router.get("/connections", response_model=List[DeviceConnectionResponse])
+@router.get("/connections", response_model=List[DeviceConnectionListResponse])
 async def list_connections(
     request: Request,
     user_id: str = Depends(require_authenticated_user),
@@ -1762,7 +1762,7 @@ async def list_connections(
                     dc.tracked_metrics,
                     dc.consent_given,
                     dc.consent_timestamp
-                FROM device_connections dc
+                FROM wearable_integrations dc
                 WHERE dc.user_id = :user_id
                 ORDER BY dc.created_at DESC
             """),
@@ -1771,7 +1771,7 @@ async def list_connections(
         
         connections = []
         for row in result.fetchall():
-            connections.append(DeviceConnectionResponse(
+            connections.append(DeviceConnectionListResponse(
                 id=str(row.id),
                 deviceType=row.device_type or "",
                 deviceName=row.device_name or "",
@@ -1818,7 +1818,7 @@ class HealthSectionAnalyticsResponse(BaseModel):
     stability_score: float
     trend: str
     data_points: int
-    risk_factors: List[str] = []
+    risk_factors: List[Dict[str, Any]] = []
     predictions: Dict[str, Any] = {}
 
 
@@ -1828,7 +1828,7 @@ class HealthAnalyticsResponse(BaseModel):
     overall_risk_score: float
     overall_trend: str
     sections: Dict[str, HealthSectionAnalyticsResponse]
-    critical_alerts: List[str] = []
+    critical_alerts: List[Dict[str, Any]] = []
     recommendations: List[str] = []
 
 
@@ -1933,7 +1933,7 @@ async def get_sync_history(
                     dsj.created_at,
                     dsj.error_message
                 FROM device_sync_jobs dsj
-                JOIN device_connections dc ON dc.id = dsj.device_id
+                LEFT JOIN wearable_integrations dc ON dc.id = dsj.device_connection_id
                 WHERE dsj.user_id = :user_id
                 ORDER BY dsj.created_at DESC
                 LIMIT :limit
@@ -2002,7 +2002,7 @@ async def trigger_device_sync(
         result = await db.execute(
             text("""
                 SELECT id, vendor_id, device_name
-                FROM device_connections
+                FROM wearable_integrations
                 WHERE id = :device_id AND user_id = :user_id
             """),
             {"device_id": device_id, "user_id": user_id}
@@ -2033,7 +2033,7 @@ async def trigger_device_sync(
         # Update device status
         await db.execute(
             text("""
-                UPDATE device_connections
+                UPDATE wearable_integrations
                 SET sync_status = 'syncing'
                 WHERE id = :device_id
             """),
@@ -2094,7 +2094,7 @@ async def disconnect_device(
         result = await db.execute(
             text("""
                 SELECT id, device_name, vendor_id
-                FROM device_connections
+                FROM wearable_integrations
                 WHERE id = :device_id AND user_id = :user_id
             """),
             {"device_id": device_id, "user_id": user_id}
@@ -2110,7 +2110,7 @@ async def disconnect_device(
         # Soft delete device connection
         await db.execute(
             text("""
-                UPDATE device_connections
+                UPDATE wearable_integrations
                 SET 
                     connection_status = 'disconnected',
                     disconnected_at = NOW(),
@@ -2183,7 +2183,7 @@ async def update_device_consent(
         result = await db.execute(
             text("""
                 SELECT id, device_name
-                FROM device_connections
+                FROM wearable_integrations
                 WHERE id = :device_id AND user_id = :user_id
             """),
             {"device_id": device_id, "user_id": user_id}
@@ -2199,7 +2199,7 @@ async def update_device_consent(
         # Update device consent
         await db.execute(
             text("""
-                UPDATE device_connections
+                UPDATE wearable_integrations
                 SET 
                     consent_given = :has_consent,
                     consent_timestamp = NOW(),
@@ -2354,8 +2354,8 @@ async def get_daily_followup_device_data(
                     dc.device_name,
                     dc.vendor_id
                 FROM device_readings dr
-                JOIN device_connections dc ON dc.id = dr.device_id
-                WHERE dr.user_id = :user_id
+                LEFT JOIN wearable_integrations dc ON dc.id = dr.wearable_integration_id
+                WHERE dr.patient_id = :user_id
                 AND dr.timestamp >= :start_date
                 AND dr.timestamp <= :end_date
                 ORDER BY dr.timestamp DESC
