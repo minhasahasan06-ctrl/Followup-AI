@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1797,6 +1798,31 @@ export default function AIAlertsDashboard() {
           testId="stat-stability"
         />
       </div>
+
+      <Card className="border-primary/30 bg-gradient-to-r from-primary/5 to-primary/10" data-testid="card-ml-insights-cta">
+        <CardContent className="flex items-center justify-between py-4 flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-primary/20">
+              <Brain className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h4 className="font-semibold">Advanced ML Insights</h4>
+              <p className="text-sm text-muted-foreground">
+                Deep-dive into disease risk, deterioration predictions, time-series forecasts, and patient segmentation
+              </p>
+            </div>
+          </div>
+          <Button 
+            asChild
+            data-testid="button-view-ml-insights"
+          >
+            <Link href="/ml-insights">
+              <Sparkles className="h-4 w-4 mr-2" />
+              View ML Insights
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="alerts" className="w-full">
         <TabsList className="grid w-full grid-cols-5">

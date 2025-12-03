@@ -55,7 +55,7 @@ import {
 import { startOfWeek, endOfWeek, subWeeks, format, formatDistanceToNow } from "date-fns";
 import type { User, DailyFollowup, Medication, ChatMessage, Prescription, DoctorPatientConsentPermissions } from "@shared/schema";
 import { PatientAIAlerts } from "@/components/patient-ai-alerts";
-import { PatientMLTools } from "@/components/patient-ml-tools";
+import { MLInsightsPanel } from "@/components/MLInsightsPanel";
 import { LysaPatientAssistant } from "@/components/LysaPatientAssistant";
 import { ClinicalDecisionSupport } from "@/components/ClinicalDecisionSupport";
 import { PredictiveAnalyticsDashboard } from "@/components/PredictiveAnalyticsDashboard";
@@ -503,9 +503,10 @@ export default function PatientReview() {
             {/* ML Prediction Tools Tab */}
             <TabsContent value="ml-tools">
               {patientId && (
-                <PatientMLTools 
+                <MLInsightsPanel 
                   patientId={patientId} 
                   patientName={patient ? `${patient.firstName} ${patient.lastName}` : undefined}
+                  isDoctor={true}
                 />
               )}
             </TabsContent>
