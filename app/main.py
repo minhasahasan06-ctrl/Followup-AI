@@ -263,6 +263,14 @@ app.include_router(auth_api.router)
 # ML Prediction API (Disease Risk, Deterioration, Time-Series, Segmentation) - PRODUCTION READY
 app.include_router(ml_prediction_api.router)
 
+# ML Training Infrastructure (Consent, Jobs, Datasets, Model Registry) - PRODUCTION READY
+try:
+    from app.routers import ml_training
+    app.include_router(ml_training.router)
+    logger.info("✅ ML Training API router registered")
+except Exception as e:
+    logger.warning(f"❌ ML Training API unavailable: {e}")
+
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:
     try:
