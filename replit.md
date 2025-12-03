@@ -50,6 +50,14 @@ The backend comprises two services: a Node.js Express server (Port 5000) for cha
     - Anomaly detection with z-score analysis
     - Statistical fallback when PyTorch unavailable
     - Risk assessment with trajectory analysis (stable/concerning/deteriorating)
+  - **K-Means Patient Segmentation (PatientSegmentationService):**
+    - scikit-learn K-Means clustering for patient phenotyping
+    - Dynamic clustering based on patient cohort data
+    - Automatic K selection via elbow method with silhouette validation
+    - Feature importance ranking per cluster using variance ratio
+    - 12 features: PHQ-9, GAD-7, PSS-10, daily steps, sleep hours, checkin rate, symptom count, pain level, medication adherence, vital stability, age, comorbidity count
+    - 4 clinical phenotypes: Wellness Engaged, Moderate Risk, High Complexity, Critical Needs
+    - Graceful fallback to predefined centroids when insufficient data
 - **Guided Video Examination:** 4-stage workflow (Eyes, Palm, Tongue, Lips) with LAB color analysis and S3 encrypted storage, including Facial Puffiness Score (FPS).
 - **Guided Audio Examination:** 4-stage workflow (Breathing, Coughing, Speaking, Reading) with YAMNet ML classification and S3 encrypted storage.
 - **Alert Orchestration Engine:** Multi-channel (dashboard, email, SMS) rule-based alert delivery.
