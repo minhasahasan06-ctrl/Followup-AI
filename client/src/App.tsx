@@ -43,6 +43,7 @@ import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
 import ConsentManagement from "@/pages/ConsentManagement";
 import WearableDevices from "@/pages/WearableDevices";
+import DeviceConnect from "@/pages/DeviceConnect";
 import Referrals from "@/pages/Referrals";
 import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
@@ -106,6 +107,7 @@ function PatientRouter() {
       <Route path="/consents" component={ConsentManagement} />
       <Route path="/medical-files" component={MedicalFiles} />
       <Route path="/wearables" component={WearableDevices} />
+      <Route path="/device-connect" component={DeviceConnect} />
       <Route path="/immune-monitoring" component={ImmuneMonitoring} />
       <Route path="/environmental-risk" component={EnvironmentalRiskMap} />
       <Route path="/correlation-insights" component={CorrelationInsights} />

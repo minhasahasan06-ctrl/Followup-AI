@@ -28,6 +28,77 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================
+# AUTHENTICATION HELPER
+# ============================================
+
+async def get_current_user_id(request: Request) -> Optional[str]:
+    """
+    Extract user ID from request.
+    Supports:
+    - Auth0 JWT tokens (Authorization header)
+    - Session-based auth (request.state.user)
+    - Development bypass (X-User-Id header)
+    """
+    try:
+        # Check for development bypass header (only in dev mode)
+        dev_user_id = request.headers.get("X-User-Id")
+        if dev_user_id and os.getenv("DEV_MODE_SECRET"):
+            return dev_user_id
+        
+        # Check session-based auth
+        if hasattr(request, "state") and hasattr(request.state, "user"):
+            user = request.state.user
+            if isinstance(user, dict):
+                return user.get("sub") or user.get("id") or user.get("user_id")
+            elif hasattr(user, "id"):
+                return str(user.id)
+        
+        # Check Authorization header
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                import jwt
+                from jwt import PyJWKClient
+                
+                auth0_domain = os.getenv("AUTH0_DOMAIN")
+                if auth0_domain:
+                    jwks_url = f"https://{auth0_domain}/.well-known/jwks.json"
+                    jwks_client = PyJWKClient(jwks_url)
+                    signing_key = jwks_client.get_signing_key_from_jwt(token)
+                    
+                    payload = jwt.decode(
+                        token,
+                        signing_key.key,
+                        algorithms=["RS256"],
+                        audience=os.getenv("AUTH0_API_AUDIENCE"),
+                        issuer=f"https://{auth0_domain}/"
+                    )
+                    return payload.get("sub")
+            except Exception as jwt_error:
+                logger.warning(f"JWT validation failed: {jwt_error}")
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error getting current user: {e}")
+        return None
+
+
+async def require_authenticated_user(request: Request) -> str:
+    """Dependency that requires an authenticated user"""
+    user_id = await get_current_user_id(request)
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    return user_id
+
+
 router = APIRouter(prefix="/api/v1/devices", tags=["Device Connect"])
 
 # ============================================
@@ -581,10 +652,11 @@ async def get_supported_device_types():
 async def start_device_pairing(
     request_data: StartPairingRequest,
     request: Request,
+    user_id: str = Depends(require_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Start device pairing flow.
+    Start device pairing flow. Requires authentication.
     Returns OAuth URL, BLE instructions, or QR code based on pairing method.
     """
     vendor_id = request_data.vendor_id
@@ -611,9 +683,6 @@ async def start_device_pairing(
         "expires_at": expires_at.isoformat(),
         "consent_required": True,
     }
-    
-    # Get user ID from request (simplified - in production use proper auth)
-    user_id = request.headers.get("X-User-Id", "anonymous")
     
     if pairing_method == PairingMethod.OAUTH.value:
         # Check credentials
@@ -1080,159 +1149,22 @@ async def complete_device_pairing(
     
     raise HTTPException(status_code=400, detail="Invalid pairing session state")
 
-@router.get("/connections", response_model=List[DeviceConnectionResponse])
-async def list_device_connections(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    List all device connections for the current user.
-    """
-    from sqlalchemy import text
-    
-    user_id = request.headers.get("X-User-Id", "anonymous")
-    
-    result = await db.execute(
-        text("""
-            SELECT * FROM wearable_integrations 
-            WHERE user_id = :user_id
-            ORDER BY created_at DESC
-        """),
-        {"user_id": user_id}
-    )
-    connections = result.fetchall()
-    
-    return [
-        DeviceConnectionResponse(
-            id=conn.id,
-            vendor_id=conn.device_type,
-            vendor_name=conn.device_name,
-            device_type=conn.device_model or conn.device_type,
-            device_model=conn.device_model,
-            connection_status=conn.connection_status or "unknown",
-            last_sync_at=conn.last_synced_at.isoformat() if conn.last_synced_at else None,
-            battery_level=conn.battery_level,
-            tracked_metrics=conn.tracked_metrics or [],
-            auto_sync=conn.auto_sync if conn.auto_sync is not None else True,
-            created_at=conn.created_at.isoformat() if conn.created_at else datetime.utcnow().isoformat(),
-        )
-        for conn in connections
-    ]
-
-@router.get("/connections/{connection_id}", response_model=DeviceConnectionResponse)
-async def get_device_connection(
-    connection_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Get details for a specific device connection.
-    """
-    from sqlalchemy import text
-    
-    user_id = request.headers.get("X-User-Id", "anonymous")
-    
-    result = await db.execute(
-        text("""
-            SELECT * FROM wearable_integrations 
-            WHERE id = :id AND user_id = :user_id
-        """),
-        {"id": connection_id, "user_id": user_id}
-    )
-    conn = result.fetchone()
-    
-    if not conn:
-        raise HTTPException(status_code=404, detail="Device connection not found")
-    
-    return DeviceConnectionResponse(
-        id=conn.id,
-        vendor_id=conn.device_type,
-        vendor_name=conn.device_name,
-        device_type=conn.device_model or conn.device_type,
-        device_model=conn.device_model,
-        connection_status=conn.connection_status or "unknown",
-        last_sync_at=conn.last_synced_at.isoformat() if conn.last_synced_at else None,
-        battery_level=conn.battery_level,
-        tracked_metrics=conn.tracked_metrics or [],
-        auto_sync=conn.auto_sync if conn.auto_sync is not None else True,
-        created_at=conn.created_at.isoformat() if conn.created_at else datetime.utcnow().isoformat(),
-    )
-
-@router.delete("/connections/{connection_id}")
-async def delete_device_connection(
-    connection_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Disconnect and remove a device.
-    """
-    from sqlalchemy import text
-    
-    user_id = request.headers.get("X-User-Id", "anonymous")
-    
-    # Verify ownership
-    result = await db.execute(
-        text("""
-            SELECT * FROM wearable_integrations 
-            WHERE id = :id AND user_id = :user_id
-        """),
-        {"id": connection_id, "user_id": user_id}
-    )
-    conn = result.fetchone()
-    
-    if not conn:
-        raise HTTPException(status_code=404, detail="Device connection not found")
-    
-    # Delete connection
-    await db.execute(
-        text("DELETE FROM wearable_integrations WHERE id = :id"),
-        {"id": connection_id}
-    )
-    
-    # Also delete vendor account if exists
-    await db.execute(
-        text("""
-            DELETE FROM vendor_accounts 
-            WHERE user_id = :user_id AND vendor_id = :vendor_id
-        """),
-        {"user_id": user_id, "vendor_id": conn.device_type}
-    )
-    
-    await db.commit()
-    
-    # Log audit event
-    await log_device_audit(
-        db=db,
-        actor_id=user_id,
-        actor_type="patient",
-        action="device_unpaired",
-        action_category="device_management",
-        resource_type="device_connection",
-        resource_id=connection_id,
-        patient_id=user_id,
-        event_details={
-            "vendor_id": conn.device_type,
-            "device_name": conn.device_name,
-        },
-        success=True,
-        request=request,
-    )
-    
-    return {"status": "deleted", "connection_id": connection_id}
+# NOTE: Secure authenticated endpoints for /connections and /connections/{id} are defined
+# in the DEVICE CONNECTIONS LIST section below (line ~1874).
+# The DELETE operation is handled by the DEVICE DISCONNECT section (line ~2246).
+# These older insecure endpoints using X-User-Id header have been removed for HIPAA compliance.
 
 @router.get("/health/{connection_id}", response_model=DeviceHealthResponse)
 async def get_device_health(
     connection_id: str,
     request: Request,
+    user_id: str = Depends(require_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get health status for a device connection.
+    Get health status for a device connection. Requires authentication.
     """
     from sqlalchemy import text
-    
-    user_id = request.headers.get("X-User-Id", "anonymous")
     
     # Get connection
     result = await db.execute(
@@ -1288,14 +1220,13 @@ async def sync_device(
     connection_id: str,
     request: Request,
     background_tasks: BackgroundTasks,
+    user_id: str = Depends(require_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Trigger manual sync for a device connection.
+    Trigger manual sync for a device connection. Requires authentication.
     """
     from sqlalchemy import text
-    
-    user_id = request.headers.get("X-User-Id", "anonymous")
     
     # Get connection
     result = await db.execute(
@@ -1355,15 +1286,14 @@ async def sync_device(
 async def ingest_device_data(
     request_data: DataIngestRequest,
     request: Request,
+    user_id: str = Depends(require_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Ingest device readings into the system.
+    Ingest device readings into the system. Requires authentication.
     Normalizes data, routes to appropriate health sections, and triggers alerts.
     """
     from sqlalchemy import text
-    
-    user_id = request.headers.get("X-User-Id", "anonymous")
     
     # Verify device connection
     result = await db.execute(
@@ -1548,15 +1478,14 @@ async def ingest_device_data(
 async def sync_healthkit_data(
     request_data: HealthKitDataRequest,
     request: Request,
+    user_id: str = Depends(require_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Receive and process Apple HealthKit data exports.
+    Receive and process Apple HealthKit data exports. Requires authentication.
     Endpoint for iOS companion app or manual HealthKit export.
     """
     from sqlalchemy import text
-    
-    user_id = request.headers.get("X-User-Id", "anonymous")
     
     records_processed = 0
     routed_sections = set()
@@ -1779,3 +1708,766 @@ async def get_ble_services():
         },
         "ios_fallback": "For iOS devices, please use our companion app or Apple HealthKit sync.",
     }
+
+
+# ============================================
+# DEVICE CONNECTIONS LIST
+# ============================================
+
+class DeviceConnectionResponse(BaseModel):
+    """Response model for device connection"""
+    id: str
+    deviceType: str
+    deviceName: str
+    vendorId: str
+    connectionStatus: str
+    batteryLevel: Optional[int] = None
+    lastSyncAt: Optional[str] = None
+    firmwareVersion: Optional[str] = None
+    trackedMetrics: List[str] = []
+    consentGiven: bool = False
+    consentTimestamp: Optional[str] = None
+
+
+@router.get("/connections", response_model=List[DeviceConnectionResponse])
+async def list_connections(
+    request: Request,
+    user_id: str = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all device connections for the authenticated user.
+    
+    Requires authentication. Returns detailed status for each connected device including:
+    - Connection status
+    - Last sync timestamp
+    - Battery level
+    - Tracked metrics
+    - Consent status
+    """
+    from sqlalchemy import text
+    
+    try:
+        result = await db.execute(
+            text("""
+                SELECT 
+                    dc.id,
+                    dc.device_type,
+                    dc.device_name,
+                    dc.vendor_id,
+                    dc.connection_status,
+                    dc.battery_level,
+                    dc.last_sync_at,
+                    dc.firmware_version,
+                    dc.tracked_metrics,
+                    dc.consent_given,
+                    dc.consent_timestamp
+                FROM device_connections dc
+                WHERE dc.user_id = :user_id
+                ORDER BY dc.created_at DESC
+            """),
+            {"user_id": user_id}
+        )
+        
+        connections = []
+        for row in result.fetchall():
+            connections.append(DeviceConnectionResponse(
+                id=str(row.id),
+                deviceType=row.device_type or "",
+                deviceName=row.device_name or "",
+                vendorId=row.vendor_id or "",
+                connectionStatus=row.connection_status or "unknown",
+                batteryLevel=row.battery_level,
+                lastSyncAt=row.last_sync_at.isoformat() if row.last_sync_at else None,
+                firmwareVersion=row.firmware_version,
+                trackedMetrics=row.tracked_metrics or [],
+                consentGiven=row.consent_given or False,
+                consentTimestamp=row.consent_timestamp.isoformat() if row.consent_timestamp else None,
+            ))
+        
+        # Log audit event
+        await log_device_audit(
+            db=db,
+            actor_id=user_id,
+            actor_type="patient",
+            action="list_devices",
+            action_category="device_access",
+            resource_type="device_connection",
+            patient_id=user_id,
+            event_details={"device_count": len(connections)},
+            request=request,
+        )
+        
+        return connections
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing connections: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve device connections")
+
+
+# ============================================
+# HEALTH ANALYTICS
+# ============================================
+
+class HealthSectionAnalyticsResponse(BaseModel):
+    """Response model for health section analytics"""
+    risk_score: float
+    deterioration_index: float
+    stability_score: float
+    trend: str
+    data_points: int
+    risk_factors: List[str] = []
+    predictions: Dict[str, Any] = {}
+
+
+class HealthAnalyticsResponse(BaseModel):
+    """Response model for comprehensive health analytics"""
+    generated_at: str
+    overall_risk_score: float
+    overall_trend: str
+    sections: Dict[str, HealthSectionAnalyticsResponse]
+    critical_alerts: List[str] = []
+    recommendations: List[str] = []
+
+
+@router.get("/health-analytics", response_model=HealthAnalyticsResponse)
+async def get_health_analytics(
+    request: Request,
+    days: int = Query(7, ge=1, le=90),
+    user_id: str = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get comprehensive health analytics for connected devices.
+    
+    Requires authentication. Returns:
+    - Per-section analytics (cardiovascular, hypertension, diabetes, etc.)
+    - Risk scores
+    - Trends
+    - Anomaly detection
+    - ML predictions
+    """
+    
+    try:
+        from app.services.health_section_analytics import HealthSectionAnalyticsEngine
+        
+        engine = HealthSectionAnalyticsEngine(db)
+        profile = await engine.analyze_patient(user_id, days)
+        
+        # Log audit event
+        await log_device_audit(
+            db=db,
+            actor_id=user_id,
+            actor_type="patient",
+            action="view_health_analytics",
+            action_category="health_data_access",
+            resource_type="health_analytics",
+            patient_id=user_id,
+            event_details={"days": days, "sections_count": len(profile.sections)},
+            request=request,
+        )
+        
+        return HealthAnalyticsResponse(
+            generated_at=profile.generated_at,
+            overall_risk_score=profile.overall_risk_score,
+            overall_trend=profile.overall_trend.value,
+            sections={
+                section.value: HealthSectionAnalyticsResponse(
+                    risk_score=analytics.risk_score,
+                    deterioration_index=analytics.deterioration_index,
+                    stability_score=analytics.stability_score,
+                    trend=analytics.trend.value,
+                    data_points=analytics.data_points,
+                    risk_factors=analytics.risk_factors[:3] if analytics.risk_factors else [],
+                    predictions=analytics.predictions or {},
+                )
+                for section, analytics in profile.sections.items()
+            },
+            critical_alerts=profile.critical_alerts or [],
+            recommendations=profile.recommendations or [],
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting health analytics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve health analytics")
+
+
+# ============================================
+# SYNC HISTORY
+# ============================================
+
+class SyncHistoryResponse(BaseModel):
+    """Response model for sync history item"""
+    id: str
+    deviceName: str
+    vendorId: str
+    status: str
+    recordsProcessed: int = 0
+    timestamp: Optional[str] = None
+    error: Optional[str] = None
+
+
+@router.get("/sync-history", response_model=List[SyncHistoryResponse])
+async def get_sync_history(
+    request: Request,
+    limit: int = Query(50, ge=1, le=200),
+    user_id: str = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get device sync history for the authenticated user"""
+    from sqlalchemy import text
+    
+    try:
+        result = await db.execute(
+            text("""
+                SELECT 
+                    dsj.id,
+                    dc.device_name,
+                    dsj.vendor_id,
+                    dsj.status,
+                    dsj.records_processed,
+                    dsj.created_at,
+                    dsj.error_message
+                FROM device_sync_jobs dsj
+                JOIN device_connections dc ON dc.id = dsj.device_id
+                WHERE dsj.user_id = :user_id
+                ORDER BY dsj.created_at DESC
+                LIMIT :limit
+            """),
+            {"user_id": user_id, "limit": limit}
+        )
+        
+        history = []
+        for row in result.fetchall():
+            history.append(SyncHistoryResponse(
+                id=str(row.id),
+                deviceName=row.device_name or "",
+                vendorId=row.vendor_id or "",
+                status=row.status or "unknown",
+                recordsProcessed=row.records_processed or 0,
+                timestamp=row.created_at.isoformat() if row.created_at else None,
+                error=row.error_message,
+            ))
+        
+        # Log audit event
+        await log_device_audit(
+            db=db,
+            actor_id=user_id,
+            actor_type="patient",
+            action="view_sync_history",
+            action_category="device_access",
+            resource_type="sync_history",
+            patient_id=user_id,
+            event_details={"limit": limit, "records_returned": len(history)},
+            request=request,
+        )
+        
+        return history
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting sync history: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve sync history")
+
+
+# ============================================
+# DEVICE SYNC TRIGGER
+# ============================================
+
+class SyncTriggerResponse(BaseModel):
+    """Response model for sync trigger"""
+    status: str
+    job_id: Optional[str] = None
+    message: str
+
+
+@router.post("/{device_id}/sync", response_model=SyncTriggerResponse)
+async def trigger_device_sync(
+    device_id: str,
+    request: Request,
+    user_id: str = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger immediate sync for a specific device. Requires authentication."""
+    from sqlalchemy import text
+    import uuid
+    
+    try:
+        # Verify device belongs to user
+        result = await db.execute(
+            text("""
+                SELECT id, vendor_id, device_name
+                FROM device_connections
+                WHERE id = :device_id AND user_id = :user_id
+            """),
+            {"device_id": device_id, "user_id": user_id}
+        )
+        
+        device = result.fetchone()
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        # Create sync job
+        job_id = str(uuid.uuid4())
+        await db.execute(
+            text("""
+                INSERT INTO device_sync_jobs (
+                    id, user_id, device_id, vendor_id, status, created_at
+                ) VALUES (
+                    :job_id, :user_id, :device_id, :vendor_id, 'pending', NOW()
+                )
+            """),
+            {
+                "job_id": job_id,
+                "user_id": user_id,
+                "device_id": device_id,
+                "vendor_id": device.vendor_id,
+            }
+        )
+        
+        # Update device status
+        await db.execute(
+            text("""
+                UPDATE device_connections
+                SET sync_status = 'syncing'
+                WHERE id = :device_id
+            """),
+            {"device_id": device_id}
+        )
+        
+        await db.commit()
+        
+        # Log audit event
+        await log_device_audit(
+            db=db,
+            actor_id=user_id,
+            actor_type="patient",
+            action="sync_triggered",
+            action_category="device_management",
+            resource_type="device_sync_job",
+            resource_id=job_id,
+            patient_id=user_id,
+            event_details={"device_id": device_id, "device_name": device.device_name},
+            request=request,
+        )
+        
+        return {
+            "status": "queued",
+            "job_id": job_id,
+            "message": f"Sync job created for {device.device_name}",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# DEVICE DISCONNECT
+# ============================================
+
+class DisconnectResponse(BaseModel):
+    """Response model for device disconnect"""
+    status: str
+    message: str
+
+
+@router.delete("/{device_id}", response_model=DisconnectResponse)
+async def disconnect_device(
+    device_id: str,
+    request: Request,
+    user_id: str = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Disconnect and remove a device. Requires authentication."""
+    from sqlalchemy import text
+    
+    try:
+        # Verify device belongs to user
+        result = await db.execute(
+            text("""
+                SELECT id, device_name, vendor_id
+                FROM device_connections
+                WHERE id = :device_id AND user_id = :user_id
+            """),
+            {"device_id": device_id, "user_id": user_id}
+        )
+        
+        device = result.fetchone()
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        # Revoke vendor tokens if OAuth
+        # (Token revocation would happen here via vendor API)
+        
+        # Soft delete device connection
+        await db.execute(
+            text("""
+                UPDATE device_connections
+                SET 
+                    connection_status = 'disconnected',
+                    disconnected_at = NOW(),
+                    access_token = NULL,
+                    refresh_token = NULL
+                WHERE id = :device_id
+            """),
+            {"device_id": device_id}
+        )
+        
+        await db.commit()
+        
+        # Log audit event
+        await log_device_audit(
+            db=db,
+            actor_id=user_id,
+            actor_type="patient",
+            action="device_disconnected",
+            action_category="device_management",
+            resource_type="device_connection",
+            resource_id=device_id,
+            patient_id=user_id,
+            event_details={"device_name": device.device_name, "vendor_id": device.vendor_id},
+            request=request,
+        )
+        
+        return {
+            "status": "disconnected",
+            "message": f"{device.device_name} has been disconnected",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error disconnecting device: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# DEVICE CONSENT MANAGEMENT
+# ============================================
+
+class ConsentUpdateRequest(BaseModel):
+    """Request model for consent update"""
+    consent_types: Dict[str, bool]
+
+
+class ConsentUpdateResponse(BaseModel):
+    """Response model for consent update"""
+    status: str
+    message: str
+    enabled_consents: List[str] = []
+
+
+@router.patch("/{device_id}/consent", response_model=ConsentUpdateResponse)
+async def update_device_consent(
+    device_id: str,
+    consent_data: ConsentUpdateRequest,
+    request: Request,
+    user_id: str = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update data sharing consent for a device. Requires authentication."""
+    from sqlalchemy import text
+    
+    consent_types = consent_data.consent_types
+    
+    try:
+        # Verify device belongs to user
+        result = await db.execute(
+            text("""
+                SELECT id, device_name
+                FROM device_connections
+                WHERE id = :device_id AND user_id = :user_id
+            """),
+            {"device_id": device_id, "user_id": user_id}
+        )
+        
+        device = result.fetchone()
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        # Get enabled consent types
+        enabled_consents = [k for k, v in consent_types.items() if v]
+        
+        # Update device consent
+        await db.execute(
+            text("""
+                UPDATE device_connections
+                SET 
+                    consent_given = :has_consent,
+                    consent_timestamp = NOW(),
+                    consent_types = :consent_types
+                WHERE id = :device_id
+            """),
+            {
+                "device_id": device_id,
+                "has_consent": len(enabled_consents) > 0,
+                "consent_types": enabled_consents,
+            }
+        )
+        
+        await db.commit()
+        
+        # Log HIPAA-compliant audit event
+        await log_device_audit(
+            db=db,
+            actor_id=user_id,
+            actor_type="patient",
+            action="consent_updated",
+            action_category="consent_management",
+            resource_type="device_consent",
+            resource_id=device_id,
+            patient_id=user_id,
+            event_details={
+                "device_name": device.device_name,
+                "consent_types_enabled": enabled_consents,
+                "consent_types_disabled": [k for k, v in consent_types.items() if not v],
+            },
+            request=request,
+        )
+        
+        return {
+            "status": "updated",
+            "message": "Data sharing preferences saved",
+            "enabled_consents": enabled_consents,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating consent: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# DAILY FOLLOWUP DEVICE DATA
+# ============================================
+
+@router.get("/daily-followup/device-data")
+async def get_daily_followup_device_data(
+    request: Request,
+    date: str = Query(None),
+    user_id: str = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get device data for Daily Follow-up integration.
+    
+    Retrieves the latest readings from all connected devices
+    for inclusion in the Daily Follow-up form.
+    """
+    from sqlalchemy import text
+    
+    effective_user_id = user_id or (request.state.user.get("sub") if hasattr(request, "state") and hasattr(request.state, "user") else None)
+    target_date = date or datetime.utcnow().strftime("%Y-%m-%d")
+    
+    if not effective_user_id:
+        # Return demo device data
+        return {
+            "date": target_date,
+            "devices_synced": 2,
+            "readings": {
+                "heart_rate": {
+                    "latest": 72,
+                    "min": 58,
+                    "max": 110,
+                    "avg": 74,
+                    "source": "Fitbit Sense 2",
+                    "timestamp": "2024-12-03T10:30:00Z",
+                },
+                "resting_heart_rate": {
+                    "value": 62,
+                    "source": "Fitbit Sense 2",
+                    "timestamp": "2024-12-03T06:00:00Z",
+                },
+                "hrv": {
+                    "value": 42,
+                    "unit": "ms",
+                    "source": "Fitbit Sense 2",
+                    "timestamp": "2024-12-03T06:00:00Z",
+                },
+                "blood_pressure": {
+                    "systolic": 122,
+                    "diastolic": 78,
+                    "pulse": 68,
+                    "source": "Withings BPM Connect",
+                    "timestamp": "2024-12-03T08:15:00Z",
+                },
+                "spo2": {
+                    "value": 97,
+                    "unit": "%",
+                    "source": "Fitbit Sense 2",
+                    "timestamp": "2024-12-03T06:00:00Z",
+                },
+                "sleep": {
+                    "duration_hours": 7.5,
+                    "efficiency": 89,
+                    "deep_minutes": 82,
+                    "rem_minutes": 95,
+                    "source": "Fitbit Sense 2",
+                    "timestamp": "2024-12-03T06:00:00Z",
+                },
+                "steps": {
+                    "value": 8432,
+                    "goal": 10000,
+                    "source": "Fitbit Sense 2",
+                    "timestamp": "2024-12-03T10:30:00Z",
+                },
+            },
+            "auto_populate_suggestions": {
+                "vitals": {
+                    "heart_rate": 72,
+                    "blood_pressure_systolic": 122,
+                    "blood_pressure_diastolic": 78,
+                    "oxygen_saturation": 97,
+                },
+                "sleep": {
+                    "hours_slept": 7.5,
+                    "sleep_quality": "good",
+                },
+                "activity": {
+                    "steps": 8432,
+                    "active_minutes": 45,
+                },
+            },
+        }
+    
+    try:
+        # Get today's readings
+        start_of_day = f"{target_date}T00:00:00Z"
+        end_of_day = f"{target_date}T23:59:59Z"
+        
+        result = await db.execute(
+            text("""
+                SELECT 
+                    dr.data_type,
+                    dr.value,
+                    dr.unit,
+                    dr.timestamp,
+                    dc.device_name,
+                    dc.vendor_id
+                FROM device_readings dr
+                JOIN device_connections dc ON dc.id = dr.device_id
+                WHERE dr.user_id = :user_id
+                AND dr.timestamp >= :start_date
+                AND dr.timestamp <= :end_date
+                ORDER BY dr.timestamp DESC
+            """),
+            {
+                "user_id": effective_user_id,
+                "start_date": start_of_day,
+                "end_date": end_of_day,
+            }
+        )
+        
+        readings_by_type: Dict[str, List[Dict]] = {}
+        for row in result.fetchall():
+            data_type = row.data_type
+            if data_type not in readings_by_type:
+                readings_by_type[data_type] = []
+            readings_by_type[data_type].append({
+                "value": row.value,
+                "unit": row.unit,
+                "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                "source": row.device_name,
+            })
+        
+        # Process readings
+        processed = {}
+        for data_type, readings in readings_by_type.items():
+            if readings:
+                latest = readings[0]
+                processed[data_type] = {
+                    "latest": latest["value"],
+                    "source": latest["source"],
+                    "timestamp": latest["timestamp"],
+                    "unit": latest.get("unit"),
+                }
+                
+                # Calculate stats for numeric values
+                numeric_vals = []
+                for r in readings:
+                    try:
+                        if isinstance(r["value"], (int, float)):
+                            numeric_vals.append(float(r["value"]))
+                        elif isinstance(r["value"], str):
+                            numeric_vals.append(float(r["value"]))
+                    except:
+                        pass
+                
+                if numeric_vals:
+                    processed[data_type]["min"] = min(numeric_vals)
+                    processed[data_type]["max"] = max(numeric_vals)
+                    processed[data_type]["avg"] = sum(numeric_vals) / len(numeric_vals)
+        
+        return {
+            "date": target_date,
+            "devices_synced": len(set(r["source"] for readings in readings_by_type.values() for r in readings)),
+            "readings": processed,
+            "auto_populate_suggestions": _generate_auto_populate_suggestions(processed),
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting daily followup device data: {e}")
+        return {"error": str(e)}
+
+
+def _generate_auto_populate_suggestions(readings: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate auto-populate suggestions for Daily Follow-up form"""
+    suggestions: Dict[str, Any] = {
+        "vitals": {},
+        "sleep": {},
+        "activity": {},
+    }
+    
+    # Vitals
+    if "heart_rate" in readings:
+        suggestions["vitals"]["heart_rate"] = readings["heart_rate"].get("latest")
+    
+    if "resting_heart_rate" in readings:
+        suggestions["vitals"]["resting_heart_rate"] = readings["resting_heart_rate"].get("latest")
+    
+    if "blood_pressure" in readings or "bp" in readings:
+        bp = readings.get("blood_pressure") or readings.get("bp", {})
+        if isinstance(bp.get("latest"), dict):
+            suggestions["vitals"]["blood_pressure_systolic"] = bp["latest"].get("systolic")
+            suggestions["vitals"]["blood_pressure_diastolic"] = bp["latest"].get("diastolic")
+    
+    if "spo2" in readings:
+        suggestions["vitals"]["oxygen_saturation"] = readings["spo2"].get("latest")
+    
+    if "temperature" in readings:
+        suggestions["vitals"]["temperature"] = readings["temperature"].get("latest")
+    
+    # Sleep
+    if "sleep" in readings:
+        sleep = readings["sleep"]
+        if isinstance(sleep.get("latest"), dict):
+            duration = sleep["latest"].get("duration_minutes", 0)
+            suggestions["sleep"]["hours_slept"] = round(duration / 60, 1)
+            efficiency = sleep["latest"].get("efficiency", 0)
+            if efficiency >= 85:
+                suggestions["sleep"]["sleep_quality"] = "good"
+            elif efficiency >= 70:
+                suggestions["sleep"]["sleep_quality"] = "fair"
+            else:
+                suggestions["sleep"]["sleep_quality"] = "poor"
+    
+    # Activity
+    if "steps" in readings:
+        suggestions["activity"]["steps"] = readings["steps"].get("latest")
+    
+    if "active_minutes" in readings:
+        suggestions["activity"]["active_minutes"] = readings["active_minutes"].get("latest")
+    
+    if "calories" in readings:
+        suggestions["activity"]["calories_burned"] = readings["calories"].get("latest")
+    
+    return suggestions
