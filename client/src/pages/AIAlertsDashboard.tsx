@@ -40,7 +40,9 @@ import {
   Droplets,
   Footprints,
   Gauge,
-  History
+  History,
+  Moon,
+  Link2
 } from "lucide-react";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -310,6 +312,71 @@ interface MLDiseaseRiskResponse {
   predicted_at: string;
   model_version: string;
 }
+
+interface DeviceHealthSection {
+  deterioration_index: number;
+  risk_score: number;
+  risk_level: string;
+  trend: string;
+  stability_score: number;
+  data_coverage: number;
+  anomalies_detected: number;
+  alert_triggered: boolean;
+}
+
+interface DeviceAnalyticsData {
+  patient_id: string;
+  generated_at: string;
+  overall_risk_score: number;
+  overall_trend: string;
+  critical_alerts: string[];
+  recommendations: string[];
+  sections: Record<string, DeviceHealthSection>;
+}
+
+const HEALTH_SECTION_CONFIG: Record<string, { 
+  label: string; 
+  icon: typeof Heart; 
+  color: string;
+  description: string;
+}> = {
+  cardiovascular: { 
+    label: "Cardiovascular", 
+    icon: Heart, 
+    color: "text-rose-500",
+    description: "Heart rate, blood pressure, HRV"
+  },
+  respiratory: { 
+    label: "Respiratory", 
+    icon: Wind, 
+    color: "text-blue-500",
+    description: "SpO2, respiratory rate, breathing patterns"
+  },
+  metabolic: { 
+    label: "Metabolic", 
+    icon: Droplets, 
+    color: "text-amber-500",
+    description: "Blood glucose, temperature, hydration"
+  },
+  activity: { 
+    label: "Activity", 
+    icon: Footprints, 
+    color: "text-green-500",
+    description: "Steps, active minutes, exercise"
+  },
+  sleep: { 
+    label: "Sleep", 
+    icon: Moon, 
+    color: "text-purple-500",
+    description: "Sleep quality, duration, stages"
+  },
+  body_composition: { 
+    label: "Body Composition", 
+    icon: Gauge, 
+    color: "text-cyan-500",
+    description: "Weight, BMI, body fat"
+  },
+};
 
 const CHART_COLORS = {
   primary: 'hsl(var(--primary))',
@@ -1411,6 +1478,260 @@ function BaselinePanel({
   );
 }
 
+function DeviceHealthSectionPanel({ 
+  analytics, 
+  isLoading 
+}: { 
+  analytics: DeviceAnalyticsData | null; 
+  isLoading: boolean;
+}) {
+  const getRiskLevelColor = (level: string) => {
+    switch (level) {
+      case 'critical': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+      case 'high': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+      case 'moderate': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+      case 'low': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+      default: return 'bg-muted text-muted-foreground';
+    }
+  };
+
+  const getTrendIcon = (trend: string) => {
+    switch (trend) {
+      case 'improving': return { icon: TrendingUp, color: 'text-green-500' };
+      case 'worsening':
+      case 'declining': return { icon: TrendingDown, color: 'text-red-500' };
+      default: return { icon: Minus, color: 'text-muted-foreground' };
+    }
+  };
+
+  const getDeteriorationColor = (index: number) => {
+    if (index >= 0.7) return 'text-red-500';
+    if (index >= 0.4) return 'text-yellow-500';
+    return 'text-green-500';
+  };
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {Array(6).fill(0).map((_, i) => (
+          <Skeleton key={i} className="h-48" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!analytics || !analytics.sections || Object.keys(analytics.sections).length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Activity className="h-16 w-16 mx-auto text-muted-foreground opacity-50 mb-4" />
+        <h3 className="text-lg font-semibold mb-2">No Device Data Available</h3>
+        <p className="text-muted-foreground mb-4">
+          Connect medical devices to view health section analytics.
+        </p>
+        <Button asChild variant="outline">
+          <Link href="/device-connect">
+            <Link2 className="h-4 w-4 mr-2" />
+            Connect Devices
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6" data-testid="device-health-sections">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="col-span-1">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Overall Device Risk</p>
+                <p className="text-3xl font-bold" data-testid="text-overall-risk">
+                  {(analytics.overall_risk_score * 100).toFixed(0)}%
+                </p>
+              </div>
+              <div className={`p-3 rounded-full ${
+                analytics.overall_risk_score >= 0.7 ? 'bg-red-100 dark:bg-red-900/30' :
+                analytics.overall_risk_score >= 0.4 ? 'bg-yellow-100 dark:bg-yellow-900/30' :
+                'bg-green-100 dark:bg-green-900/30'
+              }`}>
+                <Shield className={`h-6 w-6 ${
+                  analytics.overall_risk_score >= 0.7 ? 'text-red-500' :
+                  analytics.overall_risk_score >= 0.4 ? 'text-yellow-500' :
+                  'text-green-500'
+                }`} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="col-span-1">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Overall Trend</p>
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const { icon: TrendIconComponent, color } = getTrendIcon(analytics.overall_trend);
+                    return (
+                      <>
+                        <TrendIconComponent className={`h-6 w-6 ${color}`} />
+                        <p className="text-lg font-semibold capitalize" data-testid="text-overall-trend">
+                          {analytics.overall_trend}
+                        </p>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="col-span-1">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Critical Alerts</p>
+                <p className="text-3xl font-bold" data-testid="text-critical-count">
+                  {analytics.critical_alerts?.length || 0}
+                </p>
+              </div>
+              <div className={`p-3 rounded-full ${
+                (analytics.critical_alerts?.length || 0) > 0 
+                  ? 'bg-red-100 dark:bg-red-900/30' 
+                  : 'bg-green-100 dark:bg-green-900/30'
+              }`}>
+                <AlertTriangle className={`h-6 w-6 ${
+                  (analytics.critical_alerts?.length || 0) > 0 ? 'text-red-500' : 'text-green-500'
+                }`} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {Object.entries(analytics.sections).map(([sectionKey, section]) => {
+          const config = HEALTH_SECTION_CONFIG[sectionKey] || {
+            label: sectionKey.replace(/_/g, ' '),
+            icon: Activity,
+            color: 'text-primary',
+            description: ''
+          };
+          const SectionIcon = config.icon;
+          const { icon: TrendIconComponent, color: trendColor } = getTrendIcon(section.trend);
+
+          return (
+            <Card key={sectionKey} className="hover-elevate" data-testid={`section-card-${sectionKey}`}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-lg bg-muted`}>
+                      <SectionIcon className={`h-5 w-5 ${config.color}`} />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">{config.label}</CardTitle>
+                      <CardDescription className="text-xs">{config.description}</CardDescription>
+                    </div>
+                  </div>
+                  {section.alert_triggered && (
+                    <Badge variant="destructive" className="text-xs">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      Alert
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Risk Score</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-lg font-bold">{(section.risk_score * 100).toFixed(0)}%</p>
+                      <Badge className={`text-xs ${getRiskLevelColor(section.risk_level)}`}>
+                        {section.risk_level}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Deterioration</p>
+                    <p className={`text-lg font-bold ${getDeteriorationColor(section.deterioration_index)}`}>
+                      {(section.deterioration_index * 100).toFixed(0)}%
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Trend</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <TrendIconComponent className={`h-4 w-4 ${trendColor}`} />
+                      <p className="text-sm font-medium capitalize">{section.trend}</p>
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Stability</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <Progress value={section.stability_score * 100} className="h-2 flex-1" />
+                      <p className="text-sm font-medium">{(section.stability_score * 100).toFixed(0)}%</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
+                  <div className="flex items-center gap-1">
+                    <Activity className="h-3 w-3" />
+                    <span>Coverage: {(section.data_coverage * 100).toFixed(0)}%</span>
+                  </div>
+                  {section.anomalies_detected > 0 && (
+                    <Badge variant="outline" className="text-xs">
+                      {section.anomalies_detected} anomalies
+                    </Badge>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {analytics.recommendations && analytics.recommendations.length > 0 && (
+        <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+          <Info className="h-4 w-4 text-blue-500" />
+          <AlertTitle>Device-Based Recommendations</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
+              {analytics.recommendations.map((rec, idx) => (
+                <li key={idx}>{rec}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {analytics.critical_alerts && analytics.critical_alerts.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Critical Device Alerts</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
+              {analytics.critical_alerts.map((alert, idx) => (
+                <li key={idx}>{alert}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <p className="text-xs text-muted-foreground text-center italic">
+        Device analytics based on connected medical devices. 
+        {analytics.generated_at && ` Last updated: ${format(new Date(analytics.generated_at), 'MMM d, h:mm a')}`}
+      </p>
+    </div>
+  );
+}
+
 export default function AIAlertsDashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -1581,6 +1902,20 @@ export default function AIAlertsDashboard() {
       if (!response.ok) {
         if (response.status === 404 || response.status === 502) return null;
         throw new Error('Failed to fetch disease risk predictions');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+    staleTime: 60000,
+  });
+
+  const { data: deviceAnalytics, isLoading: loadingDeviceAnalytics, refetch: refetchDeviceAnalytics } = useQuery<DeviceAnalyticsData>({
+    queryKey: ['/api/ai-health-alerts/device-analytics', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/ai-health-alerts/device-analytics/${patientId}?days=7`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502 || response.status === 503) return null;
+        throw new Error('Failed to fetch device analytics');
       }
       return response.json();
     },
@@ -1825,10 +2160,14 @@ export default function AIAlertsDashboard() {
       </Card>
 
       <Tabs defaultValue="alerts" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="alerts" className="flex items-center gap-2" data-testid="tab-alerts">
             <Bell className="h-4 w-4" />
             Alerts {activeAlerts.length > 0 && <Badge variant="destructive" className="ml-1">{activeAlerts.length}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="devices" className="flex items-center gap-2" data-testid="tab-devices">
+            <Activity className="h-4 w-4" />
+            Device Health
           </TabsTrigger>
           <TabsTrigger value="risk" className="flex items-center gap-2" data-testid="tab-risk">
             <Shield className="h-4 w-4" />
@@ -2050,6 +2389,48 @@ export default function AIAlertsDashboard() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="devices" className="space-y-4 mt-4">
+          <Card data-testid="card-device-health">
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-primary" />
+                    Device Health Analytics
+                  </CardTitle>
+                  <CardDescription>
+                    Health metrics derived from your connected medical devices
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refetchDeviceAnalytics()}
+                    disabled={loadingDeviceAnalytics}
+                    data-testid="button-refresh-device-analytics"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-1 ${loadingDeviceAnalytics ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                  <Button asChild size="sm" data-testid="button-manage-devices">
+                    <Link href="/device-connect">
+                      <Link2 className="h-4 w-4 mr-1" />
+                      Manage Devices
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <DeviceHealthSectionPanel 
+                analytics={deviceAnalytics || null} 
+                isLoading={loadingDeviceAnalytics} 
+              />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="risk" className="space-y-4 mt-4">
