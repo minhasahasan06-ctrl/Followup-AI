@@ -1,0 +1,134 @@
+Build a full-featured, secure Device Connect page and backend that lets patients pair and manage home medical devices (smart watch, smart BP, smart scale, continuous glucose monitor, smart stethoscope, pulse oximeter, thermometer, activity trackers). Provide robust pairing UX (web + mobile), ingestion pipeline, device registry, real-time data syncing, error handling, device health, and clinician view.  produce production-ready code and deployment artifacts targeted for Neon + OpenAI BAA infra.
+
+Deliverables:
+    •    react frontend page(s): Device Center, Pair Device Wizard, Device Dashboard, Device Health view.
+    •    Backend (FastAPI): device registry API, pairing endpoints, webhook handlers, ingestion pipeline, upload presigned URL, device data normalization service.
+    •    Worker (Redis + RQ or Bull): background sync jobs, retry/error queue, periodic device health checks.
+    •    Database (Postgres / Neon): tables for devices, device_connections, device_data, device_health, vendors, permissions, audit_logs.
+    •    SDK connectors: stubs for HealthKit, Google Fit, with example for Web Bluetooth fallback and OAuth integrations for vendor APIs (Withings, Dexcom, Omron, Eko, Fitbit).
+    •    Consent UI & audit logging for PHI.
+    •    Dockerfile, env config, README for moving to HIPAA infra.
+    •    Comments marking PHI-handling points, vendor BAA reminders.
+    •    Integration tests (device onboarding flow + data ingestion simulation).
+
+Hard constraints & warnings:
+    •    Replit = development only. Do not store production PHI in Replit. Production must use HIPAA-BAA vendors (Neon Enterprise,
+    •    Many device vendors require partnership & proprietary SDKs (Dexcom, Eko, Abbott Libre). Implement generic interfaces and request vendor credentials later.
+    •    For iOS device pairing (BLE), prefer native mobile app or use HealthKit sync; Web Bluetooth on iOS is not reliable.
+
+Start building now: please scaffold the frontend & backend, wire HealthKit + Google Fit connectors, add vendor OAuth adapter templates for Withings / Fitbit / Dexcom (placeholders), implement Web Bluetooth fallback for supported devices on Chrome, and provide a simulated device generator for dev/testing.
+FULL TECHNICAL SPEC (DEVS: READ THIS)
+
+1) Frontend — react (TypeScript) pages/components
+    •    DeviceCenter (list of connected devices, add device button, device health, last sync)
+    •    PairDeviceWizard (choose device type → recommended pairing method → run pairing steps)
+    •    DeviceDashboard (per-device timeline: readings, trends, last sync, battery)
+    •    DeviceTroubleshoot (manual reconnect, logs)
+    •    ConsentModal (explicit consent per device, record timestamp & version)
+    •    IntegrationsPage (connect HealthKit / Google Fit / vendor OAuth)
+    •    WebSocket / SSE client to show live ingestion progress.
+
+Important UI behaviors:
+    •    Show clear allowed data types per device (e.g., BP: systolic/diastolic/HR/time).
+    •    Show device status: connected | disconnected | pairing | failed and battery.
+    •    Provide “simulate device” button in dev mode.
+    •    UX for native fallback: If device requires native pairing, show QR + link to install companion app (degrades gracefully).
+
+2) Backend — FastAPI (Python) or 
+
+Endpoints (examples):
+    •    POST /api/v1/devices/register — register device model in platform (vendor_id, model, capabilities)
+    •    GET  /api/v1/devices — list available device models
+    •    POST /api/v1/device-connections/create — create connection record (user_id, device_model, pairing_method)
+    •    POST /api/v1/device-connections/pair/start — returns pairing token/QR or Web Bluetooth instructions
+    •    POST /api/v1/device-connections/pair/complete — finalize pairing (store device id, credentials)
+    •    POST /api/v1/device-data/ingest — accepts normalized readings (JSON), validates, writes to DB and pushes to event stream (Redis)
+    •    GET  /api/v1/device-data/:device_id — time series / latest reading
+    •    POST /webhooks/vendor/:vendor — vendor webhook receiver (e.g., Dexcom webhook)
+    •    POST /api/v1/device/sync — on-demand sync trigger (worker job)
+    •    GET  /api/v1/device-health/:device_id — device health & last sync
+    •    POST /api/v1/device/simulate — dev only: push synthetic data
+
+Message/ingest format (normalized): {
+  "device_connection_id":"uuid",
+  "timestamp":"ISO8601",
+  "readings": {
+    "blood_pressure": { "systolic":120, "diastolic":80, "hr":72 },
+    "weight_kg": 78.4,
+    "glucose_mg_dL": 104,
+    "spo2_pct": 97,
+    "stethoscope_audio_url": "s3://.."
+  },
+  "meta": { "battery_pct": 76, "rssi": -60, "firmware":"1.2.3" }
+} 3) Worker & Sync system
+    •    Queue system (Redis + RQ or BullMQ)
+    •    Jobs:
+    •    vendor_webhook_processor — validate & normalize vendor payloads
+    •    scheduled_sync_job — run OAuth refresh + pull new data for connected vendor accounts
+    •    device_health_checker — mark stale devices & retry pairing
+    •    data_processor — compute derived metrics (rolling averages) and persist
+    •    alert_engine_publisher — push metrics to AlertEngine via event stream
+
+4) Database (Postgres / Neon)
+
+Tables (summary):
+    •    device_models (id, vendor, name, capabilities JSON, pairing_methods, docs_url)
+    •    device_connections (id, user_id, device_model_id, status, credentials_encrypted, last_sync_at, created_at)
+    •    device_data (id, device_connection_id, ts, readings JSONB, meta JSONB)
+    •    device_health (device_connection_id, battery_pct, rssi, last_seen, status, notes)
+    •    vendor_accounts (id, user_id, vendor, oauth_tokens_encrypted)
+    •    audit_logs (actor_id, action, object_type, object_id, details, ts)
+
+Encryption at rest for credentials and tokens.
+
+5) Integrations & SDKs (what to implement now)
+    •    HealthKit (iOS) — implement server endpoint to accept HealthKit export via companion iOS app. HealthKit sync is the recommended path for iOS-based devices. (Requires native app or use existing HealthKit syncing app.)
+    •    Google Fit (Android) — OAuth + subscription to Aggregated APIs; recommended for Android.
+    •    Vendor OAuth APIs (implement adapters with standard interface):
+    •    Withings (scales, BP) — OAuth + measurement API
+    •    Fitbit — OAuth + metrics
+    •    Dexcom / Libre — clinical CGM vendors: require partnership & special API flows; stubs in dev.
+    •    Omron — some models have cloud APIs; others require BLE pairing.
+    •    Eko (smart stethoscope) — Eko provides SDK & enterprise agreements; implement webhook adapter once partner access granted.
+    •    Bluetooth BLE devices — implement Web Bluetooth (Chrome/Android) fallback and native pairing recommendation for iOS.
+    •    MQTT/WebSockets for real-time vendors (some vendors push via socket).
+
+6) Web vs Native pairing notes
+    •    Web Bluetooth (Chrome): workable for many BLE devices on desktop and Android. Not reliable on iOS Safari. Use only for devices that support BLE GATT and have no vendor-cloud dependency.
+    •    Native mobile companion app: required for iOS BLE pairing. Build a thin React Native / Capacitor wrapper that:
+    •    uses CoreBluetooth / HealthKit on iOS
+    •    uses Android BLE + Google Fit on Android
+    •    can upload readings to backend (presigned URLs)
+    •    Cloud OAuth sync: prefer vendor cloud -> platform sync (Withings, Fitbit, Dexcom) over direct BLE for less complexity.
+
+⸻
+
+WHAT DEVICES TO SUPPORT (practical list + notes)
+
+Important: many medical-grade devices (CGMs, smart stethoscopes) have vendor SDKs and enterprise agreements. Treat these as integrations that require negotiation.
+
+Primary device types to include (recommended order)
+    1.    Smart Blood Pressure (BP) cuffs
+    •    Examples: Omron (various models), Withings BPM Connect
+    •    Pairing: Withings cloud (OAuth) or BLE
+    •    Data: systolic, diastolic, pulse, irregular heartbeat flag
+    2.    Smart Scales
+    •    Examples: Withings Body, Fitbit Aria (older)
+    •    Data: weight, BMI, body fat (if available)
+    3.    Continuous Glucose Monitors (CGMs) / Glucometers
+    •    Examples: Dexcom G6/7 (cloud APIs), Abbott FreeStyle Libre (requires partnership), consumer glucometers (BLE)
+    •    Note: CGMs are sensitive — vendor API access often requires contract.
+    4.    Pulse Oximeters
+    •    Consumer BLE oximeters — SpO2, PR
+    5.    Smart Thermometers
+    •    Examples: Kinsa — temp reading, trend
+    6.    Smart Stethoscopes
+    •    Examples: Eko Core — digital auscultation, requires Eko SDK and enterprise access; stethoscope audio files may be large — store raw audio securely.
+    7.    Smart Scales / Activity Trackers
+    •    Fitbit, Garmin, Apple Watch (Apple Health sync), Google Fit
+    8.    Smart Inhaler / Spirometer
+    •    Feasibility: some spirometers have cloud APIs; inhalers may have adherence sensors.
+    9.    Wearables (HR / HRV / Activity)
+    •    Apple Watch (HealthKit), Fitbit (OAuth), Garmin
+    10.    Home ECG devices
+    •    Examples: KardiaMobile (AliveCor) — requires vendor integration 11. Smart watches
