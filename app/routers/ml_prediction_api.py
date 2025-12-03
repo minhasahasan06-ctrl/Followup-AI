@@ -47,6 +47,12 @@ class DiseaseRiskRequest(BaseModel):
 class DeteriorationRequest(BaseModel):
     """Request for deterioration prediction."""
     patient_id: str = Field(..., description="Patient identifier")
+    use_ensemble: bool = Field(True, description="Use sklearn ensemble models")
+    use_news2: bool = Field(True, description="Include NEWS2 early warning score")
+    use_scale2: bool = Field(
+        False, 
+        description="Use NEWS2 SpO2 Scale 2 for COPD/hypercapnic respiratory failure patients"
+    )
 
 
 class TimeSeriesRequest(BaseModel):
@@ -187,7 +193,10 @@ async def predict_deterioration(
         service = MLPredictionService(db)
         result = await service.predict_deterioration(
             patient_id=patient_id,
-            doctor_id=doctor_id
+            doctor_id=doctor_id,
+            use_ensemble=request.use_ensemble,
+            use_news2=request.use_news2,
+            use_scale2=request.use_scale2
         )
         
         return result
@@ -465,11 +474,20 @@ async def get_disease_risk(
 @router.get("/deterioration/{patient_id}")
 async def get_deterioration(
     patient_id: str,
+    use_ensemble: bool = True,
+    use_news2: bool = True,
+    use_scale2: bool = False,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     GET endpoint for deterioration/readmission risk (frontend-compatible).
+    
+    Query Parameters:
+        use_ensemble: Use sklearn ensemble models (default: True)
+        use_news2: Include NEWS2 early warning score (default: True)
+        use_scale2: Use NEWS2 SpO2 Scale 2 for COPD patients (default: False)
+    
     Returns clinical deterioration and readmission predictions.
     """
     doctor_id = current_user.get("sub")
@@ -503,7 +521,10 @@ async def get_deterioration(
         service = MLPredictionService(db)
         result = await service.predict_deterioration(
             patient_id=patient_id,
-            doctor_id=doctor_id
+            doctor_id=doctor_id,
+            use_ensemble=use_ensemble,
+            use_news2=use_news2,
+            use_scale2=use_scale2
         )
         
         return result
