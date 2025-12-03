@@ -35,6 +35,11 @@ The backend consists of two services: a Node.js Express server (Port 5000) for c
   - Background sync worker with vendor-specific rate limiting
   - HealthKit data receiver endpoint for iOS integration
   - DEV_MODE_SECRET-gated development bypass (disabled in production)
+- **Device Data → Health Alerts → ML Training Pipeline:** Complete data flow wiring:
+  - `health_section_analytics.py`: Queries `device_readings` table with column mapping (heart_rate, bp_systolic, spo2, respiratory_rate, steps, etc.) for 6 health sections (cardiovascular, respiratory, metabolic, activity, sleep, body_composition)
+  - `ai_health_alerts.py`: `/device-data-pipeline/{patient_id}` runs HealthSectionAnalyticsEngine, computes deterioration indices/risk scores/trends, generates alerts for clinician review; `/device-analytics/{patient_id}` provides read-only analytics
+  - `ml_training.py`: `/device-data/extract` extracts device readings with consent verification (wearableData, device_readings_smartwatch, device_readings_bp, device_readings_glucose, device_readings_scale, device_readings_thermometer, device_readings_stethoscope), anonymizes patient IDs, logs HIPAA audit trail
+  - Database tables: `device_readings` (readings with specific columns), `wearable_integrations` (device pairing), `ml_training_consent` (granular consent), `ml_training_contributions` (extraction tracking), `audit_logs` (HIPAA compliance)
 - **Video Consultations:** HIPAA-compliant video conferencing.
 - **Home Clinical Exam Coach (HCEC):** AI-guided self-examinations using OpenAI Vision for metrics like respiratory rate and skin pallor.
 - **Deterioration Prediction System:** Comprehensive health change detection via baseline calculation, Z-score, anomaly detection, Bayesian risk modeling, and time-series analysis for a composite risk score.
