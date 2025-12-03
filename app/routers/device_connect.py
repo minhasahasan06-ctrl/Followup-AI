@@ -1581,6 +1581,171 @@ async def sync_healthkit_data(
     }
 
 # ============================================
+# PAIRING STATUS POLLING
+# ============================================
+
+@router.get("/pair/status/{session_id}")
+async def get_pairing_status(
+    session_id: str,
+    request: Request,
+    user_id: str = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get status of a pairing session for OAuth polling.
+    Returns current status: pending_auth, completed, failed, expired.
+    """
+    from sqlalchemy import text
+    
+    result = await db.execute(
+        text("""
+            SELECT session_status, error_code, error_message, result_device_connection_id, 
+                   expires_at, completed_at, vendor_id, device_type
+            FROM device_pairing_sessions 
+            WHERE id = :session_id AND user_id = :user_id
+        """),
+        {"session_id": session_id, "user_id": user_id}
+    )
+    session = result.fetchone()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Pairing session not found")
+    
+    # Check if session expired
+    if session.expires_at and session.expires_at < datetime.utcnow():
+        return {
+            "session_id": session_id,
+            "status": "expired",
+            "error_message": "Pairing session has expired. Please start a new pairing session.",
+        }
+    
+    return {
+        "session_id": session_id,
+        "status": session.session_status,
+        "error_code": session.error_code,
+        "error_message": session.error_message,
+        "device_connection_id": session.result_device_connection_id,
+        "vendor_id": session.vendor_id,
+        "device_type": session.device_type,
+        "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+    }
+
+# ============================================
+# WEBHOOK STATUS
+# ============================================
+
+@router.get("/webhook-status")
+async def get_webhook_status(
+    request: Request,
+    user_id: str = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get webhook status for all connected vendors.
+    Returns activity status and event counts for the current day.
+    Also includes last sync info from wearable_integrations as fallback.
+    """
+    from sqlalchemy import text
+    
+    # Get user's connected vendors with their last sync info
+    result = await db.execute(
+        text("""
+            SELECT 
+                device_type as vendor_id,
+                device_name,
+                last_synced_at,
+                last_sync_status,
+                connection_status
+            FROM wearable_integrations 
+            WHERE user_id = :user_id AND connection_status = 'connected'
+        """),
+        {"user_id": user_id}
+    )
+    connected_devices = result.fetchall()
+    
+    webhook_statuses = []
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    for device in connected_devices:
+        vendor_id = device.vendor_id
+        last_synced_at = device.last_synced_at
+        last_sync_status = device.last_sync_status
+        
+        # Try to get webhook events from device_sync_jobs
+        events_count = 0
+        last_webhook_event = None
+        webhook_errors = 0
+        
+        try:
+            events_result = await db.execute(
+                text("""
+                    SELECT COUNT(*) as event_count, MAX(created_at) as last_event
+                    FROM device_sync_jobs 
+                    WHERE job_type = 'webhook_process' 
+                    AND (metadata->>'vendor_id' = :vendor_id 
+                         OR metadata->>'device_type' = :vendor_id)
+                    AND created_at >= :today_start
+                """),
+                {"vendor_id": vendor_id, "today_start": today_start}
+            )
+            events = events_result.fetchone()
+            events_count = events.event_count if events else 0
+            last_webhook_event = events.last_event if events else None
+            
+            # Check for any webhook errors
+            error_result = await db.execute(
+                text("""
+                    SELECT COUNT(*) as error_count
+                    FROM device_sync_jobs 
+                    WHERE job_type = 'webhook_process' 
+                    AND (metadata->>'vendor_id' = :vendor_id 
+                         OR metadata->>'device_type' = :vendor_id)
+                    AND status = 'failed'
+                    AND created_at >= :today_start
+                """),
+                {"vendor_id": vendor_id, "today_start": today_start}
+            )
+            errors = error_result.fetchone()
+            webhook_errors = errors.error_count if errors else 0
+        except Exception as e:
+            # device_sync_jobs table might not exist yet - use wearable_integrations data
+            logger.debug(f"Could not query device_sync_jobs: {e}")
+        
+        # Determine status based on recent activity
+        status = "inactive"
+        last_activity = last_webhook_event or last_synced_at
+        
+        if last_activity:
+            hours_since_last = (datetime.utcnow() - last_activity).total_seconds() / 3600
+            if hours_since_last < 1:
+                status = "active"
+            elif hours_since_last < 24:
+                status = "active"
+        
+        # Check for sync errors
+        if webhook_errors > 0 or last_sync_status == 'failed':
+            status = "error"
+        
+        # If we have a recent successful sync but no webhook events, still show as active
+        if last_synced_at and last_sync_status == 'success':
+            hours_since_sync = (datetime.utcnow() - last_synced_at).total_seconds() / 3600
+            if hours_since_sync < 24 and status == "inactive":
+                status = "active"
+        
+        webhook_statuses.append({
+            "vendorId": vendor_id,
+            "deviceName": device.device_name,
+            "lastReceived": last_activity.isoformat() if last_activity else None,
+            "lastSyncedAt": last_synced_at.isoformat() if last_synced_at else None,
+            "lastSyncStatus": last_sync_status,
+            "status": status,
+            "eventsToday": events_count,
+            "errorsToday": webhook_errors,
+        })
+    
+    return webhook_statuses
+
+# ============================================
 # WEBHOOK HANDLERS
 # ============================================
 
