@@ -301,6 +301,9 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'tremor_api':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Accelerometer tremor analysis)")
+        elif router_name == 'device_connect':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Device Connect API)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

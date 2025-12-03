@@ -24,7 +24,17 @@ The backend consists of two services: a Node.js Express server (Port 5000) for c
 - **Voice-Based Followups:** OpenAI Whisper for transcription and GPT-4 for analysis.
 - **Assistant Lysa:** AI-powered appointment management, email categorization, and reminders.
 - **Secure Data Sharing:** Consent-managed, audit-logged patient record sharing.
-- **EHR & Wearable Integration:** FHIR-based integration.
+- **EHR & Wearable Integration:** FHIR-based integration with production-grade Device Connect API.
+- **Device Connect API (Python FastAPI):** Comprehensive medical device integration system with:
+  - 8 device types (smartwatch, BP monitor, glucose meter, scale, thermometer, stethoscope, pulse oximeter, activity trackers)
+  - 13 vendor integrations (Fitbit, Withings, Oura, Google Fit, Apple HealthKit, Garmin, Whoop, Dexcom, Samsung, Eko, Abbott, Omron, iHealth)
+  - OAuth, BLE, and QR code pairing methods with PKCE security
+  - FastAPI dependency injection authentication via `require_authenticated_user` on ALL endpoints
+  - HIPAA audit logging (`log_device_audit`) for all data access operations
+  - Health section analytics with per-section risk scores, trends, and deterioration indices
+  - Background sync worker with vendor-specific rate limiting
+  - HealthKit data receiver endpoint for iOS integration
+  - DEV_MODE_SECRET-gated development bypass (disabled in production)
 - **Video Consultations:** HIPAA-compliant video conferencing.
 - **Home Clinical Exam Coach (HCEC):** AI-guided self-examinations using OpenAI Vision for metrics like respiratory rate and skin pallor.
 - **Deterioration Prediction System:** Comprehensive health change detection via baseline calculation, Z-score, anomaly detection, Bayesian risk modeling, and time-series analysis for a composite risk score.

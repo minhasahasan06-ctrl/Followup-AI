@@ -25,7 +25,9 @@ function getPythonBackendUrl(url: string): string {
     normalizedUrl.startsWith("/api/v1/gait-analysis") ||
     normalizedUrl.startsWith("/api/v1/tremor") ||
     normalizedUrl.startsWith("/api/v1/automation") ||
-    normalizedUrl.startsWith("/api/v1/webhooks")
+    normalizedUrl.startsWith("/api/v1/webhooks") ||
+    normalizedUrl.startsWith("/api/v1/devices") ||
+    normalizedUrl.startsWith("/api/v1/health-analytics")
   ) {
     return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
   }
