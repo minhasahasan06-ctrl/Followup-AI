@@ -295,6 +295,7 @@ export interface IStorage {
   createConsentPermissions(permissions: any): Promise<any>;
   getConsentPermissions(assignmentId: string): Promise<any>;
   getConsentPermissionsByDoctorPatient(doctorId: string, patientId: string): Promise<any>;
+  getPatientConsentPermissions(patientId: string): Promise<any[]>;
   updateConsentPermissions(assignmentId: string, permissions: any): Promise<any>;
   
   // Daily followup operations
@@ -1305,6 +1306,14 @@ export class DatabaseStorage implements IStorage {
           eq(doctorPatientConsentPermissions.patientId, patientId)
         )
       );
+    return permissions;
+  }
+
+  async getPatientConsentPermissions(patientId: string): Promise<any[]> {
+    const permissions = await db
+      .select()
+      .from(doctorPatientConsentPermissions)
+      .where(eq(doctorPatientConsentPermissions.patientId, patientId));
     return permissions;
   }
 
