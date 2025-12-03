@@ -25,6 +25,11 @@ import json
 from app.services.feature_builder_service import FeatureBuilderService
 from app.services.audit_logger import AuditLogger
 from app.services.clinical_risk_formulas import ClinicalRiskFormulaService
+from app.services.patient_segmentation_service import (
+    PatientSegmentationService,
+    get_segmentation_service,
+    segment_patient as segment_patient_sklearn
+)
 from app.models.ml_models import MLModel, MLPrediction
 
 logger = logging.getLogger(__name__)
@@ -1155,28 +1160,85 @@ class MLPredictionService:
     async def segment_patient(
         self,
         patient_id: str,
-        doctor_id: Optional[str] = None
+        doctor_id: Optional[str] = None,
+        use_sklearn: bool = True
     ) -> Dict[str, Any]:
-        """Assign patient to health segment with frontend-compatible response."""
-        # Build features
+        """
+        Assign patient to health segment using production-grade K-Means clustering.
+        
+        Uses sklearn K-Means with:
+        - Feature importance per cluster
+        - Silhouette scoring for cluster quality
+        - Graceful fallback to centroid-based assignment
+        
+        Args:
+            patient_id: Patient identifier
+            doctor_id: Doctor requesting segmentation
+            use_sklearn: Whether to use sklearn K-Means (True) or legacy model (False)
+        
+        Returns:
+            Frontend-compatible segmentation response
+        """
         features, missing = await self.feature_builder.build_features(
             patient_id=patient_id,
             model_type="patient_segment",
             doctor_id=doctor_id
         )
         
-        segmentation = PatientSegmentationModel.segment_patient(features)
+        if use_sklearn:
+            segmentation = segment_patient_sklearn(features)
+        else:
+            legacy_result = PatientSegmentationModel.segment_patient(features)
+            segmentation = self._convert_legacy_segmentation(legacy_result)
         
-        # Log prediction
         self._log_prediction(
             patient_id=patient_id,
             prediction_type="segmentation",
-            input_data={"features_used": len(features)},
+            input_data={
+                "features_used": len(features),
+                "method": "sklearn_kmeans" if use_sklearn else "legacy_centroids"
+            },
             result=segmentation,
             doctor_id=doctor_id
         )
         
-        # Map to frontend-compatible response structure
+        segment_data = segmentation.get("segment", {})
+        
+        characteristics = []
+        for dev in segmentation.get("key_deviations", []):
+            cluster_avg = dev.get("cluster_average") or dev.get("segment_average") or 0
+            characteristics.append({
+                "feature": dev.get("feature", ""),
+                "patient_value": round(dev.get("patient_value", 0) * 100, 1),
+                "cluster_mean": round(cluster_avg * 100, 1),
+                "deviation": "high" if dev.get("direction") == "above" else "low"
+            })
+        
+        return {
+            "patient_id": patient_id,
+            "segment": {
+                "cluster_id": segment_data.get("cluster_id", 0),
+                "cluster_name": segment_data.get("cluster_name", "Unknown"),
+                "cluster_description": segment_data.get("cluster_description", ""),
+                "confidence": segment_data.get("confidence", 0.0),
+                "distance_to_centroid": segment_data.get("distance_to_centroid", 0.0),
+                "silhouette_score": segment_data.get("silhouette_score"),
+                "care_level": segment_data.get("care_level", "standard"),
+                "color": segment_data.get("color", "#6b7280"),
+                "feature_importance": segment_data.get("feature_importance", []),
+                "characteristics": characteristics,
+                "recommended_interventions": segment_data.get("recommended_interventions", [])
+            },
+            "alternative_segments": segmentation.get("alternative_segments", [])[:3],
+            "phenotype_profile": features,
+            "model_info": segmentation.get("model_info", {}),
+            "model_version": "2.0.0",
+            "segmented_at": segmentation.get("segmented_at", datetime.utcnow().isoformat()),
+            "missing_features": missing
+        }
+    
+    def _convert_legacy_segmentation(self, legacy_result: Dict) -> Dict[str, Any]:
+        """Convert legacy PatientSegmentationModel result to new format."""
         segment_id_map = {
             "wellness_engaged": 0,
             "moderate_risk": 1,
@@ -1184,49 +1246,51 @@ class MLPredictionService:
             "critical_needs": 3
         }
         
-        # Build alternative segments from distances
+        segment_id = legacy_result.get("segment_id", "wellness_engaged")
+        distances = legacy_result.get("distances", {})
+        
         alternative_segments = []
-        distances = segmentation.get("distances", {})
         for seg_name, distance in sorted(distances.items(), key=lambda x: x[1]):
-            if seg_name != segmentation.get("segment_id"):
-                # Convert distance to probability (closer = higher probability)
+            if seg_name != segment_id:
                 max_dist = max(distances.values()) if distances else 1.0
                 probability = max(0.0, 1.0 - (distance / (max_dist + 0.01)))
                 alternative_segments.append({
                     "cluster_id": segment_id_map.get(seg_name, 0),
-                    "cluster_name": PatientSegmentationModel.SEGMENT_DESCRIPTIONS.get(seg_name, {}).get("name", seg_name),
-                    "probability": round(probability, 3)
+                    "cluster_name": PatientSegmentationModel.SEGMENT_DESCRIPTIONS.get(
+                        seg_name, {}
+                    ).get("name", seg_name),
+                    "distance": distance,
+                    "relative_fit": round(probability, 3)
                 })
         
-        # Build characteristics from key_deviations
-        characteristics = []
-        for dev in segmentation.get("key_deviations", []):
-            characteristics.append({
+        key_deviations = []
+        for dev in legacy_result.get("key_deviations", []):
+            key_deviations.append({
                 "feature": dev.get("feature", ""),
-                "patient_value": dev.get("patient_value", 0) * 100,  # Denormalize for display
-                "cluster_mean": dev.get("segment_average", 0) * 100,
-                "deviation": "high" if dev.get("direction") == "above" else "low"
+                "patient_value": dev.get("patient_value", 0),
+                "cluster_average": dev.get("segment_average", 0),
+                "deviation": dev.get("deviation", 0),
+                "direction": dev.get("direction", "above")
             })
         
         return {
-            "patient_id": patient_id,
             "segment": {
-                "cluster_id": segment_id_map.get(segmentation.get("segment_id"), 0),
-                "cluster_name": segmentation.get("segment_name", "Unknown"),
-                "cluster_description": segmentation.get("description", ""),
-                "confidence": segmentation.get("confidence", 0.0),
-                "distance_to_centroid": round(distances.get(segmentation.get("segment_id"), 0), 4),
-                "percentile_in_cluster": round(np.random.uniform(40, 85), 0),  # Simulated
-                "cluster_size": np.random.randint(50, 200),  # Simulated
-                "characteristics": characteristics,
-                "similar_patients_count": np.random.randint(10, 50),  # Simulated
-                "recommended_interventions": segmentation.get("recommendations", [])
+                "cluster_id": segment_id_map.get(segment_id, 0),
+                "cluster_name": legacy_result.get("segment_name", "Unknown"),
+                "cluster_description": legacy_result.get("description", ""),
+                "confidence": legacy_result.get("confidence", 0.0),
+                "distance_to_centroid": distances.get(segment_id, 0.0),
+                "care_level": legacy_result.get("care_level", "standard"),
+                "color": legacy_result.get("color", "#6b7280"),
+                "recommended_interventions": legacy_result.get("recommendations", [])
             },
-            "alternative_segments": alternative_segments[:3],  # Top 3 alternatives
-            "phenotype_profile": features,  # Use normalized features as phenotype profile
-            "model_version": "1.0.0",
-            "segmented_at": datetime.utcnow().isoformat(),
-            "missing_features": missing
+            "alternative_segments": alternative_segments,
+            "key_deviations": key_deviations,
+            "model_info": {
+                "method": "legacy_centroids",
+                "n_clusters": 4
+            },
+            "segmented_at": datetime.utcnow().isoformat()
         }
     
     async def get_comprehensive_ml_assessment(
