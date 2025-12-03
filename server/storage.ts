@@ -235,6 +235,9 @@ import {
   paintrackSessions,
   type PaintrackSession,
   type InsertPaintrackSession,
+  deviceReadings,
+  type DeviceReading,
+  type InsertDeviceReading,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, sql, gte, lte, gt, like, ilike, inArray, between } from "drizzle-orm";
@@ -695,6 +698,22 @@ export interface IStorage {
   createPaintrackSession(session: InsertPaintrackSession): Promise<PaintrackSession>;
   getPaintrackSessions(userId: string, limit?: number): Promise<PaintrackSession[]>;
   getPaintrackSession(id: string, userId: string): Promise<PaintrackSession | undefined>;
+
+  // Device Readings operations (BP, glucose, scale, thermometer, stethoscope, smartwatch)
+  createDeviceReading(reading: InsertDeviceReading): Promise<DeviceReading>;
+  getDeviceReadings(patientId: string, options?: { 
+    deviceType?: string; 
+    limit?: number; 
+    startDate?: Date; 
+    endDate?: Date;
+  }): Promise<DeviceReading[]>;
+  getDeviceReading(id: string): Promise<DeviceReading | undefined>;
+  getLatestDeviceReading(patientId: string, deviceType: string): Promise<DeviceReading | undefined>;
+  getDeviceReadingsByType(patientId: string, deviceType: string, limit?: number): Promise<DeviceReading[]>;
+  updateDeviceReading(id: string, data: Partial<DeviceReading>): Promise<DeviceReading | undefined>;
+  deleteDeviceReading(id: string): Promise<boolean>;
+  getDeviceReadingsForHealthAlerts(patientId: string, hours?: number): Promise<DeviceReading[]>;
+  markDeviceReadingProcessedForAlerts(id: string, alertIds: string[]): Promise<DeviceReading | undefined>;
 
   // Doctor Integrations operations (per-doctor OAuth/API connections)
   getDoctorIntegrations(doctorId: string): Promise<DoctorIntegration[]>;
@@ -4443,6 +4462,111 @@ export class DatabaseStorage implements IStorage {
       .from(paintrackSessions)
       .where(and(eq(paintrackSessions.id, id), eq(paintrackSessions.userId, userId)));
     return session;
+  }
+
+  // Device Readings operations (BP, glucose, scale, thermometer, stethoscope, smartwatch)
+  async createDeviceReading(reading: InsertDeviceReading): Promise<DeviceReading> {
+    const [created] = await db.insert(deviceReadings).values(reading).returning();
+    return created;
+  }
+
+  async getDeviceReadings(patientId: string, options?: { 
+    deviceType?: string; 
+    limit?: number; 
+    startDate?: Date; 
+    endDate?: Date;
+  }): Promise<DeviceReading[]> {
+    const conditions = [eq(deviceReadings.patientId, patientId)];
+    
+    if (options?.deviceType) {
+      conditions.push(eq(deviceReadings.deviceType, options.deviceType));
+    }
+    if (options?.startDate) {
+      conditions.push(gte(deviceReadings.recordedAt, options.startDate));
+    }
+    if (options?.endDate) {
+      conditions.push(lte(deviceReadings.recordedAt, options.endDate));
+    }
+
+    return await db
+      .select()
+      .from(deviceReadings)
+      .where(and(...conditions))
+      .orderBy(desc(deviceReadings.recordedAt))
+      .limit(options?.limit || 100);
+  }
+
+  async getDeviceReading(id: string): Promise<DeviceReading | undefined> {
+    const [reading] = await db
+      .select()
+      .from(deviceReadings)
+      .where(eq(deviceReadings.id, id));
+    return reading;
+  }
+
+  async getLatestDeviceReading(patientId: string, deviceType: string): Promise<DeviceReading | undefined> {
+    const [reading] = await db
+      .select()
+      .from(deviceReadings)
+      .where(and(
+        eq(deviceReadings.patientId, patientId),
+        eq(deviceReadings.deviceType, deviceType)
+      ))
+      .orderBy(desc(deviceReadings.recordedAt))
+      .limit(1);
+    return reading;
+  }
+
+  async getDeviceReadingsByType(patientId: string, deviceType: string, limit: number = 50): Promise<DeviceReading[]> {
+    return await db
+      .select()
+      .from(deviceReadings)
+      .where(and(
+        eq(deviceReadings.patientId, patientId),
+        eq(deviceReadings.deviceType, deviceType)
+      ))
+      .orderBy(desc(deviceReadings.recordedAt))
+      .limit(limit);
+  }
+
+  async updateDeviceReading(id: string, data: Partial<DeviceReading>): Promise<DeviceReading | undefined> {
+    const [updated] = await db
+      .update(deviceReadings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(deviceReadings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDeviceReading(id: string): Promise<boolean> {
+    await db.delete(deviceReadings).where(eq(deviceReadings.id, id));
+    return true;
+  }
+
+  async getDeviceReadingsForHealthAlerts(patientId: string, hours: number = 24): Promise<DeviceReading[]> {
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    return await db
+      .select()
+      .from(deviceReadings)
+      .where(and(
+        eq(deviceReadings.patientId, patientId),
+        eq(deviceReadings.processedForAlerts, false),
+        gte(deviceReadings.recordedAt, since)
+      ))
+      .orderBy(desc(deviceReadings.recordedAt));
+  }
+
+  async markDeviceReadingProcessedForAlerts(id: string, alertIds: string[]): Promise<DeviceReading | undefined> {
+    const [updated] = await db
+      .update(deviceReadings)
+      .set({ 
+        processedForAlerts: true, 
+        alertsGenerated: alertIds,
+        updatedAt: new Date() 
+      })
+      .where(eq(deviceReadings.id, id))
+      .returning();
+    return updated;
   }
 
   // Doctor Integrations operations
