@@ -13681,6 +13681,45 @@ Provide:
     }
   });
 
+  // Proxy to Python backend for correlation insights
+  app.get('/api/ai-health-alerts/correlation-insights/:patientId', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const { days } = req.query;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const queryParams = days ? `?days=${days}` : '';
+      const response = await fetch(`${pythonBackendUrl}/api/ai-health-alerts/correlation-insights/${patientId}${queryParams}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (correlation-insights): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching correlation insights:', error);
+      res.status(502).json({ error: 'Failed to connect to correlation insights service' });
+    }
+  });
+
   // ============================================================================
   // V2 ML PREDICTION ROUTES
   // ============================================================================

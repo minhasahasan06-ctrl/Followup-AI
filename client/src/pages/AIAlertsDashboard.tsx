@@ -42,7 +42,11 @@ import {
   Gauge,
   History,
   Moon,
-  Link2
+  Link2,
+  Pill,
+  ArrowUpRight,
+  ArrowDownRight,
+  CornerUpRight
 } from "lucide-react";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -370,6 +374,74 @@ interface DevicePipelineResponse {
   alerts_generated: number;
   new_alerts: GeneratedAlertData[];
 }
+
+interface CorrelationPair {
+  metric_a: string;
+  metric_a_label: string;
+  metric_b: string;
+  metric_b_label: string;
+  correlation_coefficient: number;
+  p_value: number;
+  is_significant: boolean;
+  strength: string;
+  direction: string;
+  sample_size: number;
+  category: string;
+}
+
+interface CorrelationCategory {
+  category_name: string;
+  category_label: string;
+  category_description: string;
+  correlations: CorrelationPair[];
+  total_correlations: number;
+  significant_correlations: number;
+}
+
+interface CorrelationInsightsData {
+  patient_id: string;
+  generated_at: string;
+  categories: CorrelationCategory[];
+  summary: {
+    total_correlations: number;
+    significant_correlations: number;
+    categories_analyzed: number;
+    analysis_period_days: number;
+  };
+  recommendations: string[];
+}
+
+const CORRELATION_CATEGORY_CONFIG: Record<string, {
+  label: string;
+  icon: typeof Link2;
+  color: string;
+  bgColor: string;
+}> = {
+  symptom_medication: {
+    label: "Symptom-Medication",
+    icon: Pill,
+    color: "text-rose-500",
+    bgColor: "bg-rose-100 dark:bg-rose-900/30"
+  },
+  activity_sleep: {
+    label: "Activity-Sleep",
+    icon: Moon,
+    color: "text-purple-500",
+    bgColor: "bg-purple-100 dark:bg-purple-900/30"
+  },
+  environmental_health: {
+    label: "Environmental-Health",
+    icon: Wind,
+    color: "text-blue-500",
+    bgColor: "bg-blue-100 dark:bg-blue-900/30"
+  },
+  device_metrics: {
+    label: "Device Metrics",
+    icon: Activity,
+    color: "text-green-500",
+    bgColor: "bg-green-100 dark:bg-green-900/30"
+  }
+};
 
 const HEALTH_SECTION_CONFIG: Record<string, { 
   label: string; 
@@ -1960,6 +2032,20 @@ export default function AIAlertsDashboard() {
     staleTime: 60000,
   });
 
+  const { data: correlationInsights, isLoading: loadingCorrelations, refetch: refetchCorrelations } = useQuery<CorrelationInsightsData>({
+    queryKey: ['/api/ai-health-alerts/correlation-insights', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/ai-health-alerts/correlation-insights/${patientId}?days=30`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502 || response.status === 503) return null;
+        throw new Error('Failed to fetch correlation insights');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+    staleTime: 120000,
+  });
+
   const recalculateBaselineMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch('/api/v1/baseline/calculate/me', {
@@ -2232,7 +2318,7 @@ export default function AIAlertsDashboard() {
       </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="alerts" className="flex items-center gap-2" data-testid="tab-alerts">
             <Bell className="h-4 w-4" />
             Alerts {activeAlerts.length > 0 && <Badge variant="destructive" className="ml-1">{activeAlerts.length}</Badge>}
@@ -2240,6 +2326,13 @@ export default function AIAlertsDashboard() {
           <TabsTrigger value="devices" className="flex items-center gap-2" data-testid="tab-devices">
             <Activity className="h-4 w-4" />
             Device Health
+          </TabsTrigger>
+          <TabsTrigger value="correlations" className="flex items-center gap-2" data-testid="tab-correlations">
+            <Link2 className="h-4 w-4" />
+            Correlations
+            {correlationInsights?.summary?.significant_correlations && correlationInsights.summary.significant_correlations > 0 && (
+              <Badge variant="secondary" className="ml-1">{correlationInsights.summary.significant_correlations}</Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="risk" className="flex items-center gap-2" data-testid="tab-risk">
             <Shield className="h-4 w-4" />
@@ -2762,6 +2855,189 @@ export default function AIAlertsDashboard() {
               </Card>
             );
           })()}
+        </TabsContent>
+
+        <TabsContent value="correlations" className="space-y-4 mt-4">
+          {loadingCorrelations ? (
+            <div className="grid gap-4" data-testid="loading-correlations">
+              <Skeleton className="h-32" data-testid="skeleton-correlation-summary" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Skeleton className="h-64" data-testid="skeleton-correlation-category-1" />
+                <Skeleton className="h-64" data-testid="skeleton-correlation-category-2" />
+              </div>
+            </div>
+          ) : !correlationInsights || !correlationInsights.categories || correlationInsights.categories.length === 0 ? (
+            <Card data-testid="card-no-correlations">
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <Link2 className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2" data-testid="text-no-correlations-title">No Correlation Data Available</h3>
+                <p className="text-sm text-muted-foreground text-center max-w-md" data-testid="text-no-correlations-desc">
+                  We need more health data to identify correlations between your habits, symptoms, and device metrics.
+                  Continue logging your daily health data to enable this feature.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <Card data-testid="card-correlation-summary">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Link2 className="h-5 w-5 text-primary" />
+                        Correlation Insights Summary
+                      </CardTitle>
+                      <CardDescription>
+                        Identified patterns and relationships in your health data over the past {correlationInsights.summary.analysis_period_days} days
+                      </CardDescription>
+                    </div>
+                    {correlationInsights.generated_at && (
+                      <Badge variant="outline" className="text-xs" data-testid="badge-correlation-generated-at">
+                        <Clock className="h-3 w-3 mr-1" />
+                        {format(new Date(correlationInsights.generated_at), 'MMM d, h:mm a')}
+                      </Badge>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="p-4 rounded-lg bg-muted/50" data-testid="stat-total-correlations">
+                      <p className="text-sm text-muted-foreground">Total Correlations</p>
+                      <p className="text-2xl font-bold">{correlationInsights.summary.total_correlations}</p>
+                    </div>
+                    <div className="p-4 rounded-lg bg-green-100 dark:bg-green-900/30" data-testid="stat-significant-correlations">
+                      <p className="text-sm text-green-700 dark:text-green-300">Significant Findings</p>
+                      <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+                        {correlationInsights.summary.significant_correlations}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-lg bg-muted/50" data-testid="stat-categories-analyzed">
+                      <p className="text-sm text-muted-foreground">Categories Analyzed</p>
+                      <p className="text-2xl font-bold">{correlationInsights.summary.categories_analyzed}</p>
+                    </div>
+                    <div className="p-4 rounded-lg bg-muted/50" data-testid="stat-analysis-period">
+                      <p className="text-sm text-muted-foreground">Analysis Period</p>
+                      <p className="text-2xl font-bold">{correlationInsights.summary.analysis_period_days} days</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {correlationInsights.recommendations && correlationInsights.recommendations.length > 0 && (
+                <Card className="border-primary/30 bg-gradient-to-r from-primary/5 to-primary/10" data-testid="card-correlation-recommendations">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      AI Recommendations Based on Correlations
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {correlationInsights.recommendations.map((rec, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-sm" data-testid={`text-recommendation-${idx}`}>
+                          <CornerUpRight className="h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                          {rec}
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {correlationInsights.categories.map((category) => {
+                  const config = CORRELATION_CATEGORY_CONFIG[category.category_name] || {
+                    label: category.category_label,
+                    icon: Link2,
+                    color: "text-gray-500",
+                    bgColor: "bg-gray-100 dark:bg-gray-900/30"
+                  };
+                  const CategoryIcon = config.icon;
+
+                  return (
+                    <Card key={category.category_name} data-testid={`card-correlation-${category.category_name}`}>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center justify-between">
+                          <span className="flex items-center gap-2 text-base">
+                            <CategoryIcon className={`h-4 w-4 ${config.color}`} />
+                            {config.label}
+                          </span>
+                          <Badge variant="secondary" className="text-xs">
+                            {category.significant_correlations} significant
+                          </Badge>
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          {category.category_description}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {category.correlations.length === 0 ? (
+                          <div className="flex flex-col items-center py-6" data-testid={`empty-correlation-${category.category_name}`}>
+                            <CategoryIcon className={`h-8 w-8 ${config.color} opacity-40 mb-2`} />
+                            <p className="text-sm text-muted-foreground text-center">
+                              No correlations found in this category yet.
+                              More data may reveal patterns.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                            {category.correlations.map((corr, idx) => (
+                              <div 
+                                key={idx}
+                                className={`p-3 rounded-lg border ${corr.is_significant ? 'border-green-500/50 bg-green-50/50 dark:bg-green-900/20' : 'border-border'}`}
+                                data-testid={`correlation-pair-${category.category_name}-${idx}`}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <Badge variant="outline" className="text-xs">
+                                      {corr.metric_a_label}
+                                    </Badge>
+                                    {corr.direction === "positive" ? (
+                                      <ArrowUpRight className="h-3 w-3 text-green-500" />
+                                    ) : (
+                                      <ArrowDownRight className="h-3 w-3 text-red-500" />
+                                    )}
+                                    <Badge variant="outline" className="text-xs">
+                                      {corr.metric_b_label}
+                                    </Badge>
+                                  </div>
+                                  {corr.is_significant && (
+                                    <Badge variant="default" className="text-xs bg-green-600">
+                                      Significant
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                  <span>
+                                    r = {corr.correlation_coefficient.toFixed(3)} ({corr.strength})
+                                  </span>
+                                  <span>
+                                    p = {corr.p_value.toFixed(4)} | n = {corr.sample_size}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-end">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => refetchCorrelations()}
+                  data-testid="button-refresh-correlations"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Correlations
+                </Button>
+              </div>
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="risk" className="space-y-4 mt-4">
