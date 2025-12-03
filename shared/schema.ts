@@ -6752,6 +6752,264 @@ export const insertMlTrainingAuditLogSchema = createInsertSchema(mlTrainingAudit
 export type InsertMlTrainingAuditLog = z.infer<typeof insertMlTrainingAuditLogSchema>;
 export type MlTrainingAuditLog = typeof mlTrainingAuditLog.$inferSelect;
 
+// ============================================
+// UNIVERSAL DEVICE DATA COLLECTION SYSTEM
+// Supports: BP Monitor, Glucose Meter, Smart Scale, Thermometer, Stethoscope, Smartwatch (Whoop/Garmin/Apple/Oura/Samsung/Google)
+// ============================================
+
+// Device Readings - Universal table for all medical device data
+export const deviceReadings = pgTable("device_readings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Device identification
+  deviceType: varchar("device_type").notNull(), // 'bp_monitor', 'glucose_meter', 'smart_scale', 'thermometer', 'stethoscope', 'smartwatch'
+  deviceBrand: varchar("device_brand"), // 'whoop', 'garmin', 'apple_watch', 'oura', 'samsung', 'google', 'fitbit', 'omron', 'freestyle', 'withings', 'manual'
+  deviceModel: varchar("device_model"), // Specific model name
+  
+  // Data source
+  source: varchar("source").notNull().default("manual"), // 'manual', 'auto_sync', 'api_import'
+  wearableIntegrationId: varchar("wearable_integration_id").references(() => wearableIntegrations.id),
+  
+  // Timestamp
+  recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+  
+  // Blood Pressure Monitor Metrics
+  bpSystolic: integer("bp_systolic"), // mmHg
+  bpDiastolic: integer("bp_diastolic"), // mmHg
+  bpPulse: integer("bp_pulse"), // bpm
+  bpIrregularHeartbeat: boolean("bp_irregular_heartbeat"),
+  bpBodyPosition: varchar("bp_body_position"), // 'sitting', 'standing', 'lying'
+  bpArmUsed: varchar("bp_arm_used"), // 'left', 'right'
+  
+  // Glucose Meter Metrics
+  glucoseValue: decimal("glucose_value", { precision: 5, scale: 1 }), // mg/dL
+  glucoseContext: varchar("glucose_context"), // 'fasting', 'before_meal', 'after_meal', 'bedtime', 'random'
+  glucoseUnit: varchar("glucose_unit").default("mg/dL"), // 'mg/dL', 'mmol/L'
+  
+  // Smart Scale Metrics
+  weight: decimal("weight", { precision: 5, scale: 2 }), // kg or lbs
+  weightUnit: varchar("weight_unit").default("kg"), // 'kg', 'lbs'
+  bmi: decimal("bmi", { precision: 4, scale: 1 }),
+  bodyFatPercentage: decimal("body_fat_percentage", { precision: 4, scale: 1 }),
+  muscleMass: decimal("muscle_mass", { precision: 5, scale: 2 }),
+  boneMass: decimal("bone_mass", { precision: 4, scale: 2 }),
+  waterPercentage: decimal("water_percentage", { precision: 4, scale: 1 }),
+  visceralFat: integer("visceral_fat"), // 1-59 scale
+  metabolicAge: integer("metabolic_age"),
+  
+  // Thermometer Metrics
+  temperature: decimal("temperature", { precision: 4, scale: 1 }), // Celsius or Fahrenheit
+  temperatureUnit: varchar("temperature_unit").default("F"), // 'C', 'F'
+  temperatureLocation: varchar("temperature_location"), // 'oral', 'ear', 'forehead', 'armpit', 'rectal'
+  
+  // Stethoscope Metrics (Digital)
+  stethoscopeAudioUrl: varchar("stethoscope_audio_url"), // S3 URL for audio recording
+  stethoscopeLocation: varchar("stethoscope_location"), // 'heart', 'lungs_left', 'lungs_right', 'abdomen'
+  heartSoundsAnalysis: jsonb("heart_sounds_analysis").$type<{
+    murmurs?: boolean;
+    abnormalRhythm?: boolean;
+    s3Sound?: boolean;
+    s4Sound?: boolean;
+    notes?: string;
+  }>(),
+  lungSoundsAnalysis: jsonb("lung_sounds_analysis").$type<{
+    wheezing?: boolean;
+    crackles?: boolean;
+    rhonchi?: boolean;
+    diminished?: boolean;
+    notes?: string;
+  }>(),
+  
+  // Smartwatch - Heart/Cardiovascular Metrics
+  heartRate: integer("heart_rate"), // bpm
+  restingHeartRate: integer("resting_heart_rate"), // bpm
+  hrv: integer("hrv"), // Heart Rate Variability (ms RMSSD)
+  hrvSdnn: integer("hrv_sdnn"), // SDNN in ms
+  ecgData: jsonb("ecg_data").$type<{
+    classification?: string; // 'sinus_rhythm', 'afib', 'inconclusive'
+    heartRateDuringEcg?: number;
+    recordingUrl?: string;
+  }>(),
+  afibDetected: boolean("afib_detected"),
+  irregularRhythmAlert: boolean("irregular_rhythm_alert"),
+  heartRateZones: jsonb("heart_rate_zones").$type<{
+    resting?: number;
+    fatBurn?: number;
+    cardio?: number;
+    peak?: number;
+  }>(),
+  
+  // Smartwatch - Blood Oxygen / Respiratory
+  spo2: integer("spo2"), // Blood oxygen percentage
+  spo2Min: integer("spo2_min"),
+  respiratoryRate: integer("respiratory_rate"), // Breaths per minute
+  
+  // Smartwatch - Sleep Metrics
+  sleepDuration: integer("sleep_duration"), // Total minutes
+  sleepDeepMinutes: integer("sleep_deep_minutes"),
+  sleepRemMinutes: integer("sleep_rem_minutes"),
+  sleepLightMinutes: integer("sleep_light_minutes"),
+  sleepAwakeMinutes: integer("sleep_awake_minutes"),
+  sleepScore: integer("sleep_score"), // 0-100
+  sleepEfficiency: decimal("sleep_efficiency", { precision: 4, scale: 1 }), // Percentage
+  sleepConsistency: integer("sleep_consistency"), // 0-100
+  sleepDebt: integer("sleep_debt"), // Minutes of sleep debt
+  sleepNeed: integer("sleep_need"), // Predicted sleep need in minutes
+  
+  // Smartwatch - Recovery/Readiness Metrics (Whoop, Oura, Garmin)
+  recoveryScore: integer("recovery_score"), // 0-100 (Whoop Recovery, Oura Readiness)
+  readinessScore: integer("readiness_score"), // 0-100
+  bodyBattery: integer("body_battery"), // 0-100 (Garmin)
+  strainScore: decimal("strain_score", { precision: 3, scale: 1 }), // 0-21 (Whoop Strain)
+  stressScore: integer("stress_score"), // 0-100
+  
+  // Smartwatch - Temperature
+  skinTemperature: decimal("skin_temperature", { precision: 4, scale: 2 }), // Deviation from baseline
+  skinTempUnit: varchar("skin_temp_unit").default("C"),
+  
+  // Smartwatch - Activity/Fitness Metrics
+  steps: integer("steps"),
+  activeMinutes: integer("active_minutes"),
+  caloriesBurned: integer("calories_burned"),
+  distanceMeters: integer("distance_meters"),
+  floorsClimbed: integer("floors_climbed"),
+  standingHours: integer("standing_hours"),
+  vo2Max: decimal("vo2_max", { precision: 4, scale: 1 }), // mL/kg/min
+  trainingLoad: integer("training_load"), // Garmin Training Load
+  trainingStatus: varchar("training_status"), // 'productive', 'peaking', 'unproductive', 'recovery', 'detraining'
+  trainingReadiness: integer("training_readiness"), // 0-100
+  fitnessAge: integer("fitness_age"),
+  
+  // Smartwatch - Running/Sport Specific (Garmin)
+  runningDynamics: jsonb("running_dynamics").$type<{
+    cadence?: number;
+    strideLength?: number;
+    groundContactTime?: number;
+    verticalOscillation?: number;
+    groundContactBalance?: number;
+  }>(),
+  lactateThreshold: integer("lactate_threshold"), // bpm
+  performanceCondition: integer("performance_condition"), // -20 to +20
+  
+  // Smartwatch - Women's Health
+  cycleDay: integer("cycle_day"),
+  cyclePhase: varchar("cycle_phase"), // 'menstrual', 'follicular', 'ovulation', 'luteal'
+  predictedOvulation: timestamp("predicted_ovulation"),
+  periodLogged: boolean("period_logged"),
+  
+  // Smartwatch - Safety/Emergency
+  fallDetected: boolean("fall_detected"),
+  fallTimestamp: timestamp("fall_timestamp"),
+  emergencySOSTriggered: boolean("emergency_sos_triggered"),
+  
+  // Data routing flags (which health section this data should appear in)
+  routeToHypertension: boolean("route_to_hypertension").default(false),
+  routeToDiabetes: boolean("route_to_diabetes").default(false),
+  routeToCardiovascular: boolean("route_to_cardiovascular").default(false),
+  routeToRespiratory: boolean("route_to_respiratory").default(false),
+  routeToSleep: boolean("route_to_sleep").default(false),
+  routeToMentalHealth: boolean("route_to_mental_health").default(false),
+  routeToFitness: boolean("route_to_fitness").default(false),
+  
+  // ML/Health Alert integration
+  processedForAlerts: boolean("processed_for_alerts").default(false),
+  alertsGenerated: jsonb("alerts_generated").$type<string[]>(), // Array of alert IDs
+  contributedToMlTraining: boolean("contributed_to_ml_training").default(false),
+  
+  // Notes and metadata
+  notes: text("notes"),
+  metadata: jsonb("metadata").$type<{
+    syncBatchId?: string;
+    firmwareVersion?: string;
+    batteryLevel?: number;
+    signalQuality?: string;
+    rawData?: Record<string, unknown>;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientDateIdx: index("device_readings_patient_date_idx").on(table.patientId, table.recordedAt),
+  deviceTypeIdx: index("device_readings_device_type_idx").on(table.deviceType),
+  sourceIdx: index("device_readings_source_idx").on(table.source),
+}));
+
+export const insertDeviceReadingSchema = createInsertSchema(deviceReadings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeviceReading = z.infer<typeof insertDeviceReadingSchema>;
+export type DeviceReading = typeof deviceReadings.$inferSelect;
+
+// Device reading validation schemas for manual entry forms
+export const bpReadingSchema = z.object({
+  bpSystolic: z.number().min(60).max(250),
+  bpDiastolic: z.number().min(30).max(150),
+  bpPulse: z.number().min(30).max(220).optional(),
+  bpBodyPosition: z.enum(['sitting', 'standing', 'lying']).optional(),
+  bpArmUsed: z.enum(['left', 'right']).optional(),
+  notes: z.string().optional(),
+});
+
+export const glucoseReadingSchema = z.object({
+  glucoseValue: z.number().min(20).max(600),
+  glucoseContext: z.enum(['fasting', 'before_meal', 'after_meal', 'bedtime', 'random']),
+  glucoseUnit: z.enum(['mg/dL', 'mmol/L']).default('mg/dL'),
+  notes: z.string().optional(),
+});
+
+export const weightReadingSchema = z.object({
+  weight: z.number().min(20).max(500),
+  weightUnit: z.enum(['kg', 'lbs']).default('kg'),
+  bodyFatPercentage: z.number().min(1).max(70).optional(),
+  notes: z.string().optional(),
+});
+
+export const temperatureReadingSchema = z.object({
+  temperature: z.number().min(90).max(110), // Fahrenheit range
+  temperatureUnit: z.enum(['C', 'F']).default('F'),
+  temperatureLocation: z.enum(['oral', 'ear', 'forehead', 'armpit', 'rectal']).optional(),
+  notes: z.string().optional(),
+});
+
+export const stethoscopeReadingSchema = z.object({
+  stethoscopeLocation: z.enum(['heart', 'lungs_left', 'lungs_right', 'abdomen']),
+  stethoscopeAudioUrl: z.string().optional(),
+  heartSoundsAnalysis: z.object({
+    murmurs: z.boolean().optional(),
+    abnormalRhythm: z.boolean().optional(),
+    s3Sound: z.boolean().optional(),
+    s4Sound: z.boolean().optional(),
+    notes: z.string().optional(),
+  }).optional(),
+  lungSoundsAnalysis: z.object({
+    wheezing: z.boolean().optional(),
+    crackles: z.boolean().optional(),
+    rhonchi: z.boolean().optional(),
+    diminished: z.boolean().optional(),
+    notes: z.string().optional(),
+  }).optional(),
+  notes: z.string().optional(),
+});
+
+export const smartwatchReadingSchema = z.object({
+  heartRate: z.number().min(30).max(220).optional(),
+  restingHeartRate: z.number().min(30).max(120).optional(),
+  hrv: z.number().min(0).max(300).optional(),
+  spo2: z.number().min(70).max(100).optional(),
+  respiratoryRate: z.number().min(6).max(40).optional(),
+  sleepDuration: z.number().min(0).max(1440).optional(),
+  sleepScore: z.number().min(0).max(100).optional(),
+  recoveryScore: z.number().min(0).max(100).optional(),
+  stressScore: z.number().min(0).max(100).optional(),
+  steps: z.number().min(0).max(100000).optional(),
+  caloriesBurned: z.number().min(0).max(10000).optional(),
+  notes: z.string().optional(),
+});
+
 // Message envelope types for TypeScript
 export const messageEnvelopeSchema = z.object({
   msgId: z.string().uuid(),

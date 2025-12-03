@@ -4180,6 +4180,291 @@ All questions and discussions should be focused on this patient.`;
     }
   });
 
+  // ============== DEVICE READINGS ROUTES ==============
+  // Universal device data collection for: BP monitors, glucose meters, smart scales, 
+  // thermometers, stethoscopes, and smartwatches (Whoop, Garmin, Apple, Oura, Samsung, Google, Fitbit)
+
+  // Get all device readings for a patient with optional filtering
+  app.get('/api/device-readings', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { deviceType, limit, startDate, endDate } = req.query;
+      
+      const readings = await storage.getDeviceReadings(userId, {
+        deviceType: deviceType as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+      });
+      
+      res.json(readings);
+    } catch (error) {
+      console.error("Error fetching device readings:", error);
+      res.status(500).json({ message: "Failed to fetch device readings" });
+    }
+  });
+
+  // Get device readings by type
+  app.get('/api/device-readings/type/:deviceType', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { deviceType } = req.params;
+      const { limit } = req.query;
+      
+      const readings = await storage.getDeviceReadingsByType(
+        userId, 
+        deviceType, 
+        limit ? parseInt(limit as string) : 50
+      );
+      
+      res.json(readings);
+    } catch (error) {
+      console.error("Error fetching device readings by type:", error);
+      res.status(500).json({ message: "Failed to fetch device readings" });
+    }
+  });
+
+  // Get latest reading for a specific device type
+  app.get('/api/device-readings/latest/:deviceType', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { deviceType } = req.params;
+      
+      const reading = await storage.getLatestDeviceReading(userId, deviceType);
+      
+      if (!reading) {
+        return res.status(404).json({ message: "No readings found for this device type" });
+      }
+      
+      res.json(reading);
+    } catch (error) {
+      console.error("Error fetching latest device reading:", error);
+      res.status(500).json({ message: "Failed to fetch latest reading" });
+    }
+  });
+
+  // Get a specific reading by ID
+  app.get('/api/device-readings/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const reading = await storage.getDeviceReading(id);
+      
+      if (!reading) {
+        return res.status(404).json({ message: "Device reading not found" });
+      }
+      
+      // Verify the reading belongs to the authenticated user
+      if (reading.patientId !== req.user!.id) {
+        return res.status(403).json({ message: "Not authorized to access this reading" });
+      }
+      
+      res.json(reading);
+    } catch (error) {
+      console.error("Error fetching device reading:", error);
+      res.status(500).json({ message: "Failed to fetch device reading" });
+    }
+  });
+
+  // Create a new device reading (manual entry)
+  app.post('/api/device-readings', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { deviceType, ...readingData } = req.body;
+      
+      if (!deviceType) {
+        return res.status(400).json({ message: "Device type is required" });
+      }
+      
+      const validDeviceTypes = ['bp_monitor', 'glucose_meter', 'smart_scale', 'thermometer', 'stethoscope', 'smartwatch'];
+      if (!validDeviceTypes.includes(deviceType)) {
+        return res.status(400).json({ 
+          message: "Invalid device type", 
+          validTypes: validDeviceTypes 
+        });
+      }
+      
+      // Set routing flags based on device type
+      const routingFlags: Record<string, boolean> = {};
+      switch (deviceType) {
+        case 'bp_monitor':
+          routingFlags.routeToHypertension = true;
+          routingFlags.routeToCardiovascular = true;
+          break;
+        case 'glucose_meter':
+          routingFlags.routeToDiabetes = true;
+          break;
+        case 'smart_scale':
+          routingFlags.routeToFitness = true;
+          break;
+        case 'thermometer':
+          routingFlags.routeToCardiovascular = true;
+          break;
+        case 'stethoscope':
+          routingFlags.routeToCardiovascular = true;
+          routingFlags.routeToRespiratory = true;
+          break;
+        case 'smartwatch':
+          // Smartwatch can route to multiple sections
+          if (readingData.heartRate || readingData.hrv || readingData.ecgData) {
+            routingFlags.routeToCardiovascular = true;
+          }
+          if (readingData.spo2 || readingData.respiratoryRate) {
+            routingFlags.routeToRespiratory = true;
+          }
+          if (readingData.sleepDuration || readingData.sleepScore) {
+            routingFlags.routeToSleep = true;
+          }
+          if (readingData.steps || readingData.caloriesBurned || readingData.vo2Max) {
+            routingFlags.routeToFitness = true;
+          }
+          if (readingData.stressScore) {
+            routingFlags.routeToMentalHealth = true;
+          }
+          break;
+      }
+      
+      const reading = await storage.createDeviceReading({
+        patientId: userId,
+        deviceType,
+        source: readingData.source || 'manual',
+        recordedAt: readingData.recordedAt ? new Date(readingData.recordedAt) : new Date(),
+        ...readingData,
+        ...routingFlags,
+      });
+      
+      res.status(201).json(reading);
+    } catch (error) {
+      console.error("Error creating device reading:", error);
+      res.status(500).json({ message: "Failed to create device reading" });
+    }
+  });
+
+  // Bulk import device readings (for wearable sync)
+  app.post('/api/device-readings/bulk', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { readings } = req.body;
+      
+      if (!Array.isArray(readings) || readings.length === 0) {
+        return res.status(400).json({ message: "Readings array is required" });
+      }
+      
+      if (readings.length > 100) {
+        return res.status(400).json({ message: "Maximum 100 readings per request" });
+      }
+      
+      const createdReadings = [];
+      for (const reading of readings) {
+        const created = await storage.createDeviceReading({
+          patientId: userId,
+          source: 'auto_sync',
+          ...reading,
+          recordedAt: reading.recordedAt ? new Date(reading.recordedAt) : new Date(),
+        });
+        createdReadings.push(created);
+      }
+      
+      res.status(201).json({ 
+        success: true, 
+        count: createdReadings.length,
+        readings: createdReadings 
+      });
+    } catch (error) {
+      console.error("Error bulk importing device readings:", error);
+      res.status(500).json({ message: "Failed to import device readings" });
+    }
+  });
+
+  // Update a device reading
+  app.patch('/api/device-readings/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      
+      // Verify the reading exists and belongs to the user
+      const existing = await storage.getDeviceReading(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Device reading not found" });
+      }
+      if (existing.patientId !== userId) {
+        return res.status(403).json({ message: "Not authorized to update this reading" });
+      }
+      
+      const updated = await storage.updateDeviceReading(id, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating device reading:", error);
+      res.status(500).json({ message: "Failed to update device reading" });
+    }
+  });
+
+  // Delete a device reading
+  app.delete('/api/device-readings/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      
+      // Verify the reading exists and belongs to the user
+      const existing = await storage.getDeviceReading(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Device reading not found" });
+      }
+      if (existing.patientId !== userId) {
+        return res.status(403).json({ message: "Not authorized to delete this reading" });
+      }
+      
+      await storage.deleteDeviceReading(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting device reading:", error);
+      res.status(500).json({ message: "Failed to delete device reading" });
+    }
+  });
+
+  // Get readings summary for dashboard
+  app.get('/api/device-readings/summary', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Get latest reading for each device type
+      const deviceTypes = ['bp_monitor', 'glucose_meter', 'smart_scale', 'thermometer', 'stethoscope', 'smartwatch'];
+      const summary: Record<string, any> = {};
+      
+      for (const deviceType of deviceTypes) {
+        const latest = await storage.getLatestDeviceReading(userId, deviceType);
+        if (latest) {
+          summary[deviceType] = {
+            lastReading: latest,
+            recordedAt: latest.recordedAt,
+          };
+        }
+      }
+      
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching device readings summary:", error);
+      res.status(500).json({ message: "Failed to fetch readings summary" });
+    }
+  });
+
+  // Get unprocessed readings for health alert system
+  app.get('/api/device-readings/unprocessed', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { hours } = req.query;
+      
+      const readings = await storage.getDeviceReadingsForHealthAlerts(
+        userId, 
+        hours ? parseInt(hours as string) : 24
+      );
+      
+      res.json(readings);
+    } catch (error) {
+      console.error("Error fetching unprocessed readings:", error);
+      res.status(500).json({ message: "Failed to fetch unprocessed readings" });
+    }
+  });
+
   // ============== REFERRAL SYSTEM ROUTES ==============
 
   app.get('/api/referrals/my-code', isAuthenticated, async (req: any, res) => {
