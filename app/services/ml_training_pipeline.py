@@ -49,6 +49,12 @@ class ConsentedDataTypes:
     environmental_risk: bool = False
     medical_history: bool = False
     current_conditions: bool = False
+    device_readings_bp: bool = False
+    device_readings_glucose: bool = False
+    device_readings_scale: bool = False
+    device_readings_thermometer: bool = False
+    device_readings_stethoscope: bool = False
+    device_readings_smartwatch: bool = False
 
 
 @dataclass
@@ -1335,6 +1341,626 @@ class PatientDataExtractor:
         
         return {"features": aggregated, "count": len(rows)}
 
+    async def extract_device_readings_bp_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract blood pressure monitor device reading features"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                systolic,
+                diastolic,
+                pulse_rate,
+                irregular_heartbeat,
+                measurement_position,
+                recorded_at
+            FROM device_readings
+            WHERE patient_id = :patient_id
+            AND device_type = 'bp_monitor'
+            AND recorded_at BETWEEN :start_date AND :end_date
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        systolics = []
+        diastolics = []
+        pulse_rates = []
+        irregular_count = 0
+        
+        for row in rows:
+            if hasattr(row, 'systolic') and row.systolic:
+                systolics.append(float(row.systolic))
+            if hasattr(row, 'diastolic') and row.diastolic:
+                diastolics.append(float(row.diastolic))
+            if hasattr(row, 'pulse_rate') and row.pulse_rate:
+                pulse_rates.append(float(row.pulse_rate))
+            if hasattr(row, 'irregular_heartbeat') and row.irregular_heartbeat:
+                irregular_count += 1
+        
+        aggregated = {
+            'device_bp_readings_count': len(rows),
+            'device_bp_irregular_rate': irregular_count / len(rows) if rows else 0.0
+        }
+        if systolics:
+            aggregated['device_bp_systolic_mean'] = float(np.mean(systolics))
+            aggregated['device_bp_systolic_std'] = float(np.std(systolics))
+            aggregated['device_bp_systolic_max'] = float(np.max(systolics))
+            aggregated['device_bp_systolic_min'] = float(np.min(systolics))
+            aggregated['device_bp_systolic_trend'] = float(np.polyfit(range(len(systolics)), systolics, 1)[0]) if len(systolics) > 1 else 0.0
+        if diastolics:
+            aggregated['device_bp_diastolic_mean'] = float(np.mean(diastolics))
+            aggregated['device_bp_diastolic_std'] = float(np.std(diastolics))
+            aggregated['device_bp_diastolic_max'] = float(np.max(diastolics))
+            aggregated['device_bp_diastolic_min'] = float(np.min(diastolics))
+        if pulse_rates:
+            aggregated['device_bp_pulse_mean'] = float(np.mean(pulse_rates))
+            aggregated['device_bp_pulse_std'] = float(np.std(pulse_rates))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_device_readings_glucose_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract glucose meter device reading features"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                glucose_level,
+                meal_context,
+                ketone_level,
+                recorded_at
+            FROM device_readings
+            WHERE patient_id = :patient_id
+            AND device_type = 'glucose_meter'
+            AND recorded_at BETWEEN :start_date AND :end_date
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        glucose_levels = []
+        fasting_glucose = []
+        post_meal_glucose = []
+        ketone_levels = []
+        
+        for row in rows:
+            if hasattr(row, 'glucose_level') and row.glucose_level:
+                glucose_levels.append(float(row.glucose_level))
+                meal_context = row.meal_context if hasattr(row, 'meal_context') else None
+                if meal_context == 'fasting':
+                    fasting_glucose.append(float(row.glucose_level))
+                elif meal_context in ['after_meal', 'post_meal']:
+                    post_meal_glucose.append(float(row.glucose_level))
+            if hasattr(row, 'ketone_level') and row.ketone_level:
+                ketone_levels.append(float(row.ketone_level))
+        
+        aggregated = {
+            'device_glucose_readings_count': len(rows)
+        }
+        if glucose_levels:
+            aggregated['device_glucose_mean'] = float(np.mean(glucose_levels))
+            aggregated['device_glucose_std'] = float(np.std(glucose_levels))
+            aggregated['device_glucose_max'] = float(np.max(glucose_levels))
+            aggregated['device_glucose_min'] = float(np.min(glucose_levels))
+            aggregated['device_glucose_trend'] = float(np.polyfit(range(len(glucose_levels)), glucose_levels, 1)[0]) if len(glucose_levels) > 1 else 0.0
+        if fasting_glucose:
+            aggregated['device_glucose_fasting_mean'] = float(np.mean(fasting_glucose))
+        if post_meal_glucose:
+            aggregated['device_glucose_postmeal_mean'] = float(np.mean(post_meal_glucose))
+        if ketone_levels:
+            aggregated['device_ketone_mean'] = float(np.mean(ketone_levels))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_device_readings_scale_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract smart scale device reading features"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                weight,
+                body_fat_percentage,
+                muscle_mass,
+                bone_mass,
+                body_water_percentage,
+                visceral_fat,
+                bmi,
+                bmr,
+                metabolic_age,
+                recorded_at
+            FROM device_readings
+            WHERE patient_id = :patient_id
+            AND device_type = 'smart_scale'
+            AND recorded_at BETWEEN :start_date AND :end_date
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        weights = []
+        body_fats = []
+        muscle_masses = []
+        bmis = []
+        visceral_fats = []
+        
+        for row in rows:
+            if hasattr(row, 'weight') and row.weight:
+                weights.append(float(row.weight))
+            if hasattr(row, 'body_fat_percentage') and row.body_fat_percentage:
+                body_fats.append(float(row.body_fat_percentage))
+            if hasattr(row, 'muscle_mass') and row.muscle_mass:
+                muscle_masses.append(float(row.muscle_mass))
+            if hasattr(row, 'bmi') and row.bmi:
+                bmis.append(float(row.bmi))
+            if hasattr(row, 'visceral_fat') and row.visceral_fat:
+                visceral_fats.append(float(row.visceral_fat))
+        
+        aggregated = {
+            'device_scale_readings_count': len(rows)
+        }
+        if weights:
+            aggregated['device_weight_mean'] = float(np.mean(weights))
+            aggregated['device_weight_std'] = float(np.std(weights))
+            aggregated['device_weight_trend'] = float(np.polyfit(range(len(weights)), weights, 1)[0]) if len(weights) > 1 else 0.0
+            aggregated['device_weight_latest'] = weights[-1]
+        if body_fats:
+            aggregated['device_body_fat_mean'] = float(np.mean(body_fats))
+            aggregated['device_body_fat_trend'] = float(np.polyfit(range(len(body_fats)), body_fats, 1)[0]) if len(body_fats) > 1 else 0.0
+        if muscle_masses:
+            aggregated['device_muscle_mass_mean'] = float(np.mean(muscle_masses))
+        if bmis:
+            aggregated['device_bmi_mean'] = float(np.mean(bmis))
+            aggregated['device_bmi_latest'] = bmis[-1]
+        if visceral_fats:
+            aggregated['device_visceral_fat_mean'] = float(np.mean(visceral_fats))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_device_readings_thermometer_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract thermometer device reading features"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                temperature,
+                measurement_site,
+                recorded_at
+            FROM device_readings
+            WHERE patient_id = :patient_id
+            AND device_type = 'thermometer'
+            AND recorded_at BETWEEN :start_date AND :end_date
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        temperatures = []
+        fever_count = 0
+        
+        for row in rows:
+            if hasattr(row, 'temperature') and row.temperature:
+                temp = float(row.temperature)
+                temperatures.append(temp)
+                if temp >= 38.0:
+                    fever_count += 1
+        
+        aggregated = {
+            'device_temp_readings_count': len(rows),
+            'device_temp_fever_rate': fever_count / len(rows) if rows else 0.0
+        }
+        if temperatures:
+            aggregated['device_temp_mean'] = float(np.mean(temperatures))
+            aggregated['device_temp_std'] = float(np.std(temperatures))
+            aggregated['device_temp_max'] = float(np.max(temperatures))
+            aggregated['device_temp_min'] = float(np.min(temperatures))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_device_readings_stethoscope_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract digital stethoscope device reading features"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                heart_rate,
+                respiratory_rate,
+                heart_sounds_abnormal,
+                lung_sounds_abnormal,
+                murmur_detected,
+                arrhythmia_detected,
+                recorded_at
+            FROM device_readings
+            WHERE patient_id = :patient_id
+            AND device_type = 'stethoscope'
+            AND recorded_at BETWEEN :start_date AND :end_date
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        heart_rates = []
+        resp_rates = []
+        abnormal_heart = 0
+        abnormal_lung = 0
+        murmur_count = 0
+        arrhythmia_count = 0
+        
+        for row in rows:
+            if hasattr(row, 'heart_rate') and row.heart_rate:
+                heart_rates.append(float(row.heart_rate))
+            if hasattr(row, 'respiratory_rate') and row.respiratory_rate:
+                resp_rates.append(float(row.respiratory_rate))
+            if hasattr(row, 'heart_sounds_abnormal') and row.heart_sounds_abnormal:
+                abnormal_heart += 1
+            if hasattr(row, 'lung_sounds_abnormal') and row.lung_sounds_abnormal:
+                abnormal_lung += 1
+            if hasattr(row, 'murmur_detected') and row.murmur_detected:
+                murmur_count += 1
+            if hasattr(row, 'arrhythmia_detected') and row.arrhythmia_detected:
+                arrhythmia_count += 1
+        
+        aggregated = {
+            'device_stethoscope_readings_count': len(rows),
+            'device_stethoscope_abnormal_heart_rate': abnormal_heart / len(rows) if rows else 0.0,
+            'device_stethoscope_abnormal_lung_rate': abnormal_lung / len(rows) if rows else 0.0,
+            'device_stethoscope_murmur_rate': murmur_count / len(rows) if rows else 0.0,
+            'device_stethoscope_arrhythmia_rate': arrhythmia_count / len(rows) if rows else 0.0
+        }
+        if heart_rates:
+            aggregated['device_stethoscope_hr_mean'] = float(np.mean(heart_rates))
+            aggregated['device_stethoscope_hr_std'] = float(np.std(heart_rates))
+        if resp_rates:
+            aggregated['device_stethoscope_rr_mean'] = float(np.mean(resp_rates))
+            aggregated['device_stethoscope_rr_std'] = float(np.std(resp_rates))
+        
+        return {"features": aggregated, "count": len(rows)}
+
+    async def extract_device_readings_smartwatch_features(
+        self,
+        patient_id: str,
+        date_range: Tuple[datetime, datetime]
+    ) -> Dict[str, Any]:
+        """Extract smartwatch device reading features (50+ metrics)"""
+        
+        start_date, end_date = date_range
+        
+        query = text("""
+            SELECT 
+                heart_rate,
+                resting_heart_rate,
+                hrv,
+                spo2,
+                respiratory_rate,
+                sleep_score,
+                sleep_duration,
+                deep_sleep_duration,
+                rem_sleep_duration,
+                light_sleep_duration,
+                awake_duration,
+                steps,
+                active_minutes,
+                calories_burned,
+                vo2_max,
+                stress_score,
+                recovery_score,
+                readiness_score,
+                body_battery,
+                skin_temperature_deviation,
+                afib_detected,
+                irregular_rhythm_detected,
+                blood_pressure_trend,
+                menstrual_cycle_day,
+                cycle_phase,
+                fall_detected,
+                ecg_classification,
+                training_load,
+                training_effect,
+                recorded_at
+            FROM device_readings
+            WHERE patient_id = :patient_id
+            AND device_type = 'smartwatch'
+            AND recorded_at BETWEEN :start_date AND :end_date
+            ORDER BY recorded_at
+        """)
+        
+        try:
+            result = await self.db.execute(query, {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            rows = result.fetchall()
+        except Exception:
+            return {"features": None, "count": 0}
+        
+        if not rows:
+            return {"features": None, "count": 0}
+        
+        heart_rates = []
+        resting_hrs = []
+        hrvs = []
+        spo2s = []
+        resp_rates = []
+        sleep_scores = []
+        sleep_durations = []
+        steps = []
+        active_mins = []
+        calories = []
+        vo2_maxs = []
+        stress_scores = []
+        recovery_scores = []
+        readiness_scores = []
+        body_batteries = []
+        skin_temp_devs = []
+        afib_count = 0
+        irregular_count = 0
+        fall_count = 0
+        
+        deep_sleeps = []
+        rem_sleeps = []
+        light_sleeps = []
+        awake_durations = []
+        training_loads = []
+        training_effects = []
+        ecg_normal_count = 0
+        ecg_afib_count = 0
+        ecg_inconclusive_count = 0
+        
+        for row in rows:
+            if hasattr(row, 'heart_rate') and row.heart_rate:
+                heart_rates.append(float(row.heart_rate))
+            if hasattr(row, 'resting_heart_rate') and row.resting_heart_rate:
+                resting_hrs.append(float(row.resting_heart_rate))
+            if hasattr(row, 'hrv') and row.hrv:
+                hrvs.append(float(row.hrv))
+            if hasattr(row, 'spo2') and row.spo2:
+                spo2s.append(float(row.spo2))
+            if hasattr(row, 'respiratory_rate') and row.respiratory_rate:
+                resp_rates.append(float(row.respiratory_rate))
+            if hasattr(row, 'sleep_score') and row.sleep_score:
+                sleep_scores.append(float(row.sleep_score))
+            if hasattr(row, 'sleep_duration') and row.sleep_duration:
+                sleep_durations.append(float(row.sleep_duration))
+            if hasattr(row, 'deep_sleep_duration') and row.deep_sleep_duration:
+                deep_sleeps.append(float(row.deep_sleep_duration))
+            if hasattr(row, 'rem_sleep_duration') and row.rem_sleep_duration:
+                rem_sleeps.append(float(row.rem_sleep_duration))
+            if hasattr(row, 'light_sleep_duration') and row.light_sleep_duration:
+                light_sleeps.append(float(row.light_sleep_duration))
+            if hasattr(row, 'awake_duration') and row.awake_duration:
+                awake_durations.append(float(row.awake_duration))
+            if hasattr(row, 'steps') and row.steps:
+                steps.append(float(row.steps))
+            if hasattr(row, 'active_minutes') and row.active_minutes:
+                active_mins.append(float(row.active_minutes))
+            if hasattr(row, 'calories_burned') and row.calories_burned:
+                calories.append(float(row.calories_burned))
+            if hasattr(row, 'vo2_max') and row.vo2_max:
+                vo2_maxs.append(float(row.vo2_max))
+            if hasattr(row, 'stress_score') and row.stress_score:
+                stress_scores.append(float(row.stress_score))
+            if hasattr(row, 'recovery_score') and row.recovery_score:
+                recovery_scores.append(float(row.recovery_score))
+            if hasattr(row, 'readiness_score') and row.readiness_score:
+                readiness_scores.append(float(row.readiness_score))
+            if hasattr(row, 'body_battery') and row.body_battery:
+                body_batteries.append(float(row.body_battery))
+            if hasattr(row, 'skin_temperature_deviation') and row.skin_temperature_deviation:
+                skin_temp_devs.append(float(row.skin_temperature_deviation))
+            if hasattr(row, 'training_load') and row.training_load:
+                training_loads.append(float(row.training_load))
+            if hasattr(row, 'training_effect') and row.training_effect:
+                training_effects.append(float(row.training_effect))
+            if hasattr(row, 'afib_detected') and row.afib_detected:
+                afib_count += 1
+            if hasattr(row, 'irregular_rhythm_detected') and row.irregular_rhythm_detected:
+                irregular_count += 1
+            if hasattr(row, 'fall_detected') and row.fall_detected:
+                fall_count += 1
+            if hasattr(row, 'ecg_classification') and row.ecg_classification:
+                ecg = str(row.ecg_classification).lower()
+                if 'normal' in ecg or 'sinus' in ecg:
+                    ecg_normal_count += 1
+                elif 'afib' in ecg or 'fibrillation' in ecg:
+                    ecg_afib_count += 1
+                else:
+                    ecg_inconclusive_count += 1
+        
+        aggregated = {
+            'device_smartwatch_readings_count': len(rows),
+            'device_smartwatch_afib_rate': afib_count / len(rows) if rows else 0.0,
+            'device_smartwatch_irregular_rhythm_rate': irregular_count / len(rows) if rows else 0.0,
+            'device_smartwatch_fall_rate': fall_count / len(rows) if rows else 0.0,
+            'device_smartwatch_ecg_normal_rate': ecg_normal_count / len(rows) if rows else 0.0,
+            'device_smartwatch_ecg_afib_rate': ecg_afib_count / len(rows) if rows else 0.0,
+            'device_smartwatch_ecg_inconclusive_rate': ecg_inconclusive_count / len(rows) if rows else 0.0
+        }
+        
+        if heart_rates:
+            aggregated['device_smartwatch_hr_mean'] = float(np.mean(heart_rates))
+            aggregated['device_smartwatch_hr_std'] = float(np.std(heart_rates))
+            aggregated['device_smartwatch_hr_max'] = float(np.max(heart_rates))
+            aggregated['device_smartwatch_hr_min'] = float(np.min(heart_rates))
+            aggregated['device_smartwatch_hr_range'] = float(np.max(heart_rates) - np.min(heart_rates))
+            aggregated['device_smartwatch_hr_trend'] = float(np.polyfit(range(len(heart_rates)), heart_rates, 1)[0]) if len(heart_rates) > 1 else 0.0
+        if resting_hrs:
+            aggregated['device_smartwatch_rhr_mean'] = float(np.mean(resting_hrs))
+            aggregated['device_smartwatch_rhr_std'] = float(np.std(resting_hrs))
+            aggregated['device_smartwatch_rhr_min'] = float(np.min(resting_hrs))
+            aggregated['device_smartwatch_rhr_max'] = float(np.max(resting_hrs))
+            aggregated['device_smartwatch_rhr_trend'] = float(np.polyfit(range(len(resting_hrs)), resting_hrs, 1)[0]) if len(resting_hrs) > 1 else 0.0
+        if hrvs:
+            aggregated['device_smartwatch_hrv_mean'] = float(np.mean(hrvs))
+            aggregated['device_smartwatch_hrv_std'] = float(np.std(hrvs))
+            aggregated['device_smartwatch_hrv_min'] = float(np.min(hrvs))
+            aggregated['device_smartwatch_hrv_max'] = float(np.max(hrvs))
+            aggregated['device_smartwatch_hrv_trend'] = float(np.polyfit(range(len(hrvs)), hrvs, 1)[0]) if len(hrvs) > 1 else 0.0
+            aggregated['device_smartwatch_hrv_coefficient_variation'] = float(np.std(hrvs) / np.mean(hrvs)) if np.mean(hrvs) > 0 else 0.0
+        if spo2s:
+            aggregated['device_smartwatch_spo2_mean'] = float(np.mean(spo2s))
+            aggregated['device_smartwatch_spo2_std'] = float(np.std(spo2s))
+            aggregated['device_smartwatch_spo2_min'] = float(np.min(spo2s))
+            aggregated['device_smartwatch_spo2_max'] = float(np.max(spo2s))
+            aggregated['device_smartwatch_spo2_below_95_rate'] = sum(1 for s in spo2s if s < 95) / len(spo2s)
+        if resp_rates:
+            aggregated['device_smartwatch_rr_mean'] = float(np.mean(resp_rates))
+            aggregated['device_smartwatch_rr_std'] = float(np.std(resp_rates))
+            aggregated['device_smartwatch_rr_min'] = float(np.min(resp_rates))
+            aggregated['device_smartwatch_rr_max'] = float(np.max(resp_rates))
+        if sleep_scores:
+            aggregated['device_smartwatch_sleep_score_mean'] = float(np.mean(sleep_scores))
+            aggregated['device_smartwatch_sleep_score_std'] = float(np.std(sleep_scores))
+            aggregated['device_smartwatch_sleep_score_min'] = float(np.min(sleep_scores))
+            aggregated['device_smartwatch_sleep_score_max'] = float(np.max(sleep_scores))
+            aggregated['device_smartwatch_sleep_score_trend'] = float(np.polyfit(range(len(sleep_scores)), sleep_scores, 1)[0]) if len(sleep_scores) > 1 else 0.0
+        if sleep_durations:
+            aggregated['device_smartwatch_sleep_duration_mean'] = float(np.mean(sleep_durations))
+            aggregated['device_smartwatch_sleep_duration_std'] = float(np.std(sleep_durations))
+            aggregated['device_smartwatch_sleep_duration_total'] = float(sum(sleep_durations))
+        if deep_sleeps:
+            aggregated['device_smartwatch_deep_sleep_mean'] = float(np.mean(deep_sleeps))
+            aggregated['device_smartwatch_deep_sleep_ratio'] = float(np.mean(deep_sleeps)) / float(np.mean(sleep_durations)) if sleep_durations and np.mean(sleep_durations) > 0 else 0.0
+        if rem_sleeps:
+            aggregated['device_smartwatch_rem_sleep_mean'] = float(np.mean(rem_sleeps))
+            aggregated['device_smartwatch_rem_sleep_ratio'] = float(np.mean(rem_sleeps)) / float(np.mean(sleep_durations)) if sleep_durations and np.mean(sleep_durations) > 0 else 0.0
+        if light_sleeps:
+            aggregated['device_smartwatch_light_sleep_mean'] = float(np.mean(light_sleeps))
+        if awake_durations:
+            aggregated['device_smartwatch_awake_mean'] = float(np.mean(awake_durations))
+            aggregated['device_smartwatch_sleep_efficiency'] = 1.0 - (float(np.mean(awake_durations)) / float(np.mean(sleep_durations))) if sleep_durations and np.mean(sleep_durations) > 0 else 0.0
+        if steps:
+            aggregated['device_smartwatch_steps_mean'] = float(np.mean(steps))
+            aggregated['device_smartwatch_steps_std'] = float(np.std(steps))
+            aggregated['device_smartwatch_steps_total'] = float(sum(steps))
+            aggregated['device_smartwatch_steps_max'] = float(np.max(steps))
+            aggregated['device_smartwatch_steps_trend'] = float(np.polyfit(range(len(steps)), steps, 1)[0]) if len(steps) > 1 else 0.0
+        if active_mins:
+            aggregated['device_smartwatch_active_mins_mean'] = float(np.mean(active_mins))
+            aggregated['device_smartwatch_active_mins_total'] = float(sum(active_mins))
+            aggregated['device_smartwatch_active_mins_max'] = float(np.max(active_mins))
+        if calories:
+            aggregated['device_smartwatch_calories_mean'] = float(np.mean(calories))
+            aggregated['device_smartwatch_calories_total'] = float(sum(calories))
+        if vo2_maxs:
+            aggregated['device_smartwatch_vo2max_mean'] = float(np.mean(vo2_maxs))
+            aggregated['device_smartwatch_vo2max_latest'] = vo2_maxs[-1] if vo2_maxs else 0.0
+            aggregated['device_smartwatch_vo2max_trend'] = float(np.polyfit(range(len(vo2_maxs)), vo2_maxs, 1)[0]) if len(vo2_maxs) > 1 else 0.0
+        if stress_scores:
+            aggregated['device_smartwatch_stress_mean'] = float(np.mean(stress_scores))
+            aggregated['device_smartwatch_stress_std'] = float(np.std(stress_scores))
+            aggregated['device_smartwatch_stress_max'] = float(np.max(stress_scores))
+            aggregated['device_smartwatch_stress_min'] = float(np.min(stress_scores))
+            aggregated['device_smartwatch_high_stress_rate'] = sum(1 for s in stress_scores if s > 75) / len(stress_scores)
+        if recovery_scores:
+            aggregated['device_smartwatch_recovery_mean'] = float(np.mean(recovery_scores))
+            aggregated['device_smartwatch_recovery_std'] = float(np.std(recovery_scores))
+            aggregated['device_smartwatch_recovery_min'] = float(np.min(recovery_scores))
+            aggregated['device_smartwatch_recovery_trend'] = float(np.polyfit(range(len(recovery_scores)), recovery_scores, 1)[0]) if len(recovery_scores) > 1 else 0.0
+        if readiness_scores:
+            aggregated['device_smartwatch_readiness_mean'] = float(np.mean(readiness_scores))
+            aggregated['device_smartwatch_readiness_std'] = float(np.std(readiness_scores))
+            aggregated['device_smartwatch_readiness_min'] = float(np.min(readiness_scores))
+            aggregated['device_smartwatch_low_readiness_rate'] = sum(1 for r in readiness_scores if r < 50) / len(readiness_scores)
+        if body_batteries:
+            aggregated['device_smartwatch_body_battery_mean'] = float(np.mean(body_batteries))
+            aggregated['device_smartwatch_body_battery_std'] = float(np.std(body_batteries))
+            aggregated['device_smartwatch_body_battery_min'] = float(np.min(body_batteries))
+            aggregated['device_smartwatch_body_battery_max'] = float(np.max(body_batteries))
+            aggregated['device_smartwatch_body_battery_range'] = float(np.max(body_batteries) - np.min(body_batteries))
+        if skin_temp_devs:
+            aggregated['device_smartwatch_skin_temp_dev_mean'] = float(np.mean(skin_temp_devs))
+            aggregated['device_smartwatch_skin_temp_dev_std'] = float(np.std(skin_temp_devs))
+            aggregated['device_smartwatch_skin_temp_dev_max'] = float(np.max(skin_temp_devs))
+            aggregated['device_smartwatch_elevated_temp_rate'] = sum(1 for t in skin_temp_devs if t > 0.5) / len(skin_temp_devs)
+        if training_loads:
+            aggregated['device_smartwatch_training_load_mean'] = float(np.mean(training_loads))
+            aggregated['device_smartwatch_training_load_total'] = float(sum(training_loads))
+            aggregated['device_smartwatch_training_load_trend'] = float(np.polyfit(range(len(training_loads)), training_loads, 1)[0]) if len(training_loads) > 1 else 0.0
+        if training_effects:
+            aggregated['device_smartwatch_training_effect_mean'] = float(np.mean(training_effects))
+            aggregated['device_smartwatch_training_effect_max'] = float(np.max(training_effects))
+        
+        return {"features": aggregated, "count": len(rows)}
+
 
 class FeatureEngineeringPipeline:
     """Feature engineering and preprocessing pipeline"""
@@ -1378,7 +2004,9 @@ class FeatureEngineeringPipeline:
             'connected_apps', 'wearable_devices',
             'wearable_heart', 'wearable_activity', 'wearable_sleep',
             'wearable_oxygen', 'wearable_stress',
-            'environmental_risk', 'medical_history', 'current_conditions'
+            'environmental_risk', 'medical_history', 'current_conditions',
+            'device_readings_bp', 'device_readings_glucose', 'device_readings_scale',
+            'device_readings_thermometer', 'device_readings_stethoscope', 'device_readings_smartwatch'
         ]
         
         for category in feature_order:
@@ -1533,6 +2161,22 @@ class MLTrainingPipeline:
                 record_counts = {}
                 data_types = patient['data_types']
                 
+                consented_device_types = []
+                skipped_device_types = []
+                device_type_keys = [
+                    'device_readings_bp', 'device_readings_glucose', 'device_readings_scale',
+                    'device_readings_thermometer', 'device_readings_stethoscope', 'device_readings_smartwatch'
+                ]
+                for dt_key in device_type_keys:
+                    camel_key = ''.join(word.capitalize() if i else word for i, word in enumerate(dt_key.split('_')))
+                    if data_types.get(dt_key, False) or data_types.get(camel_key, False):
+                        consented_device_types.append(dt_key)
+                    else:
+                        skipped_device_types.append(dt_key)
+                
+                if skipped_device_types:
+                    logger.debug(f"Patient {patient_hash[:8]} skipped device types (no consent): {skipped_device_types}")
+                
                 if data_types.get('vitals', False):
                     result = await self.data_extractor.extract_vitals_features(
                         patient['patient_id'], date_range
@@ -1685,7 +2329,72 @@ class MLTrainingPipeline:
                         extracted['lab_results'] = result
                         record_counts['lab_results'] = result['count']
                 
+                if data_types.get('device_readings_bp', False) or data_types.get('deviceReadingsBp', False):
+                    result = await self.data_extractor.extract_device_readings_bp_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['device_readings_bp'] = result
+                        record_counts['device_readings_bp'] = result['count']
+                
+                if data_types.get('device_readings_glucose', False) or data_types.get('deviceReadingsGlucose', False):
+                    result = await self.data_extractor.extract_device_readings_glucose_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['device_readings_glucose'] = result
+                        record_counts['device_readings_glucose'] = result['count']
+                
+                if data_types.get('device_readings_scale', False) or data_types.get('deviceReadingsScale', False):
+                    result = await self.data_extractor.extract_device_readings_scale_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['device_readings_scale'] = result
+                        record_counts['device_readings_scale'] = result['count']
+                
+                if data_types.get('device_readings_thermometer', False) or data_types.get('deviceReadingsThermometer', False):
+                    result = await self.data_extractor.extract_device_readings_thermometer_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['device_readings_thermometer'] = result
+                        record_counts['device_readings_thermometer'] = result['count']
+                
+                if data_types.get('device_readings_stethoscope', False) or data_types.get('deviceReadingsStethoscope', False):
+                    result = await self.data_extractor.extract_device_readings_stethoscope_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['device_readings_stethoscope'] = result
+                        record_counts['device_readings_stethoscope'] = result['count']
+                
+                if data_types.get('device_readings_smartwatch', False) or data_types.get('deviceReadingsSmartwatch', False):
+                    result = await self.data_extractor.extract_device_readings_smartwatch_features(
+                        patient['patient_id'], date_range
+                    )
+                    if result['features']:
+                        extracted['device_readings_smartwatch'] = result
+                        record_counts['device_readings_smartwatch'] = result['count']
+                
                 if extracted:
+                    included_device_types = [k for k in extracted.keys() if k.startswith('device_readings_')]
+                    if included_device_types or consented_device_types:
+                        await self.audit_logger.log_event(
+                            event_type="device_data_consent_verification",
+                            event_category="training",
+                            actor_id=None,
+                            actor_type="system",
+                            resource_type="patient_data",
+                            patient_id_hash=patient_hash,
+                            event_details={
+                                "consented_device_types": consented_device_types,
+                                "extracted_device_types": included_device_types,
+                                "skipped_device_types": skipped_device_types,
+                                "device_record_counts": {k: v for k, v in record_counts.items() if k.startswith('device_readings_')}
+                            }
+                        )
+                    
                     feature_vector, feature_names = self.feature_pipeline.create_feature_vector(extracted)
                     
                     contribution = PatientDataContribution(
@@ -1710,7 +2419,13 @@ class MLTrainingPipeline:
                             wearable_stress=data_types.get('wearable_stress', False),
                             environmental_risk=data_types.get('environmental_risk', False),
                             medical_history=data_types.get('medical_history', False),
-                            current_conditions=data_types.get('current_conditions', False)
+                            current_conditions=data_types.get('current_conditions', False),
+                            device_readings_bp=data_types.get('device_readings_bp', False) or data_types.get('deviceReadingsBp', False),
+                            device_readings_glucose=data_types.get('device_readings_glucose', False) or data_types.get('deviceReadingsGlucose', False),
+                            device_readings_scale=data_types.get('device_readings_scale', False) or data_types.get('deviceReadingsScale', False),
+                            device_readings_thermometer=data_types.get('device_readings_thermometer', False) or data_types.get('deviceReadingsThermometer', False),
+                            device_readings_stethoscope=data_types.get('device_readings_stethoscope', False) or data_types.get('deviceReadingsStethoscope', False),
+                            device_readings_smartwatch=data_types.get('device_readings_smartwatch', False) or data_types.get('deviceReadingsSmartwatch', False)
                         ),
                         anonymization_level=patient['anonymization_level'] or 'full',
                         record_counts=record_counts,

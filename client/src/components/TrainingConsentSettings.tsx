@@ -50,7 +50,10 @@ import {
   Footprints,
   Moon,
   Zap,
-  Thermometer
+  Thermometer,
+  Droplet,
+  Scale,
+  Timer
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -206,6 +209,47 @@ const DATA_TYPE_CATEGORIES = [
         label: "Current Conditions", 
         description: "Active diagnoses, ongoing treatments, and current health status",
         icon: Stethoscope
+      },
+    ]
+  },
+  {
+    category: "Medical Device Readings",
+    options: [
+      { 
+        id: "device_readings_bp", 
+        label: "Blood Pressure Monitor", 
+        description: "Systolic, diastolic, pulse rate, irregular heartbeat detection, and measurement patterns",
+        icon: HeartPulse
+      },
+      { 
+        id: "device_readings_glucose", 
+        label: "Glucose Meter", 
+        description: "Blood glucose levels, fasting vs post-meal readings, ketone levels, and glucose trends",
+        icon: Droplet
+      },
+      { 
+        id: "device_readings_scale", 
+        label: "Smart Scale", 
+        description: "Weight, body fat %, muscle mass, BMI, visceral fat, body water, and metabolic age",
+        icon: Scale
+      },
+      { 
+        id: "device_readings_thermometer", 
+        label: "Thermometer", 
+        description: "Body temperature readings, fever detection, and measurement site patterns",
+        icon: Thermometer
+      },
+      { 
+        id: "device_readings_stethoscope", 
+        label: "Digital Stethoscope", 
+        description: "Heart rate, respiratory rate, heart/lung sounds analysis, murmur and arrhythmia detection",
+        icon: Stethoscope
+      },
+      { 
+        id: "device_readings_smartwatch", 
+        label: "Smartwatch (50+ Metrics)", 
+        description: "Heart rate, HRV, SpO2, sleep, steps, stress, recovery, body battery, AFib detection, VO2 max, and more",
+        icon: Watch
       },
     ]
   },
