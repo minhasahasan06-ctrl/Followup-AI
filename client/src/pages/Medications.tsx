@@ -38,8 +38,15 @@ import {
   Shield,
   FileText,
   Plus,
+  Users,
+  Infinity,
+  Timer,
+  PlayCircle,
+  PauseCircle,
+  Stethoscope,
+  Ban,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, differenceInDays, addDays } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -106,6 +113,93 @@ interface MedicationAdherenceData {
   sevenDayTrend: AdherenceTrendPoint[];
   regimenRisk: RegimenRisk;
   missedDoseEscalation: MissedDoseEscalation;
+}
+
+// Chronic care medication types
+interface MedicationConflict {
+  id: string;
+  patientId: string;
+  medication1Id: string;
+  medication2Id: string;
+  doctor1Id: string;
+  doctor2Id: string;
+  specialty1: string;
+  specialty2: string;
+  conflictType: string;
+  severity: string;
+  description: string;
+  status: 'pending' | 'resolved';
+  doctor1Response?: string;
+  doctor2Response?: string;
+  resolution?: string;
+  createdAt: string;
+}
+
+interface ChronicMedication {
+  id: string;
+  name: string;
+  dosage: string;
+  frequency: string;
+  specialty?: string;
+  isContinuous?: boolean;
+  durationDays?: number;
+  intendedStartDate?: string;
+  actualStartDate?: string;
+  computedEndDate?: string;
+  status: string;
+  conflictStatus?: string;
+  prescribedBy?: string;
+  prescribedByName?: string;
+  active: boolean;
+}
+
+// Helper function to calculate remaining days
+function getRemainingDays(endDate: string | undefined | null): number | null {
+  if (!endDate) return null;
+  const end = new Date(endDate);
+  const today = new Date();
+  return differenceInDays(end, today);
+}
+
+// Helper function to format duration display
+function formatDuration(med: ChronicMedication): string {
+  if (med.isContinuous) {
+    return "Continuous";
+  }
+  
+  const remaining = getRemainingDays(med.computedEndDate);
+  if (remaining === null) {
+    return med.durationDays ? `${med.durationDays} day course` : "Duration not set";
+  }
+  
+  if (remaining < 0) {
+    return "Completed";
+  }
+  
+  if (remaining === 0) {
+    return "Last day";
+  }
+  
+  return `${remaining} day${remaining !== 1 ? 's' : ''} left`;
+}
+
+// Specialty display helper
+function getSpecialtyColor(specialty: string): string {
+  const colors: Record<string, string> = {
+    cardiology: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+    oncology: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
+    neurology: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+    rheumatology: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+    immunology: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+    endocrinology: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300",
+    gastroenterology: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
+    pulmonology: "bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300",
+    nephrology: "bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300",
+    psychiatry: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
+    "general medicine": "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+    unspecified: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  };
+  return colors[specialty?.toLowerCase()] || colors.unspecified;
 }
 
 export default function Medications() {
