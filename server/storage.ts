@@ -345,6 +345,19 @@ export interface IStorage {
   updatePrescription(id: string, data: Partial<Prescription>): Promise<Prescription | undefined>;
   acknowledgePrescription(id: string, acknowledgedBy: string): Promise<Prescription | undefined>;
   
+  // Chronic care medication lifecycle operations
+  getMedicationsBySpecialty(patientId: string, specialty: string): Promise<Medication[]>;
+  getMedicationsByDrugClass(patientId: string, drugClassPattern: string): Promise<Medication[]>;
+  supersedeMedication(oldMedicationId: string, newMedicationId: string, reason: string): Promise<Medication | undefined>;
+  
+  // Cross-specialty conflict operations
+  getMedicationConflicts(patientId: string): Promise<any[]>;
+  getPendingConflicts(doctorId: string): Promise<any[]>;
+  createMedicationConflict(conflict: any): Promise<any>;
+  getMedicationConflict(id: string): Promise<any | undefined>;
+  updateMedicationConflict(id: string, data: any): Promise<any | undefined>;
+  resolveMedicationConflict(id: string, resolution: any): Promise<any | undefined>;
+  
   // Medication change log operations
   getMedicationChangelog(medicationId: string): Promise<MedicationChangeLog[]>;
   getPatientMedicationChangelog(patientId: string, limit?: number): Promise<MedicationChangeLog[]>;
@@ -1755,6 +1768,144 @@ export class DatabaseStorage implements IStorage {
       .where(eq(prescriptions.id, id))
       .returning();
     return rx;
+  }
+
+  // Chronic care medication lifecycle operations
+  async getMedicationsBySpecialty(patientId: string, specialty: string): Promise<Medication[]> {
+    const meds = await db
+      .select()
+      .from(medications)
+      .where(and(
+        eq(medications.patientId, patientId),
+        eq(medications.specialty, specialty),
+        eq(medications.active, true)
+      ))
+      .orderBy(medications.name);
+    return meds;
+  }
+
+  async getMedicationsByDrugClass(patientId: string, drugClassPattern: string): Promise<Medication[]> {
+    const meds = await db
+      .select()
+      .from(medications)
+      .where(and(
+        eq(medications.patientId, patientId),
+        eq(medications.active, true)
+      ))
+      .orderBy(medications.name);
+    
+    // Filter by drug class using joined drug table
+    const medsWithDrugs = await Promise.all(meds.map(async (med) => {
+      if (med.drugId) {
+        const [drug] = await db.select().from(drugs).where(eq(drugs.id, med.drugId));
+        if (drug?.drugClass && drug.drugClass.toLowerCase().includes(drugClassPattern.toLowerCase())) {
+          return med;
+        }
+      }
+      return null;
+    }));
+    
+    return medsWithDrugs.filter((m): m is Medication => m !== null);
+  }
+
+  async supersedeMedication(oldMedicationId: string, newMedicationId: string, reason: string): Promise<Medication | undefined> {
+    const now = new Date();
+    
+    // Mark the old medication as superseded
+    const [oldMed] = await db
+      .update(medications)
+      .set({
+        status: "superseded",
+        active: false,
+        supersededBy: newMedicationId,
+        supersededAt: now,
+        supersessionReason: reason,
+        updatedAt: now,
+      })
+      .where(eq(medications.id, oldMedicationId))
+      .returning();
+    
+    return oldMed;
+  }
+
+  // Cross-specialty conflict operations
+  async getMedicationConflicts(patientId: string): Promise<any[]> {
+    const conflicts = await db.execute(sql`
+      SELECT * FROM medication_conflicts 
+      WHERE patient_id = ${patientId} 
+      ORDER BY created_at DESC
+    `);
+    return conflicts.rows as any[];
+  }
+
+  async getPendingConflicts(doctorId: string): Promise<any[]> {
+    const conflicts = await db.execute(sql`
+      SELECT * FROM medication_conflicts 
+      WHERE (doctor1_id = ${doctorId} OR doctor2_id = ${doctorId})
+        AND status = 'pending'
+      ORDER BY created_at DESC
+    `);
+    return conflicts.rows as any[];
+  }
+
+  async createMedicationConflict(conflict: any): Promise<any> {
+    const result = await db.execute(sql`
+      INSERT INTO medication_conflicts (
+        patient_id, conflict_group_id, medication1_id, medication2_id,
+        prescription1_id, prescription2_id, doctor1_id, doctor2_id,
+        specialty1, specialty2, conflict_type, severity,
+        description, detected_reason, status
+      ) VALUES (
+        ${conflict.patientId}, ${conflict.conflictGroupId}, ${conflict.medication1Id}, ${conflict.medication2Id},
+        ${conflict.prescription1Id || null}, ${conflict.prescription2Id || null}, ${conflict.doctor1Id}, ${conflict.doctor2Id},
+        ${conflict.specialty1}, ${conflict.specialty2}, ${conflict.conflictType}, ${conflict.severity},
+        ${conflict.description}, ${conflict.detectedReason || null}, 'pending'
+      ) RETURNING *
+    `);
+    return result.rows[0];
+  }
+
+  async getMedicationConflict(id: string): Promise<any | undefined> {
+    const result = await db.execute(sql`
+      SELECT * FROM medication_conflicts WHERE id = ${id}
+    `);
+    return result.rows[0];
+  }
+
+  async updateMedicationConflict(id: string, data: any): Promise<any | undefined> {
+    const setClauses: string[] = [];
+    const values: any[] = [];
+    
+    Object.entries(data).forEach(([key, value]) => {
+      const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+      setClauses.push(`${snakeKey} = $${values.length + 1}`);
+      values.push(value);
+    });
+    
+    if (setClauses.length === 0) return undefined;
+    
+    const result = await db.execute(sql`
+      UPDATE medication_conflicts 
+      SET ${sql.raw(setClauses.join(', '))}, updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `);
+    return result.rows[0];
+  }
+
+  async resolveMedicationConflict(id: string, resolution: any): Promise<any | undefined> {
+    const result = await db.execute(sql`
+      UPDATE medication_conflicts SET
+        status = 'resolved',
+        resolution = ${resolution.resolution},
+        resolution_details = ${resolution.resolutionDetails || null},
+        resolved_by = ${resolution.resolvedBy},
+        resolved_at = NOW(),
+        updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `);
+    return result.rows[0];
   }
 
   // Medication change log operations

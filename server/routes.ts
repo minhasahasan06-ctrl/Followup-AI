@@ -6282,6 +6282,313 @@ All questions and discussions should be focused on this patient.`;
     }
   });
 
+  // ============================================
+  // MEDICATION CONFLICT MANAGEMENT ROUTES
+  // ============================================
+
+  // Get all medication conflicts for a patient
+  app.get('/api/medications/conflicts', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const conflicts = await storage.getMedicationConflicts(userId);
+      res.json(conflicts);
+    } catch (error) {
+      console.error('Error fetching medication conflicts:', error);
+      res.status(500).json({ message: 'Failed to fetch medication conflicts' });
+    }
+  });
+
+  // Get pending conflicts for a doctor
+  app.get('/api/doctor/medication-conflicts/pending', isDoctor, async (req: any, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const conflicts = await storage.getPendingConflicts(doctorId);
+      res.json(conflicts);
+    } catch (error) {
+      console.error('Error fetching pending conflicts:', error);
+      res.status(500).json({ message: 'Failed to fetch pending conflicts' });
+    }
+  });
+
+  // Doctor responds to a medication conflict
+  app.post('/api/doctor/medication-conflicts/:id/respond', isDoctor, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const doctorId = req.user!.id;
+      const { response, action } = req.body;
+
+      const conflict = await storage.getMedicationConflict(id);
+      if (!conflict) {
+        return res.status(404).json({ message: 'Conflict not found' });
+      }
+
+      // Check if this doctor is involved in the conflict
+      const isDoctor1 = conflict.doctor1_id === doctorId;
+      const isDoctor2 = conflict.doctor2_id === doctorId;
+      
+      if (!isDoctor1 && !isDoctor2) {
+        return res.status(403).json({ message: 'Not authorized to respond to this conflict' });
+      }
+
+      // Update the appropriate doctor's response
+      const updateData = isDoctor1 ? {
+        doctor1Response: response,
+        doctor1RespondedAt: new Date(),
+        doctor1Action: action,
+      } : {
+        doctor2Response: response,
+        doctor2RespondedAt: new Date(),
+        doctor2Action: action,
+      };
+
+      const updated = await storage.updateMedicationConflict(id, updateData);
+
+      // Check if both doctors have responded - auto-resolve if they agree
+      if (updated.doctor1_responded_at && updated.doctor2_responded_at) {
+        if (updated.doctor1_action === updated.doctor2_action && updated.doctor1_action !== 'escalate') {
+          // Both doctors agree - auto-resolve
+          await storage.resolveMedicationConflict(id, {
+            resolution: updated.doctor1_action,
+            resolutionDetails: `Both doctors agreed to: ${updated.doctor1_action}`,
+            resolvedBy: 'system',
+          });
+        }
+      }
+
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} responded to medication conflict ${id} at ${new Date().toISOString()}`);
+      
+      res.json(updated);
+    } catch (error) {
+      console.error('Error responding to conflict:', error);
+      res.status(500).json({ message: 'Failed to respond to conflict' });
+    }
+  });
+
+  // Resolve a medication conflict
+  app.post('/api/doctor/medication-conflicts/:id/resolve', isDoctor, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const doctorId = req.user!.id;
+      const { resolution, resolutionDetails } = req.body;
+
+      const conflict = await storage.getMedicationConflict(id);
+      if (!conflict) {
+        return res.status(404).json({ message: 'Conflict not found' });
+      }
+
+      // Check if this doctor is involved in the conflict
+      if (conflict.doctor1_id !== doctorId && conflict.doctor2_id !== doctorId) {
+        return res.status(403).json({ message: 'Not authorized to resolve this conflict' });
+      }
+
+      const resolved = await storage.resolveMedicationConflict(id, {
+        resolution,
+        resolutionDetails,
+        resolvedBy: doctorId,
+      });
+
+      // Update involved medications to clear conflict status
+      if (conflict.medication1_id) {
+        await storage.updateMedication(conflict.medication1_id, {
+          conflictStatus: 'resolved',
+          conflictResolvedAt: new Date(),
+          conflictResolution: resolution,
+        });
+      }
+      if (conflict.medication2_id) {
+        await storage.updateMedication(conflict.medication2_id, {
+          conflictStatus: 'resolved',
+          conflictResolvedAt: new Date(),
+          conflictResolution: resolution,
+        });
+      }
+
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} resolved medication conflict ${id} at ${new Date().toISOString()}`);
+      
+      res.json(resolved);
+    } catch (error) {
+      console.error('Error resolving conflict:', error);
+      res.status(500).json({ message: 'Failed to resolve conflict' });
+    }
+  });
+
+  // ============================================
+  // MEDICATION LIFECYCLE ROUTES
+  // ============================================
+
+  // Confirm patient start date for a medication
+  app.post('/api/medications/:id/confirm-start', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      const { actualStartDate } = req.body;
+
+      const [medication] = await db
+        .select()
+        .from(schema.medications)
+        .where(and(eq(schema.medications.id, id), eq(schema.medications.patientId, userId)));
+
+      if (!medication) {
+        return res.status(404).json({ message: 'Medication not found' });
+      }
+
+      // Calculate computed end date if duration is specified
+      let computedEndDate = null;
+      if (medication.durationDays && actualStartDate) {
+        const startDate = new Date(actualStartDate);
+        computedEndDate = new Date(startDate);
+        computedEndDate.setDate(computedEndDate.getDate() + medication.durationDays);
+      }
+
+      const updated = await storage.updateMedication(id, {
+        actualStartDate: new Date(actualStartDate),
+        computedEndDate,
+        status: 'active',
+      });
+
+      await storage.createMedicationChangeLog({
+        medicationId: id,
+        patientId: userId,
+        changeType: 'confirmed_start',
+        changedBy: 'patient',
+        changedByUserId: userId,
+        changeReason: `Patient confirmed start date: ${actualStartDate}`,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error('Error confirming medication start:', error);
+      res.status(500).json({ message: 'Failed to confirm medication start' });
+    }
+  });
+
+  // Get medications grouped by specialty
+  app.get('/api/medications/by-specialty', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const allMeds = await storage.getAllMedications(userId);
+      
+      // Group by specialty
+      const grouped: Record<string, any[]> = {};
+      for (const med of allMeds) {
+        const specialty = med.specialty || 'unspecified';
+        if (!grouped[specialty]) {
+          grouped[specialty] = [];
+        }
+        grouped[specialty].push(med);
+      }
+      
+      res.json(grouped);
+    } catch (error) {
+      console.error('Error fetching medications by specialty:', error);
+      res.status(500).json({ message: 'Failed to fetch medications by specialty' });
+    }
+  });
+
+  // Check for supersession candidates (same specialty medications)
+  app.get('/api/medications/supersession-check', isDoctor, async (req: any, res) => {
+    try {
+      const { patientId, specialty, drugClass } = req.query;
+      
+      if (!patientId) {
+        return res.status(400).json({ message: 'Patient ID required' });
+      }
+
+      let candidates: any[] = [];
+      
+      if (specialty) {
+        candidates = await storage.getMedicationsBySpecialty(patientId as string, specialty as string);
+      } else if (drugClass) {
+        candidates = await storage.getMedicationsByDrugClass(patientId as string, drugClass as string);
+      }
+
+      res.json({ 
+        supersessionCandidates: candidates,
+        message: candidates.length > 0 
+          ? `Found ${candidates.length} active medication(s) that may be superseded` 
+          : 'No medications to supersede'
+      });
+    } catch (error) {
+      console.error('Error checking supersession candidates:', error);
+      res.status(500).json({ message: 'Failed to check supersession candidates' });
+    }
+  });
+
+  // Supersede a medication (doctor only)
+  app.post('/api/medications/:id/supersede', isDoctor, async (req: any, res) => {
+    try {
+      const { id: oldMedicationId } = req.params;
+      const doctorId = req.user!.id;
+      const { newMedicationId, reason } = req.body;
+
+      const oldMed = await storage.supersedeMedication(oldMedicationId, newMedicationId, reason);
+      
+      if (!oldMed) {
+        return res.status(404).json({ message: 'Medication not found' });
+      }
+
+      // Log the supersession
+      await storage.createMedicationChangeLog({
+        medicationId: oldMedicationId,
+        patientId: oldMed.patientId,
+        changeType: 'superseded',
+        changedBy: 'doctor',
+        changedByUserId: doctorId,
+        changeReason: reason,
+        notes: `Superseded by medication ID: ${newMedicationId}`,
+      });
+
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} superseded medication ${oldMedicationId} with ${newMedicationId} at ${new Date().toISOString()}`);
+
+      res.json({ superseded: oldMed, newMedicationId });
+    } catch (error) {
+      console.error('Error superseding medication:', error);
+      res.status(500).json({ message: 'Failed to supersede medication' });
+    }
+  });
+
+  // Auto-archive expired medications (can be called by cron or manually)
+  app.post('/api/medications/auto-archive', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const allMeds = await storage.getAllMedications(userId);
+      const now = new Date();
+      const archived: string[] = [];
+
+      for (const med of allMeds) {
+        // Skip continuous medications - they don't auto-expire
+        if (med.isContinuous) continue;
+        
+        // Check if medication has expired
+        const endDate = med.computedEndDate || med.endDate;
+        if (endDate && new Date(endDate) < now && med.status === 'active') {
+          await storage.updateMedication(med.id, {
+            status: 'expired',
+            active: false,
+          });
+          
+          await storage.createMedicationChangeLog({
+            medicationId: med.id,
+            patientId: userId,
+            changeType: 'expired',
+            changedBy: 'system',
+            changeReason: 'Medication duration completed',
+          });
+          
+          archived.push(med.id);
+        }
+      }
+
+      res.json({ 
+        message: `Auto-archived ${archived.length} expired medication(s)`,
+        archivedIds: archived
+      });
+    } catch (error) {
+      console.error('Error auto-archiving medications:', error);
+      res.status(500).json({ message: 'Failed to auto-archive medications' });
+    }
+  });
+
   // Doctor-specific drug interaction check for patient
   // Uses doctor_patient_assignments table for HIPAA-compliant access control
   app.post('/api/drug-interactions/analyze-for-patient', isDoctor, async (req: any, res) => {
