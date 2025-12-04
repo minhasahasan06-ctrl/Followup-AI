@@ -77,6 +77,8 @@ import Prescriptions from "@/pages/Prescriptions";
 import DrugInteractions from "@/pages/DrugInteractions";
 import MLMonitoring from "@/pages/MLMonitoring";
 import MLInsightsPage from "@/pages/MLInsightsPage";
+import AdminMLTrainingHub from "@/pages/AdminMLTrainingHub";
+import MedicalNLPDashboard from "@/pages/MedicalNLPDashboard";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
@@ -137,6 +139,8 @@ function DoctorRouter() {
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/ml-monitoring" component={MLMonitoring} />
+      <Route path="/ml-training" component={AdminMLTrainingHub} />
+      <Route path="/medical-nlp" component={MedicalNLPDashboard} />
       <Route path="/agent-hub" component={AgentHub} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />

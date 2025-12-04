@@ -1,0 +1,1111 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { 
+  Database, 
+  Brain, 
+  Play, 
+  Loader2, 
+  FileText, 
+  CheckCircle2, 
+  XCircle, 
+  Clock, 
+  AlertCircle,
+  RefreshCw,
+  Rocket,
+  Users,
+  ShieldCheck,
+  TrendingUp,
+  Package,
+  Settings,
+  History,
+  Cpu,
+  HardDrive,
+  Lock,
+  Unlock,
+  Watch,
+  Download,
+  Calendar,
+  Filter,
+  Droplets,
+  Activity,
+} from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { format } from "date-fns";
+
+interface Dataset {
+  name: string;
+  source: string;
+  description: string;
+  record_count: number;
+  patient_count: number;
+  requires_credentials: boolean;
+  is_available: boolean;
+}
+
+interface TrainedModel {
+  model_id: string;
+  name: string;
+  model_type: string;
+  version: string;
+  status: string;
+  is_active: boolean;
+  metrics: {
+    accuracy?: number;
+    auc?: number;
+    f1?: number;
+    precision?: number;
+    recall?: number;
+  } | null;
+  created_at: string;
+}
+
+interface TrainingJob {
+  job_id: string;
+  status: string;
+  model_name: string;
+  version: string;
+  progress_percent: number;
+  current_phase: string | null;
+  message: string | null;
+}
+
+interface ConsentStats {
+  total_patients_with_consent_record: number;
+  consenting_patients: number;
+  consent_rate: number;
+  data_type_breakdown: {
+    vitals: number;
+    symptoms: number;
+    mental_health: number;
+    medications: number;
+    wearable: number;
+  };
+}
+
+interface ContributionsSummary {
+  unique_contributors: number;
+  total_contributions: number;
+  total_records_contributed: number;
+  training_jobs_with_patient_data: number;
+}
+
+const CONSENT_COLORS = ["#22c55e", "#3b82f6", "#f97316", "#8b5cf6", "#ec4899"];
+
+function LegalDisclaimer() {
+  return (
+    <Alert className="border-amber-500/50 bg-amber-500/5 mb-4" data-testid="alert-ml-disclaimer">
+      <ShieldCheck className="h-4 w-4 text-amber-500" />
+      <AlertTitle className="text-amber-700 dark:text-amber-400 font-semibold">
+        HIPAA-Compliant ML Training Platform
+      </AlertTitle>
+      <AlertDescription className="text-amber-600 dark:text-amber-300 text-sm">
+        All training data is fully anonymized with k-anonymity enforcement. Patient consent is verified 
+        before any data extraction. HIPAA audit logs are maintained for all operations.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function DatasetsTab() {
+  const { data: datasets, isLoading } = useQuery<Dataset[]>({
+    queryKey: ['/api/ml/training/datasets'],
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: async (datasetKey: string) => {
+      return apiRequest(`/api/ml/training/register-dataset/${datasetKey}`, {
+        method: 'POST',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/ml/training/datasets'] });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        {[1, 2, 3, 4].map(i => (
+          <Card key={i}>
+            <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
+            <CardContent><Skeleton className="h-24 w-full" /></CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {datasets?.map((dataset) => (
+        <Card key={dataset.name} data-testid={`card-dataset-${dataset.name.toLowerCase().replace(/\s+/g, '-')}`}>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center justify-between gap-2 text-base">
+              <div className="flex items-center gap-2">
+                <Database className="h-4 w-4 text-blue-500" />
+                {dataset.name}
+              </div>
+              {dataset.is_available ? (
+                <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                  <Unlock className="h-3 w-3 mr-1" /> Available
+                </Badge>
+              ) : (
+                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  <Lock className="h-3 w-3 mr-1" /> Credentials Required
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>{dataset.source}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">{dataset.description}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-2 rounded bg-muted/50 text-center">
+                <p className="text-xs text-muted-foreground">Records</p>
+                <p className="text-lg font-semibold" data-testid={`text-dataset-records-${dataset.name}`}>
+                  {dataset.record_count.toLocaleString()}
+                </p>
+              </div>
+              <div className="p-2 rounded bg-muted/50 text-center">
+                <p className="text-xs text-muted-foreground">Patients</p>
+                <p className="text-lg font-semibold" data-testid={`text-dataset-patients-${dataset.name}`}>
+                  {dataset.patient_count.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter>
+            {dataset.is_available ? (
+              <Button 
+                variant="default" 
+                size="sm" 
+                className="w-full"
+                onClick={() => registerMutation.mutate(dataset.name.toLowerCase().replace(/\s+/g, '_'))}
+                disabled={registerMutation.isPending}
+                data-testid={`button-register-dataset-${dataset.name}`}
+              >
+                {registerMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                Register for Training
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" className="w-full" disabled>
+                <Lock className="h-4 w-4 mr-2" />
+                Add PhysioNet Credentials
+              </Button>
+            )}
+          </CardFooter>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function ModelsTab() {
+  const { toast } = useToast();
+  const { data: models, isLoading, refetch } = useQuery<TrainedModel[]>({
+    queryKey: ['/api/ml/training/models'],
+  });
+
+  const deployMutation = useMutation({
+    mutationFn: async (modelId: string) => {
+      return apiRequest(`/api/ml/training/models/${modelId}/deploy`, {
+        method: 'POST',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/ml/training/models'] });
+      toast({ title: 'Model Deployed', description: 'Model is now active for predictions' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Deployment Failed', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const getStatusBadge = (status: string, isActive: boolean) => {
+    if (isActive) {
+      return <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"><CheckCircle2 className="h-3 w-3 mr-1" />Active</Badge>;
+    }
+    switch (status) {
+      case 'trained':
+        return <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"><Package className="h-3 w-3 mr-1" />Trained</Badge>;
+      case 'training':
+        return <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Training</Badge>;
+      case 'failed':
+        return <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map(i => (
+          <Card key={i}>
+            <CardHeader><Skeleton className="h-6 w-48" /></CardHeader>
+            <CardContent><Skeleton className="h-16 w-full" /></CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (!models?.length) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <Brain className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+          <h3 className="text-lg font-medium mb-2">No Trained Models</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Create a training job to train your first ML model.
+          </p>
+          <Button variant="outline" onClick={() => refetch()}>
+            <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+        </Button>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Model</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Version</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Metrics</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {models.map((model) => (
+            <TableRow key={model.model_id} data-testid={`row-model-${model.model_id}`}>
+              <TableCell className="font-medium">{model.name}</TableCell>
+              <TableCell><Badge variant="outline">{model.model_type}</Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground">{model.version}</TableCell>
+              <TableCell>{getStatusBadge(model.status, model.is_active)}</TableCell>
+              <TableCell>
+                {model.metrics ? (
+                  <div className="flex gap-2 text-xs">
+                    {model.metrics.accuracy && (
+                      <span className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+                        Acc: {(model.metrics.accuracy * 100).toFixed(1)}%
+                      </span>
+                    )}
+                    {model.metrics.auc && (
+                      <span className="bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 rounded">
+                        AUC: {model.metrics.auc.toFixed(3)}
+                      </span>
+                    )}
+                    {model.metrics.f1 && (
+                      <span className="bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded">
+                        F1: {model.metrics.f1.toFixed(3)}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground text-sm">—</span>
+                )}
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {format(new Date(model.created_at), 'MMM d, yyyy')}
+              </TableCell>
+              <TableCell className="text-right">
+                {model.status === 'trained' && !model.is_active && (
+                  <Button 
+                    size="sm" 
+                    onClick={() => deployMutation.mutate(model.model_id)}
+                    disabled={deployMutation.isPending}
+                    data-testid={`button-deploy-${model.model_id}`}
+                  >
+                    {deployMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4 mr-1" />}
+                    Deploy
+                  </Button>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function TrainingJobsTab() {
+  const { toast } = useToast();
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [jobForm, setJobForm] = useState({
+    model_name: '',
+    model_type: 'random_forest',
+  });
+
+  const { data: jobs, isLoading, refetch } = useQuery<TrainingJob[]>({
+    queryKey: ['/api/ml/training/jobs'],
+    refetchInterval: 5000,
+  });
+
+  const createJobMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('/api/ml/training/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_name: jobForm.model_name,
+          model_type: jobForm.model_type,
+          data_sources: {},
+          hyperparameters: {},
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/ml/training/jobs'] });
+      setShowCreateDialog(false);
+      setJobForm({ model_name: '', model_type: 'random_forest' });
+      toast({ title: 'Training Job Created', description: 'Job has been queued for processing' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Failed to Create Job', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const startJobMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      return apiRequest(`/api/ml/training/jobs/${jobId}/start`, {
+        method: 'POST',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/ml/training/jobs'] });
+      toast({ title: 'Job Started', description: 'Training has begun' });
+    },
+  });
+
+  const getStatusBadge = (status: string, progress: number) => {
+    switch (status) {
+      case 'queued':
+        return <Badge variant="outline"><Clock className="h-3 w-3 mr-1" />Queued</Badge>;
+      case 'running':
+        return (
+          <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+            <Loader2 className="h-3 w-3 mr-1 animate-spin" />{progress}%
+          </Badge>
+        );
+      case 'completed':
+        return <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"><CheckCircle2 className="h-3 w-3 mr-1" />Completed</Badge>;
+      case 'failed':
+        return <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-40" />
+        {[1, 2, 3].map(i => (
+          <Card key={i}>
+            <CardContent className="py-4"><Skeleton className="h-12 w-full" /></CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-create-training-job">
+              <Play className="h-4 w-4 mr-2" /> Create Training Job
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create ML Training Job</DialogTitle>
+              <DialogDescription>Configure a new model training job with hyperparameters.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="model_name">Model Name</Label>
+                <Input 
+                  id="model_name"
+                  placeholder="e.g., Deterioration Predictor v2"
+                  value={jobForm.model_name}
+                  onChange={(e) => setJobForm(prev => ({ ...prev, model_name: e.target.value }))}
+                  data-testid="input-model-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="model_type">Model Type</Label>
+                <Select 
+                  value={jobForm.model_type} 
+                  onValueChange={(v) => setJobForm(prev => ({ ...prev, model_type: v }))}
+                >
+                  <SelectTrigger data-testid="select-model-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="random_forest">Random Forest</SelectItem>
+                    <SelectItem value="gradient_boosting">Gradient Boosting</SelectItem>
+                    <SelectItem value="kmeans">K-Means Clustering</SelectItem>
+                    <SelectItem value="lstm">LSTM Neural Network</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+              <Button 
+                onClick={() => createJobMutation.mutate()}
+                disabled={!jobForm.model_name || createJobMutation.isPending}
+                data-testid="button-submit-training-job"
+              >
+                {createJobMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Create Job
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+        </Button>
+      </div>
+
+      {!jobs?.length ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Cpu className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+            <h3 className="text-lg font-medium mb-2">No Training Jobs</h3>
+            <p className="text-sm text-muted-foreground">Create your first training job to get started.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Job ID</TableHead>
+              <TableHead>Model</TableHead>
+              <TableHead>Version</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Phase</TableHead>
+              <TableHead>Progress</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {jobs.map((job) => (
+              <TableRow key={job.job_id} data-testid={`row-job-${job.job_id}`}>
+                <TableCell className="font-mono text-xs">{job.job_id.slice(0, 8)}...</TableCell>
+                <TableCell className="font-medium">{job.model_name}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{job.version}</TableCell>
+                <TableCell>{getStatusBadge(job.status, job.progress_percent)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{job.current_phase || '—'}</TableCell>
+                <TableCell>
+                  {job.status === 'running' && (
+                    <Progress value={job.progress_percent} className="w-24 h-2" />
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  {job.status === 'queued' && (
+                    <Button 
+                      size="sm" 
+                      onClick={() => startJobMutation.mutate(job.job_id)}
+                      disabled={startJobMutation.isPending}
+                      data-testid={`button-start-job-${job.job_id}`}
+                    >
+                      {startJobMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}
+                      Start
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
+interface DeviceExtractionResult {
+  job_id: string;
+  status: string;
+  patients_extracted: number;
+  total_readings: number;
+  device_types_included: string[];
+  consent_verified: boolean;
+  hipaa_audit_logged: boolean;
+}
+
+const DEVICE_TYPES = [
+  { id: 'smartwatch', label: 'Smartwatch', icon: Watch },
+  { id: 'bp_monitor', label: 'Blood Pressure Monitor', icon: Activity },
+  { id: 'glucose_meter', label: 'Glucose Meter', icon: Droplets },
+  { id: 'scale', label: 'Smart Scale', icon: TrendingUp },
+  { id: 'thermometer', label: 'Thermometer', icon: Activity },
+  { id: 'pulse_oximeter', label: 'Pulse Oximeter', icon: Activity },
+];
+
+function DeviceExtractionTab() {
+  const { toast } = useToast();
+  const [dateRange, setDateRange] = useState(30);
+  const [selectedDevices, setSelectedDevices] = useState<string[]>(DEVICE_TYPES.map(d => d.id));
+  const [extractionResult, setExtractionResult] = useState<DeviceExtractionResult | null>(null);
+
+  const { data: consentStats } = useQuery<ConsentStats>({
+    queryKey: ['/api/ml/training/consent/stats'],
+  });
+
+  const extractMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest<DeviceExtractionResult>('/api/ml/training/device-data/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_ids: null,
+          device_types: selectedDevices.length > 0 ? selectedDevices : null,
+          date_range_days: dateRange,
+        }),
+      });
+    },
+    onSuccess: (data) => {
+      setExtractionResult(data);
+      queryClient.invalidateQueries({ queryKey: ['/api/ml/training/contributions/summary'] });
+      toast({ 
+        title: 'Device Data Extracted', 
+        description: `Extracted ${data.total_readings.toLocaleString()} readings from ${data.patients_extracted} patients` 
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Extraction Failed', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const toggleDevice = (deviceId: string) => {
+    setSelectedDevices(prev => 
+      prev.includes(deviceId) 
+        ? prev.filter(d => d !== deviceId)
+        : [...prev, deviceId]
+    );
+  };
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card data-testid="card-extraction-config">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Filter className="h-4 w-4 text-blue-500" />
+            Extraction Configuration
+          </CardTitle>
+          <CardDescription>
+            Configure which device data to extract for ML training
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label className="flex items-center justify-between">
+              <span>Date Range</span>
+              <span className="text-sm text-muted-foreground">{dateRange} days</span>
+            </Label>
+            <Select 
+              value={String(dateRange)} 
+              onValueChange={(v) => setDateRange(Number(v))}
+            >
+              <SelectTrigger data-testid="select-date-range">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">Last 7 days</SelectItem>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="90">Last 90 days</SelectItem>
+                <SelectItem value="180">Last 180 days</SelectItem>
+                <SelectItem value="365">Last 365 days</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Device Types</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {DEVICE_TYPES.map((device) => (
+                <Button
+                  key={device.id}
+                  variant={selectedDevices.includes(device.id) ? "default" : "outline"}
+                  size="sm"
+                  className="justify-start gap-2"
+                  onClick={() => toggleDevice(device.id)}
+                  data-testid={`button-device-${device.id}`}
+                >
+                  <device.icon className="h-4 w-4" />
+                  {device.label}
+                </Button>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-2">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setSelectedDevices(DEVICE_TYPES.map(d => d.id))}
+                data-testid="button-select-all-devices"
+              >
+                Select All
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setSelectedDevices([])}
+                data-testid="button-clear-devices"
+              >
+                Clear All
+              </Button>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-muted/50">
+            <div className="flex justify-between items-center text-sm mb-1">
+              <span className="text-muted-foreground">Consenting Patients</span>
+              <span className="font-semibold" data-testid="text-consenting-count">
+                {consentStats?.consenting_patients || 0}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Wearable Consent</span>
+              <span className="font-semibold" data-testid="text-wearable-consent">
+                {consentStats?.data_type_breakdown?.wearable || 0} patients
+              </span>
+            </div>
+          </div>
+
+          <Button 
+            className="w-full"
+            onClick={() => extractMutation.mutate()}
+            disabled={extractMutation.isPending || selectedDevices.length === 0}
+            data-testid="button-extract-device-data"
+          >
+            {extractMutation.isPending ? (
+              <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Extracting...</>
+            ) : (
+              <><Download className="h-4 w-4 mr-2" /> Extract Device Data</>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-extraction-results">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <HardDrive className="h-4 w-4 text-green-500" />
+            Extraction Results
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {extractionResult ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-green-100/50 dark:bg-green-900/20">
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <span className="text-sm font-medium">Extraction Complete</span>
+                <Badge className="ml-auto bg-green-100 text-green-700 dark:bg-green-900/30">
+                  {extractionResult.status}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-muted/50 text-center">
+                  <p className="text-xs text-muted-foreground">Patients</p>
+                  <p className="text-2xl font-bold" data-testid="text-extracted-patients">
+                    {extractionResult.patients_extracted}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/50 text-center">
+                  <p className="text-xs text-muted-foreground">Readings</p>
+                  <p className="text-2xl font-bold" data-testid="text-extracted-readings">
+                    {extractionResult.total_readings.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Device Types Included</p>
+                <div className="flex flex-wrap gap-1">
+                  {extractionResult.device_types_included.map((type) => (
+                    <Badge key={type} variant="outline">{type}</Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center gap-2">
+                  {extractionResult.consent_verified ? (
+                    <><CheckCircle2 className="h-4 w-4 text-green-500" /> Consent Verified</>
+                  ) : (
+                    <><AlertCircle className="h-4 w-4 text-amber-500" /> Consent Pending</>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {extractionResult.hipaa_audit_logged ? (
+                    <><CheckCircle2 className="h-4 w-4 text-green-500" /> HIPAA Audit Logged</>
+                  ) : (
+                    <><AlertCircle className="h-4 w-4 text-amber-500" /> Audit Pending</>
+                  )}
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Job ID: <span className="font-mono">{extractionResult.job_id.slice(0, 12)}...</span>
+              </p>
+            </div>
+          ) : (
+            <div className="py-12 text-center">
+              <Database className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+              <h3 className="text-sm font-medium mb-2">No Recent Extraction</h3>
+              <p className="text-xs text-muted-foreground">
+                Configure and run an extraction to see results here.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="md:col-span-2" data-testid="card-consent-verification">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldCheck className="h-4 w-4 text-purple-500" />
+            Device Data Consent Verification
+          </CardTitle>
+          <CardDescription>
+            Only patients with explicit device data consent will have their data extracted
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="p-4 rounded-lg bg-green-100/50 dark:bg-green-900/20">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <span className="font-medium">Pre-Extraction</span>
+              </div>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• ML training consent required</li>
+                <li>• Wearable data consent verified</li>
+                <li>• Per-device type consent checked</li>
+              </ul>
+            </div>
+            <div className="p-4 rounded-lg bg-blue-100/50 dark:bg-blue-900/20">
+              <div className="flex items-center gap-2 mb-2">
+                <Lock className="h-5 w-5 text-blue-500" />
+                <span className="font-medium">During Extraction</span>
+              </div>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• Patient IDs anonymized (SHA-256)</li>
+                <li>• k-Anonymity (k=5) enforced</li>
+                <li>• HIPAA audit log created</li>
+              </ul>
+            </div>
+            <div className="p-4 rounded-lg bg-purple-100/50 dark:bg-purple-900/20">
+              <div className="flex items-center gap-2 mb-2">
+                <Database className="h-5 w-5 text-purple-500" />
+                <span className="font-medium">Post-Extraction</span>
+              </div>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• Contribution tracked per patient</li>
+                <li>• Data linked to training job</li>
+                <li>• Withdrawal honored retroactively</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ConsentAnalyticsTab() {
+  const { data: consentStats, isLoading: loadingConsent } = useQuery<ConsentStats>({
+    queryKey: ['/api/ml/training/consent/stats'],
+  });
+
+  const { data: contributionsSummary, isLoading: loadingContributions } = useQuery<ContributionsSummary>({
+    queryKey: ['/api/ml/training/contributions/summary'],
+  });
+
+  if (loadingConsent || loadingContributions) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        {[1, 2, 3, 4].map(i => (
+          <Card key={i}>
+            <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
+            <CardContent><Skeleton className="h-24 w-full" /></CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  const consentPieData = consentStats?.data_type_breakdown 
+    ? Object.entries(consentStats.data_type_breakdown).map(([key, value]) => ({
+        name: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        value: value,
+      }))
+    : [];
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card data-testid="card-consent-overview">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-4 w-4 text-blue-500" />
+            Consent Overview
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-3 rounded-lg bg-muted/50 text-center">
+              <p className="text-xs text-muted-foreground">Total Patients</p>
+              <p className="text-2xl font-bold" data-testid="text-total-patients">
+                {consentStats?.total_patients_with_consent_record || 0}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/30 text-center">
+              <p className="text-xs text-muted-foreground">Consenting</p>
+              <p className="text-2xl font-bold text-green-700 dark:text-green-400" data-testid="text-consenting-patients">
+                {consentStats?.consenting_patients || 0}
+              </p>
+            </div>
+          </div>
+          <div className="p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium">Overall Consent Rate</span>
+              <span className="text-lg font-bold text-blue-700 dark:text-blue-400" data-testid="text-consent-rate">
+                {consentStats?.consent_rate?.toFixed(1) || 0}%
+              </span>
+            </div>
+            <Progress value={consentStats?.consent_rate || 0} className="h-2" />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-consent-breakdown">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <TrendingUp className="h-4 w-4 text-purple-500" />
+            Consent by Data Type
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {consentPieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie
+                  data={consentPieData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={40}
+                  outerRadius={80}
+                  label={({ name, value }) => `${name}: ${value}`}
+                >
+                  {consentPieData.map((entry, index) => (
+                    <Cell key={entry.name} fill={CONSENT_COLORS[index % CONSENT_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-48 flex items-center justify-center text-muted-foreground">
+              No consent data available
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-contributions">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <HardDrive className="h-4 w-4 text-cyan-500" />
+            Data Contributions
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-3 rounded-lg bg-muted/50 text-center">
+              <p className="text-xs text-muted-foreground">Unique Contributors</p>
+              <p className="text-2xl font-bold" data-testid="text-contributors">
+                {contributionsSummary?.unique_contributors || 0}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/50 text-center">
+              <p className="text-xs text-muted-foreground">Total Contributions</p>
+              <p className="text-2xl font-bold" data-testid="text-contributions">
+                {contributionsSummary?.total_contributions || 0}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/50 text-center">
+              <p className="text-xs text-muted-foreground">Records Contributed</p>
+              <p className="text-2xl font-bold" data-testid="text-records">
+                {contributionsSummary?.total_records_contributed?.toLocaleString() || 0}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/50 text-center">
+              <p className="text-xs text-muted-foreground">Training Jobs</p>
+              <p className="text-2xl font-bold" data-testid="text-training-jobs">
+                {contributionsSummary?.training_jobs_with_patient_data || 0}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-hipaa-audit">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldCheck className="h-4 w-4 text-green-500" />
+            HIPAA Compliance
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-2 rounded bg-green-100/50 dark:bg-green-900/20">
+              <span className="flex items-center gap-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                Anonymization Enforced
+              </span>
+              <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30">Active</Badge>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded bg-green-100/50 dark:bg-green-900/20">
+              <span className="flex items-center gap-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                Consent Verification
+              </span>
+              <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30">Active</Badge>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded bg-green-100/50 dark:bg-green-900/20">
+              <span className="flex items-center gap-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                Audit Logging
+              </span>
+              <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30">Active</Badge>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded bg-green-100/50 dark:bg-green-900/20">
+              <span className="flex items-center gap-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                k-Anonymity (k=5)
+              </span>
+              <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30">Enforced</Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function AdminMLTrainingHub() {
+  const { user } = useAuth();
+
+  if (!user || !['admin', 'doctor'].includes(user.role || '')) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <Alert variant="destructive" data-testid="alert-access-denied">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Access Denied</AlertTitle>
+          <AlertDescription>
+            This page is only accessible to administrators and doctors.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto py-8 px-4 space-y-6" data-testid="page-admin-ml-training">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Brain className="h-6 w-6 text-purple-500" />
+            ML Training Hub
+          </h1>
+          <p className="text-muted-foreground">
+            Manage datasets, training jobs, and model deployments
+          </p>
+        </div>
+        <Badge variant="outline" className="text-purple-500 border-purple-300">
+          Admin Access
+        </Badge>
+      </div>
+
+      <LegalDisclaimer />
+
+      <Tabs defaultValue="datasets" className="w-full">
+        <TabsList className="grid w-full grid-cols-5 max-w-2xl">
+          <TabsTrigger value="datasets" className="gap-2" data-testid="tab-datasets">
+            <Database className="h-4 w-4" />
+            Datasets
+          </TabsTrigger>
+          <TabsTrigger value="jobs" className="gap-2" data-testid="tab-jobs">
+            <Cpu className="h-4 w-4" />
+            Jobs
+          </TabsTrigger>
+          <TabsTrigger value="models" className="gap-2" data-testid="tab-models">
+            <Brain className="h-4 w-4" />
+            Models
+          </TabsTrigger>
+          <TabsTrigger value="devices" className="gap-2" data-testid="tab-devices">
+            <Watch className="h-4 w-4" />
+            Devices
+          </TabsTrigger>
+          <TabsTrigger value="consent" className="gap-2" data-testid="tab-consent">
+            <ShieldCheck className="h-4 w-4" />
+            Consent
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="datasets" className="mt-6">
+          <DatasetsTab />
+        </TabsContent>
+
+        <TabsContent value="jobs" className="mt-6">
+          <TrainingJobsTab />
+        </TabsContent>
+
+        <TabsContent value="models" className="mt-6">
+          <ModelsTab />
+        </TabsContent>
+
+        <TabsContent value="devices" className="mt-6">
+          <DeviceExtractionTab />
+        </TabsContent>
+
+        <TabsContent value="consent" className="mt-6">
+          <ConsentAnalyticsTab />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
