@@ -14965,6 +14965,337 @@ Provide:
   // =============================================================================
 
   // =============================================================================
+  // ADMIN TOTP AUTHENTICATION ROUTES
+  // Google Authenticator TOTP protection for Admin ML Training Hub
+  // =============================================================================
+
+  // Check if TOTP is set up for admin ML training hub
+  app.get('/api/admin/totp/status', async (req: any, res) => {
+    try {
+      const result = await db
+        .select()
+        .from(schema.adminTotpSecrets)
+        .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'))
+        .limit(1);
+
+      if (result.length === 0) {
+        return res.json({ 
+          isSetup: false,
+          enabled: false,
+          message: 'TOTP not configured for ML Training Hub'
+        });
+      }
+
+      const secret = result[0];
+      
+      // Check if locked due to failed attempts
+      const isLocked = secret.lockedUntil && new Date(secret.lockedUntil) > new Date();
+      
+      res.json({
+        isSetup: true,
+        enabled: secret.enabled,
+        isLocked,
+        lockedUntil: isLocked ? secret.lockedUntil : null,
+        verificationCount: secret.verificationCount || 0,
+        lastVerifiedAt: secret.lastVerifiedAt
+      });
+    } catch (error: any) {
+      console.error('Error checking TOTP status:', error);
+      res.status(500).json({ error: 'Failed to check TOTP status' });
+    }
+  });
+
+  // Generate TOTP setup (QR code and secret)
+  app.post('/api/admin/totp/setup', async (req: any, res) => {
+    try {
+      // Check if already set up
+      const existing = await db
+        .select()
+        .from(schema.adminTotpSecrets)
+        .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'))
+        .limit(1);
+
+      if (existing.length > 0 && existing[0].enabled) {
+        return res.status(400).json({ 
+          error: 'TOTP already configured. To reset, disable first.',
+          isSetup: true
+        });
+      }
+
+      // Generate new secret
+      const secret = speakeasy.generateSecret({
+        name: 'Followup AI ML Training Hub',
+        issuer: 'Followup AI',
+        length: 32
+      });
+
+      // Generate QR code
+      const qrCodeDataUrl = await QRCode.toDataURL(secret.otpauth_url || '');
+
+      // Store or update the secret (not enabled until verified)
+      if (existing.length > 0) {
+        await db
+          .update(schema.adminTotpSecrets)
+          .set({
+            totpSecret: secret.base32,
+            enabled: false,
+            failedAttempts: 0,
+            lockedUntil: null,
+            updatedAt: new Date()
+          })
+          .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'));
+      } else {
+        await db.insert(schema.adminTotpSecrets).values({
+          secretName: 'ml-training-hub',
+          totpSecret: secret.base32,
+          enabled: false
+        });
+      }
+
+      res.json({
+        success: true,
+        qrCode: qrCodeDataUrl,
+        secret: secret.base32,
+        message: 'Scan the QR code with Google Authenticator, then verify with a 6-digit code'
+      });
+    } catch (error: any) {
+      console.error('Error setting up TOTP:', error);
+      res.status(500).json({ error: 'Failed to set up TOTP' });
+    }
+  });
+
+  // Verify initial TOTP setup (enables 2FA after first successful verification)
+  app.post('/api/admin/totp/verify-setup', async (req: any, res) => {
+    try {
+      const { token } = req.body;
+
+      if (!token || !/^\d{6}$/.test(token)) {
+        return res.status(400).json({ error: 'Valid 6-digit code required' });
+      }
+
+      const existing = await db
+        .select()
+        .from(schema.adminTotpSecrets)
+        .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'))
+        .limit(1);
+
+      if (existing.length === 0) {
+        return res.status(400).json({ error: 'TOTP not set up. Generate QR code first.' });
+      }
+
+      const secret = existing[0];
+
+      if (secret.enabled) {
+        return res.status(400).json({ error: 'TOTP already enabled. Use /authenticate endpoint.' });
+      }
+
+      // Verify the token
+      const verified = speakeasy.totp.verify({
+        secret: secret.totpSecret,
+        encoding: 'base32',
+        token: token,
+        window: 2
+      });
+
+      if (!verified) {
+        return res.status(401).json({ error: 'Invalid verification code. Please try again.' });
+      }
+
+      // Enable TOTP
+      await db
+        .update(schema.adminTotpSecrets)
+        .set({
+          enabled: true,
+          setupCompletedAt: new Date(),
+          setupCompletedBy: req.user?.id || 'system',
+          updatedAt: new Date()
+        })
+        .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'));
+
+      // Set session flag
+      if (req.session) {
+        req.session.adminTotpVerified = true;
+        req.session.adminTotpVerifiedAt = new Date().toISOString();
+      }
+
+      res.json({
+        success: true,
+        message: 'TOTP successfully enabled! You will now need this code to access ML Training Hub.'
+      });
+    } catch (error: any) {
+      console.error('Error verifying TOTP setup:', error);
+      res.status(500).json({ error: 'Failed to verify TOTP' });
+    }
+  });
+
+  // Authenticate with TOTP (for ongoing access)
+  app.post('/api/admin/totp/authenticate', async (req: any, res) => {
+    try {
+      const { token } = req.body;
+
+      if (!token || !/^\d{6}$/.test(token)) {
+        return res.status(400).json({ error: 'Valid 6-digit code required' });
+      }
+
+      const existing = await db
+        .select()
+        .from(schema.adminTotpSecrets)
+        .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'))
+        .limit(1);
+
+      if (existing.length === 0 || !existing[0].enabled) {
+        return res.status(400).json({ error: 'TOTP not configured. Set up first.' });
+      }
+
+      const secret = existing[0];
+
+      // Check if locked
+      if (secret.lockedUntil && new Date(secret.lockedUntil) > new Date()) {
+        const remainingMinutes = Math.ceil((new Date(secret.lockedUntil).getTime() - Date.now()) / 60000);
+        return res.status(429).json({ 
+          error: `Too many failed attempts. Try again in ${remainingMinutes} minutes.`,
+          lockedUntil: secret.lockedUntil
+        });
+      }
+
+      // Verify the token
+      const verified = speakeasy.totp.verify({
+        secret: secret.totpSecret,
+        encoding: 'base32',
+        token: token,
+        window: 1
+      });
+
+      if (!verified) {
+        // Increment failed attempts
+        const newFailedAttempts = (secret.failedAttempts || 0) + 1;
+        const updateData: any = {
+          failedAttempts: newFailedAttempts,
+          updatedAt: new Date()
+        };
+
+        // Lock after 5 failed attempts for 15 minutes
+        if (newFailedAttempts >= 5) {
+          updateData.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+        }
+
+        await db
+          .update(schema.adminTotpSecrets)
+          .set(updateData)
+          .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'));
+
+        const attemptsRemaining = Math.max(0, 5 - newFailedAttempts);
+        return res.status(401).json({ 
+          error: `Invalid code. ${attemptsRemaining} attempts remaining before lockout.`,
+          attemptsRemaining
+        });
+      }
+
+      // Success - reset failed attempts and update verification tracking
+      await db
+        .update(schema.adminTotpSecrets)
+        .set({
+          failedAttempts: 0,
+          lockedUntil: null,
+          lastVerifiedAt: new Date(),
+          lastVerifiedBy: req.user?.id || 'anonymous',
+          verificationCount: sql`COALESCE(verification_count, 0) + 1`,
+          updatedAt: new Date()
+        })
+        .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'));
+
+      // Set session flag
+      if (req.session) {
+        req.session.adminTotpVerified = true;
+        req.session.adminTotpVerifiedAt = new Date().toISOString();
+      }
+
+      res.json({
+        success: true,
+        message: 'Authentication successful'
+      });
+    } catch (error: any) {
+      console.error('Error authenticating TOTP:', error);
+      res.status(500).json({ error: 'Failed to authenticate' });
+    }
+  });
+
+  // Check if current session is TOTP verified
+  app.get('/api/admin/totp/session', async (req: any, res) => {
+    try {
+      const isVerified = req.session?.adminTotpVerified === true;
+      const verifiedAt = req.session?.adminTotpVerifiedAt || null;
+      
+      res.json({
+        isVerified,
+        verifiedAt
+      });
+    } catch (error: any) {
+      console.error('Error checking TOTP session:', error);
+      res.status(500).json({ error: 'Failed to check session' });
+    }
+  });
+
+  // Reset TOTP (for re-setup)
+  app.post('/api/admin/totp/reset', async (req: any, res) => {
+    try {
+      const { token } = req.body;
+
+      // Must provide valid current TOTP to reset
+      if (!token || !/^\d{6}$/.test(token)) {
+        return res.status(400).json({ error: 'Current TOTP code required to reset' });
+      }
+
+      const existing = await db
+        .select()
+        .from(schema.adminTotpSecrets)
+        .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'))
+        .limit(1);
+
+      if (existing.length === 0) {
+        return res.status(400).json({ error: 'TOTP not configured' });
+      }
+
+      const secret = existing[0];
+
+      // Verify current token before allowing reset
+      const verified = speakeasy.totp.verify({
+        secret: secret.totpSecret,
+        encoding: 'base32',
+        token: token,
+        window: 1
+      });
+
+      if (!verified) {
+        return res.status(401).json({ error: 'Invalid current TOTP code' });
+      }
+
+      // Delete the existing secret
+      await db
+        .delete(schema.adminTotpSecrets)
+        .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'));
+
+      // Clear session
+      if (req.session) {
+        req.session.adminTotpVerified = false;
+        req.session.adminTotpVerifiedAt = null;
+      }
+
+      res.json({
+        success: true,
+        message: 'TOTP reset. You can now set up a new authenticator.'
+      });
+    } catch (error: any) {
+      console.error('Error resetting TOTP:', error);
+      res.status(500).json({ error: 'Failed to reset TOTP' });
+    }
+  });
+
+  // =============================================================================
+  // END ADMIN TOTP AUTHENTICATION ROUTES
+  // =============================================================================
+
+  // =============================================================================
   // ML TRAINING CONSENT ROUTES
   // Patient data contribution consent for ML model training
   // =============================================================================

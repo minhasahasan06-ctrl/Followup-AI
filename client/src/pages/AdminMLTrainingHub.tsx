@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from "@/components/ui/input-otp";
 import { 
   Database, 
   Brain, 
@@ -40,6 +41,10 @@ import {
   Filter,
   Droplets,
   Activity,
+  KeyRound,
+  QrCode,
+  Smartphone,
+  Copy,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -105,6 +110,351 @@ interface ContributionsSummary {
 }
 
 const CONSENT_COLORS = ["#22c55e", "#3b82f6", "#f97316", "#8b5cf6", "#ec4899"];
+
+interface TOTPStatus {
+  isSetup: boolean;
+  enabled: boolean;
+  isLocked?: boolean;
+  lockedUntil?: string | null;
+}
+
+interface TOTPSession {
+  isVerified: boolean;
+  verifiedAt?: string | null;
+}
+
+function TOTPGate({ children }: { children: React.ReactNode }) {
+  const { toast } = useToast();
+  const [otpValue, setOtpValue] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [secretKey, setSecretKey] = useState<string | null>(null);
+
+  const { data: totpStatus, isLoading: statusLoading, refetch: refetchStatus } = useQuery<TOTPStatus>({
+    queryKey: ['/api/admin/totp/status'],
+  });
+
+  const { data: sessionStatus, isLoading: sessionLoading, refetch: refetchSession } = useQuery<TOTPSession>({
+    queryKey: ['/api/admin/totp/session'],
+  });
+
+  const setupMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('/api/admin/totp/setup', {
+        method: 'POST',
+      });
+    },
+    onSuccess: (data: any) => {
+      setQrCode(data.qrCode);
+      setSecretKey(data.secret);
+      toast({
+        title: "QR Code Generated",
+        description: "Scan with Google Authenticator to set up 2FA",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Setup Failed",
+        description: error.message || "Failed to generate QR code",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const verifySetupMutation = useMutation({
+    mutationFn: async (token: string) => {
+      return apiRequest('/api/admin/totp/verify-setup', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "2FA Enabled",
+        description: "Google Authenticator is now required for access",
+      });
+      setQrCode(null);
+      setSecretKey(null);
+      setOtpValue("");
+      refetchStatus();
+      refetchSession();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Verification Failed",
+        description: error.message || "Invalid code. Please try again.",
+        variant: "destructive",
+      });
+      setOtpValue("");
+    },
+  });
+
+  const authenticateMutation = useMutation({
+    mutationFn: async (token: string) => {
+      return apiRequest('/api/admin/totp/authenticate', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Access Granted",
+        description: "Authentication successful",
+      });
+      setOtpValue("");
+      refetchSession();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Authentication Failed",
+        description: error.message || "Invalid code. Please try again.",
+        variant: "destructive",
+      });
+      setOtpValue("");
+    },
+  });
+
+  const handleCopySecret = () => {
+    if (secretKey) {
+      navigator.clipboard.writeText(secretKey);
+      toast({
+        title: "Copied",
+        description: "Secret key copied to clipboard",
+      });
+    }
+  };
+
+  const handleOtpComplete = (value: string) => {
+    if (value.length === 6) {
+      if (qrCode && !totpStatus?.enabled) {
+        verifySetupMutation.mutate(value);
+      } else {
+        authenticateMutation.mutate(value);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (otpValue.length === 6) {
+      handleOtpComplete(otpValue);
+    }
+  }, [otpValue]);
+
+  if (statusLoading || sessionLoading) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <Card className="max-w-md mx-auto">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-center space-x-2">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="text-muted-foreground">Loading security status...</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (sessionStatus?.isVerified) {
+    return <>{children}</>;
+  }
+
+  if (totpStatus?.isLocked) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <Card className="max-w-md mx-auto border-red-500/50" data-testid="card-totp-locked">
+          <CardHeader className="text-center">
+            <div className="mx-auto w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
+              <Lock className="h-8 w-8 text-red-500" />
+            </div>
+            <CardTitle className="text-red-600 dark:text-red-400">Access Locked</CardTitle>
+            <CardDescription>
+              Too many failed attempts. Access is temporarily locked.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Please try again later or contact an administrator.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!totpStatus?.isSetup || !totpStatus?.enabled) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <Card className="max-w-lg mx-auto" data-testid="card-totp-setup">
+          <CardHeader className="text-center">
+            <div className="mx-auto w-16 h-16 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mb-4">
+              <KeyRound className="h-8 w-8 text-purple-500" />
+            </div>
+            <CardTitle>Set Up Two-Factor Authentication</CardTitle>
+            <CardDescription>
+              Protect the ML Training Hub with Google Authenticator
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {!qrCode ? (
+              <div className="text-center space-y-4">
+                <div className="p-6 bg-muted/30 rounded-lg space-y-3">
+                  <Smartphone className="h-12 w-12 mx-auto text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    You'll need the Google Authenticator app installed on your phone.
+                    Download it from the App Store or Google Play if you don't have it.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setupMutation.mutate()}
+                  disabled={setupMutation.isPending}
+                  className="w-full"
+                  data-testid="button-generate-qr"
+                >
+                  {setupMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <QrCode className="h-4 w-4 mr-2" />
+                  )}
+                  Generate QR Code
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Scan this QR code with Google Authenticator:
+                  </p>
+                  <div className="bg-white p-4 rounded-lg inline-block">
+                    <img 
+                      src={qrCode} 
+                      alt="TOTP QR Code" 
+                      className="w-48 h-48"
+                      data-testid="img-qr-code"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm text-muted-foreground">Manual entry key:</Label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowSecret(!showSecret)}
+                      data-testid="button-toggle-secret"
+                    >
+                      {showSecret ? "Hide" : "Show"}
+                    </Button>
+                  </div>
+                  {showSecret && secretKey && (
+                    <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                      <code className="flex-1 text-xs font-mono break-all" data-testid="text-secret-key">
+                        {secretKey}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleCopySecret}
+                        data-testid="button-copy-secret"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-center block">Enter the 6-digit code from your app:</Label>
+                  <div className="flex justify-center">
+                    <InputOTP
+                      maxLength={6}
+                      value={otpValue}
+                      onChange={setOtpValue}
+                      disabled={verifySetupMutation.isPending}
+                      data-testid="input-otp-setup"
+                    >
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} />
+                        <InputOTPSlot index={1} />
+                        <InputOTPSlot index={2} />
+                      </InputOTPGroup>
+                      <InputOTPSeparator />
+                      <InputOTPGroup>
+                        <InputOTPSlot index={3} />
+                        <InputOTPSlot index={4} />
+                        <InputOTPSlot index={5} />
+                      </InputOTPGroup>
+                    </InputOTP>
+                  </div>
+                  {verifySetupMutation.isPending && (
+                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Verifying...
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto py-8 px-4">
+      <Card className="max-w-md mx-auto" data-testid="card-totp-auth">
+        <CardHeader className="text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-4">
+            <ShieldCheck className="h-8 w-8 text-blue-500" />
+          </div>
+          <CardTitle>Two-Factor Authentication</CardTitle>
+          <CardDescription>
+            Enter the code from Google Authenticator
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-3">
+            <div className="flex justify-center">
+              <InputOTP
+                maxLength={6}
+                value={otpValue}
+                onChange={setOtpValue}
+                disabled={authenticateMutation.isPending}
+                data-testid="input-otp-auth"
+              >
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                </InputOTPGroup>
+                <InputOTPSeparator />
+                <InputOTPGroup>
+                  <InputOTPSlot index={3} />
+                  <InputOTPSlot index={4} />
+                  <InputOTPSlot index={5} />
+                </InputOTPGroup>
+              </InputOTP>
+            </div>
+            {authenticateMutation.isPending && (
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Authenticating...
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-center text-muted-foreground">
+            Open Google Authenticator on your phone and enter the 6-digit code for "Followup AI ML Training Hub"
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 function LegalDisclaimer() {
   return (
@@ -1026,26 +1376,10 @@ function ConsentAnalyticsTab() {
   );
 }
 
-export default function AdminMLTrainingHub() {
-  const { user } = useAuth();
-
-  if (!user || !['admin', 'doctor'].includes(user.role || '')) {
-    return (
-      <div className="container mx-auto py-8 px-4">
-        <Alert variant="destructive" data-testid="alert-access-denied">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Access Denied</AlertTitle>
-          <AlertDescription>
-            This page is only accessible to administrators and doctors.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
+function MLTrainingHubContent() {
   return (
     <div className="container mx-auto py-8 px-4 space-y-6" data-testid="page-admin-ml-training">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Brain className="h-6 w-6 text-purple-500" />
@@ -1056,7 +1390,8 @@ export default function AdminMLTrainingHub() {
           </p>
         </div>
         <Badge variant="outline" className="text-purple-500 border-purple-300">
-          Admin Access
+          <Lock className="h-3 w-3 mr-1" />
+          2FA Protected
         </Badge>
       </div>
 
@@ -1107,5 +1442,13 @@ export default function AdminMLTrainingHub() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function AdminMLTrainingHub() {
+  return (
+    <TOTPGate>
+      <MLTrainingHubContent />
+    </TOTPGate>
   );
 }
