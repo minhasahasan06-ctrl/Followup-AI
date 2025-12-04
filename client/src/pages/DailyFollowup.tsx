@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import * as React from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -49,6 +50,12 @@ import {
   RefreshCw,
   Calculator,
   Clock,
+  Mic,
+  Square,
+  Upload,
+  FileText,
+  Stethoscope,
+  Pill,
 } from 'lucide-react';
 import { ExamPrepStep } from '@/components/ExamPrepStep';
 import { VideoRecorder } from '@/components/VideoRecorder';
@@ -991,6 +998,534 @@ function DeviationAnalysisTab() {
   );
 }
 
+interface VoiceFollowupResult {
+  id: number;
+  transcription: string;
+  response: string;
+  extractedSymptoms: Array<{
+    symptom: string;
+    severity: string;
+    duration?: string;
+  }>;
+  extractedVitals: Array<{
+    type: string;
+    value: string;
+    unit?: string;
+  }>;
+  recommendedActions: string[];
+  conversationSummary?: string;
+  empathyLevel?: string;
+  concernsRaised: boolean;
+  needsFollowup: boolean;
+  createdAt: string;
+}
+
+function VoiceFollowupTab() {
+  const { toast } = useToast();
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [transcription, setTranscription] = useState<string>('');
+  const [isEditing, setIsEditing] = useState(false);
+  
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+  const timerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const maxDuration = 120; // 2 minutes
+
+  const { data: recentFollowups, isLoading: loadingHistory, refetch: refetchHistory } = useQuery<VoiceFollowupResult[]>({
+    queryKey: ['/api/voice-followup/recent'],
+    queryFn: async () => {
+      const response = await fetch('/api/voice-followup/recent?limit=5');
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 404) return [];
+        throw new Error('Failed to fetch voice history');
+      }
+      return response.json();
+    },
+    retry: 1,
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: async ({ audio, transcript }: { audio: Blob; transcript?: string }) => {
+      const formData = new FormData();
+      formData.append('audio', audio, `voice-followup-${Date.now()}.webm`);
+      if (transcript) {
+        formData.append('transcription', transcript);
+      }
+      
+      const response = await fetch('/api/voice-followup/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Upload failed' }));
+        throw new Error(error.message || 'Failed to process voice recording');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Voice Check-in Complete",
+        description: "Your recording has been processed and analyzed.",
+      });
+      setTranscription(data.transcription || '');
+      refetchHistory();
+      queryClient.invalidateQueries({ queryKey: ['/api/voice-followup'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Processing Failed",
+        description: error.message || "Unable to process your recording. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setAudioBlob(blob);
+        setAudioUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      setTranscription('');
+
+      timerRef.current = setInterval(() => {
+        setRecordingTime((prev) => {
+          const newTime = prev + 1;
+          if (newTime >= maxDuration) {
+            stopRecording();
+            return maxDuration;
+          }
+          return newTime;
+        });
+      }, 1000);
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      toast({
+        title: "Microphone Access Denied",
+        description: "Please allow microphone access to record voice messages.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+  };
+
+  const handleUpload = () => {
+    if (audioBlob) {
+      uploadMutation.mutate({ 
+        audio: audioBlob, 
+        transcript: isEditing ? transcription : undefined 
+      });
+    }
+  };
+
+  const handleReset = () => {
+    setAudioBlob(null);
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+    }
+    setAudioUrl(null);
+    setRecordingTime(0);
+    setTranscription('');
+    setIsEditing(false);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const progressPercentage = (recordingTime / maxDuration) * 100;
+
+  return (
+    <div className="space-y-6">
+      {/* Voice Recording Card */}
+      <Card data-testid="card-voice-recording">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-pink-400 to-red-500 text-white">
+              <Mic className="h-5 w-5" />
+            </div>
+            <div>
+              <CardTitle>Voice Check-in</CardTitle>
+              <CardDescription>
+                Speak naturally about how you're feeling - our AI will extract symptoms and vitals
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Initial State - Start Recording */}
+          {!audioBlob && !isRecording && (
+            <div className="text-center py-8">
+              <Button
+                size="lg"
+                onClick={startRecording}
+                className="h-20 w-20 rounded-full"
+                data-testid="button-start-voice-recording"
+              >
+                <Mic className="h-8 w-8" />
+              </Button>
+              <p className="text-sm text-muted-foreground mt-4">
+                Tap to start recording (up to {maxDuration / 60} minutes)
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                Example: "I've been having headaches for the past two days, my temperature feels normal, 
+                and I slept okay last night. My energy level is about a 6 out of 10."
+              </p>
+            </div>
+          )}
+
+          {/* Recording State */}
+          {isRecording && (
+            <div className="space-y-4">
+              <div className="text-center py-4">
+                <div className="flex items-center justify-center gap-3 mb-4">
+                  <div className="h-4 w-4 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-3xl font-mono font-bold" data-testid="text-voice-recording-time">
+                    {formatTime(recordingTime)}
+                  </span>
+                </div>
+                <Progress value={progressPercentage} className="h-2" />
+                <p className="text-xs text-muted-foreground mt-2">
+                  {formatTime(maxDuration - recordingTime)} remaining
+                </p>
+              </div>
+
+              <div className="flex justify-center">
+                <Button
+                  variant="destructive"
+                  size="lg"
+                  onClick={stopRecording}
+                  className="h-20 w-20 rounded-full"
+                  data-testid="button-stop-voice-recording"
+                >
+                  <Square className="h-8 w-8" />
+                </Button>
+              </div>
+
+              <p className="text-center text-sm text-muted-foreground">
+                Speak clearly about your symptoms, how you're feeling, and any vital signs you've measured
+              </p>
+            </div>
+          )}
+
+          {/* Review State - Audio recorded */}
+          {audioBlob && !uploadMutation.isSuccess && (
+            <div className="space-y-4">
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  Recording Complete
+                </p>
+                <audio src={audioUrl || ''} controls className="w-full" data-testid="audio-voice-player" />
+                <p className="text-xs text-muted-foreground mt-2">
+                  Duration: {formatTime(recordingTime)}
+                </p>
+              </div>
+
+              {/* Transcription Edit Option */}
+              {transcription && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Transcription
+                    </Label>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setIsEditing(!isEditing)}
+                      data-testid="button-edit-transcription"
+                    >
+                      {isEditing ? 'Done Editing' : 'Edit'}
+                    </Button>
+                  </div>
+                  {isEditing ? (
+                    <Textarea 
+                      value={transcription}
+                      onChange={(e) => setTranscription(e.target.value)}
+                      className="min-h-[100px]"
+                      data-testid="textarea-transcription"
+                    />
+                  ) : (
+                    <p className="text-sm p-3 bg-muted rounded-lg" data-testid="text-transcription-preview">
+                      {transcription}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleUpload}
+                  disabled={uploadMutation.isPending}
+                  className="flex-1"
+                  data-testid="button-submit-voice"
+                >
+                  {uploadMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Submit Voice Check-in
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleReset}
+                  disabled={uploadMutation.isPending}
+                  data-testid="button-rerecord-voice"
+                >
+                  Re-record
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Success State - Show Results */}
+          {uploadMutation.isSuccess && uploadMutation.data && (
+            <div className="space-y-4">
+              <Alert className="border-green-500/50 bg-green-500/5">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                <AlertTitle className="text-green-700 dark:text-green-400">
+                  Voice Check-in Processed
+                </AlertTitle>
+                <AlertDescription className="text-green-600 dark:text-green-300">
+                  {uploadMutation.data.conversationSummary || 'Your voice message has been analyzed successfully.'}
+                </AlertDescription>
+              </Alert>
+
+              {/* AI Response */}
+              {uploadMutation.data.response && (
+                <Card className="border-primary/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Heart className="h-4 w-4 text-pink-500" />
+                      Health Companion Response
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm leading-relaxed" data-testid="text-ai-response">
+                      {uploadMutation.data.response}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Extracted Symptoms */}
+              {uploadMutation.data.extractedSymptoms && uploadMutation.data.extractedSymptoms.length > 0 && (
+                <div className="p-4 bg-muted rounded-lg">
+                  <p className="font-medium text-sm mb-2 flex items-center gap-2">
+                    <Stethoscope className="h-4 w-4 text-blue-500" />
+                    Extracted Symptoms
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {uploadMutation.data.extractedSymptoms.map((symptom: any, idx: number) => (
+                      <Badge key={idx} variant="secondary" data-testid={`badge-symptom-${idx}`}>
+                        {symptom.symptom}
+                        {symptom.severity && ` (${symptom.severity})`}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Extracted Vitals */}
+              {uploadMutation.data.extractedVitals && uploadMutation.data.extractedVitals.length > 0 && (
+                <div className="p-4 bg-muted rounded-lg">
+                  <p className="font-medium text-sm mb-2 flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-green-500" />
+                    Mentioned Vitals
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {uploadMutation.data.extractedVitals.map((vital: any, idx: number) => (
+                      <div key={idx} className="text-sm p-2 bg-background rounded" data-testid={`vital-${idx}`}>
+                        <span className="text-muted-foreground">{vital.type}:</span>{' '}
+                        <span className="font-medium">{vital.value} {vital.unit || ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recommended Actions */}
+              {uploadMutation.data.recommendedActions && uploadMutation.data.recommendedActions.length > 0 && (
+                <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
+                  <p className="font-medium text-sm mb-2 flex items-center gap-2">
+                    <Pill className="h-4 w-4 text-blue-500" />
+                    Suggested Actions
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-sm">
+                    {uploadMutation.data.recommendedActions.map((action: string, idx: number) => (
+                      <li key={idx} className="text-muted-foreground" data-testid={`action-${idx}`}>
+                        {action}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Concern Badges */}
+              <div className="flex flex-wrap gap-2">
+                {uploadMutation.data.empathyLevel && (
+                  <Badge variant="outline" className="capitalize">
+                    {uploadMutation.data.empathyLevel}
+                  </Badge>
+                )}
+                {uploadMutation.data.concernsRaised && (
+                  <Badge variant="outline" className="bg-yellow-50 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-300">
+                    <AlertCircle className="w-3 h-3 mr-1" />
+                    Concerns Noted
+                  </Badge>
+                )}
+                {uploadMutation.data.needsFollowup && (
+                  <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                    Follow-up Recommended
+                  </Badge>
+                )}
+              </div>
+
+              <Button onClick={handleReset} variant="outline" className="w-full" data-testid="button-new-voice-recording">
+                <Mic className="h-4 w-4 mr-2" />
+                Record Another Check-in
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Recent Voice Check-ins History */}
+      <Card data-testid="card-voice-history">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-muted-foreground" />
+                Recent Voice Check-ins
+              </CardTitle>
+              <CardDescription>
+                Your latest voice recordings and extracted health data
+              </CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetchHistory()} data-testid="button-refresh-voice-history">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingHistory ? (
+            <div className="space-y-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : recentFollowups && recentFollowups.length > 0 ? (
+            <div className="space-y-3">
+              {recentFollowups.map((followup, idx) => (
+                <div 
+                  key={followup.id || idx} 
+                  className="p-4 border rounded-lg hover-elevate"
+                  data-testid={`voice-history-${idx}`}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Mic className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">
+                        {new Date(followup.createdAt).toLocaleDateString()} at{' '}
+                        {new Date(followup.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <div className="flex gap-1">
+                      {followup.concernsRaised && (
+                        <Badge variant="outline" className="text-xs bg-yellow-50 dark:bg-yellow-950">
+                          Concerns
+                        </Badge>
+                      )}
+                      {followup.needsFollowup && (
+                        <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950">
+                          Follow-up
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {followup.conversationSummary && (
+                    <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
+                      {followup.conversationSummary}
+                    </p>
+                  )}
+                  
+                  {followup.extractedSymptoms && followup.extractedSymptoms.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {followup.extractedSymptoms.slice(0, 4).map((s, sidx) => (
+                        <Badge key={sidx} variant="secondary" className="text-xs">
+                          {s.symptom}
+                        </Badge>
+                      ))}
+                      {followup.extractedSymptoms.length > 4 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{followup.extractedSymptoms.length - 4} more
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Mic className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+              <p className="text-muted-foreground">No voice check-ins yet</p>
+              <p className="text-sm text-muted-foreground">
+                Record your first voice check-in to see your history here
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function LegalDisclaimer() {
   return (
     <Alert className="border-amber-500/50 bg-amber-500/5">
@@ -1229,10 +1764,14 @@ export default function DailyFollowup() {
 
       {/* Tabs for Examination, Device Data, and Deviations */}
       <Tabs defaultValue="examination" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 max-w-xl">
+        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="examination" className="gap-2" data-testid="tab-examination">
             <Video className="h-4 w-4" />
             Examinations
+          </TabsTrigger>
+          <TabsTrigger value="voice" className="gap-2" data-testid="tab-voice">
+            <Mic className="h-4 w-4" />
+            Voice
           </TabsTrigger>
           <TabsTrigger value="devices" className="gap-2" data-testid="tab-devices">
             <Watch className="h-4 w-4" />
@@ -1529,6 +2068,22 @@ export default function DailyFollowup() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="voice" className="mt-6">
+          <div className="space-y-4">
+            <Alert className="border-pink-500/50 bg-pink-500/5" data-testid="alert-voice-disclaimer">
+              <Mic className="h-4 w-4 text-pink-500" />
+              <AlertTitle className="text-pink-700 dark:text-pink-400 font-semibold">
+                Voice-Based Health Check-in
+              </AlertTitle>
+              <AlertDescription className="text-pink-600 dark:text-pink-300 text-sm">
+                Speak naturally about how you're feeling. Our AI will transcribe your message and extract 
+                symptoms, vitals, and health information to track your wellness journey.
+              </AlertDescription>
+            </Alert>
+            <VoiceFollowupTab />
+          </div>
         </TabsContent>
 
         <TabsContent value="devices" className="mt-6">
