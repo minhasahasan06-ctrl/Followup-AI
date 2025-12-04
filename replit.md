@@ -81,6 +81,14 @@ The ML Training Pipeline handles consent-filtered patient data extraction, anony
 
 ### Security and Compliance
 The platform is HIPAA-compliant, utilizing AWS Cognito for authentication, BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, and explicit doctor-patient assignment authorization.
+- **Google Authenticator TOTP Protection:** Admin ML Training Hub (/ml-training) is protected with Google Authenticator two-factor authentication:
+  - Database table `admin_totp_secrets` stores encrypted TOTP secrets with lockout tracking
+  - Express routes: /api/admin/totp/setup (QR code generation), /verify-setup (initial setup), /authenticate (ongoing verification), /status, /session, /reset
+  - TOTPGate component wraps protected content, shows QR code setup for first-time users, 6-digit code entry for subsequent access
+  - Speakeasy library for TOTP generation/verification with 30-second time windows
+  - Lockout protection: 5 failed attempts triggers 15-minute lockout
+  - Session-based verification to avoid repeated code entry during active session
+  - Hidden from navigation (direct URL access only at /ml-training) for security through obscurity
 
 ## External Dependencies
 

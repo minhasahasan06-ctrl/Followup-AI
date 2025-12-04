@@ -1703,6 +1703,43 @@ export const insertTwoFactorAuthSchema = createInsertSchema(twoFactorAuth).omit(
 export type InsertTwoFactorAuth = z.infer<typeof insertTwoFactorAuthSchema>;
 export type TwoFactorAuth = typeof twoFactorAuth.$inferSelect;
 
+// Admin ML Training Hub TOTP Access Control
+export const adminTotpSecrets = pgTable("admin_totp_secrets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Secret name/identifier (e.g., "ml-training-hub")
+  secretName: varchar("secret_name").unique().notNull(),
+  
+  // TOTP settings
+  totpSecret: varchar("totp_secret").notNull(),
+  enabled: boolean("enabled").default(false),
+  
+  // Setup tracking
+  setupCompletedAt: timestamp("setup_completed_at"),
+  setupCompletedBy: varchar("setup_completed_by"),
+  
+  // Usage tracking
+  lastVerifiedAt: timestamp("last_verified_at"),
+  lastVerifiedBy: varchar("last_verified_by"),
+  verificationCount: integer("verification_count").default(0),
+  
+  // Security
+  failedAttempts: integer("failed_attempts").default(0),
+  lockedUntil: timestamp("locked_until"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAdminTotpSecretSchema = createInsertSchema(adminTotpSecrets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAdminTotpSecret = z.infer<typeof insertAdminTotpSecretSchema>;
+export type AdminTotpSecret = typeof adminTotpSecrets.$inferSelect;
+
 // Medical Documents (OCR extraction from uploaded files)
 export const medicalDocuments = pgTable("medical_documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
