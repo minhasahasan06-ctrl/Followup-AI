@@ -297,7 +297,7 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 
-// Medications - Extended for complete lifecycle management
+// Medications - Extended for complete lifecycle management with chronic care support
 export const medications = pgTable("medications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   patientId: varchar("patient_id").notNull().references(() => users.id),
@@ -319,12 +319,43 @@ export const medications = pgTable("medications", {
   sourceDocumentId: varchar("source_document_id"), // Link to medical document if from upload
   sourcePrescriptionId: varchar("source_prescription_id"), // Link to prescription if from doctor
   
-  // Status and confirmation tracking
-  status: varchar("status").notNull().default("active"), // 'active', 'pending_confirmation', 'inactive'
+  // Status and confirmation tracking - Extended for chronic care
+  status: varchar("status").notNull().default("active"), // 'draft', 'scheduled', 'active', 'completed', 'expired', 'superseded', 'conflict_hold', 'discontinued'
   confirmedAt: timestamp("confirmed_at"),
   confirmedBy: varchar("confirmed_by"), // User ID who confirmed
   addedBy: varchar("added_by").notNull().default("patient"), // 'patient', 'doctor', 'system'
   autoDetected: boolean("auto_detected").default(false), // True if extracted from document
+  
+  // Chronic care - Duration and continuous medication tracking
+  isContinuous: boolean("is_continuous").default(false), // True for ongoing/indefinite medications
+  intendedStartDate: timestamp("intended_start_date"), // When patient plans to start
+  actualStartDate: timestamp("actual_start_date"), // When patient confirmed they started
+  durationDays: integer("duration_days"), // Null for continuous medications
+  computedEndDate: timestamp("computed_end_date"), // Auto-calculated: actualStartDate + durationDays
+  
+  // Multi-specialty tracking
+  specialty: varchar("specialty"), // 'cardiology', 'oncology', 'neurology', etc.
+  prescribingDoctorId: varchar("prescribing_doctor_id").references(() => users.id),
+  
+  // Supersession tracking - same specialty replacement
+  supersededBy: varchar("superseded_by"), // ID of the new medication that replaced this one
+  supersededAt: timestamp("superseded_at"),
+  supersessionReason: text("supersession_reason"),
+  
+  // Cross-specialty conflict tracking
+  conflictGroupId: varchar("conflict_group_id"), // Links medications in same conflict
+  conflictStatus: varchar("conflict_status"), // 'pending', 'resolved', 'escalated'
+  conflictDetectedAt: timestamp("conflict_detected_at"),
+  conflictResolvedAt: timestamp("conflict_resolved_at"),
+  conflictResolution: text("conflict_resolution"), // JSON with resolution details
+  
+  // Reminder settings
+  remindersEnabled: boolean("reminders_enabled").default(true),
+  reminderOffsets: jsonb("reminder_offsets").$type<number[]>(), // Hours before end to remind, e.g., [24, 48, 168]
+  lastReminderSentAt: timestamp("last_reminder_sent_at"),
+  
+  // Adherence tracking
+  adherenceLog: jsonb("adherence_log").$type<Array<{ date: string; taken: boolean; time?: string; notes?: string }>>(),
   
   // Discontinuation tracking
   discontinuedAt: timestamp("discontinued_at"),
@@ -345,7 +376,7 @@ export const insertMedicationSchema = createInsertSchema(medications).omit({
 export type InsertMedication = z.infer<typeof insertMedicationSchema>;
 export type Medication = typeof medications.$inferSelect;
 
-// Prescriptions - Doctor-created prescriptions for patients
+// Prescriptions - Doctor-created prescriptions for patients with chronic care support
 export const prescriptions = pgTable("prescriptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   patientId: varchar("patient_id").notNull().references(() => users.id),
@@ -365,8 +396,27 @@ export const prescriptions = pgTable("prescriptions", {
   startDate: timestamp("start_date").defaultNow(),
   expirationDate: timestamp("expiration_date"), // When prescription expires
   
+  // Chronic care - Duration and continuous tracking
+  isContinuous: boolean("is_continuous").default(false), // True for ongoing medications
+  durationDays: integer("duration_days"), // Null for continuous medications
+  intendedStartDate: timestamp("intended_start_date"), // When patient should start
+  
+  // Multi-specialty tracking
+  specialty: varchar("specialty"), // 'cardiology', 'oncology', 'neurology', etc.
+  
+  // Supersession tracking - same specialty replaces previous
+  supersedes: varchar("supersedes"), // ID of the prescription this one replaces
+  supersededBy: varchar("superseded_by"), // ID of prescription that replaced this
+  supersededAt: timestamp("superseded_at"),
+  
+  // Cross-specialty conflict tracking
+  conflictGroupId: varchar("conflict_group_id"), // Links prescriptions in same conflict
+  hasConflict: boolean("has_conflict").default(false),
+  conflictDetectedAt: timestamp("conflict_detected_at"),
+  conflictResolvedAt: timestamp("conflict_resolved_at"),
+  
   // Status and tracking
-  status: varchar("status").notNull().default("sent"), // 'sent', 'acknowledged', 'filled', 'expired'
+  status: varchar("status").notNull().default("sent"), // 'sent', 'acknowledged', 'filled', 'active', 'completed', 'expired', 'superseded', 'conflict_hold'
   acknowledgedAt: timestamp("acknowledged_at"),
   acknowledgedBy: varchar("acknowledged_by"), // Patient who acknowledged
   
@@ -381,6 +431,65 @@ export const prescriptions = pgTable("prescriptions", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Cross-Specialty Medication Conflicts - Tracks conflicts between different specialists
+export const medicationConflicts = pgTable("medication_conflicts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  conflictGroupId: varchar("conflict_group_id").notNull(), // Groups related medications
+  
+  // Conflicting medications/prescriptions
+  medication1Id: varchar("medication1_id").references(() => medications.id),
+  medication2Id: varchar("medication2_id").references(() => medications.id),
+  prescription1Id: varchar("prescription1_id"),
+  prescription2Id: varchar("prescription2_id"),
+  
+  // Doctors involved
+  doctor1Id: varchar("doctor1_id").notNull().references(() => users.id),
+  doctor2Id: varchar("doctor2_id").notNull().references(() => users.id),
+  specialty1: varchar("specialty1").notNull(),
+  specialty2: varchar("specialty2").notNull(),
+  
+  // Conflict details
+  conflictType: varchar("conflict_type").notNull(), // 'drug_interaction', 'duplicate_therapy', 'dosage_overlap', 'contraindication'
+  severity: varchar("severity").notNull(), // 'low', 'moderate', 'high', 'critical'
+  description: text("description").notNull(),
+  detectedReason: text("detected_reason"), // Why conflict was flagged
+  
+  // Status tracking
+  status: varchar("status").notNull().default("pending"), // 'pending', 'doctor1_reviewed', 'doctor2_reviewed', 'resolved', 'escalated'
+  
+  // Doctor responses
+  doctor1Response: text("doctor1_response"),
+  doctor1RespondedAt: timestamp("doctor1_responded_at"),
+  doctor1Action: varchar("doctor1_action"), // 'keep', 'modify', 'cancel', 'defer'
+  doctor2Response: text("doctor2_response"),
+  doctor2RespondedAt: timestamp("doctor2_responded_at"),
+  doctor2Action: varchar("doctor2_action"), // 'keep', 'modify', 'cancel', 'defer'
+  
+  // Resolution
+  resolution: varchar("resolution"), // 'keep_both', 'modify_one', 'cancel_one', 'cancel_both', 'escalated'
+  resolutionDetails: text("resolution_details"),
+  resolvedBy: varchar("resolved_by"), // User ID who resolved
+  resolvedAt: timestamp("resolved_at"),
+  
+  // Notifications
+  doctor1NotifiedAt: timestamp("doctor1_notified_at"),
+  doctor2NotifiedAt: timestamp("doctor2_notified_at"),
+  patientNotifiedAt: timestamp("patient_notified_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertMedicationConflictSchema = createInsertSchema(medicationConflicts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMedicationConflict = z.infer<typeof insertMedicationConflictSchema>;
+export type MedicationConflict = typeof medicationConflicts.$inferSelect;
 
 export const insertPrescriptionSchema = createInsertSchema(prescriptions).omit({
   id: true,
