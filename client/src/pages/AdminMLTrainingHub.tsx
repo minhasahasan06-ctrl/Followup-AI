@@ -140,9 +140,14 @@ function TOTPGate({ children }: { children: React.ReactNode }) {
 
   const setupMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest('/api/admin/totp/setup', {
+      const response = await apiRequest('/api/admin/totp/setup', {
         method: 'POST',
       });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to generate QR code');
+      }
+      return response.json();
     },
     onSuccess: (data: any) => {
       setQrCode(data.qrCode);
@@ -163,10 +168,16 @@ function TOTPGate({ children }: { children: React.ReactNode }) {
 
   const verifySetupMutation = useMutation({
     mutationFn: async (token: string) => {
-      return apiRequest('/api/admin/totp/verify-setup', {
+      const response = await apiRequest('/api/admin/totp/verify-setup', {
         method: 'POST',
         body: JSON.stringify({ token }),
+        headers: { 'Content-Type': 'application/json' },
       });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Verification failed');
+      }
+      return response.json();
     },
     onSuccess: () => {
       toast({
@@ -191,10 +202,16 @@ function TOTPGate({ children }: { children: React.ReactNode }) {
 
   const authenticateMutation = useMutation({
     mutationFn: async (token: string) => {
-      return apiRequest('/api/admin/totp/authenticate', {
+      const response = await apiRequest('/api/admin/totp/authenticate', {
         method: 'POST',
         body: JSON.stringify({ token }),
+        headers: { 'Content-Type': 'application/json' },
       });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Authentication failed');
+      }
+      return response.json();
     },
     onSuccess: () => {
       toast({
