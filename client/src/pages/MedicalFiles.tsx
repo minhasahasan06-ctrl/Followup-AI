@@ -119,6 +119,29 @@ export default function MedicalFiles() {
     queryKey: ["/api/ehr/connections"],
   });
 
+  const { data: medicationHistory, isLoading: isLoadingMedHistory, error: medHistoryError } = useQuery<{
+    medications: Array<{
+      id: string;
+      name: string;
+      dosage: string;
+      frequency: string;
+      specialty?: string;
+      status?: string;
+      isContinuous?: boolean;
+      durationDays?: number;
+      supersededBy?: string;
+      supersededAt?: string;
+      supersessionReason?: string;
+      conflictStatus?: string;
+      computedEndDate?: string;
+      createdAt?: string;
+    }>;
+    total: number;
+    hasMore: boolean;
+  }>({
+    queryKey: ["/api/medications/history"],
+  });
+
   // Mutations
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
@@ -349,7 +372,7 @@ export default function MedicalFiles() {
         </div>
 
         <Tabs defaultValue="all" className="space-y-6">
-          <TabsList className="grid w-full max-w-3xl grid-cols-4">
+          <TabsList className="grid w-full max-w-4xl grid-cols-5">
             <TabsTrigger value="all" data-testid="tab-all-files">
               <Database className="h-4 w-4 mr-2" />
               All Files
@@ -365,6 +388,10 @@ export default function MedicalFiles() {
             <TabsTrigger value="imaging" data-testid="tab-imaging">
               <Image className="h-4 w-4 mr-2" />
               Imaging
+            </TabsTrigger>
+            <TabsTrigger value="med-history" data-testid="tab-medication-history">
+              <Pill className="h-4 w-4 mr-2" />
+              Rx History
             </TabsTrigger>
           </TabsList>
 
@@ -786,6 +813,152 @@ export default function MedicalFiles() {
                   <p>Medical imaging analysis coming soon</p>
                   <p className="text-sm mt-1">AI-powered DICOM analysis with AWS HealthImaging service</p>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Medication History Tab */}
+          <TabsContent value="med-history" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Pill className="h-5 w-5" />
+                  Medication History
+                </CardTitle>
+                <CardDescription>
+                  Archived, superseded, and discontinued prescriptions from all specialists
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingMedHistory ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : medHistoryError ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-3 text-destructive opacity-70" />
+                    <p className="font-medium text-destructive">Failed to load medication history</p>
+                    <p className="text-sm mt-1">Please try refreshing the page</p>
+                  </div>
+                ) : !medicationHistory?.medications || medicationHistory.medications.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Pill className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No medication history yet</p>
+                    <p className="text-sm mt-1">Archived and discontinued prescriptions will appear here</p>
+                  </div>
+                ) : (
+                  <ScrollArea className="h-[600px]">
+                    <div className="space-y-4">
+                      {medicationHistory.medications.map((med) => {
+                        const getStatusBadgeVariant = (status?: string) => {
+                          switch (status) {
+                            case 'superseded': return 'secondary';
+                            case 'expired': return 'outline';
+                            case 'discontinued': return 'destructive';
+                            default: return 'outline';
+                          }
+                        };
+                        
+                        const getSpecialtyColor = (specialty?: string) => {
+                          const colors: Record<string, string> = {
+                            cardiology: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800",
+                            oncology: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200 dark:border-purple-800",
+                            neurology: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+                            rheumatology: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800",
+                            endocrinology: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800",
+                            gastroenterology: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 border-orange-200 dark:border-orange-800",
+                            "general medicine": "bg-gray-100 text-gray-700 dark:bg-gray-800/60 dark:text-gray-300 border-gray-200 dark:border-gray-700",
+                          };
+                          return colors[specialty?.toLowerCase() || ''] || colors['general medicine'];
+                        };
+
+                        return (
+                          <Card key={med.id} className="hover-elevate" data-testid={`card-archived-med-${med.id}`}>
+                            <CardHeader className="pb-3">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <h3 className="font-medium">{med.name}</h3>
+                                    <Badge variant={getStatusBadgeVariant(med.status)} className="text-xs capitalize">
+                                      {med.status || 'archived'}
+                                    </Badge>
+                                    {med.specialty && (
+                                      <Badge variant="outline" className={`text-xs ${getSpecialtyColor(med.specialty)}`}>
+                                        <Stethoscope className="h-3 w-3 mr-1" />
+                                        {med.specialty}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                    <span>{med.dosage}</span>
+                                    <span>{med.frequency}</span>
+                                    {med.isContinuous ? (
+                                      <span className="flex items-center gap-1">
+                                        <Infinity className="h-3 w-3" />
+                                        Continuous
+                                      </span>
+                                    ) : med.durationDays && (
+                                      <span className="flex items-center gap-1">
+                                        <Clock className="h-3 w-3" />
+                                        {med.durationDays} days
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-right text-sm text-muted-foreground">
+                                  {med.createdAt && (
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="h-3 w-3" />
+                                      {formatDistanceToNow(new Date(med.createdAt), { addSuffix: true })}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="pt-0">
+                              {med.status === 'superseded' && med.supersessionReason && (
+                                <div className="flex items-start gap-2 p-3 bg-muted/50 rounded-md border">
+                                  <ArrowRightLeft className="h-4 w-4 text-muted-foreground mt-0.5" />
+                                  <div>
+                                    <p className="text-sm font-medium">Supersession Note</p>
+                                    <p className="text-sm text-muted-foreground">{med.supersessionReason}</p>
+                                    {med.supersededAt && (
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Superseded on {new Date(med.supersededAt).toLocaleDateString()}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {med.conflictStatus && med.conflictStatus !== 'none' && (
+                                <div className="flex items-start gap-2 p-3 bg-destructive/10 rounded-md border border-destructive/20 mt-2">
+                                  <Ban className="h-4 w-4 text-destructive mt-0.5" />
+                                  <div>
+                                    <p className="text-sm font-medium text-destructive">Had Conflict</p>
+                                    <p className="text-sm text-muted-foreground capitalize">{med.conflictStatus}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {med.computedEndDate && (
+                                <p className="text-xs text-muted-foreground mt-2">
+                                  End date: {new Date(med.computedEndDate).toLocaleDateString()}
+                                </p>
+                              )}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                    {medicationHistory.total > 0 && (
+                      <div className="mt-4 pt-4 border-t text-center text-sm text-muted-foreground">
+                        Showing {medicationHistory.medications.length} of {medicationHistory.total} archived medications
+                        {medicationHistory.hasMore && (
+                          <span className="block text-xs mt-1">More records available</span>
+                        )}
+                      </div>
+                    )}
+                  </ScrollArea>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

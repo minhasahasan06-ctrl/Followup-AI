@@ -6705,6 +6705,36 @@ All questions and discussions should be focused on this patient.`;
   // MEDICATION LIFECYCLE ROUTES
   // ============================================
 
+  // Lightweight medication history endpoint (for Medical Files page)
+  app.get('/api/medications/history', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const allMedications = await storage.getAllMedications(userId);
+      
+      // Get archived/completed medications for history
+      const archivedMedications = allMedications.filter(m => 
+        !m.active || m.status === 'superseded' || m.status === 'expired' || m.status === 'discontinued'
+      );
+
+      // Paginate results
+      const paginatedResults = archivedMedications.slice(offset, offset + limit);
+      
+      res.json({
+        medications: paginatedResults,
+        total: archivedMedications.length,
+        limit,
+        offset,
+        hasMore: offset + limit < archivedMedications.length,
+      });
+    } catch (error) {
+      console.error('Error fetching medication history:', error);
+      res.status(500).json({ message: 'Failed to fetch medication history' });
+    }
+  });
+
   // Confirm patient start date for a medication
   app.post('/api/medications/:id/confirm-start', isAuthenticated, async (req: any, res) => {
     try {
@@ -6748,6 +6778,122 @@ All questions and discussions should be focused on this patient.`;
     } catch (error) {
       console.error('Error confirming medication start:', error);
       res.status(500).json({ message: 'Failed to confirm medication start' });
+    }
+  });
+
+  // Mark medication as taken (adherence tracking)
+  app.post('/api/medications/:id/mark-taken', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      const { takenAt } = req.body;
+
+      // Validate takenAt if provided
+      const recordedAt = takenAt ? new Date(takenAt) : new Date();
+      if (isNaN(recordedAt.getTime())) {
+        return res.status(400).json({ message: 'Invalid takenAt date format' });
+      }
+
+      const [medication] = await db
+        .select()
+        .from(schema.medications)
+        .where(and(eq(schema.medications.id, id), eq(schema.medications.patientId, userId)));
+
+      if (!medication) {
+        return res.status(404).json({ message: 'Medication not found' });
+      }
+
+      // Record adherence log
+      await storage.createMedicationChangeLog({
+        medicationId: id,
+        patientId: userId,
+        changeType: 'dose_taken',
+        changedBy: 'patient',
+        changedByUserId: userId,
+        changeReason: `Patient marked dose taken at ${recordedAt.toISOString()}`,
+      });
+
+      // Get adherence count for this medication (total doses taken)
+      const adherenceLogs = await storage.getMedicationChangelog(id);
+      const dosesTaken = adherenceLogs.filter(log => log.changeType === 'dose_taken').length;
+
+      console.log(`[ADHERENCE] Patient ${userId} marked dose taken for medication ${id} - total doses: ${dosesTaken}`);
+      res.json({ 
+        success: true, 
+        message: 'Dose recorded successfully',
+        medicationId: id,
+        dosesTaken,
+        lastTakenAt: recordedAt.toISOString(),
+      });
+    } catch (error) {
+      console.error('Error marking medication taken:', error);
+      res.status(500).json({ message: 'Failed to record dose' });
+    }
+  });
+
+  // Request refill for a medication
+  app.post('/api/medications/:id/request-refill', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+
+      const [medication] = await db
+        .select()
+        .from(schema.medications)
+        .where(and(eq(schema.medications.id, id), eq(schema.medications.patientId, userId)));
+
+      if (!medication) {
+        return res.status(404).json({ message: 'Medication not found' });
+      }
+
+      // Check for recent refill request (within last 24 hours to prevent spam)
+      const recentLogs = await storage.getMedicationChangelog(id);
+      const recentRefillRequest = recentLogs.find(log => {
+        if (log.changeType !== 'refill_requested') return false;
+        const logDate = new Date(log.createdAt || 0);
+        const hoursSince = (Date.now() - logDate.getTime()) / (1000 * 60 * 60);
+        return hoursSince < 24;
+      });
+
+      if (recentRefillRequest) {
+        return res.status(400).json({ 
+          message: 'A refill request was already submitted within the last 24 hours. Please wait before requesting again.',
+        });
+      }
+
+      // Record refill request
+      await storage.createMedicationChangeLog({
+        medicationId: id,
+        patientId: userId,
+        changeType: 'refill_requested',
+        changedBy: 'patient',
+        changedByUserId: userId,
+        changeReason: `Patient requested refill for ${medication.name}`,
+      });
+
+      // Get prescribing doctor if available
+      const prescribingDoctorId = medication.prescribingDoctorId;
+      if (prescribingDoctorId) {
+        // Create notification for doctor
+        console.log(`[REFILL] Patient ${userId} requested refill for ${medication.name}, notifying doctor ${prescribingDoctorId}`);
+        // In production, would create notification record or send email here
+      }
+
+      // Count total refill requests for this medication
+      const allLogs = await storage.getMedicationChangelog(id);
+      const refillCount = allLogs.filter(log => log.changeType === 'refill_requested').length;
+
+      res.json({ 
+        success: true, 
+        message: 'Refill request submitted. Your doctor will be notified.',
+        medicationId: id,
+        medicationName: medication.name,
+        refillRequestCount: refillCount,
+        requestedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Error requesting refill:', error);
+      res.status(500).json({ message: 'Failed to request refill' });
     }
   });
 

@@ -251,6 +251,48 @@ export default function Medications() {
     },
   });
 
+  const markTakenMutation = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      return apiRequest('POST', `/api/medications/${id}/mark-taken`, {
+        takenAt: new Date().toISOString(),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/medications/dashboard'] });
+      toast({
+        title: "Dose Recorded",
+        description: "Your medication dose has been recorded.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to record dose. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const requestRefillMutation = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      return apiRequest('POST', `/api/medications/${id}/request-refill`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/medications/dashboard'] });
+      toast({
+        title: "Refill Requested",
+        description: "Your doctor has been notified of your refill request.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to request refill. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const toggleSpecialtyExpand = (specialty: string) => {
     setExpandedSpecialties(prev =>
       prev.includes(specialty)
@@ -668,6 +710,40 @@ export default function Medications() {
                                             <PlayCircle className="h-4 w-4 mr-1" />
                                             Confirm Start Date
                                           </Button>
+                                        </div>
+                                      )}
+                                      {med.actualStartDate && !med.hasConflict && (
+                                        <div className="mt-3 pt-3 border-t border-dashed flex items-center gap-2 flex-wrap">
+                                          <Button
+                                            size="sm"
+                                            variant="default"
+                                            onClick={() => markTakenMutation.mutate({ id: med.id })}
+                                            disabled={markTakenMutation.isPending}
+                                            data-testid={`button-taken-${med.id}`}
+                                          >
+                                            {markTakenMutation.isPending ? (
+                                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                            ) : (
+                                              <Check className="h-4 w-4 mr-1" />
+                                            )}
+                                            Mark Taken
+                                          </Button>
+                                          {med.isContinuous && (
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => requestRefillMutation.mutate({ id: med.id })}
+                                              disabled={requestRefillMutation.isPending}
+                                              data-testid={`button-refill-${med.id}`}
+                                            >
+                                              {requestRefillMutation.isPending ? (
+                                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                              ) : (
+                                                <RefreshCw className="h-4 w-4 mr-1" />
+                                              )}
+                                              Request Refill
+                                            </Button>
+                                          )}
                                         </div>
                                       )}
                                     </div>

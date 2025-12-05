@@ -114,6 +114,7 @@ export default function Prescriptions() {
 
   const [showSupersessionDialog, setShowSupersessionDialog] = useState(false);
   const [supersessionCandidates, setSupersessionCandidates] = useState<any[]>([]);
+  const [conflictResponse, setConflictResponse] = useState<{ id: string; response: string; notes: string } | null>(null);
 
   const { data: patients, isLoading: patientsLoading } = useQuery<UserType[]>({
     queryKey: ["/api/doctor/patients"],
@@ -160,6 +161,65 @@ export default function Prescriptions() {
       return res.json();
     },
     enabled: isDoctor && !!selectedPatient,
+  });
+
+  interface MedicationConflict {
+    id: string;
+    patientId: string;
+    medication1Id: string;
+    medication2Id: string;
+    doctor1Id: string;
+    doctor2Id: string;
+    specialty1: string;
+    specialty2: string;
+    conflictType: string;
+    severity: string;
+    description: string;
+    status: 'pending' | 'resolved';
+    doctor1Response?: string;
+    doctor2Response?: string;
+    resolution?: string;
+    createdAt: string;
+    medication1Name?: string;
+    medication2Name?: string;
+    patientName?: string;
+  }
+
+  const { data: pendingConflicts, isLoading: conflictsLoading } = useQuery<MedicationConflict[]>({
+    queryKey: ["/api/doctor/medication-conflicts/pending"],
+    enabled: isDoctor,
+  });
+
+  const respondToConflictMutation = useMutation({
+    mutationFn: async ({ conflictId, response, notes }: { conflictId: string; response: string; notes: string }) => {
+      const res = await apiRequest("POST", `/api/doctor/medication-conflicts/${conflictId}/respond`, {
+        response,
+        notes,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctor/medication-conflicts/pending"] });
+      setConflictResponse(null);
+      if (data.resolved) {
+        toast({
+          title: "Conflict Resolved",
+          description: "Both doctors agreed. The medications are now active.",
+        });
+      } else {
+        toast({
+          title: "Response Recorded",
+          description: "Waiting for the other doctor to respond.",
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to submit response",
+        variant: "destructive",
+      });
+    },
   });
 
   const checkSupersessionMutation = useMutation({
@@ -817,6 +877,101 @@ export default function Prescriptions() {
           {doctorPrescriptions?.length || 0} Total Prescriptions
         </Badge>
       </div>
+
+      {pendingConflicts && pendingConflicts.length > 0 && (
+        <Alert variant="destructive" className="border-2" data-testid="alert-pending-conflicts">
+          <Ban className="h-5 w-5" />
+          <AlertTitle className="text-lg">Cross-Specialty Conflicts Require Your Attention</AlertTitle>
+          <AlertDescription className="mt-2">
+            <p className="mb-3">
+              The following medication conflicts are on hold waiting for your response. Both prescribing doctors must respond before medications can be released.
+            </p>
+            <div className="space-y-3">
+              {pendingConflicts.map(conflict => (
+                <div key={conflict.id} className="p-4 bg-background rounded-md border">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline">{conflict.specialty1}</Badge>
+                        <span className="text-muted-foreground">vs</span>
+                        <Badge variant="outline">{conflict.specialty2}</Badge>
+                        <Badge variant={conflict.severity === 'severe' ? 'destructive' : 'secondary'}>
+                          {conflict.severity}
+                        </Badge>
+                      </div>
+                      <p className="text-sm font-medium mb-1">
+                        {conflict.medication1Name || 'Medication 1'} + {conflict.medication2Name || 'Medication 2'}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{conflict.description}</p>
+                      {conflict.patientName && (
+                        <p className="text-xs text-muted-foreground mt-1">Patient: {conflict.patientName}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {conflictResponse?.id === conflict.id ? (
+                        <div className="space-y-2 min-w-[200px]">
+                          <RadioGroup
+                            value={conflictResponse.response}
+                            onValueChange={(val) => setConflictResponse({ ...conflictResponse, response: val })}
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="approve" id={`approve-${conflict.id}`} />
+                              <Label htmlFor={`approve-${conflict.id}`} className="text-sm cursor-pointer">Approve my medication</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="withdraw" id={`withdraw-${conflict.id}`} />
+                              <Label htmlFor={`withdraw-${conflict.id}`} className="text-sm cursor-pointer">Withdraw my prescription</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="modify" id={`modify-${conflict.id}`} />
+                              <Label htmlFor={`modify-${conflict.id}`} className="text-sm cursor-pointer">Suggest modification</Label>
+                            </div>
+                          </RadioGroup>
+                          <Input
+                            placeholder="Notes (optional)"
+                            value={conflictResponse.notes}
+                            onChange={(e) => setConflictResponse({ ...conflictResponse, notes: e.target.value })}
+                            className="text-sm"
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setConflictResponse(null)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => respondToConflictMutation.mutate({
+                                conflictId: conflict.id,
+                                response: conflictResponse.response,
+                                notes: conflictResponse.notes,
+                              })}
+                              disabled={!conflictResponse.response || respondToConflictMutation.isPending}
+                            >
+                              Submit
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => setConflictResponse({ id: conflict.id, response: '', notes: '' })}
+                          data-testid={`button-respond-conflict-${conflict.id}`}
+                        >
+                          <Shield className="h-4 w-4 mr-1" />
+                          Respond
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-2">
