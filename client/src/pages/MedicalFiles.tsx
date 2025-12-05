@@ -30,6 +30,12 @@ import {
   Lock,
   Calendar,
   Database,
+  Pill,
+  ArrowRightLeft,
+  Clock,
+  Ban,
+  Infinity,
+  Stethoscope,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import {
