@@ -1,80 +1,56 @@
+/**
+ * Secure Query Client for React Query
+ * 
+ * HIPAA-Compliant query client with comprehensive security features.
+ * This module provides a secure wrapper around React Query that integrates
+ * all security measures including SSRF protection, rate limiting, CSRF
+ * protection, audit logging, and error sanitization.
+ */
+
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import {
+  secureApiRequest,
+  secureGet,
+  type SecureApiRequestOptions,
+} from "./security/secureApiClient";
+import { sanitizeError } from "./security/errorSanitizer";
 
-// Python backend URL (FastAPI on port 8000)
-const PYTHON_BACKEND_URL = import.meta.env.VITE_PYTHON_BACKEND_URL || "http://localhost:8000";
-
-// Helper to determine if URL should go to Python backend
-function getPythonBackendUrl(url: string): string {
-  // If it's already an absolute URL (starts with http:// or https://), return unchanged
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
-  }
-  
-  // Normalize URL (ensure leading slash for relative paths)
-  const normalizedUrl = url.startsWith('/') ? url : `/${url}`;
-  
-  // Routes that should go to Python FastAPI backend
-  if (normalizedUrl.startsWith("/api/v1/video-ai") || 
-      normalizedUrl.startsWith("/api/v1/audio-ai") || 
-      normalizedUrl.startsWith("/api/v1/trends") || 
-      normalizedUrl.startsWith("/api/v1/alerts") ||
-      normalizedUrl.startsWith("/api/v1/guided-audio-exam") ||
-      normalizedUrl.startsWith("/api/v1/guided-exam") ||
-      normalizedUrl.startsWith("/api/v1/gait-analysis") ||
-      normalizedUrl.startsWith("/api/v1/tremor")) {
-    return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
-  }
-  return normalizedUrl;
-}
-
-async function throwIfResNotOk(res: Response) {
-  if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
-  }
-}
-
+/**
+ * Legacy apiRequest function for backward compatibility
+ * @deprecated Use secureApiRequest from './security/secureApiClient' instead
+ */
 export async function apiRequest(
   url: string,
   options?: RequestInit & { json?: unknown }
 ): Promise<Response> {
   const { json, ...fetchOptions } = options || {};
   
-  // Route to Python backend if needed
-  const finalUrl = getPythonBackendUrl(url);
-  
-  // Prepare headers and body
-  const headers = { ...((fetchOptions.headers as Record<string, string>) || {}) };
-  let body = fetchOptions.body;
-  
-  // If json payload is provided, stringify and set Content-Type
-  if (json !== undefined) {
-    headers["Content-Type"] = "application/json";
-    body = JSON.stringify(json);
-  }
-  // If body is already FormData, don't set Content-Type (browser sets it with boundary)
-  // For other body types, let them pass through as-is
-  
-  const res = await fetch(finalUrl, {
+  const secureOptions: SecureApiRequestOptions = {
     ...fetchOptions,
-    headers,
-    body,
-    credentials: "include", // Always include credentials for authentication
-  });
+    json,
+  };
 
-  await throwIfResNotOk(res);
-  return res;
+  const response = await secureApiRequest(url, secureOptions);
+  return response;
 }
 
+/**
+ * Query function factory with security features
+ */
 type UnauthorizedBehavior = "returnNull" | "throw";
+
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
+  phiAccess?: boolean;
+  resourceType?: string;
+  resourceId?: string;
 }) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
+  ({ on401: unauthorizedBehavior, phiAccess = false, resourceType, resourceId }) =>
   async ({ queryKey }) => {
     // Require first queryKey entry to be a string URL path
     if (queryKey.length === 0 || typeof queryKey[0] !== 'string') {
-      throw new Error('Query key must start with a string URL path');
+      const error = new Error('Query key must start with a string URL path');
+      throw sanitizeError(error);
     }
     
     // Build URL from query key
@@ -87,21 +63,35 @@ export const getQueryFn: <T>(options: {
       const stringParts = queryKey.filter(k => typeof k === 'string') as string[];
       url = stringParts.join("/");
     }
-    
-    const finalUrl = getPythonBackendUrl(url);
-    
-    const res = await fetch(finalUrl, {
-      credentials: "include",
-    });
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
+    try {
+      // Use secure API client
+      const response = await secureGet<any>(url, {
+        phiAccess,
+        resourceType,
+        resourceId,
+        skipRetry: false, // Allow retries for queries
+      });
+
+      // Return parsed data
+      return response.data;
+    } catch (error) {
+      // Handle 401 errors (secureGet throws for 401, so we catch it here)
+      if (error && typeof error === 'object' && 'statusCode' in error) {
+        const statusCode = (error as any).statusCode;
+        if (statusCode === 401 && unauthorizedBehavior === "returnNull") {
+          return null;
+        }
+      }
+
+      // Re-throw sanitized error
+      throw sanitizeError(error, `Query function for ${url}`);
     }
-
-    await throwIfResNotOk(res);
-    return await res.json();
   };
 
+/**
+ * Secure Query Client with HIPAA-compliant defaults
+ */
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -109,10 +99,30 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: Infinity,
-      retry: false,
+      retry: (failureCount, error: any) => {
+        // Don't retry on 4xx errors (client errors)
+        if (error?.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
+          return false;
+        }
+        // Retry up to 2 times for network/server errors
+        return failureCount < 2;
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     },
     mutations: {
-      retry: false,
+      retry: (failureCount, error: any) => {
+        // Don't retry mutations on client errors
+        if (error?.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
+          return false;
+        }
+        // Retry once for network/server errors
+        return failureCount < 1;
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
     },
   },
 });
+
+// Export secure API functions for direct use
+export { secureApiRequest, secureGet, securePost, securePut, securePatch, secureDelete } from "./security/secureApiClient";
+export * from "./security";
