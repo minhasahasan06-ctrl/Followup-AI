@@ -186,12 +186,27 @@ const api = {
   delete: <T = any>(url: string, config?: AxiosRequestConfig) =>
     axiosRequest<T>({ ...(config || {}), url, method: 'DELETE' }),
   create: (defaultConfig?: AxiosRequestConfig) => {
-    // Create a new instance with default config
+    // Helper to merge defaults with config
+    const mergeConfig = (config?: AxiosRequestConfig): AxiosRequestConfig => {
+      return { ...(defaultConfig || {}), ...(config || {}) };
+    };
+
+    // Create a new instance with default config applied to all methods
     return {
       ...api,
       defaults: defaultConfig || {},
-      request: (config?: AxiosRequestConfig) =>
-        axiosRequest({ ...(defaultConfig || {}), ...(config || {}) }),
+      request: (config?: AxiosRequestConfig) => axiosRequest(mergeConfig(config)),
+      get: <T = any>(url: string, config?: AxiosRequestConfig) =>
+        axiosRequest<T>(mergeConfig({ ...(config || {}), url, method: 'GET' })),
+      post: <T = any>(url: string, data?: any, config?: AxiosRequestConfig) =>
+        axiosRequest<T>(mergeConfig({ ...(config || {}), url, method: 'POST', data })),
+      put: <T = any>(url: string, data?: any, config?: AxiosRequestConfig) =>
+        axiosRequest<T>(mergeConfig({ ...(config || {}), url, method: 'PUT', data })),
+      patch: <T = any>(url: string, data?: any, config?: AxiosRequestConfig) =>
+        axiosRequest<T>(mergeConfig({ ...(config || {}), url, method: 'PATCH', data })),
+      delete: <T = any>(url: string, config?: AxiosRequestConfig) =>
+        axiosRequest<T>(mergeConfig({ ...(config || {}), url, method: 'DELETE' })),
+      interceptors: api.interceptors, // Share interceptors across instances
     };
   },
   interceptors: {

@@ -117,14 +117,19 @@ async function validateResponseSize(response: Response): Promise<void> {
 /**
  * Creates AbortController with timeout
  */
-function createTimeoutController(timeoutMs: number): AbortController {
+function createTimeoutController(timeoutMs: number): {
+  controller: AbortController;
+  clearTimeout: () => void;
+} {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort();
   }, timeoutMs);
   
-  // Clean up timeout if request completes
-  return controller;
+  return {
+    controller,
+    clearTimeout: () => clearTimeout(timeoutId),
+  };
 }
 
 /**
@@ -239,7 +244,8 @@ export async function secureApiRequest<T = any>(
   }
 
   // Step 6: Create timeout controller
-  const timeoutController = createTimeoutController(timeout);
+  const timeoutControllerWrapper = createTimeoutController(timeout);
+  const timeoutController = timeoutControllerWrapper.controller;
   const abortController = new AbortController();
 
   // Combine abort signals (fallback for browsers that don't support AbortSignal.any)
@@ -344,6 +350,9 @@ export async function secureApiRequest<T = any>(
   try {
     const response = await requestPromise;
 
+    // Clear timeout since request completed successfully
+    timeoutControllerWrapper.clearTimeout();
+
     // Step 9: Audit logging - response
     audit.apiResponse(finalUrl, method, response.status, userId);
 
@@ -401,6 +410,8 @@ export async function secureApiRequest<T = any>(
 
     return secureResponse;
   } catch (error) {
+    // Clear timeout on error as well
+    timeoutControllerWrapper.clearTimeout();
     audit.apiError(finalUrl, method, String(error), undefined, userId);
     throwSanitizedError(error, `API request to ${finalUrl}`);
   }

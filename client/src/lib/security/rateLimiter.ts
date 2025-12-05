@@ -82,10 +82,16 @@ class RateLimiter {
   isDuplicate(url: string, method: string, body?: string): boolean {
     const requestKey = this.getRequestKey(url, method, body);
     const now = Date.now();
-    const entry = this.requests.get('dedupe');
+    let entry = this.requests.get('dedupe');
 
+    // Initialize dedupe entry if it doesn't exist
     if (!entry) {
-      return false;
+      entry = {
+        count: 0,
+        resetTime: now + this.deduplicationWindow,
+        requests: new Map(),
+      };
+      this.requests.set('dedupe', entry);
     }
 
     const lastRequestTime = entry.requests.get(requestKey);

@@ -50,7 +50,11 @@ export const getQueryFn: <T>(options: {
     // Require first queryKey entry to be a string URL path
     if (queryKey.length === 0 || typeof queryKey[0] !== 'string') {
       const error = new Error('Query key must start with a string URL path');
-      throw sanitizeError(error);
+      const sanitized = sanitizeError(error);
+      const errorInstance = new Error(sanitized.userMessage) as any;
+      errorInstance.code = sanitized.code;
+      errorInstance.userMessage = sanitized.userMessage;
+      throw errorInstance;
     }
     
     // Build URL from query key
