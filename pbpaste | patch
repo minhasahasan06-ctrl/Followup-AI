@@ -1,0 +1,1914 @@
+diff --git a/server/environmentalRisk.ts b/server/environmentalRisk.ts
+--- a/server/environmentalRisk.ts
++++ b/server/environmentalRisk.ts
+@@ -301,1 +301,1 @@
+-    const severeOutbreaks = environmentalRisk.localOutbreaks.filter((o: any) => o.severity === 'high');
++    const severeOutbreaks = environmentalRisk.localOutbreaks.filter((o: unknown) => o.severity === 'high');
+@@ -304,1 +304,1 @@
+-        action: `${severeOutbreaks.map((o: any) => o.disease).join(', ')} outbreak detected nearby. Avoid crowded places and practice enhanced hygiene.`,
++        action: `${severeOutbreaks.map((o: unknown) => o.disease).join(', ')} outbreak detected nearby. Avoid crowded places and practice enhanced hygiene.`,
+@@ -313,1 +313,1 @@
+-    const increasingPathogens = environmentalRisk.detectedPathogens.filter((p: any) => p.trend === 'increasing');
++    const increasingPathogens = environmentalRisk.detectedPathogens.filter((p: unknown) => p.trend === 'increasing');
+diff --git a/client/src/pages/NutritionInsights.tsx b/client/src/pages/NutritionInsights.tsx
+--- a/client/src/pages/NutritionInsights.tsx
++++ b/client/src/pages/NutritionInsights.tsx
+@@ -55,1 +55,1 @@
+-  nutrition: any;
++  nutrition: unknown;
+@@ -99,1 +99,1 @@
+-  const { data: pendingMeds, isLoading: pendingLoading } = useQuery<any[]>({
++  const { data: pendingMeds, isLoading: pendingLoading } = useQuery<unknown[]>({
+@@ -119,1 +119,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -318,1 +318,1 @@
+-                  onClick={() => generateMealPlanMutation.mutate()}
++                  onClick={() => { generateMealPlanMutation.mutate(); }}
+@@ -331,1 +331,1 @@
+-                  onClick={() => optimizeMedicationTimingMutation.mutate()}
++                  onClick={() => { optimizeMedicationTimingMutation.mutate(); }}
+@@ -357,1 +357,1 @@
+-                    {pendingMeds.slice(0, 3).map((med: any) => (
++                    {pendingMeds.slice(0, 3).map((med: unknown) => (
+diff --git a/client/src/components/ui/chart.tsx b/client/src/components/ui/chart.tsx
+--- a/client/src/components/ui/chart.tsx
++++ b/client/src/components/ui/chart.tsx
+@@ -146,1 +146,1 @@
+-          ? config[label as keyof typeof config]?.label || label
++          ? config[label as keyof typeof config].label || label
+diff --git a/client/src/pages/MedicationEffects.tsx b/client/src/pages/MedicationEffects.tsx
+--- a/client/src/pages/MedicationEffects.tsx
++++ b/client/src/pages/MedicationEffects.tsx
+@@ -434,1 +434,1 @@
+-                        onClick={() => setSelectedMedicationIdx(idx)}
++                        onClick={() => { setSelectedMedicationIdx(idx); }}
+diff --git a/server/gmailService.ts b/server/gmailService.ts
+--- a/server/gmailService.ts
++++ b/server/gmailService.ts
+@@ -11,1 +11,1 @@
+-  private oauth2Client: any;
++  private oauth2Client: unknown;
+diff --git a/client/src/components/EmailAIHelper.tsx b/client/src/components/EmailAIHelper.tsx
+--- a/client/src/components/EmailAIHelper.tsx
++++ b/client/src/components/EmailAIHelper.tsx
+@@ -552,1 +552,1 @@
+-        onChange={(e) => setSubject(e.target.value)}
++        onChange={(e) => { setSubject(e.target.value); }}
+diff --git a/client/src/pages/Prescriptions.tsx b/client/src/pages/Prescriptions.tsx
+--- a/client/src/pages/Prescriptions.tsx
++++ b/client/src/pages/Prescriptions.tsx
+@@ -921,1 +921,1 @@
+-                        onChange={(e) => setPrescriptionForm({ ...prescriptionForm, quantity: e.target.value })}
++                        onChange={(e) => { setPrescriptionForm({ ...prescriptionForm, quantity: e.target.value }); }}
+diff --git a/client/src/pages/RoleSelection.tsx b/client/src/pages/RoleSelection.tsx
+--- a/client/src/pages/RoleSelection.tsx
++++ b/client/src/pages/RoleSelection.tsx
+@@ -99,1 +99,1 @@
+-            onClick={() => handleRoleSelect("patient")}
++            onClick={() => { handleRoleSelect("patient"); }}
+diff --git a/client/src/components/DiagnosisHelper.tsx b/client/src/components/DiagnosisHelper.tsx
+--- a/client/src/components/DiagnosisHelper.tsx
++++ b/client/src/components/DiagnosisHelper.tsx
+@@ -181,1 +181,1 @@
+-                  onChange={(e) => setPatientAge(e.target.value)}
++                  onChange={(e) => { setPatientAge(e.target.value); }}
+@@ -223,1 +223,1 @@
+-                  onChange={(e) => setNewSeverity(e.target.value as 'mild' | 'moderate' | 'severe')}
++                  onChange={(e) => { setNewSeverity(e.target.value as 'mild' | 'moderate' | 'severe'); }}
+diff --git a/client/src/pages/AdminVerification.tsx b/client/src/pages/AdminVerification.tsx
+--- a/client/src/pages/AdminVerification.tsx
++++ b/client/src/pages/AdminVerification.tsx
+@@ -15,1 +15,1 @@
+-  const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
++  const [selectedDoctor, setSelectedDoctor] = useState<unknown>(null);
+@@ -20,1 +20,1 @@
+-  const { data: pendingDoctors, isLoading } = useQuery<any[]>({
++  const { data: pendingDoctors, isLoading } = useQuery<unknown[]>({
+@@ -121,1 +121,1 @@
+-          {pendingDoctors.map((doctor: any) => (
++          {pendingDoctors.map((doctor: unknown) => (
+@@ -248,1 +248,1 @@
+-                onChange={(e) => setNotes(e.target.value)}
++                onChange={(e) => { setNotes(e.target.value); }}
+diff --git a/client/src/pages/SymptomJournal.tsx b/client/src/pages/SymptomJournal.tsx
+--- a/client/src/pages/SymptomJournal.tsx
++++ b/client/src/pages/SymptomJournal.tsx
+@@ -71,1 +71,1 @@
+-  const [respiratoryResult, setRespiratoryResult] = useState<any | null>(null);
++  const [respiratoryResult, setRespiratoryResult] = useState<unknown | null>(null);
+@@ -93,1 +93,1 @@
+-  const { data: alertsData } = useQuery<{ alerts: any[] }>({
++  const { data: alertsData } = useQuery<{ alerts: unknown[] }>({
+@@ -143,1 +143,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -177,1 +177,1 @@
+-        data.alerts.forEach((alert: any) => {
++        data.alerts.forEach((alert: unknown) => {
+@@ -218,1 +218,1 @@
+-        videoRef.current.play();
++        void videoRef.current.play();
+@@ -339,1 +339,1 @@
+-        processVideoForRespiratoryAnalysis(blob);
++        void processVideoForRespiratoryAnalysis(blob);
+@@ -703,1 +703,1 @@
+-                      onChange={(e) => setPatientNotes(e.target.value)}
++                      onChange={(e) => { setPatientNotes(e.target.value); }}
+@@ -768,1 +768,1 @@
+-                      onValueChange={(val) => setSelectedMeasurement1(parseInt(val))}
++                      onValueChange={(val) => { setSelectedMeasurement1(parseInt(val)); }}
+@@ -792,1 +792,1 @@
+-                      onValueChange={(val) => setSelectedMeasurement2(parseInt(val))}
++                      onValueChange={(val) => { setSelectedMeasurement2(parseInt(val)); }}
+@@ -942,1 +942,1 @@
+-                    onClick={() => setShowComparison(true)}
++                    onClick={() => { setShowComparison(true); }}
+diff --git a/server/researchService.ts b/server/researchService.ts
+--- a/server/researchService.ts
++++ b/server/researchService.ts
+@@ -12,1 +12,1 @@
+-  trends: any[];
++  trends: unknown[];
+@@ -22,1 +22,1 @@
+-  async queryFHIRData(query: ResearchQuery): Promise<any> {
++  async queryFHIRData(query: ResearchQuery): Promise<unknown> {
+@@ -64,1 +64,1 @@
+-  async getPopulationHealthMetrics(doctorId?: string): Promise<any> {
++  async getPopulationHealthMetrics(doctorId?: string): Promise<unknown> {
+@@ -77,1 +77,1 @@
+-      appointmentTrends: [] as any[],
++      appointmentTrends: [] as unknown[],
+@@ -100,1 +100,1 @@
+-    parameters: Record<string, any>
++    parameters: Record<string, unknown>
+@@ -101,1 +101,1 @@
+-  ): Promise<any> {
++  ): Promise<unknown> {
+diff --git a/client/src/pages/TwoFactorAuth.tsx b/client/src/pages/TwoFactorAuth.tsx
+--- a/client/src/pages/TwoFactorAuth.tsx
++++ b/client/src/pages/TwoFactorAuth.tsx
+@@ -116,1 +116,1 @@
+-    navigator.clipboard.writeText(text);
++    void navigator.clipboard.writeText(text);
+@@ -206,1 +206,1 @@
+-                onClick={() => setShowDisableDialog(true)}
++                onClick={() => { setShowDisableDialog(true); }}
+@@ -241,1 +241,1 @@
+-                    onClick={() => copyToClipboard(secret)}
++                    onClick={() => { copyToClipboard(secret); }}
+@@ -278,1 +278,1 @@
+-                onClick={() => setSetupStep('verify')}
++                onClick={() => { setSetupStep('verify'); }}
+@@ -306,1 +306,1 @@
+-                onChange={(e) => setVerificationToken(e.target.value.replace(/\D/g, ''))}
++                onChange={(e) => { setVerificationToken(e.target.value.replace(/\D/g, '')); }}
+@@ -315,1 +315,1 @@
+-                onClick={() => setSetupStep('setup')}
++                onClick={() => { setSetupStep('setup'); }}
+@@ -351,1 +351,1 @@
+-              onChange={(e) => setDisablePassword(e.target.value)}
++              onChange={(e) => { setDisablePassword(e.target.value); }}
+diff --git a/client/src/pages/DoctorProfile.tsx b/client/src/pages/DoctorProfile.tsx
+--- a/client/src/pages/DoctorProfile.tsx
++++ b/client/src/pages/DoctorProfile.tsx
+@@ -66,1 +66,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -228,1 +228,1 @@
+-                onClick={() => connectMutation.mutate()}
++                onClick={() => { connectMutation.mutate(); }}
+diff --git a/server/googleDrive.ts b/server/googleDrive.ts
+--- a/server/googleDrive.ts
++++ b/server/googleDrive.ts
+@@ -5,1 +5,1 @@
+-let connectionSettings: any;
++let connectionSettings: unknown;
+@@ -72,1 +72,1 @@
+-    doc.on('end', () => resolve(Buffer.concat(chunks)));
++    doc.on('end', () => { resolve(Buffer.concat(chunks)); });
+@@ -148,1 +148,1 @@
+-  } catch (error: any) {
++  } catch (error: unknown) {
+diff --git a/client/src/components/LysaPatientAssistant.tsx b/client/src/components/LysaPatientAssistant.tsx
+--- a/client/src/components/LysaPatientAssistant.tsx
++++ b/client/src/components/LysaPatientAssistant.tsx
+@@ -201,1 +201,1 @@
+-    handleSendMessage(inputValue);
++    void handleSendMessage(inputValue);
+@@ -205,1 +205,1 @@
+-    handleSendMessage(prompt);
++    void handleSendMessage(prompt);
+@@ -280,1 +280,1 @@
+-                  onClick={() => setShowQuickPrompts(false)}
++                  onClick={() => { setShowQuickPrompts(false); }}
+@@ -293,1 +293,1 @@
+-                    onClick={() => handleQuickPrompt(qp.prompt)}
++                    onClick={() => { handleQuickPrompt(qp.prompt); }}
+@@ -308,1 +308,1 @@
+-              onChange={(e) => setInputValue(e.target.value)}
++              onChange={(e) => { setInputValue(e.target.value); }}
+diff --git a/client/src/pages/VerifyEmail.tsx b/client/src/pages/VerifyEmail.tsx
+--- a/client/src/pages/VerifyEmail.tsx
++++ b/client/src/pages/VerifyEmail.tsx
+@@ -63,1 +63,1 @@
+-    } catch (error: any) {
++    } catch (error: unknown) {
+diff --git a/client/src/components/DevLogin.tsx b/client/src/components/DevLogin.tsx
+--- a/client/src/components/DevLogin.tsx
++++ b/client/src/components/DevLogin.tsx
+@@ -28,1 +28,1 @@
+-    } catch (error: any) {
++    } catch (error: unknown) {
+diff --git a/client/src/pages/Counseling.tsx b/client/src/pages/Counseling.tsx
+--- a/client/src/pages/Counseling.tsx
++++ b/client/src/pages/Counseling.tsx
+@@ -317,1 +317,1 @@
+-                    onClick={() => setIsCreateDialogOpen(false)}
++                    onClick={() => { setIsCreateDialogOpen(false); }}
+@@ -379,1 +379,1 @@
+-                            onClick={() => handleDelete(session.id)}
++                            onClick={() => { handleDelete(session.id); }}
+@@ -404,1 +404,1 @@
+-                          onClick={() => handleStatusChange(session, "completed")}
++                          onClick={() => { handleStatusChange(session, "completed"); }}
+@@ -412,1 +412,1 @@
+-                          onClick={() => handleStatusChange(session, "cancelled")}
++                          onClick={() => { handleStatusChange(session, "cancelled"); }}
+diff --git a/client/src/components/DiagnosticImagingAnalysis.tsx b/client/src/components/DiagnosticImagingAnalysis.tsx
+--- a/client/src/components/DiagnosticImagingAnalysis.tsx
++++ b/client/src/components/DiagnosticImagingAnalysis.tsx
+@@ -116,1 +116,1 @@
+-    onSuccess: (data: any) => {
++    onSuccess: (data: unknown) => {
+@@ -125,1 +125,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -224,1 +224,1 @@
+-                    onChange={(e) => setStudyDescription(e.target.value)}
++                    onChange={(e) => { setStudyDescription(e.target.value); }}
+@@ -236,1 +236,1 @@
+-                  onChange={(e) => setClinicalContext(e.target.value)}
++                  onChange={(e) => { setClinicalContext(e.target.value); }}
+diff --git a/client/src/pages/Referrals.tsx b/client/src/pages/Referrals.tsx
+--- a/client/src/pages/Referrals.tsx
++++ b/client/src/pages/Referrals.tsx
+@@ -24,1 +24,1 @@
+-      navigator.clipboard.writeText(referralCode.referralLink);
++      void navigator.clipboard.writeText(referralCode.referralLink);
+@@ -26,1 +26,1 @@
+-      setTimeout(() => setCopied(false), 2000);
++      setTimeout(() => { setCopied(false); }, 2000);
+@@ -36,1 +36,1 @@
+-      navigator.clipboard.writeText(referralCode.referralCode);
++      void navigator.clipboard.writeText(referralCode.referralCode);
+@@ -45,1 +45,1 @@
+-    const config: any = {
++    const config: unknown = {
+@@ -181,1 +181,1 @@
+-              {referrals.map((referral: any) => (
++              {referrals.map((referral: unknown) => (
+diff --git a/client/src/components/AddPatientDialog.tsx b/client/src/components/AddPatientDialog.tsx
+--- a/client/src/components/AddPatientDialog.tsx
++++ b/client/src/components/AddPatientDialog.tsx
+@@ -94,1 +94,1 @@
+-      searchPatients();
++      void searchPatients();
+@@ -159,1 +159,1 @@
+-                  onChange={(e) => setSearchQuery(e.target.value)}
++                  onChange={(e) => { setSearchQuery(e.target.value); }}
+@@ -290,1 +290,1 @@
+-                onChange={(e) => setRequestMessage(e.target.value)}
++                onChange={(e) => { setRequestMessage(e.target.value); }}
+diff --git a/client/src/components/ui/sidebar.tsx b/client/src/components/ui/sidebar.tsx
+--- a/client/src/components/ui/sidebar.tsx
++++ b/client/src/components/ui/sidebar.tsx
+@@ -93,1 +93,1 @@
+-    return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
++    isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
+@@ -109,1 +109,1 @@
+-    return () => window.removeEventListener("keydown", handleKeyDown)
++    return () => { window.removeEventListener("keydown", handleKeyDown); }
+diff --git a/server/companionService.ts b/server/companionService.ts
+--- a/server/companionService.ts
++++ b/server/companionService.ts
+@@ -15,1 +15,1 @@
+-    recentMedications?: any[];
++    recentMedications?: unknown[];
+@@ -16,1 +16,1 @@
+-    recentMeals?: any[];
++    recentMeals?: unknown[];
+@@ -24,1 +24,1 @@
+-  extractedData: any;
++  extractedData: unknown;
+@@ -100,1 +100,1 @@
+-  engagement: any
++  engagement: unknown
+@@ -140,1 +140,1 @@
+-    let parsed: any;
++    let parsed: unknown;
+@@ -183,1 +183,1 @@
+-async function extractHealthData(userInput: string): Promise<any> {
++async function extractHealthData(userInput: string): Promise<unknown> {
+@@ -255,1 +255,1 @@
+-  currentEngagement: any,
++  currentEngagement: unknown,
+@@ -301,1 +301,1 @@
+-  extractedData: any,
++  extractedData: unknown,
+diff --git a/server/cognitoAuth.ts b/server/cognitoAuth.ts
+--- a/server/cognitoAuth.ts
++++ b/server/cognitoAuth.ts
+@@ -120,1 +120,1 @@
+-    (req as any).userId = decoded.sub;
++    (req as unknown).userId = decoded.sub;
+@@ -121,1 +121,1 @@
+-    (req as any).cognitoUsername = decoded["cognito:username"];
++    (req as unknown).cognitoUsername = decoded["cognito:username"];
+@@ -133,1 +133,1 @@
+-    const userId = (req as any).userId;
++    const userId = (req as unknown).userId;
+@@ -200,1 +200,1 @@
+-  } catch (error: any) {
++  } catch (error: unknown) {
+diff --git a/server/googleCalendarSyncService.ts b/server/googleCalendarSyncService.ts
+--- a/server/googleCalendarSyncService.ts
++++ b/server/googleCalendarSyncService.ts
+@@ -15,1 +15,1 @@
+-let connectionSettings: any;
++let connectionSettings: unknown;
+@@ -192,1 +192,1 @@
+-  private async getAuthClient(doctorId: string): Promise<any> {
++  private async getAuthClient(doctorId: string): Promise<unknown> {
+@@ -236,1 +236,1 @@
+-  ): Promise<{ success: boolean; stats: any; error?: string }> {
++  ): Promise<{ success: boolean; stats: unknown; error?: string }> {
+@@ -267,1 +267,1 @@
+-        } catch (error: any) {
++        } catch (error: unknown) {
+diff --git a/client/src/pages/DoctorWellness.tsx b/client/src/pages/DoctorWellness.tsx
+--- a/client/src/pages/DoctorWellness.tsx
++++ b/client/src/pages/DoctorWellness.tsx
+@@ -88,1 +88,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -156,1 +156,1 @@
+-              <form onSubmit={logWellnessForm.handleSubmit((data) => logWellnessMutation.mutate(data))} className="space-y-4">
++              <form onSubmit={logWellnessForm.handleSubmit((data) => { logWellnessMutation.mutate(data); })} className="space-y-4">
+@@ -240,1 +240,1 @@
+-                  <Button type="button" variant="outline" onClick={() => setIsLogDialogOpen(false)} data-testid="button-cancel-wellness">
++                  <Button type="button" variant="outline" onClick={() => { setIsLogDialogOpen(false); }} data-testid="button-cancel-wellness">
+@@ -397,1 +397,1 @@
+-              <Button onClick={() => setIsLogDialogOpen(true)} data-testid="button-start-tracking">
++              <Button onClick={() => { setIsLogDialogOpen(true); }} data-testid="button-start-tracking">
+diff --git a/client/src/pages/DailyFollowup.tsx b/client/src/pages/DailyFollowup.tsx
+--- a/client/src/pages/DailyFollowup.tsx
++++ b/client/src/pages/DailyFollowup.tsx
+@@ -119,1 +119,1 @@
+-  const latestGait = gaitSessions?.sessions?.[0];
++  const latestGait = gaitSessions?.sessions[0];
+@@ -161,1 +161,1 @@
+-    switch (severity?.toLowerCase()) {
++    switch (severity.toLowerCase()) {
+@@ -208,1 +208,1 @@
+-                {tremorDashboard?.trend?.status !== 'insufficient_data' && (
++                {tremorDashboard.trend?.status !== 'insufficient_data' && (
+@@ -260,1 +260,1 @@
+-                  <span className="text-sm font-bold">{latestEdema.overall_expansion_percent?.toFixed(1) || 0}%</span>
++                  <span className="text-sm font-bold">{latestEdema.overall_expansion_percent.toFixed(1) || 0}%</span>
+@@ -325,1 +325,1 @@
+-  const { data: todayMetrics } = useQuery<any>({
++  const { data: todayMetrics } = useQuery<unknown>({
+@@ -444,1 +444,1 @@
+-                      onChange={(e) => setCustomLocation(e.target.value)}
++                      onChange={(e) => { setCustomLocation(e.target.value); }}
+@@ -454,1 +454,1 @@
+-                      onChange={(e) => setCustomDescription(e.target.value)}
++                      onChange={(e) => { setCustomDescription(e.target.value); }}
+diff --git a/client/src/pages/BehavioralAIInsights.tsx b/client/src/pages/BehavioralAIInsights.tsx
+--- a/client/src/pages/BehavioralAIInsights.tsx
++++ b/client/src/pages/BehavioralAIInsights.tsx
+@@ -168,1 +168,1 @@
+-                    <span className="font-semibold">{data?.recent_trends?.length || 0}</span>
++                    <span className="font-semibold">{data?.recent_trends.length || 0}</span>
+@@ -172,1 +172,1 @@
+-                    <span className="font-semibold">{data?.unresolved_alerts?.length || 0}</span>
++                    <span className="font-semibold">{data?.unresolved_alerts.length || 0}</span>
+@@ -177,1 +177,1 @@
+-                      {data?.risk_score?.risk_level?.toUpperCase() || 'N/A'}
++                      {data?.risk_score?.risk_level.toUpperCase() || 'N/A'}
+diff --git a/server/rateLimiting.ts b/server/rateLimiting.ts
+--- a/server/rateLimiting.ts
++++ b/server/rateLimiting.ts
+@@ -6,1 +6,1 @@
+-  keyGenerator?: (req: any) => string;  // Custom key generator
++  keyGenerator?: (req: unknown) => string;  // Custom key generator
+@@ -39,1 +39,1 @@
+-    keyGenerator = (req: any) => {
++    keyGenerator = (req: unknown) => {
+@@ -46,1 +46,1 @@
+-    const key = keyGenerator(req as any);
++    const key = keyGenerator(req as unknown);
+diff --git a/client/src/pages/DrugInteractions.tsx b/client/src/pages/DrugInteractions.tsx
+--- a/client/src/pages/DrugInteractions.tsx
++++ b/client/src/pages/DrugInteractions.tsx
+@@ -64,1 +64,1 @@
+-  const [checkResults, setCheckResults] = useState<any>(null);
++  const [checkResults, setCheckResults] = useState<unknown>(null);
+@@ -67,1 +67,1 @@
+-  const [selectedAlertForOverride, setSelectedAlertForOverride] = useState<any>(null);
++  const [selectedAlertForOverride, setSelectedAlertForOverride] = useState<unknown>(null);
+@@ -81,1 +81,1 @@
+-  const { data: activeAlerts, isLoading: alertsLoading } = useQuery<any[]>({
++  const { data: activeAlerts, isLoading: alertsLoading } = useQuery<unknown[]>({
+@@ -85,1 +85,1 @@
+-  const { data: allAlerts } = useQuery<any[]>({
++  const { data: allAlerts } = useQuery<unknown[]>({
+@@ -89,1 +89,1 @@
+-  const { data: patientMedications } = useQuery<any[]>({
++  const { data: patientMedications } = useQuery<unknown[]>({
+@@ -197,1 +197,1 @@
+-      const payload: any = { drugName: drugToCheck };
++      const payload: unknown = { drugName: drugToCheck };
+@@ -201,1 +201,1 @@
+-      const result: any = await apiRequest('POST', '/api/drug-interactions/analyze', payload);
++      const result: unknown = await apiRequest('POST', '/api/drug-interactions/analyze', payload);
+@@ -232,1 +232,1 @@
+-  const handleOverride = (alert: any) => {
++  const handleOverride = (alert: unknown) => {
+@@ -354,1 +354,1 @@
+-                      onAcknowledge={() => acknowledgeMutation.mutate(alert.id)}
++                      onAcknowledge={() => { acknowledgeMutation.mutate(alert.id); }}
+@@ -361,1 +361,1 @@
+-                      onClick={() => handleOverride(alert)}
++                      onClick={() => { handleOverride(alert); }}
+@@ -428,1 +428,1 @@
+-                      onChange={(e) => setDrugToCheck(e.target.value)}
++                      onChange={(e) => { setDrugToCheck(e.target.value); }}
+@@ -487,1 +487,1 @@
+-                        {checkResults.interactions.map((interaction: any, index: number) => (
++                        {checkResults.interactions.map((interaction: unknown, index: number) => (
+@@ -558,1 +558,1 @@
+-                        {patientMedications.map((med: any) => (
++                        {patientMedications.map((med: unknown) => (
+@@ -898,1 +898,1 @@
+-                onChange={(e) => setOverrideReason(e.target.value)}
++                onChange={(e) => { setOverrideReason(e.target.value); }}
+@@ -905,1 +905,1 @@
+-            <Button variant="outline" onClick={() => setShowOverrideDialog(false)}>
++            <Button variant="outline" onClick={() => { setShowOverrideDialog(false); }}>
+diff --git a/server/whatsappService.ts b/server/whatsappService.ts
+--- a/server/whatsappService.ts
++++ b/server/whatsappService.ts
+@@ -77,1 +77,1 @@
+-    } catch (error: any) {
++    } catch (error: unknown) {
+@@ -216,1 +216,1 @@
+-    const requestedTime = intent.time!.toLowerCase();
++    const requestedTime = intent.time?.toLowerCase();
+diff --git a/client/src/pages/EHRIntegrations.tsx b/client/src/pages/EHRIntegrations.tsx
+--- a/client/src/pages/EHRIntegrations.tsx
++++ b/client/src/pages/EHRIntegrations.tsx
+@@ -38,1 +38,1 @@
+-    mutationFn: async (data: any) => {
++    mutationFn: async (data: unknown) => {
+@@ -128,1 +128,1 @@
+-    const variants: any = {
++    const variants: unknown = {
+@@ -137,1 +137,1 @@
+-        {status?.charAt(0).toUpperCase() + status?.slice(1)}
++        {status.charAt(0).toUpperCase() + status?.slice(1)}
+@@ -151,1 +151,1 @@
+-        <Button onClick={() => setShowAddDialog(true)} data-testid="button-add-ehr">
++        <Button onClick={() => { setShowAddDialog(true); }} data-testid="button-add-ehr">
+@@ -170,1 +170,1 @@
+-          {connections.map((connection: any) => (
++          {connections.map((connection: unknown) => (
+@@ -206,1 +206,1 @@
+-                    onClick={() => syncMutation.mutate(connection.id)}
++                    onClick={() => { syncMutation.mutate(connection.id); }}
+@@ -216,1 +216,1 @@
+-                    onClick={() => deleteMutation.mutate(connection.id)}
++                    onClick={() => { deleteMutation.mutate(connection.id); }}
+@@ -234,1 +234,1 @@
+-            <Button onClick={() => setShowAddDialog(true)} data-testid="button-add-ehr-empty">
++            <Button onClick={() => { setShowAddDialog(true); }} data-testid="button-add-ehr-empty">
+@@ -275,1 +275,1 @@
+-                onChange={(e) => setFacilityName(e.target.value)}
++                onChange={(e) => { setFacilityName(e.target.value); }}
+@@ -285,1 +285,1 @@
+-                onChange={(e) => setPatientId(e.target.value)}
++                onChange={(e) => { setPatientId(e.target.value); }}
+@@ -294,1 +294,1 @@
+-            <Button variant="outline" onClick={() => setShowAddDialog(false)} data-testid="button-cancel-ehr">
++            <Button variant="outline" onClick={() => { setShowAddDialog(false); }} data-testid="button-cancel-ehr">
+diff --git a/server/rlRewardCalculator.ts b/server/rlRewardCalculator.ts
+--- a/server/rlRewardCalculator.ts
++++ b/server/rlRewardCalculator.ts
+@@ -18,1 +18,1 @@
+-  healthMetrics: Record<string, any>;
++  healthMetrics: Record<string, unknown>;
+@@ -25,1 +25,1 @@
+-  parameters: Record<string, any>;
++  parameters: Record<string, unknown>;
+@@ -262,1 +262,1 @@
+-      outcome: any;
++      outcome: unknown;
+diff --git a/client/src/components/LabReportAnalysis.tsx b/client/src/components/LabReportAnalysis.tsx
+--- a/client/src/components/LabReportAnalysis.tsx
++++ b/client/src/components/LabReportAnalysis.tsx
+@@ -72,1 +72,1 @@
+-  trends: any[];
++  trends: unknown[];
+@@ -159,1 +159,1 @@
+-    onSuccess: (data: any) => {
++    onSuccess: (data: unknown) => {
+@@ -168,1 +168,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -205,1 +205,1 @@
+-  const updateLabTest = (index: number, field: string, value: any) => {
++  const updateLabTest = (index: number, field: string, value: unknown) => {
+@@ -332,1 +332,1 @@
+-                    onChange={(e) => setClinicalContext(e.target.value)}
++                    onChange={(e) => { setClinicalContext(e.target.value); }}
+@@ -361,1 +361,1 @@
+-                              onChange={(e) => updateLabTest(index, 'name', e.target.value)}
++                              onChange={(e) => { updateLabTest(index, 'name', e.target.value); }}
+@@ -372,1 +372,1 @@
+-                              onChange={(e) => updateLabValue(index, e.target.value)}
++                              onChange={(e) => { updateLabValue(index, e.target.value); }}
+@@ -382,1 +382,1 @@
+-                              onChange={(e) => updateLabTest(index, 'unit', e.target.value)}
++                              onChange={(e) => { updateLabTest(index, 'unit', e.target.value); }}
+@@ -393,1 +393,1 @@
+-                              onChange={(e) => updateLabTest(index, 'normalRange.low', e.target.value)}
++                              onChange={(e) => { updateLabTest(index, 'normalRange.low', e.target.value); }}
+@@ -403,1 +403,1 @@
+-                              onChange={(e) => updateLabTest(index, 'normalRange.high', e.target.value)}
++                              onChange={(e) => { updateLabTest(index, 'normalRange.high', e.target.value); }}
+@@ -413,1 +413,1 @@
+-                              onClick={() => removeLabTest(index)}
++                              onClick={() => { removeLabTest(index); }}
+@@ -571,1 +571,1 @@
+-                            onClick={() => setExpandedPanel(expandedPanel === panel.id ? null : panel.id)}
++                            onClick={() => { setExpandedPanel(expandedPanel === panel.id ? null : panel.id); }}
+diff --git a/client/src/pages/PainDetection.tsx b/client/src/pages/PainDetection.tsx
+--- a/client/src/pages/PainDetection.tsx
++++ b/client/src/pages/PainDetection.tsx
+@@ -29,1 +29,1 @@
+-  facial_landmarks: any;
++  facial_landmarks: unknown;
+@@ -47,1 +47,1 @@
+-  const [detector, setDetector] = useState<any>(null);
++  const [detector, setDetector] = useState<unknown>(null);
+@@ -59,1 +59,1 @@
+-  const [previousLandmarks, setPreviousLandmarks] = useState<any>(null);
++  const [previousLandmarks, setPreviousLandmarks] = useState<unknown>(null);
+@@ -120,1 +120,1 @@
+-    mutationFn: async (data: any) => {
++    mutationFn: async (data: unknown) => {
+@@ -158,1 +158,1 @@
+-    loadModel();
++    void loadModel();
+@@ -169,1 +169,1 @@
+-        videoRef.current.play();
++        void videoRef.current.play();
+@@ -185,1 +185,1 @@
+-      stream.getTracks().forEach(track => track.stop());
++      stream.getTracks().forEach(track => { track.stop(); });
+@@ -193,1 +193,1 @@
+-  const calculateEyebrowAngle = (landmarks: any, side: "left" | "right") => {
++  const calculateEyebrowAngle = (landmarks: unknown, side: "left" | "right") => {
+@@ -204,1 +204,1 @@
+-  const calculateNasolabialTension = (landmarks: any, side: "left" | "right") => {
++  const calculateNasolabialTension = (landmarks: unknown, side: "left" | "right") => {
+@@ -216,1 +216,1 @@
+-  const detectMicroContractions = (currentLandmarks: any, previousLandmarks: any) => {
++  const detectMicroContractions = (currentLandmarks: unknown, previousLandmarks: any) => {
+@@ -252,1 +252,1 @@
+-  const calculateGrimaceIntensity = (landmarks: any) => {
++  const calculateGrimaceIntensity = (landmarks: unknown) => {
+@@ -285,1 +285,1 @@
+-          face.keypoints.forEach((point: any) => {
++          face.keypoints.forEach((point: unknown) => {
+@@ -553,1 +553,1 @@
+-                  {latestMeasurement.facial_stress_score?.toFixed(1)}
++                  {latestMeasurement.facial_stress_score.toFixed(1)}
+@@ -584,1 +584,1 @@
+-                  onChange={(e) => setPainLevel(parseInt(e.target.value))}
++                  onChange={(e) => { setPainLevel(parseInt(e.target.value)); }}
+@@ -602,1 +602,1 @@
+-                onChange={(e) => setPainLocation(e.target.value)}
++                onChange={(e) => { setPainLocation(e.target.value); }}
+@@ -649,1 +649,1 @@
+-                onChange={(e) => setPainTriggers(e.target.value)}
++                onChange={(e) => { setPainTriggers(e.target.value); }}
+@@ -662,1 +662,1 @@
+-                    onCheckedChange={(checked) => setAffectsSleep(checked as boolean)}
++                    onCheckedChange={(checked) => { setAffectsSleep(checked as boolean); }}
+@@ -673,1 +673,1 @@
+-                    onCheckedChange={(checked) => setAffectsActivities(checked as boolean)}
++                    onCheckedChange={(checked) => { setAffectsActivities(checked as boolean); }}
+@@ -684,1 +684,1 @@
+-                    onCheckedChange={(checked) => setAffectsMood(checked as boolean)}
++                    onCheckedChange={(checked) => { setAffectsMood(checked as boolean); }}
+@@ -700,1 +700,1 @@
+-                  onCheckedChange={(checked) => setMedicationTaken(checked as boolean)}
++                  onCheckedChange={(checked) => { setMedicationTaken(checked as boolean); }}
+@@ -716,1 +716,1 @@
+-                      onChange={(e) => setMedicationNames(e.target.value)}
++                      onChange={(e) => { setMedicationNames(e.target.value); }}
+@@ -744,1 +744,1 @@
+-                onChange={(e) => setAdditionalNotes(e.target.value)}
++                onChange={(e) => { setAdditionalNotes(e.target.value); }}
+@@ -760,1 +760,1 @@
+-                onClick={() => setShowQuestionnaire(false)}
++                onClick={() => { setShowQuestionnaire(false); }}
+diff --git a/client/src/hooks/useGuidedExamWorkflow.ts b/client/src/hooks/useGuidedExamWorkflow.ts
+--- a/client/src/hooks/useGuidedExamWorkflow.ts
++++ b/client/src/hooks/useGuidedExamWorkflow.ts
+@@ -147,1 +147,1 @@
+-      queryClient.invalidateQueries({ queryKey: ['/api/v1/video-ai/exam-sessions'] });
++      void queryClient.invalidateQueries({ queryKey: ['/api/v1/video-ai/exam-sessions'] });
+diff --git a/client/src/components/patient-ai-alerts.tsx b/client/src/components/patient-ai-alerts.tsx
+--- a/client/src/components/patient-ai-alerts.tsx
++++ b/client/src/components/patient-ai-alerts.tsx
+@@ -167,1 +167,1 @@
+-    switch (level?.toLowerCase()) {
++    switch (level.toLowerCase()) {
+@@ -194,1 +194,1 @@
+-    switch (severity?.toLowerCase()) {
++    switch (severity.toLowerCase()) {
+@@ -212,1 +212,1 @@
+-  }, [] as Record<string, any>[]) || [];
++  }, [] as Record<string, unknown>[]) || [];
+@@ -232,1 +232,1 @@
+-            onClick={() => computeMetrics.mutate()}
++            onClick={() => { computeMetrics.mutate(); }}
+@@ -305,1 +305,1 @@
+-                <Button variant="link" size="sm" onClick={() => computeMetrics.mutate()}>
++                <Button variant="link" size="sm" onClick={() => { computeMetrics.mutate(); }}>
+@@ -411,1 +411,1 @@
+-                              Score: {alert.priority_score?.toFixed(1)}
++                              Score: {alert.priority_score.toFixed(1)}
+@@ -416,1 +416,1 @@
+-                            <span>{alert.metric_name}: {alert.current_value?.toFixed(1)}</span>
++                            <span>{alert.metric_name}: {alert.current_value.toFixed(1)}</span>
+@@ -426,1 +426,1 @@
+-                          {alert.recommendations?.length > 0 && (
++                          {alert.recommendations.length > 0 && (
+@@ -473,1 +473,1 @@
+-                  onClick={() => setSelectedDays(days)}
++                  onClick={() => { setSelectedDays(days); }}
+diff --git a/client/src/pages/PreviousSessions.tsx b/client/src/pages/PreviousSessions.tsx
+--- a/client/src/pages/PreviousSessions.tsx
++++ b/client/src/pages/PreviousSessions.tsx
+@@ -21,1 +21,1 @@
+-  healthInsights: any;
++  healthInsights: unknown;
+@@ -35,1 +35,1 @@
+-  medicalEntities: any;
++  medicalEntities: unknown;
+@@ -111,1 +111,1 @@
+-                        onClick={() => setSelectedSessionId(session.id)}
++                        onClick={() => { setSelectedSessionId(session.id); }}
+diff --git a/client/src/pages/DailyFollowupHistory.tsx b/client/src/pages/DailyFollowupHistory.tsx
+--- a/client/src/pages/DailyFollowupHistory.tsx
++++ b/client/src/pages/DailyFollowupHistory.tsx
+@@ -101,1 +101,1 @@
+-  icon: any; 
++  icon: unknown; 
+@@ -161,1 +161,1 @@
+-  const { data: deviceHistory, isLoading: deviceLoading } = useQuery<any[]>({
++  const { data: deviceHistory, isLoading: deviceLoading } = useQuery<unknown[]>({
+@@ -166,1 +166,1 @@
+-  const { data: symptomFeed, isLoading: symptomsLoading } = useQuery<any[]>({
++  const { data: symptomFeed, isLoading: symptomsLoading } = useQuery<unknown[]>({
+@@ -171,1 +171,1 @@
+-  const { data: paintrackSessions, isLoading: paintrackLoading } = useQuery<any[]>({
++  const { data: paintrackSessions, isLoading: paintrackLoading } = useQuery<unknown[]>({
+@@ -176,1 +176,1 @@
+-  const { data: mentalHealthHistory, isLoading: mentalHealthLoading } = useQuery<any>({
++  const { data: mentalHealthHistory, isLoading: mentalHealthLoading } = useQuery<unknown>({
+@@ -181,1 +181,1 @@
+-  const { data: voiceFollowups, isLoading: audioLoading } = useQuery<any[]>({
++  const { data: voiceFollowups, isLoading: audioLoading } = useQuery<unknown[]>({
+@@ -186,1 +186,1 @@
+-  const { data: videoMetrics, isLoading: videoMetricsLoading } = useQuery<any>({
++  const { data: videoMetrics, isLoading: videoMetricsLoading } = useQuery<unknown>({
+@@ -191,1 +191,1 @@
+-  const { data: videoSessions, isLoading: videoSessionsLoading } = useQuery<any[]>({
++  const { data: videoSessions, isLoading: videoSessionsLoading } = useQuery<unknown[]>({
+@@ -198,1 +198,1 @@
+-  const filterByTimeRange = (data: any[], dateField: string = 'createdAt') => {
++  const filterByTimeRange = (data: unknown[], dateField: string = 'createdAt') => {
+@@ -210,1 +210,1 @@
+-    return filtered.filter((s: any) => s.dataSource === 'patient-reported');
++    return filtered.filter((s: unknown) => s.dataSource === 'patient-reported');
+@@ -220,1 +220,1 @@
+-  const hasAnyData = (filteredDeviceHistory?.length > 0) || 
++  const hasAnyData = (filteredDeviceHistory.length > 0) || 
+@@ -221,1 +221,1 @@
+-                     (filteredSymptoms?.length > 0) || 
++                     (filteredSymptoms.length > 0) || 
+@@ -222,1 +222,1 @@
+-                     (filteredPaintrack?.length > 0) || 
++                     (filteredPaintrack.length > 0) || 
+@@ -223,1 +223,1 @@
+-                     (filteredMentalHealth?.length > 0) ||
++                     (filteredMentalHealth.length > 0) ||
+@@ -224,1 +224,1 @@
+-                     (filteredVoice?.length > 0) ||
++                     (filteredVoice.length > 0) ||
+@@ -225,1 +225,1 @@
+-                     (filteredVideoSessions?.length > 0) ||
++                     (filteredVideoSessions.length > 0) ||
+@@ -231,1 +231,1 @@
+-    if (!filteredDeviceHistory?.length) return [];
++    if (!filteredDeviceHistory.length) return [];
+@@ -235,1 +235,1 @@
+-      .map((d: any) => ({
++      .map((d: unknown) => ({
+@@ -245,1 +245,1 @@
+-    if (!filteredSymptoms?.length) return [];
++    if (!filteredSymptoms.length) return [];
+@@ -246,1 +246,1 @@
+-    const grouped: Record<string, any> = {};
++    const grouped: Record<string, unknown> = {};
+@@ -247,1 +247,1 @@
+-    filteredSymptoms.forEach((s: any) => {
++    filteredSymptoms.forEach((s: unknown) => {
+@@ -256,1 +256,1 @@
+-    return Object.values(grouped).map((g: any) => ({
++    return Object.values(grouped).map((g: unknown) => ({
+@@ -264,1 +264,1 @@
+-    if (!filteredPaintrack?.length) return [];
++    if (!filteredPaintrack.length) return [];
+@@ -268,1 +268,1 @@
+-      .map((p: any) => ({
++      .map((p: unknown) => ({
+@@ -276,1 +276,1 @@
+-    if (!filteredVideoSessions?.length) return [];
++    if (!filteredVideoSessions.length) return [];
+@@ -280,1 +280,1 @@
+-      .map((s: any) => ({
++      .map((s: unknown) => ({
+@@ -289,1 +289,1 @@
+-    if (!filteredMentalHealth?.length) return [];
++    if (!filteredMentalHealth.length) return [];
+@@ -293,1 +293,1 @@
+-      .map((m: any) => ({
++      .map((m: unknown) => ({
+@@ -302,1 +302,1 @@
+-    if (!filteredVoice?.length) return [];
++    if (!filteredVoice.length) return [];
+@@ -306,1 +306,1 @@
+-      .map((v: any) => ({
++      .map((v: unknown) => ({
+@@ -315,1 +315,1 @@
+-    if (!values?.length || values.length < 2) return 'stable';
++    if (!values.length || values.length < 2) return 'stable';
+@@ -325,1 +325,1 @@
+-    const values = (filteredVideoSessions || []).map((s: any) => s.completed_segments).filter((v: any) => v != null);
++    const values = (filteredVideoSessions || []).map((s: unknown) => s.completed_segments).filter((v: any) => v != null);
+@@ -330,1 +330,1 @@
+-    const values = (filteredVoice || []).map((v: any) => v.empathyLevel).filter((v: any) => v != null && !isNaN(v));
++    const values = (filteredVoice || []).map((v: unknown) => v.empathyLevel).filter((v: any) => v != null && !isNaN(v));
+@@ -335,1 +335,1 @@
+-    const values = (filteredMentalHealth || []).map((m: any) => m.total_score).filter((v: any) => v != null);
++    const values = (filteredMentalHealth || []).map((m: unknown) => m.total_score).filter((v: any) => v != null);
+@@ -340,1 +340,1 @@
+-    switch (severity?.toLowerCase()) {
++    switch (severity.toLowerCase()) {
+@@ -356,1 +356,1 @@
+-  const calculateStats = (data: any[], field: string) => {
++  const calculateStats = (data: unknown[], field: string) => {
+@@ -357,1 +357,1 @@
+-    if (!data?.length) return { avg: 0, min: 0, max: 0, trend: 'stable' as const };
++    if (!data.length) return { avg: 0, min: 0, max: 0, trend: 'stable' as const };
+@@ -469,1 +469,1 @@
+-          ) : filteredDeviceHistory?.length > 0 ? (
++          ) : filteredDeviceHistory.length > 0 ? (
+@@ -544,1 +544,1 @@
+-                      {filteredDeviceHistory.slice(0, 10).map((entry: any, idx: number) => (
++                      {filteredDeviceHistory.slice(0, 10).map((entry: unknown, idx: number) => (
+diff --git a/client/src/pages/AIVideoDashboard.tsx b/client/src/pages/AIVideoDashboard.tsx
+--- a/client/src/pages/AIVideoDashboard.tsx
++++ b/client/src/pages/AIVideoDashboard.tsx
+@@ -317,1 +317,1 @@
+-  const latestSession = gaitSessions?.sessions?.[0];
++  const latestSession = gaitSessions?.sessions[0];
+@@ -326,1 +326,1 @@
+-    enabled: !!latestSession?.session_id && latestSession?.status === 'completed',
++    enabled: !!latestSession?.session_id && latestSession.status === 'completed',
+@@ -376,1 +376,1 @@
+-  const fallRisk = getFallRiskLevel(gaitMetrics?.clinical_risks?.fall_risk_score || latestSession.abnormality_score || 0);
++  const fallRisk = getFallRiskLevel(gaitMetrics?.clinical_risks.fall_risk_score || latestSession.abnormality_score || 0);
+@@ -402,1 +402,1 @@
+-              {gaitMetrics?.temporal?.cadence_steps_per_min?.toFixed(0) || 'â'}
++              {gaitMetrics?.temporal.cadence_steps_per_min?.toFixed(0) || 'â'}
+@@ -409,1 +409,1 @@
+-              {gaitMetrics?.symmetry_stability?.overall_symmetry 
++              {gaitMetrics?.symmetry_stability.overall_symmetry 
+@@ -426,1 +426,1 @@
+-                <span className="font-medium">{((gaitMetrics.symmetry_stability?.balance_confidence_score || 0) * 100).toFixed(0)}%</span>
++                <span className="font-medium">{((gaitMetrics.symmetry_stability.balance_confidence_score || 0) * 100).toFixed(0)}%</span>
+@@ -498,1 +498,1 @@
+-    switch (severity?.toLowerCase()) {
++    switch (severity.toLowerCase()) {
+@@ -532,1 +532,1 @@
+-              {latest.overall_expansion_percent?.toFixed(1) || 0}%
++              {latest.overall_expansion_percent.toFixed(1) || 0}%
+@@ -551,1 +551,1 @@
+-                <span className={`font-medium ${latest.regional_analysis.face_upper_body?.swelling_detected ? 'text-orange-500' : 'text-green-500'}`}>
++                <span className={`font-medium ${latest.regional_analysis.face_upper_body.swelling_detected ? 'text-orange-500' : 'text-green-500'}`}>
+@@ -552,1 +552,1 @@
+-                  {latest.regional_analysis.face_upper_body?.swelling_detected ? 'Detected' : 'Normal'}
++                  {latest.regional_analysis.face_upper_body.swelling_detected ? 'Detected' : 'Normal'}
+@@ -559,1 +559,1 @@
+-                <span className={`font-medium ${latest.regional_analysis.legs_feet?.swelling_detected ? 'text-orange-500' : 'text-green-500'}`}>
++                <span className={`font-medium ${latest.regional_analysis.legs_feet.swelling_detected ? 'text-orange-500' : 'text-green-500'}`}>
+@@ -560,1 +560,1 @@
+-                  {latest.regional_analysis.legs_feet?.swelling_detected ? 'Detected' : 'Normal'}
++                  {latest.regional_analysis.legs_feet.swelling_detected ? 'Detected' : 'Normal'}
+@@ -566,1 +566,1 @@
+-                  <span>Asymmetry detected ({latest.regional_analysis.asymmetry_difference?.toFixed(1)}% difference)</span>
++                  <span>Asymmetry detected ({latest.regional_analysis.asymmetry_difference.toFixed(1)}% difference)</span>
+@@ -787,1 +787,1 @@
+-                    {recentSessions.map((session: any) => (
++                    {recentSessions.map((session: unknown) => (
+@@ -943,1 +943,1 @@
+-                    onChange={(e) => setCustomLocation(e.target.value)}
++                    onChange={(e) => { setCustomLocation(e.target.value); }}
+@@ -953,1 +953,1 @@
+-                    onChange={(e) => setCustomDescription(e.target.value)}
++                    onChange={(e) => { setCustomDescription(e.target.value); }}
+diff --git a/client/src/pages/MyDoctors.tsx b/client/src/pages/MyDoctors.tsx
+--- a/client/src/pages/MyDoctors.tsx
++++ b/client/src/pages/MyDoctors.tsx
+@@ -168,1 +168,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -353,1 +353,1 @@
+-                onClick={() => disconnectMutation.mutate(doctor.id)}
++                onClick={() => { disconnectMutation.mutate(doctor.id); }}
+@@ -455,1 +455,1 @@
+-                        onChange={(e) => setSearchQuery(e.target.value)}
++                        onChange={(e) => { setSearchQuery(e.target.value); }}
+@@ -469,1 +469,1 @@
+-                        onChange={(e) => setSpecialty(e.target.value)}
++                        onChange={(e) => { setSpecialty(e.target.value); }}
+@@ -483,1 +483,1 @@
+-                        onChange={(e) => setLocationCity(e.target.value)}
++                        onChange={(e) => { setLocationCity(e.target.value); }}
+@@ -495,1 +495,1 @@
+-                      onChange={(e) => setLocationState(e.target.value)}
++                      onChange={(e) => { setLocationState(e.target.value); }}
+@@ -590,1 +590,1 @@
+-                        onChange={(e) => setConsultationReason(e.target.value)}
++                        onChange={(e) => { setConsultationReason(e.target.value); }}
+@@ -602,1 +602,1 @@
+-                        onChange={(e) => setSymptoms(e.target.value)}
++                        onChange={(e) => { setSymptoms(e.target.value); }}
+@@ -632,1 +632,1 @@
+-                        onClick={() => setDialogOpen(false)}
++                        onClick={() => { setDialogOpen(false); }}
+@@ -657,1 +657,1 @@
+-                  <Button onClick={() => setDialogOpen(true)} data-testid="button-create-first">
++                  <Button onClick={() => { setDialogOpen(true); }} data-testid="button-create-first">
+diff --git a/client/src/components/PatientManagementPanel.tsx b/client/src/components/PatientManagementPanel.tsx
+--- a/client/src/components/PatientManagementPanel.tsx
++++ b/client/src/components/PatientManagementPanel.tsx
+@@ -174,1 +174,1 @@
+-    onSuccess: (data: any, variables) => {
++    onSuccess: (data: unknown, variables) => {
+@@ -184,1 +184,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -230,1 +230,1 @@
+-    const icons: Record<string, any> = {
++    const icons: Record<string, unknown> = {
+@@ -273,1 +273,1 @@
+-            onCheckedChange={(checked) => handleMonitoringToggle(selectedPatient.id, checked, { stopPropagation: () => {} } as React.MouseEvent)}
++            onCheckedChange={(checked) => { handleMonitoringToggle(selectedPatient.id, checked, { stopPropagation: () => {} } as React.MouseEvent); }}
+@@ -279,1 +279,1 @@
+-            onClick={(e) => openLysaForPatient(selectedPatient, e)}
++            onClick={(e) => { openLysaForPatient(selectedPatient, e); }}
+@@ -609,1 +609,1 @@
+-              onClick={() => setViewMode("grid")}
++              onClick={() => { setViewMode("grid"); }}
+@@ -617,1 +617,1 @@
+-              onClick={() => setViewMode("list")}
++              onClick={() => { setViewMode("list"); }}
+@@ -735,1 +735,1 @@
+-                onChange={(e) => setSearchQuery(e.target.value)}
++                onChange={(e) => { setSearchQuery(e.target.value); }}
+@@ -766,1 +766,1 @@
+-              onClick={() => setSelectedPatient(patient)}
++              onClick={() => { setSelectedPatient(patient); }}
+@@ -802,1 +802,1 @@
+-                        onCheckedChange={(checked) => handleMonitoringToggle(patient.id, checked, { stopPropagation: () => {} } as React.MouseEvent)}
++                        onCheckedChange={(checked) => { handleMonitoringToggle(patient.id, checked, { stopPropagation: () => {} } as React.MouseEvent); }}
+@@ -810,1 +810,1 @@
+-                        onClick={(e) => openLysaForPatient(patient, e)}
++                        onClick={(e) => { openLysaForPatient(patient, e); }}
+diff --git a/client/src/pages/EnvironmentalRiskMap.tsx b/client/src/pages/EnvironmentalRiskMap.tsx
+--- a/client/src/pages/EnvironmentalRiskMap.tsx
++++ b/client/src/pages/EnvironmentalRiskMap.tsx
+@@ -43,1 +43,1 @@
+-  pollutants?: any;
++  pollutants?: unknown;
+@@ -44,1 +44,1 @@
+-  localOutbreaks?: any[];
++  localOutbreaks?: unknown[];
+@@ -45,1 +45,1 @@
+-  detectedPathogens?: any[];
++  detectedPathogens?: unknown[];
+@@ -70,1 +70,1 @@
+-  outbreaks: any[];
++  outbreaks: unknown[];
+@@ -71,1 +71,1 @@
+-  pathogens: any[];
++  pathogens: unknown[];
+@@ -74,1 +74,1 @@
+-  recommendations: any[];
++  recommendations: unknown[];
+@@ -210,1 +210,1 @@
+-                onChange={(e) => setZipCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
++                onChange={(e) => { setZipCode(e.target.value.replace(/\D/g, "").slice(0, 5)); }}
+@@ -364,1 +364,1 @@
+-                  {pathogenMap.outbreaks.map((outbreak: any, idx: number) => (
++                  {pathogenMap.outbreaks.map((outbreak: unknown, idx: number) => (
+@@ -406,1 +406,1 @@
+-                  {pathogenMap.pathogens.map((pathogen: any, idx: number) => (
++                  {pathogenMap.pathogens.map((pathogen: unknown, idx: number) => (
+@@ -455,1 +455,1 @@
+-                  {pathogenMap.recommendations.map((rec: any, idx: number) => (
++                  {pathogenMap.recommendations.map((rec: unknown, idx: number) => (
+diff --git a/client/src/pages/ConsentManagement.tsx b/client/src/pages/ConsentManagement.tsx
+--- a/client/src/pages/ConsentManagement.tsx
++++ b/client/src/pages/ConsentManagement.tsx
+@@ -332,1 +332,1 @@
+-                    onClick={() => setIsDialogOpen(false)}
++                    onClick={() => { setIsDialogOpen(false); }}
+@@ -360,1 +360,1 @@
+-              <Button onClick={() => setIsDialogOpen(true)} data-testid="button-add-first-consent">
++              <Button onClick={() => { setIsDialogOpen(true); }} data-testid="button-add-first-consent">
+@@ -406,1 +406,1 @@
+-                      onClick={() => deleteMutation.mutate(consent.id)}
++                      onClick={() => { deleteMutation.mutate(consent.id); }}
+@@ -486,1 +486,1 @@
+-                onChange={(e) => setRevokeReason(e.target.value)}
++                onChange={(e) => { setRevokeReason(e.target.value); }}
+diff --git a/client/src/pages/MedicalDocuments.tsx b/client/src/pages/MedicalDocuments.tsx
+--- a/client/src/pages/MedicalDocuments.tsx
++++ b/client/src/pages/MedicalDocuments.tsx
+@@ -254,1 +254,1 @@
+-                      onChange={(e) => setDocumentDate(e.target.value)}
++                      onChange={(e) => { setDocumentDate(e.target.value); }}
+@@ -339,1 +339,1 @@
+-                                onClick={() => setSelectedDocument(doc)}
++                                onClick={() => { setSelectedDocument(doc); }}
+@@ -469,1 +469,1 @@
+-              onClick={() => setSelectedDocument(null)}
++              onClick={() => { setSelectedDocument(null); }}
+diff --git a/client/src/components/DailySymptomCheckin.tsx b/client/src/components/DailySymptomCheckin.tsx
+--- a/client/src/components/DailySymptomCheckin.tsx
++++ b/client/src/components/DailySymptomCheckin.tsx
+@@ -72,1 +72,1 @@
+-    mutationFn: async (data: any) => {
++    mutationFn: async (data: unknown) => {
+@@ -92,1 +92,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -363,1 +363,1 @@
+-                      onClick={() => toggleSymptom(symptom)}
++                      onClick={() => { toggleSymptom(symptom); }}
+@@ -392,1 +392,1 @@
+-                      onClick={() => toggleTrigger(trigger)}
++                      onClick={() => { toggleTrigger(trigger); }}
+@@ -489,1 +489,1 @@
+-              {unifiedFeed.slice(0, 10).map((item: any) => {
++              {unifiedFeed.slice(0, 10).map((item: unknown) => {
+diff --git a/client/src/components/DynamicWelcome.tsx b/client/src/components/DynamicWelcome.tsx
+--- a/client/src/components/DynamicWelcome.tsx
++++ b/client/src/components/DynamicWelcome.tsx
+@@ -93,1 +93,1 @@
+-    const timer = setInterval(() => setCurrentTime(new Date()), 60000); // Update every minute
++    const timer = setInterval(() => { setCurrentTime(new Date()); }, 60000); // Update every minute
+@@ -94,1 +94,1 @@
+-    return () => clearInterval(timer);
++    return () => { clearInterval(timer); };
+diff --git a/client/src/components/BreathingExercise.tsx b/client/src/components/BreathingExercise.tsx
+--- a/client/src/components/BreathingExercise.tsx
++++ b/client/src/components/BreathingExercise.tsx
+@@ -39,1 +39,1 @@
+-    return () => clearInterval(interval);
++    return () => { clearInterval(interval); };
+@@ -93,1 +93,1 @@
+-              onClick={() => setIsActive(!isActive)}
++              onClick={() => { setIsActive(!isActive); }}
+diff --git a/client/src/pages/DoctorDashboard.tsx b/client/src/pages/DoctorDashboard.tsx
+--- a/client/src/pages/DoctorDashboard.tsx
++++ b/client/src/pages/DoctorDashboard.tsx
+@@ -78,1 +78,1 @@
+-    onSuccess: (data: any, variables) => {
++    onSuccess: (data: unknown, variables) => {
+@@ -88,1 +88,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -276,1 +276,1 @@
+-                onChange={(e) => setSearchQuery(e.target.value)}
++                onChange={(e) => { setSearchQuery(e.target.value); }}
+@@ -364,1 +364,1 @@
+-                      onCheckedChange={(checked) => handleMonitoringToggle(patient.id, checked, { stopPropagation: () => {} } as React.MouseEvent)}
++                      onCheckedChange={(checked) => { handleMonitoringToggle(patient.id, checked, { stopPropagation: () => {} } as React.MouseEvent); }}
+@@ -383,1 +383,1 @@
+-                    onClick={(e) => openLysaForPatient(patient, e)}
++                    onClick={(e) => { openLysaForPatient(patient, e); }}
+diff --git a/server/voiceProcessingService.ts b/server/voiceProcessingService.ts
+--- a/server/voiceProcessingService.ts
++++ b/server/voiceProcessingService.ts
+@@ -71,1 +71,1 @@
+-      file: fileStream as any,
++      file: fileStream as unknown,
+@@ -126,1 +126,1 @@
+-    let extractedData: any = {};
++    let extractedData: unknown = {};
+@@ -153,1 +153,1 @@
+-- Symptoms: ${extractedData.symptoms?.map((s: any) => s.symptom).join(", ") || "none"}
++- Symptoms: ${extractedData.symptoms?.map((s: unknown) => s.symptom).join(", ") || "none"}
+diff --git a/client/src/pages/MentalHealth.tsx b/client/src/pages/MentalHealth.tsx
+--- a/client/src/pages/MentalHealth.tsx
++++ b/client/src/pages/MentalHealth.tsx
+@@ -54,1 +54,1 @@
+-    cluster_scores: Record<string, any>;
++    cluster_scores: Record<string, unknown>;
+@@ -175,1 +175,1 @@
+-      refetchHistory();
++      void refetchHistory();
+@@ -182,1 +182,1 @@
+-    } catch (error: any) {
++    } catch (error: unknown) {
+@@ -239,1 +239,1 @@
+-        <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="h-full flex flex-col">
++        <Tabs value={activeTab} onValueChange={(v: any) => { setActiveTab(v); }} className="h-full flex flex-col">
+@@ -283,1 +283,1 @@
+-                        {questionnaireError?.message || "Failed to connect to /api/v1/mental-health/questionnaires"}
++                        {questionnaireError.message || "Failed to connect to /api/v1/mental-health/questionnaires"}
+@@ -297,1 +297,1 @@
+-                  <Card key={template.type} className="hover-elevate active-elevate-2 cursor-pointer" onClick={() => handleStartQuestionnaire(template)} data-testid={`card-questionnaire-${template.type}`}>
++                  <Card key={template.type} className="hover-elevate active-elevate-2 cursor-pointer" onClick={() => { handleStartQuestionnaire(template); }} data-testid={`card-questionnaire-${template.type}`}>
+@@ -362,1 +362,1 @@
+-                        value={currentResponse?.response?.toString()}
++                        value={currentResponse?.response.toString()}
+@@ -513,1 +513,1 @@
+-                          {Object.entries(completedResponse.score.cluster_scores).map(([key, cluster]: [string, any]) => {
++                          {Object.entries(completedResponse.score.cluster_scores).map(([key, cluster]: [string, unknown]) => {
+@@ -535,1 +535,1 @@
+-                    <Button variant="outline" onClick={() => setActiveTab("history")} data-testid="button-view-history">
++                    <Button variant="outline" onClick={() => { setActiveTab("history"); }} data-testid="button-view-history">
+@@ -563,1 +563,1 @@
+-                      <Button className="mt-4" onClick={() => setActiveTab("questionnaires")} data-testid="button-start-first">
++                      <Button className="mt-4" onClick={() => { setActiveTab("questionnaires"); }} data-testid="button-start-first">
+diff --git a/client/src/pages/VerifyPhone.tsx b/client/src/pages/VerifyPhone.tsx
+--- a/client/src/pages/VerifyPhone.tsx
++++ b/client/src/pages/VerifyPhone.tsx
+@@ -73,1 +73,1 @@
+-    } catch (error: any) {
++    } catch (error: unknown) {
+diff --git a/client/src/pages/DailySymptomCheckin.tsx b/client/src/pages/DailySymptomCheckin.tsx
+--- a/client/src/pages/DailySymptomCheckin.tsx
++++ b/client/src/pages/DailySymptomCheckin.tsx
+@@ -58,1 +58,1 @@
+-          onClick={() => setActiveView("checkin")}
++          onClick={() => { setActiveView("checkin"); }}
+@@ -67,1 +67,1 @@
+-          onClick={() => setActiveView("history")}
++          onClick={() => { setActiveView("history"); }}
+@@ -76,1 +76,1 @@
+-          onClick={() => setActiveView("trends")}
++          onClick={() => { setActiveView("trends"); }}
+@@ -133,1 +133,1 @@
+-    mutationFn: async (data: any) => {
++    mutationFn: async (data: unknown) => {
+@@ -157,1 +157,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -218,1 +218,1 @@
+-            onValueChange={(v) => setPainLevel(v[0])}
++            onValueChange={(v) => { setPainLevel(v[0]); }}
+@@ -242,1 +242,1 @@
+-            onValueChange={(v) => setFatigueLevel(v[0])}
++            onValueChange={(v) => { setFatigueLevel(v[0]); }}
+@@ -266,1 +266,1 @@
+-            onValueChange={(v) => setBreathlessnessLevel(v[0])}
++            onValueChange={(v) => { setBreathlessnessLevel(v[0]); }}
+@@ -290,1 +290,1 @@
+-            onValueChange={(v) => setSleepQuality(v[0])}
++            onValueChange={(v) => { setSleepQuality(v[0]); }}
+@@ -310,1 +310,1 @@
+-                onClick={() => setMood(option.value)}
++                onClick={() => { setMood(option.value); }}
+@@ -333,1 +333,1 @@
+-            onValueChange={(v) => setMobilityScore(v[0])}
++            onValueChange={(v) => { setMobilityScore(v[0]); }}
+@@ -353,1 +353,1 @@
+-              onClick={() => setMedicationsTaken(true)}
++              onClick={() => { setMedicationsTaken(true); }}
+@@ -360,1 +360,1 @@
+-              onClick={() => setMedicationsTaken(false)}
++              onClick={() => { setMedicationsTaken(false); }}
+@@ -379,1 +379,1 @@
+-                onClick={() => toggleSymptom(symptom)}
++                onClick={() => { toggleSymptom(symptom); }}
+@@ -399,1 +399,1 @@
+-                onClick={() => toggleTrigger(trigger)}
++                onClick={() => { toggleTrigger(trigger); }}
+@@ -417,1 +417,1 @@
+-            onChange={(e) => setNote(e.target.value)}
++            onChange={(e) => { setNote(e.target.value); }}
+@@ -466,1 +466,1 @@
+-              onClick={() => setDaysToShow(7)}
++              onClick={() => { setDaysToShow(7); }}
+@@ -473,1 +473,1 @@
+-              onClick={() => setDaysToShow(30)}
++              onClick={() => { setDaysToShow(30); }}
+@@ -489,1 +489,1 @@
+-              {checkins.map((checkin: any) => (
++              {checkins.map((checkin: unknown) => (
+@@ -579,1 +579,1 @@
+-              onClick={() => setSelectedPeriod("3day")}
++              onClick={() => { setSelectedPeriod("3day"); }}
+@@ -586,1 +586,1 @@
+-              onClick={() => setSelectedPeriod("7day")}
++              onClick={() => { setSelectedPeriod("7day"); }}
+@@ -593,1 +593,1 @@
+-              onClick={() => setSelectedPeriod("15day")}
++              onClick={() => { setSelectedPeriod("15day"); }}
+@@ -600,1 +600,1 @@
+-              onClick={() => setSelectedPeriod("30day")}
++              onClick={() => { setSelectedPeriod("30day"); }}
+diff --git a/client/src/pages/CalendarSync.tsx b/client/src/pages/CalendarSync.tsx
+--- a/client/src/pages/CalendarSync.tsx
++++ b/client/src/pages/CalendarSync.tsx
+@@ -114,1 +114,1 @@
+-    onSuccess: (data: any) => {
++    onSuccess: (data: unknown) => {
+@@ -211,1 +211,1 @@
+-                      {connectorStatus?.email || connectorStatus?.calendarName || "Primary Calendar"}
++                      {connectorStatus.email || connectorStatus?.calendarName || "Primary Calendar"}
+@@ -227,1 +227,1 @@
+-                      onValueChange={(value) => updateSettingsMutation.mutate({ syncDirection: value })}
++                      onValueChange={(value) => { updateSettingsMutation.mutate({ syncDirection: value }); }}
+@@ -259,1 +259,1 @@
+-                      onValueChange={(value) => updateSettingsMutation.mutate({ conflictResolution: value })}
++                      onValueChange={(value) => { updateSettingsMutation.mutate({ conflictResolution: value }); }}
+@@ -282,1 +282,1 @@
+-                    onCheckedChange={(checked) => updateSettingsMutation.mutate({ syncEnabled: checked })}
++                    onCheckedChange={(checked) => { updateSettingsMutation.mutate({ syncEnabled: checked }); }}
+@@ -289,1 +289,1 @@
+-                    onClick={() => syncMutation.mutate()}
++                    onClick={() => { syncMutation.mutate(); }}
+@@ -459,1 +459,1 @@
+-                          {event.start?.dateTime ? 
++                          {event.start.dateTime ? 
+@@ -461,1 +461,1 @@
+-                            event.start?.date || "No date"
++                            event.start.date || "No date"
+diff --git a/client/src/pages/ResetPassword.tsx b/client/src/pages/ResetPassword.tsx
+--- a/client/src/pages/ResetPassword.tsx
++++ b/client/src/pages/ResetPassword.tsx
+@@ -74,1 +74,1 @@
+-    } catch (error: any) {
++    } catch (error: unknown) {
+diff --git a/server/appointmentReminderService.ts b/server/appointmentReminderService.ts
+--- a/server/appointmentReminderService.ts
++++ b/server/appointmentReminderService.ts
+@@ -77,1 +77,1 @@
+-            remindersSent: [...remindersSent, newReminder] as any,
++            remindersSent: [...remindersSent, newReminder] as unknown,
+@@ -106,1 +106,1 @@
+-    const allAppointments: any[] = [];
++    const allAppointments: unknown[] = [];
+@@ -116,1 +116,1 @@
+-      const hasRecentReminder = reminders.some((r: any) => {
++      const hasRecentReminder = reminders.some((r: unknown) => {
+@@ -131,1 +131,1 @@
+-  private async sendSMSReminder(appointment: any, patient: any, doctor: any): Promise<void> {
++  private async sendSMSReminder(appointment: unknown, patient: any, doctor: any): Promise<void> {
+@@ -153,1 +153,1 @@
+-  private async sendEmailReminder(appointment: any, patient: any, doctor: any): Promise<void> {
++  private async sendEmailReminder(appointment: unknown, patient: any, doctor: any): Promise<void> {
+diff --git a/client/src/pages/ReceptionistDashboard.tsx b/client/src/pages/ReceptionistDashboard.tsx
+--- a/client/src/pages/ReceptionistDashboard.tsx
++++ b/client/src/pages/ReceptionistDashboard.tsx
+@@ -128,1 +128,1 @@
+-            <Button variant="outline" onClick={() => setLysaExpanded(!lysaExpanded)} data-testid="button-toggle-lysa-panel">
++            <Button variant="outline" onClick={() => { setLysaExpanded(!lysaExpanded); }} data-testid="button-toggle-lysa-panel">
+@@ -375,1 +375,1 @@
+-                          <Badge variant={getCategoryColor(thread.category) as any}>
++                          <Badge variant={getCategoryColor(thread.category) as unknown}>
+@@ -379,1 +379,1 @@
+-                            <Badge variant={getPriorityColor(thread.priority) as any}>
++                            <Badge variant={getPriorityColor(thread.priority) as unknown}>
+diff --git a/server/personalizationService.ts b/server/personalizationService.ts
+--- a/server/personalizationService.ts
++++ b/server/personalizationService.ts
+@@ -451,1 +451,1 @@
+-  async trackUserInteraction(userId: string, agentType: 'clona' | 'lysa', interaction: any): Promise<void> {
++  async trackUserInteraction(userId: string, agentType: 'clona' | 'lysa', interaction: unknown): Promise<void> {
+@@ -458,1 +458,1 @@
+-  async processFeedback(userId: string, agentType: 'clona' | 'lysa', feedback: any): Promise<void> {
++  async processFeedback(userId: string, agentType: 'clona' | 'lysa', feedback: unknown): Promise<void> {
+diff --git a/client/src/components/PhoneVerification.tsx b/client/src/components/PhoneVerification.tsx
+--- a/client/src/components/PhoneVerification.tsx
++++ b/client/src/components/PhoneVerification.tsx
+@@ -42,1 +42,1 @@
+-  const { data: user, isSuccess } = useQuery<any>({
++  const { data: user, isSuccess } = useQuery<unknown>({
+@@ -97,1 +97,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -212,1 +212,1 @@
+-                        onClick={() => setChannel('sms')}
++                        onClick={() => { setChannel('sms'); }}
+diff --git a/client/src/hooks/use-mobile.tsx b/client/src/hooks/use-mobile.tsx
+--- a/client/src/hooks/use-mobile.tsx
++++ b/client/src/hooks/use-mobile.tsx
+@@ -15,1 +15,1 @@
+-    return () => mql.removeEventListener("change", onChange)
++    return () => { mql.removeEventListener("change", onChange); }
+diff --git a/client/src/components/VideoRecorder.tsx b/client/src/components/VideoRecorder.tsx
+--- a/client/src/components/VideoRecorder.tsx
++++ b/client/src/components/VideoRecorder.tsx
+@@ -111,1 +111,1 @@
+-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
++      mediaStreamRef.current.getTracks().forEach(track => { track.stop(); });
+@@ -191,1 +191,1 @@
+-    return () => clearInterval(interval);
++    return () => { clearInterval(interval); };
+@@ -196,1 +196,1 @@
+-    startCamera();
++    void startCamera();
+diff --git a/client/src/pages/guided-audio-exam.tsx b/client/src/pages/guided-audio-exam.tsx
+--- a/client/src/pages/guided-audio-exam.tsx
++++ b/client/src/pages/guided-audio-exam.tsx
+@@ -157,1 +157,1 @@
+-    onSuccess: (data: any, variables) => {
++    onSuccess: (data: unknown, variables) => {
+@@ -221,1 +221,1 @@
+-      return () => clearTimeout(timer);
++      return () => { clearTimeout(timer); };
+@@ -225,1 +225,1 @@
+-      startRecording();
++      void startRecording();
+@@ -264,1 +264,1 @@
+-        stream.getTracks().forEach(track => track.stop());
++        stream.getTracks().forEach(track => { track.stop(); });
+@@ -546,1 +546,1 @@
+-                  onClick={() => window.location.reload()}
++                  onClick={() => { window.location.reload(); }}
+diff --git a/client/src/pages/Habits.tsx b/client/src/pages/Habits.tsx
+--- a/client/src/pages/Habits.tsx
++++ b/client/src/pages/Habits.tsx
+@@ -189,1 +189,1 @@
+-  const icons: Record<string, any> = {
++  const icons: Record<string, unknown> = {
+@@ -202,1 +202,1 @@
+-  const moods: Record<string, { icon: any; color: string }> = {
++  const moods: Record<string, { icon: unknown; color: string }> = {
+@@ -233,1 +233,1 @@
+-  const [activeCbtSession, setActiveCbtSession] = useState<any>(null);
++  const [activeCbtSession, setActiveCbtSession] = useState<unknown>(null);
+@@ -382,1 +382,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -403,1 +403,1 @@
+-    mutationFn: async ({ habitId, data }: { habitId: string; data: any }) => {
++    mutationFn: async ({ habitId, data }: { habitId: string; data: unknown }) => {
+@@ -594,1 +594,1 @@
+-        setActiveCbtSession((prev: any) => ({
++        setActiveCbtSession((prev: unknown) => ({
+@@ -684,1 +684,1 @@
+-          const completed = dayData?.totalCompleted || 0;
++          const completed = dayData.totalCompleted || 0;
+@@ -685,1 +685,1 @@
+-          const total = completed + (dayData?.totalSkipped || 0);
++          const total = completed + (dayData.totalSkipped || 0);
+@@ -800,1 +800,1 @@
+-          <Button onClick={() => setIsMoodDialogOpen(true)} variant="outline" size="sm" data-testid="button-log-mood">
++          <Button onClick={() => { setIsMoodDialogOpen(true); }} variant="outline" size="sm" data-testid="button-log-mood">
+@@ -804,1 +804,1 @@
+-          <Button onClick={() => setIsJournalDialogOpen(true)} variant="outline" size="sm" data-testid="button-add-journal">
++          <Button onClick={() => { setIsJournalDialogOpen(true); }} variant="outline" size="sm" data-testid="button-add-journal">
+@@ -808,1 +808,1 @@
+-          <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-habit">
++          <Button onClick={() => { setIsCreateDialogOpen(true); }} data-testid="button-create-habit">
+@@ -954,1 +954,1 @@
+-                      onClick={() => setSelectedHabitForCompletion(habit)}
++                      onClick={() => { setSelectedHabitForCompletion(habit); }}
+@@ -973,1 +973,1 @@
+-                  <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-first-habit">
++                  <Button onClick={() => { setIsCreateDialogOpen(true); }} data-testid="button-create-first-habit">
+@@ -993,1 +993,1 @@
+-                  {recommendationsData.recommendations.slice(0, 3).map((rec: any) => (
++                  {recommendationsData.recommendations.slice(0, 3).map((rec: unknown) => (
+@@ -1018,1 +1018,1 @@
+-                    onClick={() => setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1))}
++                    onClick={() => { setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1)); }}
+@@ -1026,1 +1026,1 @@
+-                    onClick={() => setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1))}
++                    onClick={() => { setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1)); }}
+@@ -1135,1 +1135,1 @@
+-                  onChange={(e) => setCoachMessage(e.target.value)}
++                  onChange={(e) => { setCoachMessage(e.target.value); }}
+@@ -1158,1 +1158,1 @@
+-            <Button onClick={() => setIsQuitPlanDialogOpen(true)} data-testid="button-create-quit-plan">
++            <Button onClick={() => { setIsQuitPlanDialogOpen(true); }} data-testid="button-create-quit-plan">
+@@ -1165,1 +1165,1 @@
+-            {quitPlansData?.quitPlans?.map(plan => (
++            {quitPlansData?.quitPlans.map(plan => (
+@@ -1215,1 +1215,1 @@
+-                  <Button onClick={() => setIsQuitPlanDialogOpen(true)}>
++                  <Button onClick={() => { setIsQuitPlanDialogOpen(true); }}>
+@@ -1252,1 +1252,1 @@
+-                    onChange={(e) => setCbtResponse(e.target.value)}
++                    onChange={(e) => { setCbtResponse(e.target.value); }}
+@@ -1274,1 +1274,1 @@
+-                      onValueChange={(v) => setCbtResponse(v[0].toString())}
++                      onValueChange={(v) => { setCbtResponse(v[0].toString()); }}
+@@ -1283,1 +1283,1 @@
+-                  <Button variant="outline" onClick={() => setActiveCbtSession(null)}>
++                  <Button variant="outline" onClick={() => { setActiveCbtSession(null); }}>
+@@ -1308,1 +1308,1 @@
+-              {cbtFlows?.flows?.map((flow: any) => (
++              {cbtFlows?.flows?.map((flow: unknown) => (
+@@ -1309,1 +1309,1 @@
+-                <Card key={flow.id} className="hover-elevate cursor-pointer" onClick={() => startCbtMutation.mutate(flow.id)}>
++                <Card key={flow.id} className="hover-elevate cursor-pointer" onClick={() => { startCbtMutation.mutate(flow.id); }}>
+@@ -1340,1 +1340,1 @@
+-                onClick={() => analyzeTriggersMutation.mutate()}
++                onClick={() => { analyzeTriggersMutation.mutate(); }}
+@@ -1353,1 +1353,1 @@
+-                onClick={() => generateRecommendationsMutation.mutate()}
++                onClick={() => { generateRecommendationsMutation.mutate(); }}
+@@ -1376,1 +1376,1 @@
+-                {triggersData?.triggers?.length > 0 ? (
++                {triggersData?.triggers.length > 0 ? (
+@@ -1409,1 +1409,1 @@
+-                    {moodTrends.trends.slice(-7).map((trend: any) => (
++                    {moodTrends.trends.slice(-7).map((trend: unknown) => (
+@@ -1442,1 +1442,1 @@
+-                onClick={() => generateWeeklySummaryMutation.mutate()}
++                onClick={() => { generateWeeklySummaryMutation.mutate(); }}
+@@ -1454,1 +1454,1 @@
+-              {journalsData?.journals?.length > 0 ? (
++              {journalsData?.journals.length > 0 ? (
+@@ -1504,1 +1504,1 @@
+-            <form onSubmit={createHabitForm.handleSubmit((data) => createHabitMutation.mutate(data))} className="space-y-4">
++            <form onSubmit={createHabitForm.handleSubmit((data) => { createHabitMutation.mutate(data); })} className="space-y-4">
+@@ -1705,1 +1705,1 @@
+-            <form onSubmit={moodForm.handleSubmit((data) => logMoodMutation.mutate(data))} className="space-y-4">
++            <form onSubmit={moodForm.handleSubmit((data) => { logMoodMutation.mutate(data); })} className="space-y-4">
+@@ -1794,1 +1794,1 @@
+-            <form onSubmit={quitPlanForm.handleSubmit((data) => createQuitPlanMutation.mutate(data))} className="space-y-4">
++            <form onSubmit={quitPlanForm.handleSubmit((data) => { createQuitPlanMutation.mutate(data); })} className="space-y-4">
+@@ -1892,1 +1892,1 @@
+-            <form onSubmit={journalForm.handleSubmit((data) => createJournalMutation.mutate(data))} className="space-y-4">
++            <form onSubmit={journalForm.handleSubmit((data) => { createJournalMutation.mutate(data); })} className="space-y-4">
+diff --git a/client/src/components/FileUploadZone.tsx b/client/src/components/FileUploadZone.tsx
+--- a/client/src/components/FileUploadZone.tsx
++++ b/client/src/components/FileUploadZone.tsx
+@@ -41,1 +41,1 @@
+-        onDragEnter={() => setIsDragging(true)}
++        onDragEnter={() => { setIsDragging(true); }}
+@@ -42,1 +42,1 @@
+-        onDragLeave={() => setIsDragging(false)}
++        onDragLeave={() => { setIsDragging(false); }}
+diff --git a/client/src/pages/HealthCompanion.tsx b/client/src/pages/HealthCompanion.tsx
+--- a/client/src/pages/HealthCompanion.tsx
++++ b/client/src/pages/HealthCompanion.tsx
+@@ -38,1 +38,1 @@
+-  extractedData: any;
++  extractedData: unknown;
+@@ -79,1 +79,1 @@
+-    onSuccess: (response: any) => {
++    onSuccess: (response: unknown) => {
+@@ -248,1 +248,1 @@
+-                    onClick={() => setCheckInType("morning")}
++                    onClick={() => { setCheckInType("morning"); }}
+@@ -257,1 +257,1 @@
+-                    onClick={() => setCheckInType("evening")}
++                    onClick={() => { setCheckInType("evening"); }}
+@@ -266,1 +266,1 @@
+-                    onClick={() => setCheckInType("spontaneous")}
++                    onClick={() => { setCheckInType("spontaneous"); }}
+@@ -295,1 +295,1 @@
+-                  onChange={(e) => setMessage(e.target.value)}
++                  onChange={(e) => { setMessage(e.target.value); }}
+@@ -430,1 +430,1 @@
+-                  <Button onClick={() => setActiveTab("check-in")} data-testid="button-start-checkin">
++                  <Button onClick={() => { setActiveTab("check-in"); }} data-testid="button-start-checkin">
+@@ -457,1 +457,1 @@
+-                        updateEngagementMutation.mutate({ companionPersonality: personality })
++                        { updateEngagementMutation.mutate({ companionPersonality: personality }); }
+@@ -476,1 +476,1 @@
+-                      onClick={() => updateEngagementMutation.mutate({ preferredTone: tone })}
++                      onClick={() => { updateEngagementMutation.mutate({ preferredTone: tone }); }}
+@@ -495,1 +495,1 @@
+-                        updateEngagementMutation.mutate({ checkInFrequency: frequency })
++                        { updateEngagementMutation.mutate({ checkInFrequency: frequency }); }
+diff --git a/client/src/pages/AIAlertsDashboard.tsx b/client/src/pages/AIAlertsDashboard.tsx
+--- a/client/src/pages/AIAlertsDashboard.tsx
++++ b/client/src/pages/AIAlertsDashboard.tsx
+@@ -118,1 +118,1 @@
+-  functional_components: Record<string, any> | null;
++  functional_components: Record<string, unknown> | null;
+@@ -138,1 +138,1 @@
+-  contributing_metrics: any[] | null;
++  contributing_metrics: unknown[] | null;
+@@ -152,1 +152,1 @@
+-  trend_metrics: any[];
++  trend_metrics: unknown[];
+@@ -170,1 +170,1 @@
+-  active_alerts: any[];
++  active_alerts: unknown[];
+@@ -304,1 +304,1 @@
+-  icon: any;
++  icon: unknown;
+@@ -422,1 +422,1 @@
+-                onClick={() => onAcknowledge(alert.id)}
++                onClick={() => { onAcknowledge(alert.id); }}
+@@ -457,1 +457,1 @@
+-                      onChange={(e) => setDismissReason(e.target.value)}
++                      onChange={(e) => { setDismissReason(e.target.value); }}
+@@ -467,1 +467,1 @@
+-                      onChange={(e) => setClinicianNotes(e.target.value)}
++                      onChange={(e) => { setClinicianNotes(e.target.value); }}
+@@ -473,1 +473,1 @@
+-                  <Button variant="outline" onClick={() => setDismissDialogOpen(false)}>
++                  <Button variant="outline" onClick={() => { setDismissDialogOpen(false); }}>
+@@ -491,1 +491,1 @@
+-    if (!metrics?.length) return [];
++    if (!metrics.length) return [];
+@@ -493,1 +493,1 @@
+-    const grouped: Record<string, any> = {};
++    const grouped: Record<string, unknown> = {};
+@@ -568,1 +568,1 @@
+-    if (!qolMetrics?.length) return [];
++    if (!qolMetrics.length) return [];
+@@ -613,1 +613,1 @@
+-    if (!engagementMetrics?.length) return [];
++    if (!engagementMetrics.length) return [];
+@@ -707,1 +707,1 @@
+-      {dpi.explainability?.top_contributors?.length > 0 && (
++      {dpi.explainability.top_contributors?.length > 0 && (
+@@ -1103,1 +1103,1 @@
+-    if (!history?.length) return [];
++    if (!history.length) return [];
+@@ -1286,1 +1286,1 @@
+-          {baseline.respiratory_rate?.min_value && baseline.respiratory_rate?.max_value && (
++          {baseline.respiratory_rate.min_value && baseline.respiratory_rate?.max_value && (
+@@ -1301,1 +1301,1 @@
+-          {baseline.pain_facial?.min_value !== null && baseline.pain_facial?.max_value !== null && (
++          {baseline.pain_facial.min_value !== null && baseline.pain_facial?.max_value !== null && (
+@@ -1303,1 +1303,1 @@
+-              Range: {baseline.pain_facial.min_value?.toFixed(1)}-{baseline.pain_facial.max_value?.toFixed(1)}
++              Range: {baseline.pain_facial.min_value.toFixed(1)}-{baseline.pain_facial.max_value?.toFixed(1)}
+@@ -1316,1 +1316,1 @@
+-          {baseline.symptom_severity?.min_value !== null && baseline.symptom_severity?.max_value !== null && (
++          {baseline.symptom_severity.min_value !== null && baseline.symptom_severity?.max_value !== null && (
+@@ -1318,1 +1318,1 @@
+-              Range: {baseline.symptom_severity.min_value?.toFixed(1)}-{baseline.symptom_severity.max_value?.toFixed(1)}
++              Range: {baseline.symptom_severity.min_value.toFixed(1)}-{baseline.symptom_severity.max_value?.toFixed(1)}
+@@ -1331,1 +1331,1 @@
+-          {baseline.pain_self_reported?.min_value !== null && baseline.pain_self_reported?.max_value !== null && (
++          {baseline.pain_self_reported.min_value !== null && baseline.pain_self_reported?.max_value !== null && (
+@@ -1333,1 +1333,1 @@
+-              Range: {baseline.pain_self_reported.min_value?.toFixed(1)}-{baseline.pain_self_reported.max_value?.toFixed(1)}
++              Range: {baseline.pain_self_reported.min_value.toFixed(1)}-{baseline.pain_self_reported.max_value?.toFixed(1)}
+@@ -1563,1 +1563,1 @@
+-      refetchBaseline();
++      void refetchBaseline();
+@@ -1564,1 +1564,1 @@
+-      refetchBaselineHistory();
++      void refetchBaselineHistory();
+@@ -1565,1 +1565,1 @@
+-      refetchRiskScore();
++      void refetchRiskScore();
+@@ -1592,1 +1592,1 @@
+-      refetchAlerts();
++      void refetchAlerts();
+@@ -1593,1 +1593,1 @@
+-      refetchOverview();
++      void refetchOverview();
+@@ -1636,1 +1636,1 @@
+-      refetchDpi();
++      void refetchDpi();
+@@ -1637,1 +1637,1 @@
+-      refetchOrgans();
++      void refetchOrgans();
+@@ -1712,1 +1712,1 @@
+-          value={dpiData?.dpi_normalized?.toFixed(0) || "â"}
++          value={dpiData?.dpi_normalized.toFixed(0) || "â"}
+@@ -1714,1 +1714,1 @@
+-          trend={dpiData?.explainability?.trend_direction === "improving" ? 'up' : dpiData?.explainability?.trend_direction === "declining" ? 'down' : 'stable'}
++          trend={dpiData?.explainability.trend_direction === "improving" ? 'up' : dpiData?.explainability?.trend_direction === "declining" ? 'down' : 'stable'}
+@@ -1730,1 +1730,1 @@
+-          value={latestQol?.wellness_index?.toFixed(0) || "â"}
++          value={latestQol?.wellness_index.toFixed(0) || "â"}
+@@ -1748,1 +1748,1 @@
+-          value={latestQol?.stability_score?.toFixed(0) || "â"}
++          value={latestQol?.stability_score.toFixed(0) || "â"}
+@@ -1815,1 +1815,1 @@
+-                          onAcknowledge={(id) => acknowledgeMutation.mutate(id)}
++                          onAcknowledge={(id) => { acknowledgeMutation.mutate(id); }}
+@@ -1816,1 +1816,1 @@
+-                          onDismiss={(id, reason, notes) => dismissMutation.mutate({ alertId: id, reason, notes })}
++                          onDismiss={(id, reason, notes) => { dismissMutation.mutate({ alertId: id, reason, notes }); }}
+@@ -1963,1 +1963,1 @@
+-                    onRecalculate={() => recalculateBaselineMutation.mutate()}
++                    onRecalculate={() => { recalculateBaselineMutation.mutate(); }}
+@@ -2017,1 +2017,1 @@
+-                            <span>RR: {b.respiratory_rate?.mean?.toFixed(1) || 'â'} bpm</span>
++                            <span>RR: {b.respiratory_rate.mean?.toFixed(1) || 'â'} bpm</span>
+@@ -2018,1 +2018,1 @@
+-                            <span>Pain: {b.pain_facial?.mean?.toFixed(1) || 'â'}/10</span>
++                            <span>Pain: {b.pain_facial.mean?.toFixed(1) || 'â'}/10</span>
+@@ -2113,1 +2113,1 @@
+-                              z={zScore?.toFixed(2)}
++                              z={zScore.toFixed(2)}
+@@ -2264,1 +2264,1 @@
+-                  <p className="text-xl font-bold">{latestQol?.wellness_index?.toFixed(0) || 0}/100</p>
++                  <p className="text-xl font-bold">{latestQol?.wellness_index.toFixed(0) || 0}/100</p>
+@@ -2276,1 +2276,1 @@
+-                  <p className="text-xl font-bold">{latestQol?.functional_status?.toFixed(0) || 0}/100</p>
++                  <p className="text-xl font-bold">{latestQol?.functional_status.toFixed(0) || 0}/100</p>
+@@ -2288,1 +2288,1 @@
+-                  <p className="text-xl font-bold">{latestQol?.selfcare_score?.toFixed(0) || 0}/100</p>
++                  <p className="text-xl font-bold">{latestQol?.selfcare_score.toFixed(0) || 0}/100</p>
+@@ -2300,1 +2300,1 @@
+-                  <p className="text-xl font-bold">{latestQol?.stability_score?.toFixed(0) || 0}/100</p>
++                  <p className="text-xl font-bold">{latestQol?.stability_score.toFixed(0) || 0}/100</p>
+diff --git a/client/src/components/MedicationCard.tsx b/client/src/components/MedicationCard.tsx
+--- a/client/src/components/MedicationCard.tsx
++++ b/client/src/components/MedicationCard.tsx
+@@ -96,1 +96,1 @@
+-            onClick={() => console.log("Marked as taken")}
++            onClick={() => { console.log("Marked as taken"); }}
+diff --git a/server/phiRedactionService.ts b/server/phiRedactionService.ts
+--- a/server/phiRedactionService.ts
++++ b/server/phiRedactionService.ts
+@@ -271,1 +271,1 @@
+-    warnings.forEach(warning => console.warn(`   - ${warning}`));
++    warnings.forEach(warning => { console.warn(`   - ${warning}`); });
+diff --git a/client/src/pages/MLMonitoring.tsx b/client/src/pages/MLMonitoring.tsx
+--- a/client/src/pages/MLMonitoring.tsx
++++ b/client/src/pages/MLMonitoring.tsx
+@@ -60,1 +60,1 @@
+-  metrics: any;
++  metrics: unknown;
+@@ -79,1 +79,1 @@
+-    result: any;
++    result: unknown;
+@@ -157,1 +157,1 @@
+-  const [genericResult, setGenericResult] = useState<any>(null);
++  const [genericResult, setGenericResult] = useState<unknown>(null);
+@@ -179,1 +179,1 @@
+-    enabled: !!modelsData?.models?.some(m => m.name === "clinical_ner")
++    enabled: !!modelsData?.models.some(m => m.name === "clinical_ner")
+@@ -194,1 +194,1 @@
+-        description: `Found ${data.entities?.length || 0} entities in ${data.inference_time_ms?.toFixed(0) || 0}ms`,
++        description: `Found ${data.entities.length || 0} entities in ${data.inference_time_ms?.toFixed(0) || 0}ms`,
+@@ -199,1 +199,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -220,1 +220,1 @@
+-        description: `Risk Level: ${data.risk_level} (Score: ${data.risk_score?.toFixed(1) || 0})`,
++        description: `Risk Level: ${data.risk_level} (Score: ${data.risk_score.toFixed(1) || 0})`,
+@@ -236,1 +236,1 @@
+-    mutationFn: async (data: { model: string; input: any }) => {
++    mutationFn: async (data: { model: string; input: unknown }) => {
+@@ -242,1 +242,1 @@
+-    onSuccess: (data: any) => {
++    onSuccess: (data: unknown) => {
+@@ -265,1 +265,1 @@
+-  const latencyData = performanceData?.metrics?.latency?.map(m => ({
++  const latencyData = performanceData?.metrics.latency?.map(m => ({
+@@ -270,1 +270,1 @@
+-  const accuracyData = performanceData?.metrics?.accuracy?.map(m => ({
++  const accuracyData = performanceData?.metrics.accuracy?.map(m => ({
+@@ -276,1 +276,1 @@
+-  const entityDistribution = analysisResult?.entities?.reduce((acc, entity) => {
++  const entityDistribution = analysisResult?.entities.reduce((acc, entity) => {
+@@ -289,1 +289,1 @@
+-    switch (level?.toLowerCase()) {
++    switch (level.toLowerCase()) {
+@@ -361,1 +361,1 @@
+-                  {stats?.total_predictions?.toLocaleString() || 0}
++                  {stats?.total_predictions.toLocaleString() || 0}
+@@ -562,1 +562,1 @@
+-                    onChange={(e) => setSymptomText(e.target.value)}
++                    onChange={(e) => { setSymptomText(e.target.value); }}
+@@ -582,1 +582,1 @@
+-                  onClick={() => symptomAnalysisMutation.mutate({ text: symptomText, include_context: includeContext })}
++                  onClick={() => { symptomAnalysisMutation.mutate({ text: symptomText, include_context: includeContext }); }}
+@@ -623,1 +623,1 @@
+-                      <Badge variant="outline">{analysisResult.inference_time_ms?.toFixed(0)}ms</Badge>
++                      <Badge variant="outline">{analysisResult.inference_time_ms.toFixed(0)}ms</Badge>
+@@ -657,1 +657,1 @@
+-                      {analysisResult.symptoms?.length > 0 && (
++                      {analysisResult.symptoms.length > 0 && (
+@@ -670,1 +670,1 @@
+-                      {analysisResult.conditions?.length > 0 && (
++                      {analysisResult.conditions.length > 0 && (
+@@ -683,1 +683,1 @@
+-                      {analysisResult.medications?.length > 0 && (
++                      {analysisResult.medications.length > 0 && (
+@@ -697,1 +697,1 @@
+-                      {analysisResult.body_parts?.length > 0 && (
++                      {analysisResult.body_parts.length > 0 && (
+@@ -710,1 +710,1 @@
+-                      {analysisResult.severity_indicators?.length > 0 && (
++                      {analysisResult.severity_indicators.length > 0 && (
+@@ -760,1 +760,1 @@
+-                        onValueChange={([v]) => setDeteriorationMetrics(m => ({ ...m, heart_rate: v }))}
++                        onValueChange={([v]) => { setDeteriorationMetrics(m => ({ ...m, heart_rate: v })); }}
+@@ -780,1 +780,1 @@
+-                        onChange={(e) => setDeteriorationMetrics(m => ({ ...m, blood_pressure_systolic: Number(e.target.value) }))}
++                        onChange={(e) => { setDeteriorationMetrics(m => ({ ...m, blood_pressure_systolic: Number(e.target.value) })); }}
+@@ -788,1 +788,1 @@
+-                        onChange={(e) => setDeteriorationMetrics(m => ({ ...m, blood_pressure_diastolic: Number(e.target.value) }))}
++                        onChange={(e) => { setDeteriorationMetrics(m => ({ ...m, blood_pressure_diastolic: Number(e.target.value) })); }}
+@@ -803,1 +803,1 @@
+-                        onValueChange={([v]) => setDeteriorationMetrics(m => ({ ...m, respiratory_rate: v }))}
++                        onValueChange={([v]) => { setDeteriorationMetrics(m => ({ ...m, respiratory_rate: v })); }}
+@@ -822,1 +822,1 @@
+-                        onValueChange={([v]) => setDeteriorationMetrics(m => ({ ...m, temperature: v }))}
++                        onValueChange={([v]) => { setDeteriorationMetrics(m => ({ ...m, temperature: v })); }}
+@@ -841,1 +841,1 @@
+-                        onValueChange={([v]) => setDeteriorationMetrics(m => ({ ...m, oxygen_saturation: v }))}
++                        onValueChange={([v]) => { setDeteriorationMetrics(m => ({ ...m, oxygen_saturation: v })); }}
+@@ -860,1 +860,1 @@
+-                        onValueChange={([v]) => setDeteriorationMetrics(m => ({ ...m, pain_level: v }))}
++                        onValueChange={([v]) => { setDeteriorationMetrics(m => ({ ...m, pain_level: v })); }}
+@@ -875,1 +875,1 @@
+-                  onClick={() => deteriorationMutation.mutate({ metrics: deteriorationMetrics })}
++                  onClick={() => { deteriorationMutation.mutate({ metrics: deteriorationMetrics }); }}
+@@ -911,1 +911,1 @@
+-                        {deteriorationResult.risk_score?.toFixed(1)}
++                        {deteriorationResult.risk_score.toFixed(1)}
+@@ -924,1 +924,1 @@
+-                    {deteriorationResult.contributing_factors?.length > 0 && (
++                    {deteriorationResult.contributing_factors.length > 0 && (
+@@ -944,1 +944,1 @@
+-                    {deteriorationResult.recommendations?.length > 0 && (
++                    {deteriorationResult.recommendations.length > 0 && (
+@@ -959,1 +959,1 @@
+-                      Inference time: {deteriorationResult.inference_time_ms?.toFixed(0)}ms
++                      Inference time: {deteriorationResult.inference_time_ms.toFixed(0)}ms
+@@ -1029,1 +1029,1 @@
+-                  onChange={(e) => setGenericInput(e.target.value)}
++                  onChange={(e) => { setGenericInput(e.target.value); }}
+@@ -1161,1 +1161,1 @@
+-                          {new Date(pred.predicted_at).toLocaleString()} â¢ {pred.inference_time_ms?.toFixed(0)}ms
++                          {new Date(pred.predicted_at).toLocaleString()} â¢ {pred.inference_time_ms.toFixed(0)}ms
+diff --git a/server/nutritionService.ts b/server/nutritionService.ts
+--- a/server/nutritionService.ts
++++ b/server/nutritionService.ts
+@@ -15,1 +15,1 @@
+-  dietaryPreferences: any;
++  dietaryPreferences: unknown;
+@@ -16,1 +16,1 @@
+-  medications: any[];
++  medications: unknown[];
+@@ -179,1 +179,1 @@
+-    let parsed: any;
++    let parsed: unknown;
+@@ -195,1 +195,1 @@
+-    return meals.map((meal: any) => ({
++    return meals.map((meal: unknown) => ({
+@@ -271,1 +271,1 @@
+-  medications: any[],
++  medications: unknown[],
+@@ -272,1 +272,1 @@
+-  dietaryPrefs: any
++  dietaryPrefs: unknown
+@@ -340,1 +340,1 @@
+-    return recommendations.map((rec: any) => ({
++    return recommendations.map((rec: unknown) => ({
+diff --git a/client/src/pages/CorrelationInsights.tsx b/client/src/pages/CorrelationInsights.tsx
+--- a/client/src/pages/CorrelationInsights.tsx
++++ b/client/src/pages/CorrelationInsights.tsx
+@@ -26,1 +26,1 @@
+-  factors: Array<{ type: string; name: string; value: any }>;
++  factors: Array<{ type: string; name: string; value: unknown }>;
+@@ -141,1 +141,1 @@
+-          onClick={() => analyzeMutation.mutate()}
++          onClick={() => { analyzeMutation.mutate(); }}
+diff --git a/client/src/pages/VoiceFollowups.tsx b/client/src/pages/VoiceFollowups.tsx
+--- a/client/src/pages/VoiceFollowups.tsx
++++ b/client/src/pages/VoiceFollowups.tsx
+@@ -50,1 +50,1 @@
+-    refetchFollowups();
++    void refetchFollowups();
+diff --git a/client/src/pages/Medications.tsx b/client/src/pages/Medications.tsx
+--- a/client/src/pages/Medications.tsx
++++ b/client/src/pages/Medications.tsx
+@@ -124,1 +124,1 @@
+-  const [checkResults, setCheckResults] = useState<any>(null);
++  const [checkResults, setCheckResults] = useState<unknown>(null);
+@@ -145,1 +145,1 @@
+-  const { data: activeAlerts, isLoading: alertsLoading } = useQuery<any[]>({
++  const { data: activeAlerts, isLoading: alertsLoading } = useQuery<unknown[]>({
+@@ -149,1 +149,1 @@
+-  const { data: allAlerts } = useQuery<any[]>({
++  const { data: allAlerts } = useQuery<unknown[]>({
+@@ -172,1 +172,1 @@
+-    onError: (error: any) => {
++    onError: (error: unknown) => {
+@@ -207,1 +207,1 @@
+-      const result: any = await apiRequest('POST', '/api/drug-interactions/analyze', {
++      const result: unknown = await apiRequest('POST', '/api/drug-interactions/analyze', {
+@@ -521,1 +521,1 @@
+-                      {adherenceData?.currentAdherenceRate && adherenceData?.currentAdherenceRate >= 0.9
++                      {adherenceData?.currentAdherenceRate && adherenceData.currentAdherenceRate >= 0.9
+@@ -523,1 +523,1 @@
+-                        : adherenceData?.currentAdherenceRate && adherenceData?.currentAdherenceRate >= 0.7
++                        : adherenceData?.currentAdherenceRate && adherenceData.currentAdherenceRate >= 0.7
+@@ -543,1 +543,1 @@
+-                      <Badge variant={getRiskColor(adherenceData?.regimenRisk.level || "unknown") as any} className="text-sm">
++                      <Badge variant={getRiskColor(adherenceData?.regimenRisk.level || "unknown") as unknown} className="text-sm">
+@@ -567,1 +567,1 @@
+-                      <Badge variant={getSeverityColor(adherenceData?.missedDoseEscalation.severity || "none") as any}>
++                      <Badge variant={getSeverityColor(adherenceData?.missedDoseEscalation.severity || "none") as unknown}>
+@@ -606,1 +606,1 @@
+-                          onValueChange={(val) => setDaysBack(val[0])}
++                          onValueChange={(val) => { setDaysBack(val[0]); }}
+@@ -616,1 +616,1 @@
+-                          onValueChange={(val) => setMinConfidence(val[0] / 100)}
++                          onValueChange={(val) => { setMinConfidence(val[0] / 100); }}
+@@ -714,1 +714,1 @@
+-                      onChange={(e) => setDrugToCheck(e.target.value)}
++                      onChange={(e) => { setDrugToCheck(e.target.value); }}
+@@ -779,1 +779,1 @@
+-                        onAcknowledge={() => acknowledgeMutation.mutate(alert.id)}
++                        onAcknowledge={() => { acknowledgeMutation.mutate(alert.id); }}
+@@ -840,1 +840,1 @@
+-  const { data: changelog, isLoading } = useQuery<any[]>({
++  const { data: changelog, isLoading } = useQuery<unknown[]>({
+@@ -844,1 +844,1 @@
+-  const { data: pendingMeds } = useQuery<any[]>({
++  const { data: pendingMeds } = useQuery<unknown[]>({
+@@ -848,1 +848,1 @@
+-  const { data: inactiveMeds } = useQuery<any[]>({
++  const { data: inactiveMeds } = useQuery<unknown[]>({
+@@ -961,1 +961,1 @@
+-                          onClick={() => confirmMutation.mutate(med.id)}
++                          onClick={() => { confirmMutation.mutate(med.id); }}
+@@ -1015,1 +1015,1 @@
+-                        onClick={() => reactivateMutation.mutate(med.id)}
++                        onClick={() => { reactivateMutation.mutate(med.id); }}
+@@ -1106,1 +1106,1 @@
+-  const [selectedMed, setSelectedMed] = useState<any>(null);
++  const [selectedMed, setSelectedMed] = useState<unknown>(null);
+@@ -1111,1 +1111,1 @@
+-  const { data: activeMeds } = useQuery<any[]>({
++  const { data: activeMeds } = useQuery<unknown[]>({
+@@ -1115,1 +1115,1 @@
+-  const { data: myRequests, isLoading } = useQuery<any[]>({
++  const { data: myRequests, isLoading } = useQuery<unknown[]>({
+@@ -1119,1 +1119,1 @@
+-  const { data: pendingRequests, isLoading: loadingPending } = useQuery<any[]>({
++  const { data: pendingRequests, isLoading: loadingPending } = useQuery<unknown[]>({
+@@ -1125,1 +1125,1 @@
+-    mutationFn: async (data: any) => {
++    mutationFn: async (data: unknown) => {
+@@ -1217,1 +1217,1 @@
+-            <Button onClick={() => setShowRequestDialog(true)} data-testid="button-new-request">
++            <Button onClick={() => { setShowRequestDialog(true); }} data-testid="button-new-request">
+@@ -1338,1 +1338,1 @@
+-                            onClick={() => approveMutation.mutate({ id: req.id })}
++                            onClick={() => { approveMutation.mutate({ id: req.id }); }}
+@@ -1417,1 +1417,1 @@
+-                    onChange={(e) => setNewDosage(e.target.value)}
++                    onChange={(e) => { setNewDosage(e.target.value); }}
+@@ -1426,1 +1426,1 @@
+-                    onChange={(e) => setNewFrequency(e.target.value)}
++                    onChange={(e) => { setNewFrequency(e.target.value); }}
+@@ -1437,1 +1437,1 @@
+-                    onChange={(e) => setRequestReason(e.target.value)}
++                    onChange={(e) => { setRequestReason(e.target.value); }}
+@@ -1446,1 +1446,1 @@
+-            <Button variant="outline" onClick={() => setShowRequestDialog(false)}>
++            <Button variant="outline" onClick={() => { setShowRequestDialog(false); }}>
+diff --git a/server/voiceInterfaceService.ts b/server/voiceInterfaceService.ts
+--- a/server/voiceInterfaceService.ts
++++ b/server/voiceInterfaceService.ts
+@@ -45,1 +45,1 @@
+-        file: createReadStream(audioFilePath) as any,
++        file: createReadStream(audioFilePath) as unknown,
+diff --git a/server/storage.ts b/server/storage.ts
+--- a/server/storage.ts
++++ b/server/storage.ts
+@@ -301,1 +301,1 @@
+-  endSession(sessionId: string, aiSummary?: string, healthInsights?: any): Promise<ChatSession | undefined>;
++  endSession(sessionId: string, aiSummary?: string, healthInsights?: unknown): Promise<ChatSession | undefined>;
+@@ -720,1 +720,1 @@
+-    const [user] = await db.insert(users).values(userData as any).returning();
++    const [user] = await db.insert(users).values(userData as unknown).returning();
+@@ -725,1 +725,1 @@
+-    const updateData: any = { 
++    const updateData: unknown = { 
+@@ -1387,1 +1387,1 @@
+-  async endSession(sessionId: string, aiSummary?: string, healthInsights?: any): Promise<ChatSession | undefined> {
++  async endSession(sessionId: string, aiSummary?: string, healthInsights?: unknown): Promise<ChatSession | undefined> {
+diff --git a/server/metadataStorage.ts b/server/metadataStorage.ts
+--- a/server/metadataStorage.ts
++++ b/server/metadataStorage.ts
+@@ -50,1 +50,1 @@
+-    setInterval(() => this.cleanup(), 60 * 60 * 1000);
++    setInterval(() => { this.cleanup(); }, 60 * 60 * 1000);
+diff --git a/client/src/pages/PatientSignup.tsx b/client/src/pages/PatientSignup.tsx
+--- a/client/src/pages/PatientSignup.tsx
++++ b/client/src/pages/PatientSignup.tsx
+@@ -73,1 +73,1 @@
+-    } catch (error: any) {
++    } catch (error: unknown) {
+diff --git a/client/src/pages/ForgotPassword.tsx b/client/src/pages/ForgotPassword.tsx
+--- a/client/src/pages/ForgotPassword.tsx
++++ b/client/src/pages/ForgotPassword.tsx
+@@ -50,1 +50,1 @@
+-    } catch (error: any) {
++    } catch (error: unknown) {
+@@ -84,1 +84,1 @@
+-            <Button onClick={() => setEmailSent(false)} variant="outline" className="w-full" data-testid="button-try-again">
++            <Button onClick={() => { setEmailSent(false); }} variant="outline" className="w-full" data-testid="button-try-again">
+diff --git a/client/src/pages/DoctorSearch.tsx b/client/src/pages/DoctorSearch.tsx
+--- a/client/src/pages/DoctorSearch.tsx
++++ b/client/src/pages/DoctorSearch.tsx
+@@ -74,1 +74,1 @@
+-                    onChange={(e) => setSearchQuery(e.target.value)}
++                    onChange={(e) => { setSearchQuery(e.target.value); }}
+@@ -88,1 +88,1 @@
+-                    onChange={(e) => setSpecialty(e.target.value)}
++                    onChange={(e) => { setSpecialty(e.target.value); }}
+@@ -102,1 +102,1 @@
+-                    onChange={(e) => setLocationCity(e.target.value)}
++                    onChange={(e) => { setLocationCity(e.target.value); }}
+@@ -114,1 +114,1 @@
+-                  onChange={(e) => setLocationState(e.target.value)}
++                  onChange={(e) => { setLocationState(e.target.value); }}
+diff --git a/client/src/components/LysaCalendarBooking.tsx b/client/src/components/LysaCalendarBooking.tsx
+--- a/client/src/components/LysaCalendarBooking.tsx
++++ b/client/src/components/LysaCalendarBooking.tsx
+@@ -414,1 +414,1 @@
+-              onChange={(e) => setNotes(e.target.value)}
++              onChange={(e) => { setNotes(e.target.value); }}
+diff --git a/server/auth.ts b/server/auth.ts
+--- a/server/auth.ts
++++ b/server/auth.ts
+@@ -65,1 +65,1 @@
+-  if (req.session && (req.session as any).userId) {
++  if (req.session && (req.session as unknown).userId) {
+diff --git a/client/src/components/PatientConsentRequests.tsx b/client/src/components/PatientConsentRequests.tsx
+--- a/client/src/components/PatientConsentRequests.tsx
++++ b/client/src/components/PatientConsentRequests.tsx
+@@ -354,1 +354,1 @@
+-      navigator.clipboard.writeText(data.followupPatientId);
++      void navigator.clipboard.writeText(data.followupPatientId);
+diff --git a/client/src/pages/Chat.tsx b/client/src/pages/Chat.tsx
+--- a/client/src/pages/Chat.tsx
++++ b/client/src/pages/Chat.tsx
+@@ -240,1 +240,1 @@
+-                        onClick={() => handleSessionClick(session.id)}
++                        onClick={() => { handleSessionClick(session.id); }}
+diff --git a/client/src/pages/Wallet.tsx b/client/src/pages/Wallet.tsx
+--- a/client/src/pages/Wallet.tsx
++++ b/client/src/pages/Wallet.tsx
+@@ -339,1 +339,1 @@
+-                onChange={(e) => setWithdrawAmount(e.target.value)}
++                onChange={(e) => { setWithdrawAmount(e.target.value); }}
+diff --git a/client/src/pages/Login.tsx b/client/src/pages/Login.tsx
+--- a/client/src/pages/Login.tsx
++++ b/client/src/pages/Login.tsx
+@@ -62,1 +62,1 @@
+-    } catch (error: any) {
++    } catch (error: unknown) {
+diff --git a/client/src/components/patient-ml-tools.tsx b/client/src/components/patient-ml-tools.tsx
+--- a/client/src/components/patient-ml-tools.tsx
++++ b/client/src/components/patient-ml-tools.tsx
+@@ -316,1 +316,1 @@
+-                  {analysisResult.symptoms?.length > 0 && (
++                  {analysisResult.symptoms.length > 0 && (
+@@ -484,1 +484,1 @@
+-                  onChange={(e) => setMetrics(m => ({ ...m, blood_pressure_systolic: Number(e.target.value) }))}
++                  onChange={(e) => { setMetrics(m => ({ ...m, blood_pressure_systolic: Number(e.target.value) })); }}
+@@ -545,1 +545,1 @@
+-                {deteriorationResult.contributing_factors?.length > 0 && (
++                {deteriorationResult.contributing_factors.length > 0 && (
+@@ -562,1 +562,1 @@
+-                {deteriorationResult.recommendations?.length > 0 && (
++                {deteriorationResult.recommendations.length > 0 && (
