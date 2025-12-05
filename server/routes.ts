@@ -6211,12 +6211,22 @@ All questions and discussions should be focused on this patient.`;
     try {
       const doctorId = req.user!.id;
       const patientId = req.body.patientId;
+      const { 
+        medicationName, dosage, frequency, quantity, refills,
+        dosageInstructions, notes, startDate, drugId, rxcui,
+        specialty, isContinuous, durationDays, intendedStartDate,
+        supersedes // ID of prescription to supersede
+      } = req.body;
       
       // Verify patient exists
       const patient = await storage.getUser(patientId);
       if (!patient || patient.role !== 'patient') {
         return res.status(404).json({ message: 'Patient not found' });
       }
+      
+      // Get doctor profile to get specialty if not provided
+      const doctorProfile = await storage.getDoctorProfile(doctorId);
+      const prescriptionSpecialty = specialty || (doctorProfile?.specialties?.[0]) || 'general medicine';
       
       // Auto-create doctor-patient assignment if not exists (HIPAA compliance)
       await storage.createDoctorPatientAssignment({
@@ -6229,25 +6239,172 @@ All questions and discussions should be focused on this patient.`;
         consentedAt: new Date(),
       });
       
+      // Check for same-specialty supersession - if specialty matches existing active medication
+      let supersessionTarget = null;
+      if (supersedes) {
+        supersessionTarget = supersedes;
+      } else {
+        // Auto-detect supersession candidates
+        const existingMeds = await storage.getMedicationsBySpecialty(patientId, prescriptionSpecialty);
+        if (existingMeds.length > 0 && !isContinuous) {
+          // Return info about potential supersession
+          console.log(`[INFO] Found ${existingMeds.length} existing ${prescriptionSpecialty} medication(s) that may be superseded`);
+        }
+      }
+
+      // Check for cross-specialty conflicts
+      const allPatientMeds = await storage.getActiveMedications(patientId);
+      let conflictDetected = null;
+      
+      // Import drug interaction analysis
+      try {
+        const { analyzeMultipleDrugInteractions, enrichMedicationWithGenericName } = await import('./drugInteraction');
+        const medsToCheck = await Promise.all(allPatientMeds.map(async (med) => {
+          let drug = await storage.getDrugByName(med.name);
+          if (!drug) {
+            const enriched = await enrichMedicationWithGenericName(med.name);
+            drug = { genericName: enriched.genericName, drugClass: null, brandNames: enriched.brandNames };
+          }
+          return {
+            name: med.name,
+            genericName: drug.genericName || med.name,
+            drugClass: drug.drugClass || null,
+            id: med.id,
+            specialty: med.specialty,
+            brandNames: drug.brandNames || []
+          };
+        }));
+        
+        // Add new medication to check
+        medsToCheck.push({
+          name: medicationName,
+          genericName: medicationName,
+          drugClass: null,
+          id: null,
+          specialty: prescriptionSpecialty,
+          brandNames: []
+        });
+        
+        const interactions = await analyzeMultipleDrugInteractions(medsToCheck, { isImmunocompromised: true });
+        
+        // Find cross-specialty conflicts
+        for (const interaction of interactions) {
+          if (interaction.interaction.severityLevel === 'severe' || interaction.interaction.severityLevel === 'high') {
+            const med1 = medsToCheck.find(m => m.name === interaction.drug1);
+            const med2 = medsToCheck.find(m => m.name === interaction.drug2);
+            
+            if (med1 && med2 && med1.specialty !== med2.specialty && 
+                med1.specialty !== prescriptionSpecialty && med2.specialty !== prescriptionSpecialty) {
+              conflictDetected = {
+                drug1: interaction.drug1,
+                drug2: interaction.drug2,
+                severity: interaction.interaction.severityLevel,
+                description: interaction.interaction.clinicalEffects,
+              };
+              break;
+            }
+          }
+        }
+      } catch (interactionError) {
+        console.error('Error checking cross-specialty conflicts:', interactionError);
+      }
+      
       const prescription = await storage.createPrescription({
         doctorId,
-        ...req.body,
+        patientId,
+        medicationName,
+        dosage,
+        frequency,
+        quantity: quantity ? parseInt(quantity) : null,
+        refills: refills ? parseInt(refills) : 0,
+        dosageInstructions,
+        notes,
+        startDate: startDate ? new Date(startDate) : new Date(),
+        drugId,
+        rxcui,
+        specialty: prescriptionSpecialty,
+        isContinuous: isContinuous || false,
+        durationDays: isContinuous ? null : (durationDays ? parseInt(durationDays) : null),
+        intendedStartDate: intendedStartDate ? new Date(intendedStartDate) : null,
+        supersedes: supersessionTarget,
+        hasConflict: !!conflictDetected,
+        conflictDetectedAt: conflictDetected ? new Date() : null,
       });
       
-      // Create medication for patient
+      // Create medication for patient with chronic care fields
       const medication = await storage.createMedication({
         patientId,
-        name: req.body.medicationName,
-        dosage: req.body.dosage,
-        frequency: req.body.frequency,
+        name: medicationName,
+        dosage,
+        frequency,
         source: 'prescription',
         sourcePrescriptionId: prescription.id,
         addedBy: 'doctor',
-        status: 'active',
+        status: conflictDetected ? 'conflict_hold' : 'active',
+        specialty: prescriptionSpecialty,
+        prescribingDoctorId: doctorId,
+        isContinuous: isContinuous || false,
+        durationDays: isContinuous ? null : (durationDays ? parseInt(durationDays) : null),
+        intendedStartDate: intendedStartDate ? new Date(intendedStartDate) : null,
+        drugId,
+        rxcui,
+        conflictStatus: conflictDetected ? 'pending' : null,
+        conflictDetectedAt: conflictDetected ? new Date() : null,
       });
       
       // Update prescription with medication ID
       await storage.updatePrescription(prescription.id, { medicationId: medication.id });
+      
+      // Handle supersession if specified
+      if (supersessionTarget) {
+        await storage.supersedeMedication(supersessionTarget, medication.id, `Superseded by new ${prescriptionSpecialty} prescription`);
+        
+        await storage.updatePrescription(supersessionTarget, {
+          supersededBy: prescription.id,
+          supersededAt: new Date(),
+          status: 'superseded',
+        });
+        
+        console.log(`[HIPAA-AUDIT] Doctor ${doctorId} superseded prescription ${supersessionTarget} with ${prescription.id} at ${new Date().toISOString()}`);
+      }
+      
+      // Create cross-specialty conflict record if detected
+      if (conflictDetected) {
+        const conflictingMed = allPatientMeds.find(m => 
+          m.name === conflictDetected.drug1 || m.name === conflictDetected.drug2
+        );
+        
+        if (conflictingMed && conflictingMed.prescribingDoctorId) {
+          const conflictGroupId = `conflict-${Date.now()}`;
+          
+          await storage.createMedicationConflict({
+            patientId,
+            conflictGroupId,
+            medication1Id: medication.id,
+            medication2Id: conflictingMed.id,
+            prescription1Id: prescription.id,
+            doctor1Id: doctorId,
+            doctor2Id: conflictingMed.prescribingDoctorId,
+            specialty1: prescriptionSpecialty,
+            specialty2: conflictingMed.specialty || 'unspecified',
+            conflictType: 'drug_interaction',
+            severity: conflictDetected.severity,
+            description: conflictDetected.description,
+            detectedReason: `Cross-specialty interaction detected between ${conflictDetected.drug1} and ${conflictDetected.drug2}`,
+            status: 'pending',
+          });
+          
+          // Update both medications with conflict group
+          await storage.updateMedication(medication.id, { conflictGroupId });
+          await storage.updateMedication(conflictingMed.id, { 
+            conflictGroupId, 
+            conflictStatus: 'pending',
+            conflictDetectedAt: new Date()
+          });
+          
+          console.log(`[HIPAA-AUDIT] Cross-specialty conflict created between doctors ${doctorId} and ${conflictingMed.prescribingDoctorId} for patient ${patientId}`);
+        }
+      }
       
       // Log the change
       await storage.createMedicationChangeLog({
@@ -6256,14 +6413,19 @@ All questions and discussions should be focused on this patient.`;
         changeType: 'added',
         changedBy: 'doctor',
         changedByUserId: doctorId,
-        changeReason: `Prescription created by doctor`,
-        notes: req.body.notes,
+        changeReason: `Prescription created by doctor (${prescriptionSpecialty})`,
+        notes: notes,
       });
       
       // HIPAA audit log
-      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} created prescription for patient ${patientId} at ${new Date().toISOString()}`);
+      console.log(`[HIPAA-AUDIT] Doctor ${doctorId} created prescription for patient ${patientId} (specialty: ${prescriptionSpecialty}, continuous: ${isContinuous}) at ${new Date().toISOString()}`);
       
-      res.json({ prescription, medication });
+      res.json({ 
+        prescription, 
+        medication,
+        conflictDetected,
+        supersessionTarget
+      });
     } catch (error) {
       console.error('Error creating prescription:', error);
       res.status(500).json({ message: 'Failed to create prescription' });
@@ -6409,6 +6571,133 @@ All questions and discussions should be focused on this patient.`;
     } catch (error) {
       console.error('Error resolving conflict:', error);
       res.status(500).json({ message: 'Failed to resolve conflict' });
+    }
+  });
+
+  // ============================================
+  // UNIFIED MEDICATION DASHBOARD API
+  // ============================================
+
+  // Get comprehensive unified medication dashboard for patient
+  app.get('/api/medications/dashboard', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Get all medications with prescriptions and doctor info
+      const allMedications = await storage.getAllMedications(userId);
+      const activeMedications = allMedications.filter(m => m.active && m.status !== 'superseded' && m.status !== 'expired');
+      const prescriptions = await storage.getPrescriptions(userId);
+      const conflicts = await storage.getMedicationConflicts(userId);
+      const interactionAlerts = await storage.getActiveInteractionAlerts(userId);
+      
+      // Calculate reminders for medications ending soon
+      const now = new Date();
+      const reminders: any[] = [];
+      const needsStartConfirmation: any[] = [];
+      
+      for (const med of activeMedications) {
+        // Check if medication needs start confirmation
+        if (med.intendedStartDate && !med.actualStartDate) {
+          needsStartConfirmation.push({
+            id: med.id,
+            name: med.name,
+            dosage: med.dosage,
+            intendedStartDate: med.intendedStartDate,
+            specialty: med.specialty,
+          });
+        }
+        
+        // Check for expiring medications (not continuous)
+        if (!med.isContinuous && med.computedEndDate) {
+          const endDate = new Date(med.computedEndDate);
+          const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (daysRemaining <= 7 && daysRemaining >= 0) {
+            reminders.push({
+              id: med.id,
+              name: med.name,
+              type: 'expiring',
+              daysRemaining,
+              message: daysRemaining === 0 
+                ? 'Last day of this medication' 
+                : `${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining`,
+            });
+          }
+        }
+      }
+      
+      // Get prescribing doctors for each medication
+      const doctorIds = [...new Set(activeMedications.map(m => m.prescribingDoctorId).filter(Boolean))];
+      const doctors: Record<string, any> = {};
+      for (const doctorId of doctorIds) {
+        if (doctorId) {
+          const doctor = await storage.getUser(doctorId);
+          if (doctor) {
+            doctors[doctorId] = {
+              id: doctor.id,
+              name: `${doctor.firstName} ${doctor.lastName}`,
+              email: doctor.email,
+            };
+          }
+        }
+      }
+      
+      // Group medications by specialty
+      const medicationsBySpecialty: Record<string, any[]> = {};
+      for (const med of activeMedications) {
+        const specialty = med.specialty || 'unspecified';
+        if (!medicationsBySpecialty[specialty]) {
+          medicationsBySpecialty[specialty] = [];
+        }
+        
+        // Enrich medication with doctor info and calculated fields
+        const enrichedMed = {
+          ...med,
+          prescribingDoctorName: med.prescribingDoctorId && doctors[med.prescribingDoctorId] 
+            ? doctors[med.prescribingDoctorId].name 
+            : null,
+          daysRemaining: !med.isContinuous && med.computedEndDate
+            ? Math.ceil((new Date(med.computedEndDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+            : null,
+          hasConflict: med.conflictStatus === 'pending',
+        };
+        
+        medicationsBySpecialty[specialty].push(enrichedMed);
+      }
+      
+      // Check for pending conflicts that freeze medication display
+      const pendingConflicts = conflicts.filter(c => c.status === 'pending');
+      const hasFreezeConflicts = pendingConflicts.length > 0;
+      
+      // Get archived/completed medications for history
+      const archivedMedications = allMedications.filter(m => 
+        !m.active || m.status === 'superseded' || m.status === 'expired' || m.status === 'discontinued'
+      ).slice(0, 10); // Last 10 archived
+      
+      res.json({
+        activeMedications,
+        medicationsBySpecialty,
+        prescriptions,
+        conflicts: pendingConflicts,
+        hasFreezeConflicts,
+        interactionAlerts,
+        reminders,
+        needsStartConfirmation,
+        archivedMedications,
+        doctors,
+        summary: {
+          total: activeMedications.length,
+          continuous: activeMedications.filter(m => m.isContinuous).length,
+          duration: activeMedications.filter(m => !m.isContinuous).length,
+          pendingConflicts: pendingConflicts.length,
+          activeInteractions: interactionAlerts.length,
+          expiringSoon: reminders.filter(r => r.type === 'expiring').length,
+          needsConfirmation: needsStartConfirmation.length,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching medication dashboard:', error);
+      res.status(500).json({ message: 'Failed to fetch medication dashboard' });
     }
   });
 

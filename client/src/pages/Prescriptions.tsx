@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -46,8 +48,14 @@ import {
   X,
   Edit3,
   MessageSquare,
+  Infinity,
+  Timer,
+  ArrowRightLeft,
+  Stethoscope,
+  Shield,
+  Ban,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import type { User as UserType, Prescription, Drug, DosageChangeRequest } from "@shared/schema";
 
 interface DrugInteractionCheck {
@@ -98,7 +106,14 @@ export default function Prescriptions() {
     dosageInstructions: "",
     notes: "",
     startDate: format(new Date(), "yyyy-MM-dd"),
+    specialty: "",
+    isContinuous: false,
+    durationDays: "",
+    supersedes: "",
   });
+
+  const [showSupersessionDialog, setShowSupersessionDialog] = useState(false);
+  const [supersessionCandidates, setSupersessionCandidates] = useState<any[]>([]);
 
   const { data: patients, isLoading: patientsLoading } = useQuery<UserType[]>({
     queryKey: ["/api/doctor/patients"],
@@ -147,6 +162,19 @@ export default function Prescriptions() {
     enabled: isDoctor && !!selectedPatient,
   });
 
+  const checkSupersessionMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("GET", `/api/medications/supersession-check?patientId=${selectedPatient}&specialty=${prescriptionForm.specialty}`, {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.supersessionCandidates && data.supersessionCandidates.length > 0) {
+        setSupersessionCandidates(data.supersessionCandidates);
+        setShowSupersessionDialog(true);
+      }
+    },
+  });
+
   const { data: myMedications } = useQuery<PatientMedication[]>({
     queryKey: ["/api/medications"],
     enabled: !isDoctor,
@@ -190,14 +218,32 @@ export default function Prescriptions() {
         dosageInstructions: prescriptionForm.dosageInstructions || null,
         notes: prescriptionForm.notes || null,
         startDate: new Date(prescriptionForm.startDate),
+        specialty: prescriptionForm.specialty || null,
+        isContinuous: prescriptionForm.isContinuous,
+        durationDays: prescriptionForm.isContinuous ? null : (parseInt(prescriptionForm.durationDays) || null),
+        intendedStartDate: prescriptionForm.startDate ? new Date(prescriptionForm.startDate) : null,
+        supersedes: prescriptionForm.supersedes || null,
       });
       return res.json();
     },
-    onSuccess: () => {
-      toast({
-        title: "Prescription Created",
-        description: "The prescription has been sent to the patient",
-      });
+    onSuccess: (data) => {
+      if (data.conflictDetected) {
+        toast({
+          title: "Prescription Created with Conflict Warning",
+          description: `Cross-specialty conflict detected: ${data.conflictDetected.description}. The medication is on hold until resolved.`,
+          variant: "destructive",
+        });
+      } else if (data.supersessionTarget) {
+        toast({
+          title: "Prescription Created",
+          description: "The previous medication has been superseded by this new prescription.",
+        });
+      } else {
+        toast({
+          title: "Prescription Created",
+          description: "The prescription has been sent to the patient",
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/prescriptions/doctor"] });
       resetForm();
     },
@@ -274,9 +320,28 @@ export default function Prescriptions() {
       dosageInstructions: "",
       notes: "",
       startDate: format(new Date(), "yyyy-MM-dd"),
+      specialty: "",
+      isContinuous: false,
+      durationDays: "",
+      supersedes: "",
     });
     setInteractionResult(null);
+    setSupersessionCandidates([]);
   };
+
+  const MEDICAL_SPECIALTIES = [
+    "cardiology",
+    "oncology",
+    "neurology",
+    "rheumatology",
+    "immunology",
+    "endocrinology",
+    "gastroenterology",
+    "pulmonology",
+    "nephrology",
+    "psychiatry",
+    "general medicine",
+  ];
 
   const resetDosageForm = () => {
     setSelectedMedicationForChange(null);
@@ -866,6 +931,123 @@ export default function Prescriptions() {
                       </AlertDescription>
                     </Alert>
                   )}
+
+                  <Card className="mb-4 border-primary/20 bg-primary/5">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Stethoscope className="h-4 w-4" />
+                        Chronic Care Settings
+                      </CardTitle>
+                      <CardDescription>
+                        Configure specialty and duration for multi-specialist coordination
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="specialty">Medical Specialty *</Label>
+                          <Select
+                            value={prescriptionForm.specialty}
+                            onValueChange={(val) => {
+                              setPrescriptionForm({ ...prescriptionForm, specialty: val });
+                              if (selectedPatient && val) {
+                                checkSupersessionMutation.mutate();
+                              }
+                            }}
+                          >
+                            <SelectTrigger data-testid="select-specialty">
+                              <SelectValue placeholder="Select your specialty..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {MEDICAL_SPECIALTIES.map((spec) => (
+                                <SelectItem key={spec} value={spec} className="capitalize">
+                                  {spec.charAt(0).toUpperCase() + spec.slice(1)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Duration Type</Label>
+                          <div className="flex items-center gap-4 mt-2">
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                id="continuous"
+                                checked={prescriptionForm.isContinuous}
+                                onCheckedChange={(checked) =>
+                                  setPrescriptionForm({ ...prescriptionForm, isContinuous: checked, durationDays: "" })
+                                }
+                                data-testid="switch-continuous"
+                              />
+                              <Label htmlFor="continuous" className="cursor-pointer">
+                                {prescriptionForm.isContinuous ? (
+                                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                    <Infinity className="h-4 w-4" /> Continuous
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                                    <Timer className="h-4 w-4" /> Fixed Duration
+                                  </span>
+                                )}
+                              </Label>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {!prescriptionForm.isContinuous && (
+                        <div className="space-y-2">
+                          <Label htmlFor="duration-days">Duration (Days)</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              id="duration-days"
+                              type="number"
+                              value={prescriptionForm.durationDays}
+                              onChange={(e) => setPrescriptionForm({ ...prescriptionForm, durationDays: e.target.value })}
+                              placeholder="e.g., 14"
+                              className="w-32"
+                              data-testid="input-duration-days"
+                            />
+                            <span className="text-sm text-muted-foreground">days</span>
+                            {prescriptionForm.durationDays && prescriptionForm.startDate && (
+                              <Badge variant="outline" className="ml-2">
+                                Ends: {format(addDays(new Date(prescriptionForm.startDate), parseInt(prescriptionForm.durationDays)), "MMM d, yyyy")}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {supersessionCandidates.length > 0 && (
+                        <Alert className="border-amber-500 bg-amber-50 dark:bg-amber-950/30">
+                          <ArrowRightLeft className="h-4 w-4 text-amber-600" />
+                          <AlertTitle className="text-amber-800 dark:text-amber-300">Supersession Available</AlertTitle>
+                          <AlertDescription>
+                            <p className="text-amber-700 dark:text-amber-400 mb-2">
+                              This patient has {supersessionCandidates.length} existing {prescriptionForm.specialty} medication(s). 
+                              Would you like this prescription to supersede any of them?
+                            </p>
+                            <Select
+                              value={prescriptionForm.supersedes}
+                              onValueChange={(val) => setPrescriptionForm({ ...prescriptionForm, supersedes: val })}
+                            >
+                              <SelectTrigger data-testid="select-supersedes" className="bg-white dark:bg-gray-900">
+                                <SelectValue placeholder="Select medication to supersede (optional)..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">None (Add as new)</SelectItem>
+                                {supersessionCandidates.map((med) => (
+                                  <SelectItem key={med.id} value={med.id}>
+                                    {med.name} ({med.dosage}) - {med.frequency}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </CardContent>
+                  </Card>
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
