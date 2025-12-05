@@ -17,6 +17,19 @@ export interface SanitizedError {
  * Sanitizes error messages to prevent information leakage
  */
 export function sanitizeError(error: unknown, context?: string): SanitizedError {
+  // If error is already sanitized, return it as-is (avoid double sanitization)
+  if (error && typeof error === 'object' && 'code' in error && 'userMessage' in error && 'message' in error) {
+    const alreadySanitized = error as SanitizedError;
+    // Preserve context if provided
+    if (context && !alreadySanitized.message.includes(context)) {
+      return {
+        ...alreadySanitized,
+        message: `${alreadySanitized.message} (${context})`,
+      };
+    }
+    return alreadySanitized;
+  }
+
   // Default sanitized error
   const sanitized: SanitizedError = {
     message: 'An error occurred',

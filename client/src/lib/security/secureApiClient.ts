@@ -85,6 +85,23 @@ export function getUserId(): string | undefined {
 }
 
 /**
+ * Throws an Error instance with sanitized error information attached
+ * This ensures errors can be properly caught and re-sanitized if needed
+ */
+function throwSanitizedError(error: unknown, context?: string): never {
+  const sanitized = sanitizeError(error, context);
+  const errorInstance = new Error(sanitized.userMessage) as any;
+  errorInstance.statusCode = sanitized.statusCode;
+  errorInstance.code = sanitized.code;
+  errorInstance.userMessage = sanitized.userMessage;
+  errorInstance.message = sanitized.message;
+  if (error && typeof error === 'object' && 'response' in error) {
+    errorInstance.response = (error as any).response;
+  }
+  throw errorInstance;
+}
+
+/**
  * Validates response content size
  */
 async function validateResponseSize(response: Response): Promise<void> {
@@ -152,7 +169,7 @@ export async function secureApiRequest<T = any>(
     }
   } catch (error) {
     audit.securityViolation('SSRF_ATTEMPT', { url, error: String(error) }, userId);
-    throw sanitizeError(error, 'URL validation');
+    throwSanitizedError(error, 'URL validation');
   }
 
   // Step 2: Rate Limiting
@@ -175,7 +192,7 @@ export async function secureApiRequest<T = any>(
       const error = new Error('Rate limit exceeded') as any;
       error.statusCode = 429;
       error.retryAfter = rateLimitResult.retryAfter;
-      throw sanitizeError(error);
+      throwSanitizedError(error);
     }
   }
 
@@ -228,14 +245,22 @@ export async function secureApiRequest<T = any>(
   // Combine abort signals (fallback for browsers that don't support AbortSignal.any)
   let combinedSignal: AbortSignal;
   if (typeof AbortSignal !== 'undefined' && 'any' in AbortSignal) {
-    combinedSignal = AbortSignal.any([
-      timeoutController.signal,
-      abortController.signal,
-      fetchOptions.signal || new AbortController().signal,
-    ]) as AbortSignal;
+    // Use AbortSignal.any if available
+    const signals = [timeoutController.signal, abortController.signal];
+    if (fetchOptions.signal) {
+      signals.push(fetchOptions.signal);
+    }
+    combinedSignal = AbortSignal.any(signals) as AbortSignal;
   } else {
-    // Fallback: use timeout signal and manually check others
-    combinedSignal = timeoutController.signal;
+    // Fallback: use abortController and wire up other signals
+    combinedSignal = abortController.signal;
+    
+    // Wire timeout signal to abortController
+    timeoutController.signal.addEventListener('abort', () => {
+      abortController.abort();
+    });
+    
+    // Wire user signal to abortController
     const userSignal = fetchOptions.signal;
     if (userSignal) {
       userSignal.addEventListener('abort', () => {
@@ -347,10 +372,13 @@ export async function secureApiRequest<T = any>(
         window.location.href = '/login';
       }
 
-      throw sanitizeError(error);
+      throwSanitizedError(error);
     }
 
-    // Step 11: Parse response
+    // Step 11: Clone response BEFORE reading body (bodies can only be read once)
+    const clonedResponse = response.clone();
+
+    // Step 12: Parse response
     const contentType = response.headers.get('content-type') || '';
     let data: T | undefined;
 
@@ -358,7 +386,7 @@ export async function secureApiRequest<T = any>(
       try {
         data = await response.json();
       } catch (error) {
-        throw sanitizeError(new Error('Invalid JSON response'), 'Response parsing');
+        throwSanitizedError(new Error('Invalid JSON response'), 'Response parsing');
       }
     } else if (contentType.startsWith('text/')) {
       data = (await response.text()) as any;
@@ -367,14 +395,14 @@ export async function secureApiRequest<T = any>(
       data = undefined;
     }
 
-    const secureResponse: SecureApiResponse<T> = Object.assign(response.clone(), {
+    const secureResponse: SecureApiResponse<T> = Object.assign(clonedResponse, {
       data,
     });
 
     return secureResponse;
   } catch (error) {
     audit.apiError(finalUrl, method, String(error), undefined, userId);
-    throw sanitizeError(error, `API request to ${finalUrl}`);
+    throwSanitizedError(error, `API request to ${finalUrl}`);
   }
 }
 
