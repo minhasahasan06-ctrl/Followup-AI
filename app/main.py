@@ -116,6 +116,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Security middleware - order matters (first = outermost)
+from app.middleware import (
+    SecurityHeadersMiddleware,
+    InputValidationMiddleware,
+    RateLimitMiddleware,
+)
+
+# Add security middleware (order: outermost to innermost)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(InputValidationMiddleware)
+app.add_middleware(RateLimitMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
