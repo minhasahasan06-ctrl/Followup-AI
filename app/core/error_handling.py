@@ -123,14 +123,29 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             return response
         except HTTPException as e:
-            # HTTPExceptions are already sanitized
+            # SECURITY: Sanitize HTTPException.detail to prevent information leakage
+            # Even HTTPExceptions can contain sensitive information (PHI, database errors, etc.)
+            # Log full details securely, but return sanitized version
+            error_id = ErrorSanitizer._generate_error_id()
+            log_error(
+                f"HTTPException [{error_id}]: {e.status_code} - {e.detail}",
+                logger_name="error_handler",
+                exc_info=False  # HTTPExceptions are expected, don't need full traceback
+            )
+            
+            # Sanitize the HTTPException detail using ErrorSanitizer
+            # Create a temporary exception to leverage sanitization logic
+            temp_exception = Exception(str(e.detail))
+            sanitized = ErrorSanitizer.sanitize_error(temp_exception)
+            
+            # Preserve the original status code from HTTPException
+            sanitized["status_code"] = e.status_code
+            sanitized["error_id"] = error_id
+            sanitized["type"] = "http_exception"
+            
             return JSONResponse(
                 status_code=e.status_code,
-                content={
-                    "error": e.detail,
-                    "status_code": e.status_code,
-                    "type": "http_exception"
-                }
+                content=sanitized
             )
         except Exception as e:
             # Log full error details securely

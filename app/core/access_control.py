@@ -10,6 +10,7 @@ SECURITY REQUIREMENTS:
 """
 
 import logging
+import inspect
 from typing import Optional, List, Dict, Any, Callable
 from functools import wraps
 from fastapi import HTTPException, status, Depends
@@ -252,26 +253,41 @@ def require_patient_access(require_relationship: bool = True):
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            # Extract dependencies
+            # Get function signature to properly map arguments
+            sig = inspect.signature(func)
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            
+            # Extract dependencies using function signature
             current_user = None
             patient_id = None
             db = None
             
-            for arg in args:
-                if isinstance(arg, User):
-                    current_user = arg
-                elif isinstance(arg, Session):
-                    db = arg
-                elif isinstance(arg, str) and len(arg) > 10:  # Likely a UUID
-                    patient_id = arg
+            # Extract from bound arguments using parameter names
+            for param_name, param_value in bound_args.arguments.items():
+                if isinstance(param_value, User):
+                    current_user = param_value
+                elif isinstance(param_value, Session):
+                    db = param_value
+                elif param_name == "patient_id" and isinstance(param_value, str):
+                    patient_id = param_value
             
-            for key, value in kwargs.items():
-                if isinstance(value, User):
-                    current_user = value
-                elif isinstance(value, Session):
-                    db = value
-                elif key == "patient_id":
-                    patient_id = value
+            # Fallback: also check kwargs directly (for FastAPI dependency injection)
+            if not current_user:
+                for key, value in kwargs.items():
+                    if isinstance(value, User):
+                        current_user = value
+                        break
+            
+            if not db:
+                for key, value in kwargs.items():
+                    if isinstance(value, Session):
+                        db = value
+                        break
+            
+            # Fallback: check kwargs for patient_id if not found via signature
+            if not patient_id and "patient_id" in kwargs:
+                patient_id = kwargs["patient_id"]
             
             if not current_user:
                 raise HTTPException(
@@ -280,11 +296,9 @@ def require_patient_access(require_relationship: bool = True):
                 )
             
             if not patient_id:
-                # Try to extract from path parameters
-                # This is a simplified version - in practice, use FastAPI's dependency injection
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Patient ID required"
+                    detail="Patient ID required - patient_id parameter must be provided"
                 )
             
             if not db:

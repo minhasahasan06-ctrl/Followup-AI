@@ -144,17 +144,23 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Security middleware - order matters (first = outermost)
+# Security middleware - order matters
+# IMPORTANT: FastAPI/Starlette middleware executes in REVERSE order (LIFO)
+# Last middleware added executes FIRST (innermost), first added executes LAST (outermost)
+# To make ErrorHandlingMiddleware innermost (execute last), add it FIRST
 from app.middleware import (
     SecurityHeadersMiddleware,
     InputValidationMiddleware,
     RateLimitMiddleware,
 )
+from app.core.error_handling import ErrorHandlingMiddleware
 
-# Add security middleware (order: outermost to innermost)
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(InputValidationMiddleware)
-app.add_middleware(RateLimitMiddleware)
+# Add security middleware in REVERSE execution order
+# Execution order (innermost to outermost): ErrorHandling -> RateLimit -> InputValidation -> SecurityHeaders
+app.add_middleware(ErrorHandlingMiddleware)  # Added FIRST = executes LAST (innermost) - catches all errors
+app.add_middleware(RateLimitMiddleware)  # Added second = executes third
+app.add_middleware(InputValidationMiddleware)  # Added third = executes second
+app.add_middleware(SecurityHeadersMiddleware)  # Added LAST = executes FIRST (outermost) - adds headers to all responses
 
 app.add_middleware(
     CORSMiddleware,
