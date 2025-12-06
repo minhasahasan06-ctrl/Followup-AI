@@ -8,6 +8,7 @@ Followup AI is a HIPAA-compliant health monitoring platform designed for immunoc
 - **Backend Language**: Python only - ALL backend code must be written in Python (FastAPI)
 - **Frontend**: React/TypeScript (standard web practice)
 - **Development Philosophy**: Building FULL FUNCTIONAL applications, NOT MVPs. All features must be completely functional and production-ready before delivery.
+- **Code Quality**: Avoid duplicate code - use proper code reuse, modular design, and shared components/utilities.
 
 ## System Architecture
 

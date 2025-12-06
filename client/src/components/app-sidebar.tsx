@@ -166,18 +166,6 @@ const doctorItems = [
     badge: "Rx",
   },
   {
-    title: "Drug Interactions",
-    url: "/drug-interactions",
-    icon: AlertTriangle,
-    badge: "AI",
-  },
-  {
-    title: "AI Alerts",
-    url: "/ai-alerts",
-    icon: Bell,
-    badge: "AI",
-  },
-  {
     title: "Doctor Wellness",
     url: "/doctor-wellness",
     icon: Heart,
