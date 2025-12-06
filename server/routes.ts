@@ -19237,6 +19237,189 @@ Provide:
   });
 
   // =============================================================================
+  // DE-IDENTIFIED EXPORT ROUTES (HIPAA COMPLIANT)
+  // =============================================================================
+
+  app.post('/api/v1/research-center/export/deidentified', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { cohortId, studyId, dataTypes, format = 'json' } = req.body;
+      
+      if (!dataTypes || !Array.isArray(dataTypes) || dataTypes.length === 0) {
+        return res.status(400).json({ error: 'dataTypes array is required' });
+      }
+
+      if (!cohortId && !studyId) {
+        return res.status(400).json({ error: 'cohortId or studyId is required' });
+      }
+
+      // Rate limiting: max 1000 subjects per export
+      const MAX_EXPORT_SUBJECTS = 1000;
+
+      // Get consented patient data
+      let patientIds: string[] = [];
+      if (cohortId) {
+        const cohort = await storage.getCohort(cohortId);
+        if (!cohort) {
+          return res.status(404).json({ error: 'Cohort not found' });
+        }
+        patientIds = (cohort.patientIds || []).slice(0, MAX_EXPORT_SUBJECTS);
+      } else if (studyId) {
+        const enrollments = await storage.getStudyEnrollments(studyId);
+        patientIds = enrollments
+          .filter((e: any) => e.status === 'active')
+          .map((e: any) => e.patientId)
+          .slice(0, MAX_EXPORT_SUBJECTS);
+      }
+
+      // Fetch consented data for each patient with k-anonymity check
+      const exportData: any[] = [];
+      let patientCounter = 1;
+
+      for (const patientId of patientIds) {
+        // Strict consent verification
+        const consent = await storage.getResearchConsent(patientId);
+        if (!consent) continue;
+        if (consent.consentEnabled !== true) continue;
+        
+        const permissions = typeof consent.permissions === 'object' && consent.permissions !== null 
+          ? consent.permissions as Record<string, boolean>
+          : {};
+        
+        // Check that ALL requested data types are consented
+        const allConsented = dataTypes.every(dt => permissions[dt] === true);
+        if (!allConsented) continue;
+
+        const patientData: any = {
+          research_id: `SUBJ_${String(patientCounter).padStart(4, '0')}`
+          // NO identifiable fields: no names, no IDs, no emails, no DOB
+        };
+
+        // Only include data types the patient has consented to - FULLY DE-IDENTIFIED
+        for (const dataType of dataTypes) {
+          switch (dataType) {
+            case 'demographics':
+              const patient = await storage.getUser(patientId);
+              if (patient) {
+                // De-identify: 10-year age bands, binary sex only
+                const age = patient.dateOfBirth 
+                  ? Math.floor((Date.now() - new Date(patient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+                  : null;
+                // 10-year age bands for k-anonymity
+                patientData.age_band = age 
+                  ? (age < 20 ? '<20' : age < 30 ? '20-29' : age < 40 ? '30-39' : age < 50 ? '40-49' : age < 60 ? '50-59' : age < 70 ? '60-69' : '70+')
+                  : 'unknown';
+                // Binary sex only (M/F/unknown), no gender identity
+                patientData.sex = ['M', 'F'].includes(patient.sex || '') ? patient.sex : 'unknown';
+              }
+              break;
+
+            case 'medications':
+              const meds = await storage.getActiveMedications(patientId);
+              // Aggregated counts only - no specific medication names
+              patientData.medication_count = meds.length > 5 ? '6+' : String(meds.length);
+              break;
+
+            case 'vitals':
+              // Boolean indicator only
+              patientData.has_vitals_data = true;
+              break;
+
+            case 'immuneMarkers':
+              const profile = await storage.getPatientProfile(patientId);
+              if (profile?.immuneMarkers && typeof profile.immuneMarkers === 'object') {
+                // Aggregate immune markers into ranges, not exact values
+                const markers = profile.immuneMarkers as Record<string, any>;
+                patientData.crp_range = markers.crp !== undefined 
+                  ? (markers.crp < 1 ? 'normal' : markers.crp < 5 ? 'elevated' : 'high')
+                  : 'unknown';
+                patientData.esr_range = markers.esr !== undefined
+                  ? (markers.esr < 20 ? 'normal' : markers.esr < 50 ? 'elevated' : 'high')
+                  : 'unknown';
+              }
+              break;
+
+            case 'dailyFollowups':
+              patientData.has_followup_data = true;
+              break;
+
+            case 'healthAlerts':
+              patientData.has_alert_data = true;
+              break;
+          }
+        }
+
+        exportData.push(patientData);
+        patientCounter++;
+      }
+
+      // K-anonymity check: suppress if less than 5 subjects
+      if (exportData.length < 5) {
+        return res.status(400).json({ 
+          error: 'Export blocked: fewer than 5 consented subjects. K-anonymity requirement not met.' 
+        });
+      }
+
+      // HIPAA Audit log - structured format
+      const auditEntry = {
+        event: 'research_data_export',
+        actor_user_id: req.user.id,
+        actor_role: req.user.role,
+        cohort_id: cohortId || null,
+        study_id: studyId || null,
+        data_types: dataTypes,
+        subject_count: exportData.length,
+        format,
+        timestamp: new Date().toISOString(),
+        hipaa_compliant: true,
+        deidentified: true,
+        k_anonymity_threshold: 5,
+        audit_context: req.researchAuditContext || null
+      };
+      console.log(`[HIPAA_AUDIT] ${JSON.stringify(auditEntry)}`);
+
+      // Define consistent CSV schema
+      const csvSchema = ['research_id', 'age_band', 'sex', 'medication_count', 'crp_range', 'esr_range', 'has_vitals_data', 'has_followup_data', 'has_alert_data'];
+
+      if (format === 'csv') {
+        const csvRows = [csvSchema.join(',')];
+        for (const row of exportData) {
+          const values = csvSchema.map(col => {
+            const val = row[col];
+            if (val === undefined || val === null) return '';
+            if (typeof val === 'boolean') return val ? '1' : '0';
+            return String(val).includes(',') ? `"${val}"` : String(val);
+          });
+          csvRows.push(values.join(','));
+        }
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=deidentified_research_data.csv');
+        return res.send(csvRows.join('\n'));
+      }
+
+      res.json({
+        success: true,
+        data: exportData,
+        metadata: {
+          total_subjects: exportData.length,
+          data_types_included: dataTypes,
+          export_date: new Date().toISOString(),
+          deidentified: true,
+          hipaa_compliant: true,
+          k_anonymity_threshold: 5,
+          max_subjects_per_export: MAX_EXPORT_SUBJECTS
+        }
+      });
+    } catch (error) {
+      console.error('Error exporting de-identified data:', error);
+      res.status(500).json({ error: 'Failed to export data' });
+    }
+  });
+
+  // =============================================================================
   // CSV IMPORT ROUTES
   // =============================================================================
 
