@@ -79,7 +79,8 @@ interface AggregatedData {
   trends: any[];
 }
 
-interface AuditContext {
+// Exported type for request-scoped audit context (thread-safe)
+export interface AuditContext {
   userId: string;
   ipAddress?: string;
   userAgent?: string;
@@ -87,7 +88,6 @@ interface AuditContext {
 
 class ResearchService {
   private storage?: Storage;
-  private auditContext?: AuditContext;
 
   constructor(storage?: Storage) {
     this.storage = storage;
@@ -97,28 +97,25 @@ class ResearchService {
     this.storage = storage;
   }
 
-  setAuditContext(context: AuditContext) {
-    this.auditContext = context;
-  }
-
   // HIPAA Audit logging helper - logs all research data access and mutations
+  // Context is passed per-request to ensure thread-safety with concurrent requests
   private async logAudit(
+    context: AuditContext | undefined,
     actionType: string,
     objectType: string,
     objectId: string,
-    details?: Record<string, any>,
-    userId?: string
+    details?: Record<string, any>
   ): Promise<void> {
     try {
-      const auditUserId = userId || this.auditContext?.userId || 'system';
+      const auditUserId = context?.userId || 'system';
       await db.insert(researchAuditLogs).values({
         userId: auditUserId,
         actionType,
         objectType,
         objectId,
         details: details || {},
-        ipAddress: this.auditContext?.ipAddress,
-        userAgent: this.auditContext?.userAgent,
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
       });
       console.log(`[HIPAA-AUDIT] Research: ${actionType} on ${objectType}:${objectId} by ${auditUserId}`);
     } catch (error) {
@@ -314,18 +311,19 @@ class ResearchService {
     return consent;
   }
 
-  async createResearchDataConsent(consent: InsertResearchDataConsent): Promise<ResearchDataConsent> {
+  async createResearchDataConsent(consent: InsertResearchDataConsent, auditContext?: AuditContext): Promise<ResearchDataConsent> {
     const [created] = await db.insert(researchDataConsent).values(consent).returning();
-    await this.logAudit('CREATE', 'ResearchDataConsent', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'ResearchDataConsent', created.id, {
       patientId: consent.patientId,
       consentEnabled: consent.consentEnabled,
-    }, consent.patientId);
+    });
     return created;
   }
 
   async updateResearchDataConsent(
     patientId: string, 
-    data: Partial<InsertResearchDataConsent>
+    data: Partial<InsertResearchDataConsent>,
+    auditContext?: AuditContext
   ): Promise<ResearchDataConsent | undefined> {
     const [updated] = await db
       .update(researchDataConsent)
@@ -333,22 +331,22 @@ class ResearchService {
       .where(eq(researchDataConsent.patientId, patientId))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'ResearchDataConsent', updated.id, {
+      await this.logAudit(auditContext, 'UPDATE', 'ResearchDataConsent', updated.id, {
         patientId,
         consentEnabled: data.consentEnabled,
         dataTypePermissions: data.dataTypePermissions,
-      }, patientId);
+      });
     }
     return updated;
   }
 
-  async upsertResearchDataConsent(consent: InsertResearchDataConsent): Promise<ResearchDataConsent> {
+  async upsertResearchDataConsent(consent: InsertResearchDataConsent, auditContext?: AuditContext): Promise<ResearchDataConsent> {
     const existing = await this.getResearchDataConsent(consent.patientId);
     if (existing) {
-      const updated = await this.updateResearchDataConsent(consent.patientId, consent);
+      const updated = await this.updateResearchDataConsent(consent.patientId, consent, auditContext);
       return updated!;
     }
-    return this.createResearchDataConsent(consent);
+    return this.createResearchDataConsent(consent, auditContext);
   }
 
   async getConsentedPatients(): Promise<ResearchDataConsent[]> {
@@ -392,29 +390,29 @@ class ResearchService {
     return project;
   }
 
-  async createResearchProject(project: InsertResearchProject): Promise<ResearchProject> {
+  async createResearchProject(project: InsertResearchProject, auditContext?: AuditContext): Promise<ResearchProject> {
     const [created] = await db.insert(researchProjects).values(project).returning();
-    await this.logAudit('CREATE', 'ResearchProject', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'ResearchProject', created.id, {
       name: project.name,
       ownerId: project.ownerId,
     });
     return created;
   }
 
-  async updateResearchProject(id: string, data: Partial<InsertResearchProject>): Promise<ResearchProject | undefined> {
+  async updateResearchProject(id: string, data: Partial<InsertResearchProject>, auditContext?: AuditContext): Promise<ResearchProject | undefined> {
     const [updated] = await db
       .update(researchProjects)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(researchProjects.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'ResearchProject', id, { changedFields: Object.keys(data) });
+      await this.logAudit(auditContext, 'UPDATE', 'ResearchProject', id, { changedFields: Object.keys(data) });
     }
     return updated;
   }
 
-  async deleteResearchProject(id: string): Promise<boolean> {
-    await this.logAudit('DELETE', 'ResearchProject', id, {});
+  async deleteResearchProject(id: string, auditContext?: AuditContext): Promise<boolean> {
+    await this.logAudit(auditContext, 'DELETE', 'ResearchProject', id, {});
     await db.delete(researchProjects).where(eq(researchProjects.id, id));
     return true;
   }
@@ -463,9 +461,9 @@ class ResearchService {
     return study;
   }
 
-  async createResearchStudy(study: InsertResearchStudy): Promise<ResearchStudy> {
+  async createResearchStudy(study: InsertResearchStudy, auditContext?: AuditContext): Promise<ResearchStudy> {
     const [created] = await db.insert(researchStudies).values(study).returning();
-    await this.logAudit('CREATE', 'ResearchStudy', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'ResearchStudy', created.id, {
       title: study.title,
       ownerId: study.ownerUserId,
       projectId: study.projectId,
@@ -473,14 +471,14 @@ class ResearchService {
     return created;
   }
 
-  async updateResearchStudy(id: string, data: Partial<InsertResearchStudy>): Promise<ResearchStudy | undefined> {
+  async updateResearchStudy(id: string, data: Partial<InsertResearchStudy>, auditContext?: AuditContext): Promise<ResearchStudy | undefined> {
     const [updated] = await db
       .update(researchStudies)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(researchStudies.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'ResearchStudy', id, { changedFields: Object.keys(data), status: data.status });
+      await this.logAudit(auditContext, 'UPDATE', 'ResearchStudy', id, { changedFields: Object.keys(data), status: data.status });
     }
     return updated;
   }
@@ -536,9 +534,9 @@ class ResearchService {
     return cohort;
   }
 
-  async createResearchCohort(cohort: InsertResearchCohort): Promise<ResearchCohort> {
+  async createResearchCohort(cohort: InsertResearchCohort, auditContext?: AuditContext): Promise<ResearchCohort> {
     const [created] = await db.insert(researchCohorts).values(cohort).returning();
-    await this.logAudit('CREATE', 'ResearchCohort', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'ResearchCohort', created.id, {
       name: cohort.name,
       createdBy: cohort.createdBy,
       projectId: cohort.projectId,
@@ -546,14 +544,14 @@ class ResearchService {
     return created;
   }
 
-  async updateResearchCohort(id: string, data: Partial<InsertResearchCohort>): Promise<ResearchCohort | undefined> {
+  async updateResearchCohort(id: string, data: Partial<InsertResearchCohort>, auditContext?: AuditContext): Promise<ResearchCohort | undefined> {
     const [updated] = await db
       .update(researchCohorts)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(researchCohorts.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'ResearchCohort', id, { changedFields: Object.keys(data), status: data.status });
+      await this.logAudit(auditContext, 'UPDATE', 'ResearchCohort', id, { changedFields: Object.keys(data), status: data.status });
     }
     return updated;
   }
@@ -644,7 +642,7 @@ class ResearchService {
       .orderBy(desc(studyEnrollments.enrollmentDate));
   }
 
-  async createStudyEnrollment(enrollment: InsertStudyEnrollment): Promise<StudyEnrollment> {
+  async createStudyEnrollment(enrollment: InsertStudyEnrollment, auditContext?: AuditContext): Promise<StudyEnrollment> {
     const [created] = await db.insert(studyEnrollments).values(enrollment).returning();
     
     await db
@@ -655,26 +653,26 @@ class ResearchService {
       })
       .where(eq(researchStudies.id, enrollment.studyId));
     
-    await this.logAudit('CREATE', 'StudyEnrollment', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'StudyEnrollment', created.id, {
       studyId: enrollment.studyId,
       patientId: enrollment.patientId,
     });
     return created;
   }
 
-  async updateStudyEnrollment(id: string, data: Partial<InsertStudyEnrollment>): Promise<StudyEnrollment | undefined> {
+  async updateStudyEnrollment(id: string, data: Partial<InsertStudyEnrollment>, auditContext?: AuditContext): Promise<StudyEnrollment | undefined> {
     const [updated] = await db
       .update(studyEnrollments)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(studyEnrollments.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'StudyEnrollment', id, { changedFields: Object.keys(data), status: data.status });
+      await this.logAudit(auditContext, 'UPDATE', 'StudyEnrollment', id, { changedFields: Object.keys(data), status: data.status });
     }
     return updated;
   }
 
-  async withdrawFromStudy(id: string, reason: string): Promise<StudyEnrollment | undefined> {
+  async withdrawFromStudy(id: string, reason: string, auditContext?: AuditContext): Promise<StudyEnrollment | undefined> {
     const [enrollment] = await db
       .select()
       .from(studyEnrollments)
@@ -702,7 +700,7 @@ class ResearchService {
       })
       .where(eq(researchStudies.id, enrollment.studyId));
     
-    await this.logAudit('WITHDRAW', 'StudyEnrollment', id, { 
+    await this.logAudit(auditContext, 'WITHDRAW', 'StudyEnrollment', id, { 
       patientId: enrollment.patientId, 
       studyId: enrollment.studyId, 
       reason 
@@ -733,9 +731,9 @@ class ResearchService {
     return query.orderBy(researchVisits.scheduledDate);
   }
 
-  async createResearchVisit(visit: InsertResearchVisit): Promise<ResearchVisit> {
+  async createResearchVisit(visit: InsertResearchVisit, auditContext?: AuditContext): Promise<ResearchVisit> {
     const [created] = await db.insert(researchVisits).values(visit).returning();
-    await this.logAudit('CREATE', 'ResearchVisit', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'ResearchVisit', created.id, {
       patientId: visit.patientId,
       studyId: visit.studyId,
       visitType: visit.visitType,
@@ -743,14 +741,14 @@ class ResearchService {
     return created;
   }
 
-  async updateResearchVisit(id: string, data: Partial<InsertResearchVisit>): Promise<ResearchVisit | undefined> {
+  async updateResearchVisit(id: string, data: Partial<InsertResearchVisit>, auditContext?: AuditContext): Promise<ResearchVisit | undefined> {
     const [updated] = await db
       .update(researchVisits)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(researchVisits.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'ResearchVisit', id, { changedFields: Object.keys(data), status: data.visitStatus });
+      await this.logAudit(auditContext, 'UPDATE', 'ResearchVisit', id, { changedFields: Object.keys(data), status: data.visitStatus });
     }
     return updated;
   }
@@ -785,9 +783,9 @@ class ResearchService {
     return query;
   }
 
-  async createResearchMeasurement(measurement: InsertResearchMeasurement): Promise<ResearchMeasurement> {
+  async createResearchMeasurement(measurement: InsertResearchMeasurement, auditContext?: AuditContext): Promise<ResearchMeasurement> {
     const [created] = await db.insert(researchMeasurements).values(measurement).returning();
-    await this.logAudit('CREATE', 'ResearchMeasurement', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'ResearchMeasurement', created.id, {
       patientId: measurement.patientId,
       name: measurement.name,
       category: measurement.category,
@@ -795,10 +793,10 @@ class ResearchService {
     return created;
   }
 
-  async createResearchMeasurements(measurements: InsertResearchMeasurement[]): Promise<ResearchMeasurement[]> {
+  async createResearchMeasurements(measurements: InsertResearchMeasurement[], auditContext?: AuditContext): Promise<ResearchMeasurement[]> {
     if (measurements.length === 0) return [];
     const created = await db.insert(researchMeasurements).values(measurements).returning();
-    await this.logAudit('BULK_CREATE', 'ResearchMeasurement', 'bulk', {
+    await this.logAudit(auditContext, 'BULK_CREATE', 'ResearchMeasurement', 'bulk', {
       count: created.length,
       patientIds: [...new Set(measurements.map(m => m.patientId))],
     });
@@ -835,9 +833,9 @@ class ResearchService {
     return query;
   }
 
-  async createResearchImmuneMarker(marker: InsertResearchImmuneMarker): Promise<ResearchImmuneMarker> {
+  async createResearchImmuneMarker(marker: InsertResearchImmuneMarker, auditContext?: AuditContext): Promise<ResearchImmuneMarker> {
     const [created] = await db.insert(researchImmuneMarkers).values(marker).returning();
-    await this.logAudit('CREATE', 'ResearchImmuneMarker', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'ResearchImmuneMarker', created.id, {
       patientId: marker.patientId,
       markerName: marker.markerName,
     });
@@ -954,9 +952,9 @@ class ResearchService {
     return report;
   }
 
-  async createResearchAnalysisReport(report: InsertResearchAnalysisReport): Promise<ResearchAnalysisReport> {
+  async createResearchAnalysisReport(report: InsertResearchAnalysisReport, auditContext?: AuditContext): Promise<ResearchAnalysisReport> {
     const [created] = await db.insert(researchAnalysisReports).values(report).returning();
-    await this.logAudit('CREATE', 'ResearchAnalysisReport', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'ResearchAnalysisReport', created.id, {
       title: report.title,
       analysisType: report.analysisType,
       studyId: report.studyId,
@@ -964,14 +962,14 @@ class ResearchService {
     return created;
   }
 
-  async updateResearchAnalysisReport(id: string, data: Partial<InsertResearchAnalysisReport>): Promise<ResearchAnalysisReport | undefined> {
+  async updateResearchAnalysisReport(id: string, data: Partial<InsertResearchAnalysisReport>, auditContext?: AuditContext): Promise<ResearchAnalysisReport | undefined> {
     const [updated] = await db
       .update(researchAnalysisReports)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(researchAnalysisReports.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'ResearchAnalysisReport', id, { changedFields: Object.keys(data), status: data.status });
+      await this.logAudit(auditContext, 'UPDATE', 'ResearchAnalysisReport', id, { changedFields: Object.keys(data), status: data.status });
     }
     return updated;
   }
@@ -1006,9 +1004,9 @@ class ResearchService {
     return query;
   }
 
-  async createResearchAlert(alert: InsertResearchAlert): Promise<ResearchAlert> {
+  async createResearchAlert(alert: InsertResearchAlert, auditContext?: AuditContext): Promise<ResearchAlert> {
     const [created] = await db.insert(researchAlerts).values(alert).returning();
-    await this.logAudit('CREATE', 'ResearchAlert', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'ResearchAlert', created.id, {
       patientId: alert.patientId,
       alertType: alert.alertType,
       severity: alert.severity,
@@ -1016,26 +1014,26 @@ class ResearchService {
     return created;
   }
 
-  async acknowledgeResearchAlert(id: string, userId: string): Promise<ResearchAlert | undefined> {
+  async acknowledgeResearchAlert(id: string, userId: string, auditContext?: AuditContext): Promise<ResearchAlert | undefined> {
     const [updated] = await db
       .update(researchAlerts)
       .set({ status: "acknowledged", acknowledgedAt: new Date(), acknowledgedBy: userId })
       .where(eq(researchAlerts.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('ACKNOWLEDGE', 'ResearchAlert', id, { acknowledgedBy: userId });
+      await this.logAudit(auditContext, 'ACKNOWLEDGE', 'ResearchAlert', id, { acknowledgedBy: userId });
     }
     return updated;
   }
 
-  async resolveResearchAlert(id: string, userId: string, resolution: string): Promise<ResearchAlert | undefined> {
+  async resolveResearchAlert(id: string, userId: string, resolution: string, auditContext?: AuditContext): Promise<ResearchAlert | undefined> {
     const [updated] = await db
       .update(researchAlerts)
       .set({ status: "resolved", resolvedAt: new Date(), resolvedBy: userId, resolution })
       .where(eq(researchAlerts.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('RESOLVE', 'ResearchAlert', id, { resolvedBy: userId, resolution });
+      await this.logAudit(auditContext, 'RESOLVE', 'ResearchAlert', id, { resolvedBy: userId, resolution });
     }
     return updated;
   }
@@ -1067,23 +1065,23 @@ class ResearchService {
     return template;
   }
 
-  async createDailyFollowupTemplate(template: InsertDailyFollowupTemplate): Promise<DailyFollowupTemplate> {
+  async createDailyFollowupTemplate(template: InsertDailyFollowupTemplate, auditContext?: AuditContext): Promise<DailyFollowupTemplate> {
     const [created] = await db.insert(dailyFollowupTemplates).values(template).returning();
-    await this.logAudit('CREATE', 'DailyFollowupTemplate', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'DailyFollowupTemplate', created.id, {
       name: template.name,
       createdBy: template.createdBy,
     });
     return created;
   }
 
-  async updateDailyFollowupTemplate(id: string, data: Partial<InsertDailyFollowupTemplate>): Promise<DailyFollowupTemplate | undefined> {
+  async updateDailyFollowupTemplate(id: string, data: Partial<InsertDailyFollowupTemplate>, auditContext?: AuditContext): Promise<DailyFollowupTemplate | undefined> {
     const [updated] = await db
       .update(dailyFollowupTemplates)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(dailyFollowupTemplates.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'DailyFollowupTemplate', id, { changedFields: Object.keys(data) });
+      await this.logAudit(auditContext, 'UPDATE', 'DailyFollowupTemplate', id, { changedFields: Object.keys(data) });
     }
     return updated;
   }
@@ -1111,9 +1109,9 @@ class ResearchService {
     return query.orderBy(desc(dailyFollowupAssignments.createdAt));
   }
 
-  async createDailyFollowupAssignment(assignment: InsertDailyFollowupAssignment): Promise<DailyFollowupAssignment> {
+  async createDailyFollowupAssignment(assignment: InsertDailyFollowupAssignment, auditContext?: AuditContext): Promise<DailyFollowupAssignment> {
     const [created] = await db.insert(dailyFollowupAssignments).values(assignment).returning();
-    await this.logAudit('CREATE', 'DailyFollowupAssignment', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'DailyFollowupAssignment', created.id, {
       patientId: assignment.patientId,
       templateId: assignment.templateId,
       studyId: assignment.studyId,
@@ -1121,14 +1119,14 @@ class ResearchService {
     return created;
   }
 
-  async updateDailyFollowupAssignment(id: string, data: Partial<InsertDailyFollowupAssignment>): Promise<DailyFollowupAssignment | undefined> {
+  async updateDailyFollowupAssignment(id: string, data: Partial<InsertDailyFollowupAssignment>, auditContext?: AuditContext): Promise<DailyFollowupAssignment | undefined> {
     const [updated] = await db
       .update(dailyFollowupAssignments)
       .set(data)
       .where(eq(dailyFollowupAssignments.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'DailyFollowupAssignment', id, { changedFields: Object.keys(data), isActive: data.isActive });
+      await this.logAudit(auditContext, 'UPDATE', 'DailyFollowupAssignment', id, { changedFields: Object.keys(data), isActive: data.isActive });
     }
     return updated;
   }
@@ -1161,9 +1159,9 @@ class ResearchService {
     return query;
   }
 
-  async createDailyFollowupResponse(response: InsertDailyFollowupResponse): Promise<DailyFollowupResponse> {
+  async createDailyFollowupResponse(response: InsertDailyFollowupResponse, auditContext?: AuditContext): Promise<DailyFollowupResponse> {
     const [created] = await db.insert(dailyFollowupResponses).values(response).returning();
-    await this.logAudit('CREATE', 'DailyFollowupResponse', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'DailyFollowupResponse', created.id, {
       patientId: response.patientId,
       assignmentId: response.assignmentId,
     });
@@ -1211,9 +1209,9 @@ class ResearchService {
   // ANALYSIS JOBS OPERATIONS
   // =========================================================================
 
-  async createAnalysisJob(job: InsertAnalysisJob): Promise<AnalysisJob> {
+  async createAnalysisJob(job: InsertAnalysisJob, auditContext?: AuditContext): Promise<AnalysisJob> {
     const [created] = await db.insert(analysisJobs).values(job).returning();
-    await this.logAudit('CREATE', 'AnalysisJob', created.id, {
+    await this.logAudit(auditContext, 'CREATE', 'AnalysisJob', created.id, {
       analysisType: job.analysisType,
       studyId: job.studyId,
       cohortId: job.cohortId,
@@ -1229,14 +1227,14 @@ class ResearchService {
     return job;
   }
 
-  async updateAnalysisJob(id: string, data: Partial<InsertAnalysisJob>): Promise<AnalysisJob | undefined> {
+  async updateAnalysisJob(id: string, data: Partial<InsertAnalysisJob>, auditContext?: AuditContext): Promise<AnalysisJob | undefined> {
     const [updated] = await db
       .update(analysisJobs)
       .set(data)
       .where(eq(analysisJobs.id, id))
       .returning();
     if (updated) {
-      await this.logAudit('UPDATE', 'AnalysisJob', id, { status: data.status, changedFields: Object.keys(data) });
+      await this.logAudit(auditContext, 'UPDATE', 'AnalysisJob', id, { status: data.status, changedFields: Object.keys(data) });
     }
     return updated;
   }

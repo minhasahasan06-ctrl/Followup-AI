@@ -17722,13 +17722,14 @@ Provide:
   // ENHANCED RESEARCH CENTER ROUTES
   // =============================================================================
 
-  // Helper middleware to set audit context for research service
+  // Helper middleware to attach audit context to request for research service
+  // Context is request-scoped to ensure thread-safety with concurrent requests
   const setResearchAuditContext = (req: any, res: any, next: any) => {
-    researchService.setAuditContext({
+    req.researchAuditContext = {
       userId: req.user?.id || 'anonymous',
       ipAddress: req.ip || req.connection?.remoteAddress,
       userAgent: req.headers['user-agent'],
-    });
+    };
     next();
   };
 
@@ -17752,7 +17753,7 @@ Provide:
       const consent = await researchService.upsertResearchDataConsent({
         patientId: req.user.id,
         ...req.body,
-      });
+      }, req.researchAuditContext);
 
       console.log(`[HIPAA-AUDIT] Research consent updated by patient ${req.user.id}`);
       res.json(consent);
@@ -17801,7 +17802,7 @@ Provide:
       const project = await researchService.createResearchProject({
         ...req.body,
         ownerId: req.user.id,
-      });
+      }, req.researchAuditContext);
 
       console.log(`[HIPAA-AUDIT] Research project created: ${project.id} by ${req.user.id}`);
       res.json(project);
@@ -17830,7 +17831,7 @@ Provide:
         return res.status(403).json({ error: 'Access denied' });
       }
 
-      const project = await researchService.updateResearchProject(req.params.id, req.body);
+      const project = await researchService.updateResearchProject(req.params.id, req.body, req.researchAuditContext);
       if (!project) {
         return res.status(404).json({ error: 'Project not found' });
       }
@@ -17871,7 +17872,7 @@ Provide:
       const study = await researchService.createResearchStudy({
         ...req.body,
         ownerUserId: req.user.id,
-      });
+      }, req.researchAuditContext);
 
       console.log(`[HIPAA-AUDIT] Research study created: ${study.id} by ${req.user.id}`);
       res.json(study);
@@ -17900,7 +17901,7 @@ Provide:
         return res.status(403).json({ error: 'Access denied' });
       }
 
-      const study = await researchService.updateResearchStudy(req.params.id, req.body);
+      const study = await researchService.updateResearchStudy(req.params.id, req.body, req.researchAuditContext);
       if (!study) {
         return res.status(404).json({ error: 'Study not found' });
       }
@@ -17940,7 +17941,7 @@ Provide:
       const cohort = await researchService.createResearchCohort({
         ...req.body,
         createdBy: req.user.id,
-      });
+      }, req.researchAuditContext);
 
       console.log(`[HIPAA-AUDIT] Research cohort created: ${cohort.id} by ${req.user.id}`);
       res.json(cohort);
@@ -18001,7 +18002,7 @@ Provide:
       const enrollment = await researchService.createStudyEnrollment({
         studyId: req.params.studyId,
         ...req.body,
-      });
+      }, req.researchAuditContext);
 
       console.log(`[HIPAA-AUDIT] Patient enrolled in study ${req.params.studyId} by ${req.user.id}`);
       res.json(enrollment);
@@ -18014,7 +18015,7 @@ Provide:
   app.post('/api/v1/research-center/enrollments/:id/withdraw', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
     try {
       const { reason } = req.body;
-      const enrollment = await researchService.withdrawFromStudy(req.params.id, reason);
+      const enrollment = await researchService.withdrawFromStudy(req.params.id, reason, req.researchAuditContext);
       if (!enrollment) {
         return res.status(404).json({ error: 'Enrollment not found' });
       }
@@ -18049,7 +18050,7 @@ Provide:
         return res.status(403).json({ error: 'Access denied' });
       }
 
-      const visit = await researchService.createResearchVisit(req.body);
+      const visit = await researchService.createResearchVisit(req.body, req.researchAuditContext);
       res.json(visit);
     } catch (error) {
       console.error('Error creating research visit:', error);
@@ -18077,10 +18078,10 @@ Provide:
   app.post('/api/v1/research-center/measurements', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
     try {
       if (Array.isArray(req.body)) {
-        const measurements = await researchService.createResearchMeasurements(req.body);
+        const measurements = await researchService.createResearchMeasurements(req.body, req.researchAuditContext);
         res.json(measurements);
       } else {
-        const measurement = await researchService.createResearchMeasurement(req.body);
+        const measurement = await researchService.createResearchMeasurement(req.body, req.researchAuditContext);
         res.json(measurement);
       }
     } catch (error) {
@@ -18138,7 +18139,7 @@ Provide:
       const report = await researchService.createResearchAnalysisReport({
         ...req.body,
         createdBy: req.user.id,
-      });
+      }, req.researchAuditContext);
 
       console.log(`[HIPAA-AUDIT] Research report created: ${report.id} by ${req.user.id}`);
       res.json(report);
@@ -18202,7 +18203,7 @@ Provide:
         aiGeneratedSummary: aiContent.substring(0, 500),
         status: 'completed',
         createdBy: req.user.id,
-      });
+      }, req.researchAuditContext);
 
       console.log(`[HIPAA-AUDIT] AI research report generated: ${report.id} by ${req.user.id}`);
       res.json(report);
@@ -18232,7 +18233,7 @@ Provide:
 
   app.post('/api/v1/research-center/alerts/:id/acknowledge', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
     try {
-      const alert = await researchService.acknowledgeResearchAlert(req.params.id, req.user.id);
+      const alert = await researchService.acknowledgeResearchAlert(req.params.id, req.user.id, req.researchAuditContext);
       if (!alert) {
         return res.status(404).json({ error: 'Alert not found' });
       }
@@ -18246,7 +18247,7 @@ Provide:
   app.post('/api/v1/research-center/alerts/:id/resolve', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
     try {
       const { resolution } = req.body;
-      const alert = await researchService.resolveResearchAlert(req.params.id, req.user.id, resolution);
+      const alert = await researchService.resolveResearchAlert(req.params.id, req.user.id, resolution, req.researchAuditContext);
       if (!alert) {
         return res.status(404).json({ error: 'Alert not found' });
       }
@@ -18281,7 +18282,7 @@ Provide:
       const template = await researchService.createDailyFollowupTemplate({
         ...req.body,
         createdBy: req.user.id,
-      });
+      }, req.researchAuditContext);
       res.json(template);
     } catch (error) {
       console.error('Error creating followup template:', error);
@@ -18313,7 +18314,7 @@ Provide:
       const job = await researchService.createAnalysisJob({
         ...req.body,
         createdBy: req.user.id,
-      });
+      }, req.researchAuditContext);
       res.json(job);
     } catch (error) {
       console.error('Error creating analysis job:', error);
