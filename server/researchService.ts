@@ -427,6 +427,10 @@ class ResearchService {
     return true;
   }
 
+  async getStudiesByProject(projectId: string): Promise<ResearchStudy[]> {
+    return this.getResearchStudies({ projectId });
+  }
+
   // =========================================================================
   // RESEARCH STUDIES OPERATIONS
   // =========================================================================

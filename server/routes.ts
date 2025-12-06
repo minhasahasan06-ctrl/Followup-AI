@@ -18336,6 +18336,91 @@ Provide:
     }
   });
 
+  // NL Query Parsing - Proxy to Python Backend
+  app.post('/api/v1/research-center/analysis/parse-nl', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/analysis/parse-nl`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+        body: JSON.stringify(req.body),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return res.status(response.status).json({ error: errorText });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error parsing NL query:', error);
+      res.status(500).json({ error: 'Failed to parse query' });
+    }
+  });
+
+  // Research Projects - Personal Research Mode
+  app.get('/api/v1/research-center/projects', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const projects = await researchService.getResearchProjects(req.user.id);
+      res.json(projects);
+    } catch (error) {
+      console.error('Error fetching research projects:', error);
+      res.status(500).json({ error: 'Failed to fetch projects' });
+    }
+  });
+
+  app.post('/api/v1/research-center/projects', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const project = await researchService.createResearchProject({
+        ...req.body,
+        ownerId: req.user.id,
+      }, req.researchAuditContext);
+      res.json(project);
+    } catch (error) {
+      console.error('Error creating research project:', error);
+      res.status(500).json({ error: 'Failed to create project' });
+    }
+  });
+
+  app.patch('/api/v1/research-center/projects/:id', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const project = await researchService.updateResearchProject(req.params.id, req.body, req.researchAuditContext);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      res.json(project);
+    } catch (error) {
+      console.error('Error updating research project:', error);
+      res.status(500).json({ error: 'Failed to update project' });
+    }
+  });
+
+  app.get('/api/v1/research-center/projects/:id/studies', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const studies = await researchService.getStudiesByProject(req.params.id);
+      res.json(studies);
+    } catch (error) {
+      console.error('Error fetching project studies:', error);
+      res.status(500).json({ error: 'Failed to fetch studies' });
+    }
+  });
+
   // Research Audit Logs
   app.get('/api/v1/research-center/audit-logs', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
     try {

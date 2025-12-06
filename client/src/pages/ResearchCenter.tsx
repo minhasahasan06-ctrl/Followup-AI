@@ -46,6 +46,7 @@ import { AIAnalysisTab } from "@/components/research/AIAnalysisTab";
 import { AlertsTab } from "@/components/research/AlertsTab";
 import { DailyFollowupsTab } from "@/components/research/DailyFollowupsTab";
 import { ReportsTab } from "@/components/research/ReportsTab";
+import { PersonalResearchTab } from "@/components/research/PersonalResearchTab";
 
 const COHORT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00C49F', '#FFBB28'];
 
@@ -746,6 +747,10 @@ export default function ResearchCenter() {
             <FileText className="h-4 w-4" />
             Reports
           </TabsTrigger>
+          <TabsTrigger value="personal" className="gap-2" data-testid="tab-personal">
+            <Brain className="h-4 w-4" />
+            Personal Research
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="cohort">
@@ -774,6 +779,10 @@ export default function ResearchCenter() {
 
         <TabsContent value="reports">
           <ReportsTab />
+        </TabsContent>
+
+        <TabsContent value="personal">
+          <PersonalResearchTab />
         </TabsContent>
       </Tabs>
     </div>

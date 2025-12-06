@@ -406,6 +406,148 @@ async def generate_report(request: ReportRequest, auth: dict = Depends(verify_au
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class NLQueryRequest(BaseModel):
+    query: str
+
+
+class NLAnalysisSpec(BaseModel):
+    analysis_type: str
+    primary_outcome: Optional[str] = None
+    exposure_variable: Optional[str] = None
+    covariates: List[str] = []
+    time_window: Optional[int] = None
+    model_type: Optional[str] = None
+    cohort_filters: Optional[Dict[str, Any]] = None
+
+
+class NLParseResponse(BaseModel):
+    success: bool
+    analysis_spec: Optional[NLAnalysisSpec] = None
+    explanation: str
+    confidence: float
+    suggestions: Optional[List[str]] = None
+
+
+@app.post("/api/v1/ml/analysis/parse-nl", response_model=NLParseResponse)
+async def parse_nl_query(request: NLQueryRequest, auth: dict = Depends(verify_auth)):
+    """Parse natural language research query into analysis specification"""
+    try:
+        log_audit("nl_query_parse", "analysis", auth["user_id"], {"query": request.query[:100]})
+        
+        query = request.query.lower()
+        
+        analysis_type = "descriptive"
+        primary_outcome = None
+        exposure_variable = None
+        covariates = []
+        time_window = None
+        model_type = None
+        suggestions = []
+        confidence = 0.75
+        
+        if any(word in query for word in ["predict", "risk", "forecast", "will", "likelihood"]):
+            analysis_type = "risk_prediction"
+            model_type = "xgboost"
+            
+            if "30 day" in query or "30-day" in query:
+                time_window = 30
+            elif "90 day" in query or "90-day" in query:
+                time_window = 90
+            elif "year" in query:
+                time_window = 365
+                
+            if "infection" in query:
+                primary_outcome = "infection_event"
+            elif "hospitalization" in query or "hospital" in query:
+                primary_outcome = "hospitalization_event"
+            elif "deterioration" in query:
+                primary_outcome = "deterioration_score"
+            elif "mortality" in query or "death" in query:
+                primary_outcome = "mortality_event"
+                
+        elif any(word in query for word in ["survival", "time to", "hazard", "kaplan", "cox"]):
+            analysis_type = "survival"
+            
+            if "infection" in query:
+                primary_outcome = "time_to_infection"
+            elif "recovery" in query:
+                primary_outcome = "time_to_recovery"
+            elif "death" in query or "mortality" in query:
+                primary_outcome = "time_to_death"
+                
+        elif any(word in query for word in ["causal", "effect of", "impact of", "compare", "vs", "versus"]):
+            analysis_type = "causal"
+            
+            if "tacrolimus" in query and "cyclosporine" in query:
+                exposure_variable = "immunosuppressant_type"
+                suggestions.append("Consider adjusting for time since transplant")
+            elif "air quality" in query or "aqi" in query or "environmental" in query:
+                exposure_variable = "environmental_aqi_score"
+                suggestions.append("Environmental data may have seasonal variation")
+                
+        if "age" in query or "gender" in query or "sex" in query:
+            if "age" in query:
+                covariates.append("age")
+            if "gender" in query or "sex" in query:
+                covariates.append("sex")
+                
+        if "adjusting" in query or "controlling" in query or "adjust" in query:
+            if "comorbid" in query:
+                covariates.append("comorbidity_score")
+            if "bmi" in query:
+                covariates.append("bmi")
+                
+        if "cd4" in query:
+            covariates.append("cd4_count")
+        if "immune" in query:
+            covariates.append("immune_status")
+        if "transplant" in query:
+            covariates.append("transplant_type")
+            
+        if "lupus" in query:
+            covariates.append("condition:lupus")
+        if "transplant patient" in query:
+            covariates.append("condition:transplant_recipient")
+            
+        if not covariates and analysis_type in ["risk_prediction", "survival", "causal"]:
+            covariates = ["age", "sex"]
+            suggestions.append("Consider adding more covariates for better model performance")
+            
+        if not primary_outcome and analysis_type != "descriptive":
+            suggestions.append("Please specify a primary outcome variable for this analysis")
+            confidence = 0.5
+            
+        explanation_parts = [f"Detected {analysis_type.replace('_', ' ')} analysis request"]
+        if primary_outcome:
+            explanation_parts.append(f"with outcome '{primary_outcome}'")
+        if exposure_variable:
+            explanation_parts.append(f"examining effect of '{exposure_variable}'")
+        if covariates:
+            explanation_parts.append(f"adjusting for {len(covariates)} covariates")
+        if time_window:
+            explanation_parts.append(f"over {time_window}-day window")
+            
+        explanation = ". ".join(explanation_parts) + "."
+        
+        return NLParseResponse(
+            success=True,
+            analysis_spec=NLAnalysisSpec(
+                analysis_type=analysis_type,
+                primary_outcome=primary_outcome,
+                exposure_variable=exposure_variable,
+                covariates=covariates,
+                time_window=time_window,
+                model_type=model_type,
+            ),
+            explanation=explanation,
+            confidence=confidence,
+            suggestions=suggestions if suggestions else None
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PYTHON_ML_PORT", "8000"))
