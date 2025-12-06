@@ -18401,6 +18401,328 @@ Provide:
   });
 
   // =============================================================================
+  // CONSENT-AWARE DATA AGGREGATION ROUTES
+  // =============================================================================
+
+  app.get('/api/v1/research-center/data/statistics', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const statistics = await researchService.getDataTypeStatistics(req.researchAuditContext);
+      res.json(statistics);
+    } catch (error) {
+      console.error('Error fetching data statistics:', error);
+      res.status(500).json({ error: 'Failed to fetch data statistics' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/daily-followups', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { startDate, endDate, patientIds } = req.query;
+      const dateRange = startDate && endDate 
+        ? { start: new Date(startDate as string), end: new Date(endDate as string) }
+        : undefined;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedDailyFollowups(
+        req.researchAuditContext,
+        dateRange,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented daily followups:', error);
+      res.status(500).json({ error: 'Failed to fetch daily followups' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/health-alerts', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { startDate, endDate, patientIds } = req.query;
+      const dateRange = startDate && endDate 
+        ? { start: new Date(startDate as string), end: new Date(endDate as string) }
+        : undefined;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedHealthAlerts(
+        req.researchAuditContext,
+        dateRange,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented health alerts:', error);
+      res.status(500).json({ error: 'Failed to fetch health alerts' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/deterioration-scores', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { startDate, endDate, patientIds } = req.query;
+      const dateRange = startDate && endDate 
+        ? { start: new Date(startDate as string), end: new Date(endDate as string) }
+        : undefined;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedDeteriorationScores(
+        req.researchAuditContext,
+        dateRange,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented deterioration scores:', error);
+      res.status(500).json({ error: 'Failed to fetch deterioration scores' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/medications', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { patientIds } = req.query;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedMedications(
+        req.researchAuditContext,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented medications:', error);
+      res.status(500).json({ error: 'Failed to fetch medications' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/immune-biomarkers', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { startDate, endDate, patientIds } = req.query;
+      const dateRange = startDate && endDate 
+        ? { start: new Date(startDate as string), end: new Date(endDate as string) }
+        : undefined;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedImmuneBiomarkers(
+        req.researchAuditContext,
+        dateRange,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented immune biomarkers:', error);
+      res.status(500).json({ error: 'Failed to fetch immune biomarkers' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/wearable-data', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { startDate, endDate, patientIds } = req.query;
+      const dateRange = startDate && endDate 
+        ? { start: new Date(startDate as string), end: new Date(endDate as string) }
+        : undefined;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedWearableData(
+        req.researchAuditContext,
+        dateRange,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented wearable data:', error);
+      res.status(500).json({ error: 'Failed to fetch wearable data' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/symptom-journal', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { startDate, endDate, patientIds } = req.query;
+      const dateRange = startDate && endDate 
+        ? { start: new Date(startDate as string), end: new Date(endDate as string) }
+        : undefined;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedSymptomJournal(
+        req.researchAuditContext,
+        dateRange,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented symptom journal:', error);
+      res.status(500).json({ error: 'Failed to fetch symptom journal' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/pain-tracking', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { startDate, endDate, patientIds } = req.query;
+      const dateRange = startDate && endDate 
+        ? { start: new Date(startDate as string), end: new Date(endDate as string) }
+        : undefined;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedPainTracking(
+        req.researchAuditContext,
+        dateRange,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented pain tracking:', error);
+      res.status(500).json({ error: 'Failed to fetch pain tracking' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/lab-results', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { patientIds } = req.query;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedLabResults(
+        req.researchAuditContext,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented lab results:', error);
+      res.status(500).json({ error: 'Failed to fetch lab results' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/conditions', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { patientIds } = req.query;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedConditions(
+        req.researchAuditContext,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented conditions:', error);
+      res.status(500).json({ error: 'Failed to fetch conditions' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/demographics', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { patientIds } = req.query;
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const data = await researchService.getConsentedDemographics(
+        req.researchAuditContext,
+        patientIdList
+      );
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consented demographics:', error);
+      res.status(500).json({ error: 'Failed to fetch demographics' });
+    }
+  });
+
+  app.get('/api/v1/research-center/data/patient/:patientId', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const data = await researchService.getComprehensivePatientData(
+        req.params.patientId,
+        req.researchAuditContext
+      );
+      
+      if (data.error) {
+        return res.status(403).json({ error: data.error });
+      }
+      
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching comprehensive patient data:', error);
+      res.status(500).json({ error: 'Failed to fetch patient data' });
+    }
+  });
+
+  app.post('/api/v1/research-center/data/cohort/:cohortId', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { dataTypes, startDate, endDate } = req.body;
+      
+      if (!dataTypes || !Array.isArray(dataTypes)) {
+        return res.status(400).json({ error: 'dataTypes array is required' });
+      }
+      
+      const dateRange = startDate && endDate 
+        ? { start: new Date(startDate), end: new Date(endDate) }
+        : undefined;
+
+      const data = await researchService.getCohortAggregatedData(
+        req.params.cohortId,
+        dataTypes,
+        req.researchAuditContext,
+        dateRange
+      );
+      
+      if (data.error) {
+        return res.status(404).json({ error: data.error });
+      }
+      
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching cohort aggregated data:', error);
+      res.status(500).json({ error: 'Failed to fetch cohort data' });
+    }
+  });
+
+  // =============================================================================
   // END ENHANCED RESEARCH CENTER ROUTES
   // =============================================================================
 

@@ -23,6 +23,16 @@ import {
   users,
   patientProfiles,
   dailyFollowups,
+  medications,
+  symptomCheckins,
+  paintrackSessions,
+  sessionMetrics,
+  immuneBiomarkers,
+  digitalBiomarkers,
+  deteriorationPredictions,
+  interactionAlerts,
+  medicalDocuments,
+  autoJournals,
   type ResearchDataConsent,
   type InsertResearchDataConsent,
   type ResearchProject,
@@ -1379,6 +1389,755 @@ class ResearchService {
     
     return Object.entries(distribution)
       .map(([ageGroup, count]) => ({ ageGroup, count }));
+  }
+
+  // ============== CONSENT-AWARE DATA AGGREGATION LAYER ==============
+  // All methods respect patient consent grants for specific data types
+
+  private readonly dataTypeMap: Record<string, string> = {
+    dailyFollowups: 'dailyFollowups',
+    healthAlerts: 'healthAlerts',
+    deteriorationIndex: 'deteriorationIndex',
+    mlPredictions: 'mlPredictions',
+    environmentalRisk: 'environmentalRisk',
+    medications: 'medications',
+    vitals: 'vitals',
+    immuneMarkers: 'immuneMarkers',
+    behavioralData: 'behavioralData',
+    mentalHealth: 'mentalHealth',
+    wearableData: 'wearableData',
+    labResults: 'labResults',
+    conditions: 'conditions',
+    demographics: 'demographics',
+    painTracking: 'painTracking',
+    symptomJournal: 'symptomJournal',
+  };
+
+  async getPatientsConsentedForDataType(
+    dataType: keyof typeof this.dataTypeMap,
+    context?: AuditContext
+  ): Promise<string[]> {
+    const consents = await db
+      .select()
+      .from(researchDataConsent)
+      .where(eq(researchDataConsent.consentEnabled, true));
+    
+    const consentedPatients = consents.filter(c => {
+      const permissions = c.dataTypePermissions as Record<string, boolean> | null;
+      return permissions && permissions[dataType] === true;
+    });
+    
+    const patientIds = consentedPatients.map(c => c.patientId);
+    
+    await this.logAudit(context, 'query_consented_patients', 'consent', dataType, {
+      dataType,
+      count: patientIds.length,
+    });
+    
+    return patientIds;
+  }
+
+  async getConsentedDailyFollowups(
+    context?: AuditContext,
+    dateRange?: { start: Date; end: Date },
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('dailyFollowups', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    let query = db
+      .select()
+      .from(dailyFollowups)
+      .where(inArray(dailyFollowups.patientId, targetPatients));
+    
+    if (dateRange) {
+      query = db
+        .select()
+        .from(dailyFollowups)
+        .where(and(
+          inArray(dailyFollowups.patientId, targetPatients),
+          gte(dailyFollowups.date, dateRange.start),
+          lte(dailyFollowups.date, dateRange.end)
+        ));
+    }
+    
+    const results = await query;
+    
+    await this.logAudit(context, 'query_research_data', 'dailyFollowups', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+      dateRange,
+    });
+    
+    return results;
+  }
+
+  async getConsentedHealthAlerts(
+    context?: AuditContext,
+    dateRange?: { start: Date; end: Date },
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('healthAlerts', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    const results = await db
+      .select()
+      .from(interactionAlerts)
+      .where(inArray(interactionAlerts.patientId, targetPatients));
+    
+    await this.logAudit(context, 'query_research_data', 'healthAlerts', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+    });
+    
+    return results;
+  }
+
+  async getConsentedDeteriorationScores(
+    context?: AuditContext,
+    dateRange?: { start: Date; end: Date },
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('deteriorationIndex', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    let query = db
+      .select()
+      .from(deteriorationPredictions)
+      .where(inArray(deteriorationPredictions.userId, targetPatients));
+    
+    if (dateRange) {
+      query = db
+        .select()
+        .from(deteriorationPredictions)
+        .where(and(
+          inArray(deteriorationPredictions.userId, targetPatients),
+          gte(deteriorationPredictions.predictionDate, dateRange.start),
+          lte(deteriorationPredictions.predictionDate, dateRange.end)
+        ));
+    }
+    
+    const results = await query;
+    
+    await this.logAudit(context, 'query_research_data', 'deteriorationPredictions', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+      dateRange,
+    });
+    
+    return results;
+  }
+
+  async getConsentedMedications(
+    context?: AuditContext,
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('medications', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    const results = await db
+      .select()
+      .from(medications)
+      .where(inArray(medications.patientId, targetPatients));
+    
+    await this.logAudit(context, 'query_research_data', 'medications', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+    });
+    
+    return results;
+  }
+
+  async getConsentedImmuneBiomarkers(
+    context?: AuditContext,
+    dateRange?: { start: Date; end: Date },
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('immuneMarkers', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    let query = db
+      .select()
+      .from(immuneBiomarkers)
+      .where(inArray(immuneBiomarkers.userId, targetPatients));
+    
+    if (dateRange) {
+      query = db
+        .select()
+        .from(immuneBiomarkers)
+        .where(and(
+          inArray(immuneBiomarkers.userId, targetPatients),
+          gte(immuneBiomarkers.measuredAt, dateRange.start),
+          lte(immuneBiomarkers.measuredAt, dateRange.end)
+        ));
+    }
+    
+    const results = await query;
+    
+    await this.logAudit(context, 'query_research_data', 'immuneBiomarkers', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+      dateRange,
+    });
+    
+    return results;
+  }
+
+  async getConsentedWearableData(
+    context?: AuditContext,
+    dateRange?: { start: Date; end: Date },
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('wearableData', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    let query = db
+      .select()
+      .from(digitalBiomarkers)
+      .where(inArray(digitalBiomarkers.patientId, targetPatients));
+    
+    if (dateRange) {
+      query = db
+        .select()
+        .from(digitalBiomarkers)
+        .where(and(
+          inArray(digitalBiomarkers.patientId, targetPatients),
+          gte(digitalBiomarkers.date, dateRange.start),
+          lte(digitalBiomarkers.date, dateRange.end)
+        ));
+    }
+    
+    const results = await query;
+    
+    await this.logAudit(context, 'query_research_data', 'wearableData', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+      dateRange,
+    });
+    
+    return results;
+  }
+
+  async getConsentedSymptomJournal(
+    context?: AuditContext,
+    dateRange?: { start: Date; end: Date },
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('symptomJournal', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    let query = db
+      .select()
+      .from(symptomCheckins)
+      .where(inArray(symptomCheckins.userId, targetPatients));
+    
+    if (dateRange) {
+      query = db
+        .select()
+        .from(symptomCheckins)
+        .where(and(
+          inArray(symptomCheckins.userId, targetPatients),
+          gte(symptomCheckins.timestamp, dateRange.start),
+          lte(symptomCheckins.timestamp, dateRange.end)
+        ));
+    }
+    
+    const results = await query;
+    
+    await this.logAudit(context, 'query_research_data', 'symptomCheckins', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+      dateRange,
+    });
+    
+    return results;
+  }
+
+  async getConsentedPainTracking(
+    context?: AuditContext,
+    dateRange?: { start: Date; end: Date },
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('painTracking', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    let query = db
+      .select()
+      .from(paintrackSessions)
+      .where(inArray(paintrackSessions.userId, targetPatients));
+    
+    if (dateRange) {
+      query = db
+        .select()
+        .from(paintrackSessions)
+        .where(and(
+          inArray(paintrackSessions.userId, targetPatients),
+          gte(paintrackSessions.createdAt, dateRange.start),
+          lte(paintrackSessions.createdAt, dateRange.end)
+        ));
+    }
+    
+    const results = await query;
+    
+    await this.logAudit(context, 'query_research_data', 'painTracking', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+      dateRange,
+    });
+    
+    return results;
+  }
+
+  async getConsentedLabResults(
+    context?: AuditContext,
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('labResults', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    const results = await db
+      .select()
+      .from(medicalDocuments)
+      .where(and(
+        inArray(medicalDocuments.userId, targetPatients),
+        eq(medicalDocuments.documentType, 'lab_report')
+      ));
+    
+    await this.logAudit(context, 'query_research_data', 'labResults', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+    });
+    
+    return results;
+  }
+
+  async getConsentedConditions(
+    context?: AuditContext,
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('conditions', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    const results = await db
+      .select({
+        userId: patientProfiles.userId,
+        immunocompromisedCondition: patientProfiles.immunocompromisedCondition,
+        diagnosisDate: patientProfiles.diagnosisDate,
+        currentTreatmentPhase: patientProfiles.currentTreatmentPhase,
+        allergies: patientProfiles.allergies,
+        secondaryConditions: patientProfiles.secondaryConditions,
+      })
+      .from(patientProfiles)
+      .where(inArray(patientProfiles.userId, targetPatients));
+    
+    await this.logAudit(context, 'query_research_data', 'conditions', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: results.length,
+    });
+    
+    return results;
+  }
+
+  async getConsentedDemographics(
+    context?: AuditContext,
+    patientIds?: string[]
+  ): Promise<any[]> {
+    const consentedPatients = await this.getPatientsConsentedForDataType('demographics', context);
+    if (consentedPatients.length === 0) return [];
+    
+    const targetPatients = patientIds 
+      ? consentedPatients.filter(p => patientIds.includes(p))
+      : consentedPatients;
+    
+    if (targetPatients.length === 0) return [];
+    
+    const profiles = await db
+      .select({
+        userId: patientProfiles.userId,
+        dateOfBirth: patientProfiles.dateOfBirth,
+        gender: patientProfiles.gender,
+        ethnicity: patientProfiles.ethnicity,
+        immunocompromisedCondition: patientProfiles.immunocompromisedCondition,
+        diagnosisDate: patientProfiles.diagnosisDate,
+        currentTreatmentPhase: patientProfiles.currentTreatmentPhase,
+      })
+      .from(patientProfiles)
+      .where(inArray(patientProfiles.userId, targetPatients));
+    
+    await this.logAudit(context, 'query_research_data', 'demographics', 'aggregation', {
+      patientCount: targetPatients.length,
+      recordCount: profiles.length,
+    });
+    
+    return profiles;
+  }
+
+  async getComprehensivePatientData(
+    patientId: string,
+    context?: AuditContext
+  ): Promise<Record<string, any>> {
+    const consent = await db
+      .select()
+      .from(researchDataConsent)
+      .where(eq(researchDataConsent.patientId, patientId))
+      .limit(1);
+    
+    if (consent.length === 0 || !consent[0].consentEnabled) {
+      await this.logAudit(context, 'access_denied', 'patient_data', patientId, {
+        reason: 'no_consent',
+      });
+      return { error: 'Patient has not consented to research participation' };
+    }
+    
+    const permissions = consent[0].dataTypePermissions as Record<string, boolean> | null;
+    const result: Record<string, any> = {
+      patientId,
+      consentedAt: consent[0].createdAt,
+      dataTypes: {},
+    };
+    
+    if (permissions?.dailyFollowups) {
+      result.dataTypes.dailyFollowups = await db
+        .select()
+        .from(dailyFollowups)
+        .where(eq(dailyFollowups.patientId, patientId))
+        .orderBy(desc(dailyFollowups.date))
+        .limit(100);
+    }
+    
+    if (permissions?.medications) {
+      result.dataTypes.medications = await db
+        .select()
+        .from(medications)
+        .where(eq(medications.patientId, patientId));
+    }
+    
+    if (permissions?.immuneMarkers) {
+      result.dataTypes.immuneMarkers = await db
+        .select()
+        .from(immuneBiomarkers)
+        .where(eq(immuneBiomarkers.userId, patientId))
+        .orderBy(desc(immuneBiomarkers.measuredAt))
+        .limit(100);
+    }
+    
+    if (permissions?.wearableData) {
+      result.dataTypes.wearableData = await db
+        .select()
+        .from(digitalBiomarkers)
+        .where(eq(digitalBiomarkers.patientId, patientId))
+        .orderBy(desc(digitalBiomarkers.date))
+        .limit(100);
+    }
+    
+    if (permissions?.symptomJournal) {
+      result.dataTypes.symptomJournal = await db
+        .select()
+        .from(symptomCheckins)
+        .where(eq(symptomCheckins.userId, patientId))
+        .orderBy(desc(symptomCheckins.timestamp))
+        .limit(100);
+    }
+    
+    if (permissions?.painTracking) {
+      result.dataTypes.painTracking = await db
+        .select()
+        .from(paintrackSessions)
+        .where(eq(paintrackSessions.userId, patientId))
+        .orderBy(desc(paintrackSessions.createdAt))
+        .limit(50);
+    }
+    
+    if (permissions?.deteriorationIndex) {
+      result.dataTypes.deteriorationScores = await db
+        .select()
+        .from(deteriorationPredictions)
+        .where(eq(deteriorationPredictions.userId, patientId))
+        .orderBy(desc(deteriorationPredictions.predictionDate))
+        .limit(50);
+    }
+    
+    if (permissions?.demographics) {
+      const profile = await db
+        .select({
+          dateOfBirth: patientProfiles.dateOfBirth,
+          gender: patientProfiles.gender,
+          ethnicity: patientProfiles.ethnicity,
+          immunocompromisedCondition: patientProfiles.immunocompromisedCondition,
+          diagnosisDate: patientProfiles.diagnosisDate,
+          currentTreatmentPhase: patientProfiles.currentTreatmentPhase,
+        })
+        .from(patientProfiles)
+        .where(eq(patientProfiles.userId, patientId))
+        .limit(1);
+      result.dataTypes.demographics = profile[0] || null;
+    }
+    
+    if (permissions?.conditions) {
+      const conditionsData = await db
+        .select({
+          immunocompromisedCondition: patientProfiles.immunocompromisedCondition,
+          diagnosisDate: patientProfiles.diagnosisDate,
+          currentTreatmentPhase: patientProfiles.currentTreatmentPhase,
+          allergies: patientProfiles.allergies,
+          secondaryConditions: patientProfiles.secondaryConditions,
+        })
+        .from(patientProfiles)
+        .where(eq(patientProfiles.userId, patientId))
+        .limit(1);
+      result.dataTypes.conditions = conditionsData[0] || null;
+    }
+    
+    await this.logAudit(context, 'query_comprehensive_data', 'patient_data', patientId, {
+      dataTypesIncluded: Object.keys(result.dataTypes),
+    });
+    
+    return result;
+  }
+
+  async getCohortAggregatedData(
+    cohortId: string,
+    dataTypes: string[],
+    context?: AuditContext,
+    dateRange?: { start: Date; end: Date }
+  ): Promise<Record<string, any>> {
+    const cohort = await db
+      .select()
+      .from(researchCohorts)
+      .where(eq(researchCohorts.id, cohortId))
+      .limit(1);
+    
+    if (cohort.length === 0) {
+      return { error: 'Cohort not found' };
+    }
+    
+    const patientIds = (cohort[0].patientIds as string[]) || [];
+    if (patientIds.length === 0) {
+      return { error: 'Cohort has no patients', cohortId };
+    }
+    
+    const result: Record<string, any> = {
+      cohortId,
+      cohortName: cohort[0].name,
+      totalPatients: patientIds.length,
+      dataByType: {},
+    };
+    
+    for (const dataType of dataTypes) {
+      switch (dataType) {
+        case 'dailyFollowups':
+          result.dataByType.dailyFollowups = await this.getConsentedDailyFollowups(context, dateRange, patientIds);
+          break;
+        case 'healthAlerts':
+          result.dataByType.healthAlerts = await this.getConsentedHealthAlerts(context, dateRange, patientIds);
+          break;
+        case 'deteriorationIndex':
+          result.dataByType.deteriorationScores = await this.getConsentedDeteriorationScores(context, dateRange, patientIds);
+          break;
+        case 'medications':
+          result.dataByType.medications = await this.getConsentedMedications(context, patientIds);
+          break;
+        case 'immuneMarkers':
+          result.dataByType.immuneMarkers = await this.getConsentedImmuneBiomarkers(context, dateRange, patientIds);
+          break;
+        case 'wearableData':
+          result.dataByType.wearableData = await this.getConsentedWearableData(context, dateRange, patientIds);
+          break;
+        case 'symptomJournal':
+          result.dataByType.symptomJournal = await this.getConsentedSymptomJournal(context, dateRange, patientIds);
+          break;
+        case 'painTracking':
+          result.dataByType.painTracking = await this.getConsentedPainTracking(context, dateRange, patientIds);
+          break;
+        case 'labResults':
+          result.dataByType.labResults = await this.getConsentedLabResults(context, patientIds);
+          break;
+        case 'conditions':
+          result.dataByType.conditions = await this.getConsentedConditions(context, patientIds);
+          break;
+        case 'demographics':
+          result.dataByType.demographics = await this.getConsentedDemographics(context, patientIds);
+          break;
+      }
+    }
+    
+    await this.logAudit(context, 'query_cohort_data', 'cohort', cohortId, {
+      dataTypes,
+      patientCount: patientIds.length,
+      dateRange,
+    });
+    
+    return result;
+  }
+
+  async getDataTypeStatistics(
+    context?: AuditContext
+  ): Promise<Record<string, { consentedPatients: number; totalRecords: number }>> {
+    const stats: Record<string, { consentedPatients: number; totalRecords: number }> = {};
+    
+    for (const dataType of Object.keys(this.dataTypeMap)) {
+      const patientIds = await this.getPatientsConsentedForDataType(
+        dataType as keyof typeof this.dataTypeMap,
+        context
+      );
+      
+      let recordCount = 0;
+      
+      switch (dataType) {
+        case 'dailyFollowups':
+          if (patientIds.length > 0) {
+            const result = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(dailyFollowups)
+              .where(inArray(dailyFollowups.patientId, patientIds));
+            recordCount = Number(result[0]?.count || 0);
+          }
+          break;
+        case 'medications':
+          if (patientIds.length > 0) {
+            const result = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(medications)
+              .where(inArray(medications.patientId, patientIds));
+            recordCount = Number(result[0]?.count || 0);
+          }
+          break;
+        case 'immuneMarkers':
+          if (patientIds.length > 0) {
+            const result = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(immuneBiomarkers)
+              .where(inArray(immuneBiomarkers.userId, patientIds));
+            recordCount = Number(result[0]?.count || 0);
+          }
+          break;
+        case 'wearableData':
+          if (patientIds.length > 0) {
+            const result = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(digitalBiomarkers)
+              .where(inArray(digitalBiomarkers.patientId, patientIds));
+            recordCount = Number(result[0]?.count || 0);
+          }
+          break;
+        case 'symptomJournal':
+          if (patientIds.length > 0) {
+            const result = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(symptomCheckins)
+              .where(inArray(symptomCheckins.userId, patientIds));
+            recordCount = Number(result[0]?.count || 0);
+          }
+          break;
+        case 'painTracking':
+          if (patientIds.length > 0) {
+            const result = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(paintrackSessions)
+              .where(inArray(paintrackSessions.userId, patientIds));
+            recordCount = Number(result[0]?.count || 0);
+          }
+          break;
+        case 'deteriorationIndex':
+          if (patientIds.length > 0) {
+            const result = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(deteriorationPredictions)
+              .where(inArray(deteriorationPredictions.userId, patientIds));
+            recordCount = Number(result[0]?.count || 0);
+          }
+          break;
+        case 'conditions':
+          if (patientIds.length > 0) {
+            const result = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(patientProfiles)
+              .where(inArray(patientProfiles.userId, patientIds));
+            recordCount = Number(result[0]?.count || 0);
+          }
+          break;
+        case 'demographics':
+          if (patientIds.length > 0) {
+            const result = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(patientProfiles)
+              .where(inArray(patientProfiles.userId, patientIds));
+            recordCount = Number(result[0]?.count || 0);
+          }
+          break;
+      }
+      
+      stats[dataType] = {
+        consentedPatients: patientIds.length,
+        totalRecords: recordCount,
+      };
+    }
+    
+    await this.logAudit(context, 'query_data_statistics', 'research_data', 'all', {
+      dataTypes: Object.keys(stats),
+    });
+    
+    return stats;
   }
 }
 
