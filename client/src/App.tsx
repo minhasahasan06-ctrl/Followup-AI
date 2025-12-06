@@ -42,6 +42,7 @@ import CalendarSync from "@/pages/CalendarSync";
 import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
 import ConsentManagement from "@/pages/ConsentManagement";
+import ResearchConsentSettings from "@/pages/ResearchConsentSettings";
 import WearableDevices from "@/pages/WearableDevices";
 import DeviceConnect from "@/pages/DeviceConnect";
 import Referrals from "@/pages/Referrals";
@@ -109,6 +110,7 @@ function PatientRouter() {
       <Route path="/consultation-requests" component={ConsultationRequests} />
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/consents" component={ConsentManagement} />
+      <Route path="/research-consent" component={ResearchConsentSettings} />
       <Route path="/wearables" component={WearableDevices} />
       <Route path="/device-connect" component={DeviceConnect} />
       <Route path="/immune-monitoring" component={ImmuneMonitoring} />

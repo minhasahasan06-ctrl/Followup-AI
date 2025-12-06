@@ -32,6 +32,7 @@ import {
   Bell,
   TrendingUp,
   Brain,
+  Microscope,
 } from "lucide-react";
 import {
   Sidebar,
@@ -112,6 +113,12 @@ const patientItems = [
     title: "App Connections",
     url: "/consents",
     icon: LinkIcon,
+  },
+  {
+    title: "Research Consent",
+    url: "/research-consent",
+    icon: Microscope,
+    badge: "HIPAA",
   },
   {
     title: "Wearable Devices",
