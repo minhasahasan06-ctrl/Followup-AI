@@ -18723,6 +18723,213 @@ Provide:
   });
 
   // =============================================================================
+  // CSV IMPORT ROUTES
+  // =============================================================================
+
+  app.get('/api/v1/research-center/import/data-types', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const dataTypes = await researchService.getImportableDataTypes();
+      res.json(dataTypes);
+    } catch (error) {
+      console.error('Error fetching importable data types:', error);
+      res.status(500).json({ error: 'Failed to fetch data types' });
+    }
+  });
+
+  app.post('/api/v1/research-center/import/preview', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { csvData } = req.body;
+      
+      if (!csvData || typeof csvData !== 'string') {
+        return res.status(400).json({ error: 'csvData is required' });
+      }
+
+      const preview = await researchService.parseCSVPreview(csvData, req.researchAuditContext);
+      res.json(preview);
+    } catch (error) {
+      console.error('Error parsing CSV preview:', error);
+      res.status(500).json({ error: 'Failed to parse CSV' });
+    }
+  });
+
+  app.post('/api/v1/research-center/import/validate-mapping', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { dataType, mapping, headers } = req.body;
+      
+      if (!dataType || !mapping || !headers) {
+        return res.status(400).json({ error: 'dataType, mapping, and headers are required' });
+      }
+
+      const result = await researchService.validateColumnMapping(
+        dataType,
+        mapping,
+        headers,
+        req.researchAuditContext
+      );
+      res.json(result);
+    } catch (error) {
+      console.error('Error validating column mapping:', error);
+      res.status(500).json({ error: 'Failed to validate mapping' });
+    }
+  });
+
+  app.post('/api/v1/research-center/import/execute', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { dataType, csvData, mapping, studyId } = req.body;
+      
+      if (!dataType || !csvData || !mapping) {
+        return res.status(400).json({ error: 'dataType, csvData, and mapping are required' });
+      }
+
+      const result = await researchService.importCSVData(
+        dataType,
+        csvData,
+        mapping,
+        studyId || null,
+        req.researchAuditContext
+      );
+      res.json(result);
+    } catch (error) {
+      console.error('Error executing CSV import:', error);
+      res.status(500).json({ error: 'Failed to import data' });
+    }
+  });
+
+  app.get('/api/v1/research-center/import/history', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { studyId } = req.query;
+      const history = await researchService.getImportHistory(
+        studyId as string | undefined,
+        req.researchAuditContext
+      );
+      res.json(history);
+    } catch (error) {
+      console.error('Error fetching import history:', error);
+      res.status(500).json({ error: 'Failed to fetch import history' });
+    }
+  });
+
+  // =============================================================================
+  // DATA QUALITY ROUTES
+  // =============================================================================
+
+  app.get('/api/v1/research-center/quality/study/:studyId', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const quality = await researchService.getStudyDataQuality(
+        req.params.studyId,
+        req.researchAuditContext
+      );
+      res.json(quality);
+    } catch (error) {
+      console.error('Error fetching study data quality:', error);
+      res.status(500).json({ error: 'Failed to fetch data quality' });
+    }
+  });
+
+  app.get('/api/v1/research-center/quality/cohort/:cohortId', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const quality = await researchService.getCohortDataQuality(
+        req.params.cohortId,
+        req.researchAuditContext
+      );
+      res.json(quality);
+    } catch (error) {
+      console.error('Error fetching cohort data quality:', error);
+      res.status(500).json({ error: 'Failed to fetch data quality' });
+    }
+  });
+
+  app.get('/api/v1/research-center/quality/outliers', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { dataType, field, patientIds } = req.query;
+      
+      if (!dataType || !field) {
+        return res.status(400).json({ error: 'dataType and field are required' });
+      }
+
+      const patientIdList = patientIds ? (patientIds as string).split(',') : undefined;
+
+      const outliers = await researchService.detectOutliers(
+        dataType as string,
+        field as string,
+        patientIdList,
+        req.researchAuditContext
+      );
+      res.json(outliers);
+    } catch (error) {
+      console.error('Error detecting outliers:', error);
+      res.status(500).json({ error: 'Failed to detect outliers' });
+    }
+  });
+
+  app.get('/api/v1/research-center/quality/date-consistency/:studyId', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const report = await researchService.getDateConsistencyReport(
+        req.params.studyId,
+        req.researchAuditContext
+      );
+      res.json(report);
+    } catch (error) {
+      console.error('Error fetching date consistency report:', error);
+      res.status(500).json({ error: 'Failed to fetch date consistency report' });
+    }
+  });
+
+  app.get('/api/v1/research-center/quality/heatmap', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { studyId } = req.query;
+      const heatmap = await researchService.getDataQualityHeatmap(
+        studyId as string | undefined,
+        req.researchAuditContext
+      );
+      res.json(heatmap);
+    } catch (error) {
+      console.error('Error fetching data quality heatmap:', error);
+      res.status(500).json({ error: 'Failed to fetch heatmap' });
+    }
+  });
+
+  // =============================================================================
   // END ENHANCED RESEARCH CENTER ROUTES
   // =============================================================================
 

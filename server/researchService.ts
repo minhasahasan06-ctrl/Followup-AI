@@ -2139,6 +2139,716 @@ class ResearchService {
     
     return stats;
   }
+
+  // =============================================================================
+  // CSV IMPORT SYSTEM
+  // =============================================================================
+
+  private readonly importableDataTypes = [
+    'patients',
+    'conditions',
+    'study_enrollments',
+    'visits',
+    'measurements',
+    'environmental_exposures',
+    'immune_markers',
+  ] as const;
+
+  async parseCSVPreview(
+    csvData: string,
+    context?: AuditContext
+  ): Promise<{
+    headers: string[];
+    sampleRows: string[][];
+    totalRows: number;
+  }> {
+    const lines = csvData.split('\n').filter(line => line.trim());
+    if (lines.length === 0) {
+      return { headers: [], sampleRows: [], totalRows: 0 };
+    }
+
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    const sampleRows: string[][] = [];
+    
+    for (let i = 1; i < Math.min(lines.length, 6); i++) {
+      const values = this.parseCSVLine(lines[i]);
+      sampleRows.push(values);
+    }
+
+    await this.logAudit(context, 'csv_preview', 'import', 'preview', {
+      headerCount: headers.length,
+      totalRows: lines.length - 1,
+    });
+
+    return {
+      headers,
+      sampleRows,
+      totalRows: lines.length - 1,
+    };
+  }
+
+  private parseCSVLine(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  async getImportableDataTypes(): Promise<{
+    type: string;
+    label: string;
+    requiredFields: string[];
+    optionalFields: string[];
+  }[]> {
+    return [
+      {
+        type: 'patients',
+        label: 'Patients',
+        requiredFields: ['patient_id', 'date_of_birth', 'sex'],
+        optionalFields: ['email', 'phone', 'zip_code', 'conditions', 'immunocompromised_status'],
+      },
+      {
+        type: 'conditions',
+        label: 'Patient Conditions',
+        requiredFields: ['patient_id', 'condition_name', 'condition_code'],
+        optionalFields: ['onset_date', 'status', 'severity', 'icd10_code'],
+      },
+      {
+        type: 'study_enrollments',
+        label: 'Study Enrollments',
+        requiredFields: ['patient_id', 'study_id', 'enrollment_date'],
+        optionalFields: ['status', 'arm', 'consent_date', 'withdrawn_date', 'withdrawal_reason'],
+      },
+      {
+        type: 'visits',
+        label: 'Study Visits',
+        requiredFields: ['patient_id', 'study_id', 'visit_type', 'scheduled_date'],
+        optionalFields: ['completed_date', 'status', 'notes', 'protocol_deviation'],
+      },
+      {
+        type: 'measurements',
+        label: 'Clinical Measurements',
+        requiredFields: ['patient_id', 'measurement_type', 'value', 'date'],
+        optionalFields: ['unit', 'method', 'range_low', 'range_high', 'is_abnormal'],
+      },
+      {
+        type: 'environmental_exposures',
+        label: 'Environmental Exposures',
+        requiredFields: ['patient_id', 'location', 'date'],
+        optionalFields: ['aqi', 'temperature', 'humidity', 'pm25', 'pollen_index', 'exposure_type'],
+      },
+      {
+        type: 'immune_markers',
+        label: 'Immune Markers',
+        requiredFields: ['patient_id', 'marker_type', 'value', 'date'],
+        optionalFields: ['unit', 'reference_range', 'is_abnormal', 'lab_name'],
+      },
+    ];
+  }
+
+  async validateColumnMapping(
+    dataType: string,
+    mapping: Record<string, string>,
+    headers: string[],
+    context?: AuditContext
+  ): Promise<{
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+  }> {
+    const dataTypes = await this.getImportableDataTypes();
+    const typeConfig = dataTypes.find(t => t.type === dataType);
+    
+    if (!typeConfig) {
+      return {
+        valid: false,
+        errors: [`Unknown data type: ${dataType}`],
+        warnings: [],
+      };
+    }
+
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    for (const requiredField of typeConfig.requiredFields) {
+      if (!mapping[requiredField] || !headers.includes(mapping[requiredField])) {
+        errors.push(`Required field '${requiredField}' is not mapped to a column`);
+      }
+    }
+
+    for (const csvHeader of headers) {
+      const isMapped = Object.values(mapping).includes(csvHeader);
+      if (!isMapped) {
+        warnings.push(`Column '${csvHeader}' is not mapped and will be ignored`);
+      }
+    }
+
+    await this.logAudit(context, 'validate_mapping', 'import', dataType, {
+      mapping,
+      valid: errors.length === 0,
+      errorCount: errors.length,
+      warningCount: warnings.length,
+    });
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  }
+
+  async importCSVData(
+    dataType: string,
+    csvData: string,
+    mapping: Record<string, string>,
+    studyId: string | null,
+    context?: AuditContext
+  ): Promise<{
+    success: boolean;
+    imported: number;
+    skipped: number;
+    errors: { row: number; message: string }[];
+  }> {
+    const lines = csvData.split('\n').filter(line => line.trim());
+    if (lines.length < 2) {
+      return { success: false, imported: 0, skipped: 0, errors: [{ row: 0, message: 'No data rows found' }] };
+    }
+
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    const reverseMapping: Record<string, string> = {};
+    for (const [field, csvCol] of Object.entries(mapping)) {
+      reverseMapping[csvCol] = field;
+    }
+
+    let imported = 0;
+    let skipped = 0;
+    const errors: { row: number; message: string }[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      try {
+        const values = this.parseCSVLine(lines[i]);
+        const rowData: Record<string, string> = {};
+        
+        for (let j = 0; j < headers.length && j < values.length; j++) {
+          const field = reverseMapping[headers[j]];
+          if (field) {
+            rowData[field] = values[j];
+          }
+        }
+
+        const importResult = await this.importSingleRow(dataType, rowData, studyId, context);
+        if (importResult.success) {
+          imported++;
+        } else {
+          skipped++;
+          if (importResult.error) {
+            errors.push({ row: i + 1, message: importResult.error });
+          }
+        }
+      } catch (error) {
+        skipped++;
+        errors.push({ row: i + 1, message: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+
+    await this.logAudit(context, 'import_csv_complete', 'import', dataType, {
+      studyId,
+      totalRows: lines.length - 1,
+      imported,
+      skipped,
+      errorCount: errors.length,
+    });
+
+    return {
+      success: imported > 0,
+      imported,
+      skipped,
+      errors: errors.slice(0, 100),
+    };
+  }
+
+  private async importSingleRow(
+    dataType: string,
+    rowData: Record<string, string>,
+    studyId: string | null,
+    context?: AuditContext
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      switch (dataType) {
+        case 'study_enrollments':
+          if (!studyId && !rowData.study_id) {
+            return { success: false, error: 'study_id is required' };
+          }
+          await db.insert(studyEnrollments).values({
+            id: crypto.randomUUID(),
+            studyId: studyId || rowData.study_id,
+            patientId: rowData.patient_id,
+            enrollmentDate: new Date(rowData.enrollment_date),
+            status: (rowData.status as any) || 'enrolled',
+            arm: rowData.arm || null,
+            consentDate: rowData.consent_date ? new Date(rowData.consent_date) : null,
+            withdrawnDate: rowData.withdrawn_date ? new Date(rowData.withdrawn_date) : null,
+            withdrawalReason: rowData.withdrawal_reason || null,
+          });
+          break;
+
+        case 'visits':
+          if (!studyId && !rowData.study_id) {
+            return { success: false, error: 'study_id is required' };
+          }
+          await db.insert(visits).values({
+            id: crypto.randomUUID(),
+            patientId: rowData.patient_id,
+            studyId: studyId || rowData.study_id,
+            visitType: rowData.visit_type,
+            scheduledDate: new Date(rowData.scheduled_date),
+            completedDate: rowData.completed_date ? new Date(rowData.completed_date) : null,
+            status: (rowData.status as any) || 'scheduled',
+            notes: rowData.notes || null,
+            protocolDeviation: rowData.protocol_deviation === 'true' || rowData.protocol_deviation === '1',
+          });
+          break;
+
+        case 'immune_markers':
+          await db.insert(immuneMarkers).values({
+            id: crypto.randomUUID(),
+            patientId: rowData.patient_id,
+            markerType: rowData.marker_type,
+            value: parseFloat(rowData.value),
+            unit: rowData.unit || null,
+            date: new Date(rowData.date),
+            referenceRange: rowData.reference_range || null,
+            isAbnormal: rowData.is_abnormal === 'true' || rowData.is_abnormal === '1',
+            labName: rowData.lab_name || null,
+          });
+          break;
+
+        case 'measurements':
+          await db.insert(dailyFollowups).values({
+            id: crypto.randomUUID(),
+            patientId: rowData.patient_id,
+            date: new Date(rowData.date),
+            energyLevel: rowData.measurement_type === 'energy' ? parseInt(rowData.value) : null,
+            painLevel: rowData.measurement_type === 'pain' ? parseInt(rowData.value) : null,
+            sleepQuality: rowData.measurement_type === 'sleep' ? parseInt(rowData.value) : null,
+            moodScore: rowData.measurement_type === 'mood' ? parseInt(rowData.value) : null,
+            notes: `${rowData.measurement_type}: ${rowData.value} ${rowData.unit || ''}`,
+          });
+          break;
+
+        default:
+          return { success: false, error: `Data type '${dataType}' import not yet implemented` };
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Database error' };
+    }
+  }
+
+  async getImportHistory(
+    studyId?: string,
+    context?: AuditContext
+  ): Promise<any[]> {
+    await this.logAudit(context, 'view_import_history', 'import', 'history', { studyId });
+    return [];
+  }
+
+  // =============================================================================
+  // DATA QUALITY SERVICE
+  // =============================================================================
+
+  async getStudyDataQuality(
+    studyId: string,
+    context?: AuditContext
+  ): Promise<{
+    studyId: string;
+    overallScore: number;
+    metrics: {
+      completeness: number;
+      consistency: number;
+      validity: number;
+      timeliness: number;
+    };
+    fieldAnalysis: {
+      field: string;
+      missingPercent: number;
+      outlierPercent: number;
+      validPercent: number;
+    }[];
+    issues: {
+      severity: 'critical' | 'warning' | 'info';
+      field: string;
+      message: string;
+      affectedRecords: number;
+    }[];
+  }> {
+    const study = await db.select().from(studies).where(eq(studies.id, studyId)).limit(1);
+    if (study.length === 0) {
+      throw new Error('Study not found');
+    }
+
+    const enrollments = await db.select().from(studyEnrollments).where(eq(studyEnrollments.studyId, studyId));
+    const patientIds = enrollments.map(e => e.patientId);
+
+    const fieldAnalysis: { field: string; missingPercent: number; outlierPercent: number; validPercent: number }[] = [];
+    const issues: { severity: 'critical' | 'warning' | 'info'; field: string; message: string; affectedRecords: number }[] = [];
+
+    if (patientIds.length > 0) {
+      const followups = await db.select().from(dailyFollowups).where(inArray(dailyFollowups.patientId, patientIds));
+      
+      const energyMissing = followups.filter(f => f.energyLevel === null).length;
+      const painMissing = followups.filter(f => f.painLevel === null).length;
+      const sleepMissing = followups.filter(f => f.sleepQuality === null).length;
+      const moodMissing = followups.filter(f => f.moodScore === null).length;
+
+      const total = followups.length || 1;
+
+      fieldAnalysis.push(
+        { field: 'energyLevel', missingPercent: (energyMissing / total) * 100, outlierPercent: 0, validPercent: ((total - energyMissing) / total) * 100 },
+        { field: 'painLevel', missingPercent: (painMissing / total) * 100, outlierPercent: 0, validPercent: ((total - painMissing) / total) * 100 },
+        { field: 'sleepQuality', missingPercent: (sleepMissing / total) * 100, outlierPercent: 0, validPercent: ((total - sleepMissing) / total) * 100 },
+        { field: 'moodScore', missingPercent: (moodMissing / total) * 100, outlierPercent: 0, validPercent: ((total - moodMissing) / total) * 100 }
+      );
+
+      if (energyMissing > total * 0.5) {
+        issues.push({ severity: 'critical', field: 'energyLevel', message: 'More than 50% of energy level data is missing', affectedRecords: energyMissing });
+      } else if (energyMissing > total * 0.2) {
+        issues.push({ severity: 'warning', field: 'energyLevel', message: 'More than 20% of energy level data is missing', affectedRecords: energyMissing });
+      }
+
+      const outOfRangeEnergy = followups.filter(f => f.energyLevel !== null && (f.energyLevel < 1 || f.energyLevel > 10)).length;
+      if (outOfRangeEnergy > 0) {
+        issues.push({ severity: 'warning', field: 'energyLevel', message: 'Values outside expected range (1-10)', affectedRecords: outOfRangeEnergy });
+        const idx = fieldAnalysis.findIndex(f => f.field === 'energyLevel');
+        if (idx >= 0) fieldAnalysis[idx].outlierPercent = (outOfRangeEnergy / total) * 100;
+      }
+    }
+
+    const completeness = fieldAnalysis.length > 0 
+      ? fieldAnalysis.reduce((sum, f) => sum + f.validPercent, 0) / fieldAnalysis.length 
+      : 100;
+    
+    const criticalCount = issues.filter(i => i.severity === 'critical').length;
+    const warningCount = issues.filter(i => i.severity === 'warning').length;
+    
+    const overallScore = Math.max(0, Math.min(100, 
+      completeness * 0.4 + 
+      (100 - criticalCount * 20 - warningCount * 5) * 0.3 + 
+      100 * 0.3
+    ));
+
+    await this.logAudit(context, 'data_quality_check', 'study', studyId, {
+      overallScore,
+      enrollmentCount: enrollments.length,
+      issueCount: issues.length,
+    });
+
+    return {
+      studyId,
+      overallScore,
+      metrics: {
+        completeness,
+        consistency: 100 - criticalCount * 10,
+        validity: 100 - warningCount * 5,
+        timeliness: 100,
+      },
+      fieldAnalysis,
+      issues,
+    };
+  }
+
+  async getCohortDataQuality(
+    cohortId: string,
+    context?: AuditContext
+  ): Promise<{
+    cohortId: string;
+    patientCount: number;
+    dataTypeCompletion: Record<string, { available: number; total: number; percent: number }>;
+    overallCompleteness: number;
+  }> {
+    const cohort = await db.select().from(cohorts).where(eq(cohorts.id, cohortId)).limit(1);
+    if (cohort.length === 0) {
+      throw new Error('Cohort not found');
+    }
+
+    const patientIds = (cohort[0].patientIds as string[]) || [];
+    const dataTypeCompletion: Record<string, { available: number; total: number; percent: number }> = {};
+    
+    const total = patientIds.length || 1;
+
+    if (patientIds.length > 0) {
+      const followupPatients = await db
+        .selectDistinct({ patientId: dailyFollowups.patientId })
+        .from(dailyFollowups)
+        .where(inArray(dailyFollowups.patientId, patientIds));
+      dataTypeCompletion.dailyFollowups = {
+        available: followupPatients.length,
+        total,
+        percent: (followupPatients.length / total) * 100,
+      };
+
+      const alertPatients = await db
+        .selectDistinct({ patientId: interactionAlerts.patientId })
+        .from(interactionAlerts)
+        .where(inArray(interactionAlerts.patientId, patientIds));
+      dataTypeCompletion.healthAlerts = {
+        available: alertPatients.length,
+        total,
+        percent: (alertPatients.length / total) * 100,
+      };
+
+      const immunePatients = await db
+        .selectDistinct({ patientId: immuneMarkers.patientId })
+        .from(immuneMarkers)
+        .where(inArray(immuneMarkers.patientId, patientIds));
+      dataTypeCompletion.immuneMarkers = {
+        available: immunePatients.length,
+        total,
+        percent: (immunePatients.length / total) * 100,
+      };
+    }
+
+    const completionValues = Object.values(dataTypeCompletion);
+    const overallCompleteness = completionValues.length > 0
+      ? completionValues.reduce((sum, c) => sum + c.percent, 0) / completionValues.length
+      : 0;
+
+    await this.logAudit(context, 'cohort_quality_check', 'cohort', cohortId, {
+      patientCount: patientIds.length,
+      overallCompleteness,
+    });
+
+    return {
+      cohortId,
+      patientCount: patientIds.length,
+      dataTypeCompletion,
+      overallCompleteness,
+    };
+  }
+
+  async detectOutliers(
+    dataType: string,
+    field: string,
+    patientIds?: string[],
+    context?: AuditContext
+  ): Promise<{
+    field: string;
+    statistics: {
+      mean: number;
+      stdDev: number;
+      min: number;
+      max: number;
+      q1: number;
+      median: number;
+      q3: number;
+    };
+    outliers: { patientId: string; value: number; zScore: number }[];
+    iqrOutliers: { patientId: string; value: number }[];
+  }> {
+    let values: { patientId: string; value: number }[] = [];
+
+    if (dataType === 'dailyFollowups') {
+      let query = db.select({ patientId: dailyFollowups.patientId, value: dailyFollowups.energyLevel }).from(dailyFollowups);
+      if (patientIds && patientIds.length > 0) {
+        query = db.select({ patientId: dailyFollowups.patientId, value: dailyFollowups.energyLevel }).from(dailyFollowups).where(inArray(dailyFollowups.patientId, patientIds));
+      }
+      const rows = await query;
+      values = rows.filter(r => r.value !== null).map(r => ({ patientId: r.patientId, value: r.value as number }));
+    } else if (dataType === 'immuneMarkers') {
+      let query = db.select({ patientId: immuneMarkers.patientId, value: immuneMarkers.value }).from(immuneMarkers);
+      if (patientIds && patientIds.length > 0) {
+        query = db.select({ patientId: immuneMarkers.patientId, value: immuneMarkers.value }).from(immuneMarkers).where(inArray(immuneMarkers.patientId, patientIds));
+      }
+      const rows = await query;
+      values = rows.map(r => ({ patientId: r.patientId, value: r.value }));
+    }
+
+    if (values.length === 0) {
+      return {
+        field,
+        statistics: { mean: 0, stdDev: 0, min: 0, max: 0, q1: 0, median: 0, q3: 0 },
+        outliers: [],
+        iqrOutliers: [],
+      };
+    }
+
+    const numericValues = values.map(v => v.value).sort((a, b) => a - b);
+    const n = numericValues.length;
+    const mean = numericValues.reduce((a, b) => a + b, 0) / n;
+    const variance = numericValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / n;
+    const stdDev = Math.sqrt(variance);
+    const min = numericValues[0];
+    const max = numericValues[n - 1];
+    const q1 = numericValues[Math.floor(n * 0.25)];
+    const median = numericValues[Math.floor(n * 0.5)];
+    const q3 = numericValues[Math.floor(n * 0.75)];
+    const iqr = q3 - q1;
+
+    const outliers = values
+      .map(v => ({ ...v, zScore: stdDev > 0 ? (v.value - mean) / stdDev : 0 }))
+      .filter(v => Math.abs(v.zScore) > 3);
+
+    const iqrOutliers = values.filter(v => v.value < q1 - 1.5 * iqr || v.value > q3 + 1.5 * iqr);
+
+    await this.logAudit(context, 'outlier_detection', dataType, field, {
+      valueCount: values.length,
+      outlierCount: outliers.length,
+      iqrOutlierCount: iqrOutliers.length,
+    });
+
+    return {
+      field,
+      statistics: { mean, stdDev, min, max, q1, median, q3 },
+      outliers,
+      iqrOutliers,
+    };
+  }
+
+  async getDateConsistencyReport(
+    studyId: string,
+    context?: AuditContext
+  ): Promise<{
+    studyId: string;
+    issues: {
+      type: 'future_date' | 'pre_enrollment' | 'post_withdrawal' | 'invalid_sequence';
+      description: string;
+      affectedRecords: number;
+      examples: { patientId: string; date: string }[];
+    }[];
+    totalIssues: number;
+  }> {
+    const enrollments = await db.select().from(studyEnrollments).where(eq(studyEnrollments.studyId, studyId));
+    const issues: {
+      type: 'future_date' | 'pre_enrollment' | 'post_withdrawal' | 'invalid_sequence';
+      description: string;
+      affectedRecords: number;
+      examples: { patientId: string; date: string }[];
+    }[] = [];
+
+    const now = new Date();
+    let totalIssues = 0;
+
+    for (const enrollment of enrollments) {
+      const followups = await db.select().from(dailyFollowups).where(eq(dailyFollowups.patientId, enrollment.patientId));
+      
+      const futureDates = followups.filter(f => f.date > now);
+      if (futureDates.length > 0) {
+        issues.push({
+          type: 'future_date',
+          description: 'Records with dates in the future',
+          affectedRecords: futureDates.length,
+          examples: futureDates.slice(0, 3).map(f => ({ patientId: enrollment.patientId, date: f.date.toISOString() })),
+        });
+        totalIssues += futureDates.length;
+      }
+
+      const preEnrollment = followups.filter(f => f.date < enrollment.enrollmentDate);
+      if (preEnrollment.length > 0) {
+        issues.push({
+          type: 'pre_enrollment',
+          description: 'Records dated before enrollment',
+          affectedRecords: preEnrollment.length,
+          examples: preEnrollment.slice(0, 3).map(f => ({ patientId: enrollment.patientId, date: f.date.toISOString() })),
+        });
+        totalIssues += preEnrollment.length;
+      }
+
+      if (enrollment.withdrawnDate) {
+        const postWithdrawal = followups.filter(f => f.date > enrollment.withdrawnDate!);
+        if (postWithdrawal.length > 0) {
+          issues.push({
+            type: 'post_withdrawal',
+            description: 'Records dated after withdrawal',
+            affectedRecords: postWithdrawal.length,
+            examples: postWithdrawal.slice(0, 3).map(f => ({ patientId: enrollment.patientId, date: f.date.toISOString() })),
+          });
+          totalIssues += postWithdrawal.length;
+        }
+      }
+    }
+
+    await this.logAudit(context, 'date_consistency_check', 'study', studyId, {
+      enrollmentCount: enrollments.length,
+      totalIssues,
+    });
+
+    return {
+      studyId,
+      issues,
+      totalIssues,
+    };
+  }
+
+  async getDataQualityHeatmap(
+    studyId?: string,
+    context?: AuditContext
+  ): Promise<{
+    dataTypes: string[];
+    patients: string[];
+    heatmap: Record<string, Record<string, number>>;
+  }> {
+    const dataTypes = ['dailyFollowups', 'healthAlerts', 'immuneMarkers', 'painTracking', 'symptomJournal'];
+    
+    let patientIds: string[] = [];
+    if (studyId) {
+      const enrollments = await db.select().from(studyEnrollments).where(eq(studyEnrollments.studyId, studyId));
+      patientIds = enrollments.map(e => e.patientId);
+    } else {
+      const profiles = await db.select({ userId: patientProfiles.userId }).from(patientProfiles).limit(50);
+      patientIds = profiles.map(p => p.userId);
+    }
+
+    const heatmap: Record<string, Record<string, number>> = {};
+
+    for (const patientId of patientIds.slice(0, 20)) {
+      heatmap[patientId] = {};
+      
+      const followupCount = await db.select({ count: sql<number>`count(*)` }).from(dailyFollowups).where(eq(dailyFollowups.patientId, patientId));
+      heatmap[patientId].dailyFollowups = Math.min(100, Number(followupCount[0]?.count || 0) * 10);
+
+      const alertCount = await db.select({ count: sql<number>`count(*)` }).from(interactionAlerts).where(eq(interactionAlerts.patientId, patientId));
+      heatmap[patientId].healthAlerts = Math.min(100, Number(alertCount[0]?.count || 0) * 20);
+
+      const immuneCount = await db.select({ count: sql<number>`count(*)` }).from(immuneMarkers).where(eq(immuneMarkers.patientId, patientId));
+      heatmap[patientId].immuneMarkers = Math.min(100, Number(immuneCount[0]?.count || 0) * 15);
+
+      const painCount = await db.select({ count: sql<number>`count(*)` }).from(paintrackSessions).where(eq(paintrackSessions.userId, patientId));
+      heatmap[patientId].painTracking = Math.min(100, Number(painCount[0]?.count || 0) * 15);
+
+      const symptomCount = await db.select({ count: sql<number>`count(*)` }).from(symptomCheckins).where(eq(symptomCheckins.userId, patientId));
+      heatmap[patientId].symptomJournal = Math.min(100, Number(symptomCount[0]?.count || 0) * 10);
+    }
+
+    await this.logAudit(context, 'data_quality_heatmap', 'research', studyId || 'all', {
+      patientCount: Object.keys(heatmap).length,
+      dataTypeCount: dataTypes.length,
+    });
+
+    return {
+      dataTypes,
+      patients: Object.keys(heatmap),
+      heatmap,
+    };
+  }
 }
 
 export let researchService: ResearchService = new ResearchService();

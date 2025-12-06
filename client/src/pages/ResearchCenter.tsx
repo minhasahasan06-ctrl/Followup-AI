@@ -64,6 +64,406 @@ interface ResearchStudy {
   data_types: string[];
 }
 
+interface ImportableDataType {
+  type: string;
+  label: string;
+  requiredFields: string[];
+  optionalFields: string[];
+}
+
+interface CSVPreview {
+  headers: string[];
+  sampleRows: string[][];
+  totalRows: number;
+}
+
+interface ImportResult {
+  success: boolean;
+  imported: number;
+  skipped: number;
+  errors: { row: number; message: string }[];
+}
+
+function CSVImportTab() {
+  const { toast } = useToast();
+  const [step, setStep] = useState<'upload' | 'map' | 'review' | 'result'>('upload');
+  const [csvData, setCsvData] = useState<string>('');
+  const [selectedDataType, setSelectedDataType] = useState<string>('');
+  const [selectedStudyId, setSelectedStudyId] = useState<string>('');
+  const [preview, setPreview] = useState<CSVPreview | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [validationResult, setValidationResult] = useState<{ valid: boolean; errors: string[]; warnings: string[] } | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
+  const { data: dataTypes } = useQuery<ImportableDataType[]>({
+    queryKey: ['/api/v1/research-center/import/data-types'],
+  });
+
+  const { data: studies } = useQuery<ResearchStudy[]>({
+    queryKey: ['/api/research/studies'],
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: async (data: string) => {
+      const response = await apiRequest('POST', '/api/v1/research-center/import/preview', { csvData: data });
+      return response.json();
+    },
+    onSuccess: (data: CSVPreview) => {
+      setPreview(data);
+      if (data.headers.length > 0) {
+        setStep('map');
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error parsing CSV', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const validateMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', '/api/v1/research-center/import/validate-mapping', {
+        dataType: selectedDataType,
+        mapping,
+        headers: preview?.headers || [],
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setValidationResult(data);
+      if (data.valid) {
+        setStep('review');
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Validation Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', '/api/v1/research-center/import/execute', {
+        dataType: selectedDataType,
+        csvData,
+        mapping,
+        studyId: selectedStudyId || null,
+      });
+      return response.json();
+    },
+    onSuccess: (data: ImportResult) => {
+      setImportResult(data);
+      setStep('result');
+      if (data.success) {
+        toast({ title: 'Import Complete', description: `${data.imported} records imported successfully` });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Import Failed', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        setCsvData(text);
+        previewMutation.mutate(text);
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleMappingChange = (field: string, csvColumn: string) => {
+    setMapping(prev => ({ ...prev, [field]: csvColumn }));
+  };
+
+  const resetImport = () => {
+    setStep('upload');
+    setCsvData('');
+    setSelectedDataType('');
+    setSelectedStudyId('');
+    setPreview(null);
+    setMapping({});
+    setValidationResult(null);
+    setImportResult(null);
+  };
+
+  const selectedType = dataTypes?.find(t => t.type === selectedDataType);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Upload className="h-5 w-5" />
+          CSV Data Import
+        </CardTitle>
+        <CardDescription>
+          Import research data from CSV files with column mapping
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex gap-2 mb-6">
+          <Badge variant={step === 'upload' ? 'default' : 'secondary'}>1. Upload</Badge>
+          <Badge variant={step === 'map' ? 'default' : 'secondary'}>2. Map Columns</Badge>
+          <Badge variant={step === 'review' ? 'default' : 'secondary'}>3. Review</Badge>
+          <Badge variant={step === 'result' ? 'default' : 'secondary'}>4. Result</Badge>
+        </div>
+
+        {step === 'upload' && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="dataType">Data Type</Label>
+              <Select value={selectedDataType} onValueChange={setSelectedDataType}>
+                <SelectTrigger data-testid="select-data-type">
+                  <SelectValue placeholder="Select data type to import" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dataTypes?.map(dt => (
+                    <SelectItem key={dt.type} value={dt.type}>{dt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {['study_enrollments', 'visits'].includes(selectedDataType) && (
+              <div className="space-y-2">
+                <Label htmlFor="studyId">Study (Optional)</Label>
+                <Select value={selectedStudyId} onValueChange={setSelectedStudyId}>
+                  <SelectTrigger data-testid="select-study">
+                    <SelectValue placeholder="Select study" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {studies?.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {selectedType && (
+              <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+                <p className="text-sm font-medium">Required Fields:</p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedType.requiredFields.map(f => (
+                    <Badge key={f} variant="outline">{f}</Badge>
+                  ))}
+                </div>
+                {selectedType.optionalFields.length > 0 && (
+                  <>
+                    <p className="text-sm font-medium mt-2">Optional Fields:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedType.optionalFields.map(f => (
+                        <Badge key={f} variant="secondary">{f}</Badge>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="csvFile">Upload CSV File</Label>
+              <Input
+                id="csvFile"
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+                disabled={!selectedDataType || previewMutation.isPending}
+                data-testid="input-csv-file"
+              />
+            </div>
+
+            {previewMutation.isPending && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Parsing CSV...
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 'map' && preview && selectedType && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {preview.totalRows} rows found with {preview.headers.length} columns
+              </p>
+              <Button variant="ghost" size="sm" onClick={resetImport} data-testid="button-reset-import">
+                Start Over
+              </Button>
+            </div>
+
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Field</TableHead>
+                    <TableHead>CSV Column</TableHead>
+                    <TableHead>Required</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...selectedType.requiredFields, ...selectedType.optionalFields].map(field => (
+                    <TableRow key={field}>
+                      <TableCell className="font-medium">{field}</TableCell>
+                      <TableCell>
+                        <Select 
+                          value={mapping[field] || ''} 
+                          onValueChange={(v) => handleMappingChange(field, v)}
+                        >
+                          <SelectTrigger className="w-48" data-testid={`select-map-${field}`}>
+                            <SelectValue placeholder="Select column" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {preview.headers.map(h => (
+                              <SelectItem key={h} value={h}>{h}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        {selectedType.requiredFields.includes(field) ? (
+                          <Badge variant="destructive">Required</Badge>
+                        ) : (
+                          <Badge variant="secondary">Optional</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Sample Data Preview:</p>
+              <div className="border rounded-lg overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {preview.headers.map(h => (
+                        <TableHead key={h}>{h}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {preview.sampleRows.slice(0, 3).map((row, i) => (
+                      <TableRow key={i}>
+                        {row.map((cell, j) => (
+                          <TableCell key={j} className="text-sm">{cell}</TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            {validationResult && !validationResult.valid && (
+              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-medium text-destructive">Validation Errors:</p>
+                {validationResult.errors.map((e, i) => (
+                  <p key={i} className="text-sm text-destructive">{e}</p>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={resetImport} data-testid="button-back-upload">
+                Back
+              </Button>
+              <Button 
+                onClick={() => validateMutation.mutate()} 
+                disabled={validateMutation.isPending}
+                data-testid="button-validate-mapping"
+              >
+                {validateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Validate Mapping
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 'review' && preview && (
+          <div className="space-y-4">
+            <div className="bg-muted/50 p-4 rounded-lg space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <p className="font-medium">Ready to Import</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><span className="text-muted-foreground">Data Type:</span> {selectedType?.label}</div>
+                <div><span className="text-muted-foreground">Total Rows:</span> {preview.totalRows}</div>
+                <div><span className="text-muted-foreground">Fields Mapped:</span> {Object.keys(mapping).length}</div>
+                {selectedStudyId && <div><span className="text-muted-foreground">Study:</span> {studies?.find(s => s.id === selectedStudyId)?.title}</div>}
+              </div>
+            </div>
+
+            {validationResult?.warnings && validationResult.warnings.length > 0 && (
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-medium text-yellow-700">Warnings:</p>
+                {validationResult.warnings.map((w, i) => (
+                  <p key={i} className="text-sm text-yellow-700">{w}</p>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setStep('map')} data-testid="button-back-map">
+                Back to Mapping
+              </Button>
+              <Button 
+                onClick={() => importMutation.mutate()} 
+                disabled={importMutation.isPending}
+                data-testid="button-execute-import"
+              >
+                {importMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Import Data
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 'result' && importResult && (
+          <div className="space-y-4">
+            <div className={`p-4 rounded-lg ${importResult.success ? 'bg-green-500/10 border border-green-500/20' : 'bg-destructive/10 border border-destructive/20'}`}>
+              <div className="flex items-center gap-2 mb-3">
+                {importResult.success ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-destructive" />
+                )}
+                <p className="font-medium">{importResult.success ? 'Import Successful' : 'Import Completed with Issues'}</p>
+              </div>
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <div><span className="text-muted-foreground">Imported:</span> <span className="font-medium text-green-600">{importResult.imported}</span></div>
+                <div><span className="text-muted-foreground">Skipped:</span> <span className="font-medium text-yellow-600">{importResult.skipped}</span></div>
+                <div><span className="text-muted-foreground">Errors:</span> <span className="font-medium text-red-600">{importResult.errors.length}</span></div>
+              </div>
+            </div>
+
+            {importResult.errors.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Errors (first 10):</p>
+                <ScrollArea className="h-40 border rounded-lg p-2">
+                  {importResult.errors.slice(0, 10).map((e, i) => (
+                    <p key={i} className="text-sm text-destructive">Row {e.row}: {e.message}</p>
+                  ))}
+                </ScrollArea>
+              </div>
+            )}
+
+            <Button onClick={resetImport} data-testid="button-new-import">
+              Start New Import
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ResearchCenter() {
   const { toast } = useToast();
   const [reportTitle, setReportTitle] = useState("");
@@ -310,7 +710,7 @@ export default function ResearchCenter() {
       </div>
 
       <Tabs defaultValue="cohort" className="space-y-6">
-        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+        <TabsList className="grid w-full max-w-3xl grid-cols-5">
           <TabsTrigger value="cohort" className="gap-2" data-testid="tab-cohort">
             <Users className="h-4 w-4" />
             Cohort
@@ -318,6 +718,10 @@ export default function ResearchCenter() {
           <TabsTrigger value="studies" className="gap-2" data-testid="tab-studies">
             <Beaker className="h-4 w-4" />
             Studies
+          </TabsTrigger>
+          <TabsTrigger value="import" className="gap-2" data-testid="tab-import">
+            <Upload className="h-4 w-4" />
+            Import
           </TabsTrigger>
           <TabsTrigger value="generate" className="gap-2" data-testid="tab-generate">
             <Bot className="h-4 w-4" />
@@ -606,6 +1010,10 @@ export default function ResearchCenter() {
               </Button>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="import">
+          <CSVImportTab />
         </TabsContent>
 
         <TabsContent value="reports">
