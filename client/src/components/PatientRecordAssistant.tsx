@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PatientEnvironmentRiskCard } from "./PatientEnvironmentRiskCard";
 import { 
   Search, 
   User, 
@@ -34,7 +35,8 @@ import {
   Brain,
   Zap,
   CheckCircle2,
-  ClipboardList
+  ClipboardList,
+  CloudSun
 } from "lucide-react";
 import { format, parseISO, differenceInYears, formatDistanceToNow } from "date-fns";
 
@@ -393,7 +395,7 @@ export function PatientRecordAssistant({ onOpenLysa, className }: PatientRecordA
             </div>
           ) : patientRecord ? (
             <Tabs defaultValue="info" className="w-full">
-              <TabsList className="grid w-full grid-cols-5 mb-4">
+              <TabsList className="grid w-full grid-cols-6 mb-4">
                 <TabsTrigger value="info" data-testid="tab-patient-info">Info</TabsTrigger>
                 <TabsTrigger value="medical" data-testid="tab-patient-medical">Medical</TabsTrigger>
                 <TabsTrigger value="alerts" data-testid="tab-patient-alerts" className="relative">
@@ -403,6 +405,10 @@ export function PatientRecordAssistant({ onOpenLysa, className }: PatientRecordA
                       {criticalAlerts.length}
                     </span>
                   )}
+                </TabsTrigger>
+                <TabsTrigger value="environment" data-testid="tab-patient-environment">
+                  <CloudSun className="h-4 w-4 mr-1" />
+                  Environ
                 </TabsTrigger>
                 <TabsTrigger value="followups" data-testid="tab-patient-followups">Followups</TabsTrigger>
                 <TabsTrigger value="appointments" data-testid="tab-patient-appointments">Appts</TabsTrigger>
@@ -635,6 +641,10 @@ export function PatientRecordAssistant({ onOpenLysa, className }: PatientRecordA
                     )}
                   </>
                 )}
+              </TabsContent>
+
+              <TabsContent value="environment" className="space-y-4 mt-0">
+                <PatientEnvironmentRiskCard patientId={selectedPatientId} />
               </TabsContent>
 
               <TabsContent value="followups" className="space-y-4 mt-0">

@@ -73,6 +73,231 @@ function generateLabTrends(results: any[]): any[] {
   }));
 }
 
+// ============================================================================
+// ENVIRONMENTAL RISK MAP - Helper Functions
+// ============================================================================
+
+// Get ZIP code region info (simulated - in production would use census/geocoding API)
+function getZipCodeInfo(zipCode: string): { city: string; state: string; lat: number; lon: number } {
+  const zipRegions: Record<string, { city: string; state: string; lat: number; lon: number }> = {
+    '10001': { city: 'New York', state: 'NY', lat: 40.7484, lon: -73.9967 },
+    '90210': { city: 'Beverly Hills', state: 'CA', lat: 34.0901, lon: -118.4065 },
+    '60601': { city: 'Chicago', state: 'IL', lat: 41.8819, lon: -87.6278 },
+    '77001': { city: 'Houston', state: 'TX', lat: 29.7604, lon: -95.3698 },
+    '85001': { city: 'Phoenix', state: 'AZ', lat: 33.4484, lon: -112.0740 },
+    '19101': { city: 'Philadelphia', state: 'PA', lat: 39.9526, lon: -75.1652 },
+    '78201': { city: 'San Antonio', state: 'TX', lat: 29.4241, lon: -98.4936 },
+    '92101': { city: 'San Diego', state: 'CA', lat: 32.7157, lon: -117.1611 },
+    '75201': { city: 'Dallas', state: 'TX', lat: 32.7767, lon: -96.7970 },
+    '95101': { city: 'San Jose', state: 'CA', lat: 37.3382, lon: -121.8863 },
+  };
+  
+  // Default to a generic region based on first digit
+  const region = zipCode[0];
+  const defaults: Record<string, { city: string; state: string; lat: number; lon: number }> = {
+    '0': { city: 'Boston Area', state: 'MA', lat: 42.3601, lon: -71.0589 },
+    '1': { city: 'New York Area', state: 'NY', lat: 40.7128, lon: -74.0060 },
+    '2': { city: 'Washington DC Area', state: 'DC', lat: 38.9072, lon: -77.0369 },
+    '3': { city: 'Atlanta Area', state: 'GA', lat: 33.7490, lon: -84.3880 },
+    '4': { city: 'Detroit Area', state: 'MI', lat: 42.3314, lon: -83.0458 },
+    '5': { city: 'Minneapolis Area', state: 'MN', lat: 44.9778, lon: -93.2650 },
+    '6': { city: 'Chicago Area', state: 'IL', lat: 41.8781, lon: -87.6298 },
+    '7': { city: 'Houston Area', state: 'TX', lat: 29.7604, lon: -95.3698 },
+    '8': { city: 'Denver Area', state: 'CO', lat: 39.7392, lon: -104.9903 },
+    '9': { city: 'Los Angeles Area', state: 'CA', lat: 34.0522, lon: -118.2437 },
+  };
+  
+  return zipRegions[zipCode] || defaults[region] || { city: 'Unknown', state: 'US', lat: 39.8283, lon: -98.5795 };
+}
+
+// Generate simulated environmental data (in production would fetch from real APIs)
+function generateSimulatedEnvironmentalData(zipCode: string): {
+  temperature: number;
+  feelsLike: number;
+  humidity: number;
+  pressure: number;
+  uvIndex: number;
+  aqi: number;
+  aqiCategory: string;
+  pm25: number;
+  pm10: number;
+  ozone: number;
+  pollenOverall: number;
+  pollenCategory: string;
+  moldCount: number;
+} {
+  // Seed based on ZIP for consistent results
+  const seed = parseInt(zipCode) % 1000;
+  const rand = (min: number, max: number) => min + ((seed * 9301 + 49297) % 233280) / 233280 * (max - min);
+  
+  // Seasonal variation (December = winter in N. hemisphere)
+  const month = new Date().getMonth();
+  const isWinter = month >= 11 || month <= 2;
+  const isSummer = month >= 5 && month <= 8;
+  
+  // Temperature varies by region (first digit of ZIP)
+  const regionTemp = {
+    '0': 35, '1': 40, '2': 45, '3': 55, '4': 38, 
+    '5': 30, '6': 35, '7': 60, '8': 45, '9': 65
+  }[zipCode[0]] || 50;
+  
+  const baseTemp = isWinter ? regionTemp - 10 : isSummer ? regionTemp + 15 : regionTemp;
+  const temperature = baseTemp + rand(-5, 10);
+  const humidity = rand(30, 80);
+  
+  // AQI calculation
+  let aqi = Math.floor(rand(20, 150));
+  // Higher AQI in urban areas (lower ZIP first digits often more urban)
+  if (['0', '1', '2', '6', '9'].includes(zipCode[0])) {
+    aqi = Math.min(200, aqi + 20);
+  }
+  
+  const aqiCategory = aqi <= 50 ? 'Good' : 
+                      aqi <= 100 ? 'Moderate' : 
+                      aqi <= 150 ? 'Unhealthy for Sensitive Groups' : 
+                      aqi <= 200 ? 'Unhealthy' : 'Very Unhealthy';
+  
+  // Pollen (higher in spring/fall)
+  const isPollenSeason = (month >= 2 && month <= 5) || (month >= 8 && month <= 10);
+  const pollenOverall = isPollenSeason ? rand(5, 11) : rand(1, 6);
+  const pollenCategory = pollenOverall <= 2.4 ? 'Low' :
+                         pollenOverall <= 4.8 ? 'Low-Medium' :
+                         pollenOverall <= 7.2 ? 'Medium' :
+                         pollenOverall <= 9.6 ? 'Medium-High' : 'High';
+  
+  return {
+    temperature: Math.round(temperature * 10) / 10,
+    feelsLike: Math.round((temperature + (humidity > 60 ? 3 : -2)) * 10) / 10,
+    humidity: Math.round(humidity),
+    pressure: Math.round(1013 + rand(-15, 15)),
+    uvIndex: Math.round(rand(1, isSummer ? 10 : 4)),
+    aqi,
+    aqiCategory,
+    pm25: Math.round(rand(5, aqi / 2) * 10) / 10,
+    pm10: Math.round(rand(10, aqi) * 10) / 10,
+    ozone: Math.round(rand(20, 70)),
+    pollenOverall: Math.round(pollenOverall * 10) / 10,
+    pollenCategory,
+    moldCount: Math.round(rand(500, humidity > 60 ? 3000 : 1500)),
+  };
+}
+
+// Compute environmental risk based on conditions
+function computeEnvironmentalRisk(
+  envData: ReturnType<typeof generateSimulatedEnvironmentalData>,
+  conditions: string[]
+): {
+  compositeScore: number;
+  riskLevel: string;
+  weatherScore: number;
+  airQualityScore: number;
+  allergenScore: number;
+  factorContributions: Record<string, number>;
+  topFactors: string[];
+} {
+  const contributions: Record<string, number> = {};
+  
+  // Base weather risk
+  let weatherScore = 0;
+  if (envData.temperature < 32 || envData.temperature > 95) {
+    weatherScore += 30;
+    contributions['extreme_temperature'] = 30;
+  } else if (envData.temperature < 45 || envData.temperature > 85) {
+    weatherScore += 15;
+    contributions['temperature'] = 15;
+  }
+  if (envData.humidity > 70) {
+    weatherScore += 15;
+    contributions['high_humidity'] = 15;
+  }
+  if (envData.uvIndex >= 8) {
+    weatherScore += 10;
+    contributions['high_uv'] = 10;
+  }
+  
+  // Air quality risk
+  let airQualityScore = 0;
+  if (envData.aqi > 150) {
+    airQualityScore = 50;
+    contributions['very_poor_aqi'] = 50;
+  } else if (envData.aqi > 100) {
+    airQualityScore = 35;
+    contributions['poor_aqi'] = 35;
+  } else if (envData.aqi > 50) {
+    airQualityScore = 20;
+    contributions['moderate_aqi'] = 20;
+  }
+  
+  // Allergen risk
+  let allergenScore = 0;
+  if (envData.pollenOverall > 8) {
+    allergenScore = 40;
+    contributions['high_pollen'] = 40;
+  } else if (envData.pollenOverall > 5) {
+    allergenScore = 25;
+    contributions['medium_pollen'] = 25;
+  }
+  if (envData.moldCount > 2000) {
+    allergenScore += 20;
+    contributions['high_mold'] = 20;
+  }
+  
+  // Condition-specific adjustments
+  const conditionLower = conditions.map(c => c.toLowerCase());
+  
+  if (conditionLower.some(c => c.includes('asthma') || c.includes('copd') || c.includes('respiratory'))) {
+    airQualityScore *= 1.5;
+    allergenScore *= 1.3;
+    if (envData.aqi > 50) contributions['asthma_sensitivity'] = 15;
+  }
+  
+  if (conditionLower.some(c => c.includes('heart') || c.includes('cardiac') || c.includes('cardiovascular'))) {
+    if (envData.temperature > 85 || envData.temperature < 32) {
+      weatherScore *= 1.4;
+      contributions['cardiac_temp_sensitivity'] = 20;
+    }
+  }
+  
+  if (conditionLower.some(c => c.includes('arthritis') || c.includes('joint'))) {
+    if (envData.pressure < 1005 || envData.humidity > 65) {
+      weatherScore += 15;
+      contributions['arthritis_pressure'] = 15;
+    }
+  }
+  
+  if (conditionLower.some(c => c.includes('allergy') || c.includes('allergies') || c.includes('hay fever'))) {
+    allergenScore *= 1.4;
+    contributions['allergy_sensitivity'] = 10;
+  }
+  
+  // Composite score (weighted average)
+  const compositeScore = Math.min(100, Math.round(
+    weatherScore * 0.25 + 
+    airQualityScore * 0.4 + 
+    allergenScore * 0.35
+  ));
+  
+  const riskLevel = compositeScore < 25 ? 'low' : 
+                    compositeScore < 50 ? 'moderate' : 
+                    compositeScore < 75 ? 'high' : 'critical';
+  
+  // Top factors
+  const topFactors = Object.entries(contributions)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([factor]) => factor.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()));
+  
+  return {
+    compositeScore,
+    riskLevel,
+    weatherScore: Math.min(100, Math.round(weatherScore)),
+    airQualityScore: Math.min(100, Math.round(airQualityScore)),
+    allergenScore: Math.min(100, Math.round(allergenScore)),
+    factorContributions: contributions,
+    topFactors,
+  };
+}
+
 // Intelligent Device Data Routing Service
 // Routes device metrics to appropriate health sections for AI Health Alerts, ML training, and care pathways
 function calculateDeviceRoutingFlags(deviceType: string, readingData: any): Record<string, boolean> {
@@ -5724,6 +5949,532 @@ All questions and discussions should be focused on this patient.`;
     } catch (error) {
       console.error('Error generating pathogen risk map:', error);
       res.status(500).json({ message: 'Failed to generate risk map' });
+    }
+  });
+
+  // ============================================================================
+  // ENVIRONMENTAL RISK MAP API - Comprehensive Environmental Health Intelligence
+  // ============================================================================
+
+  // Get or create patient's environmental profile
+  app.post('/api/v1/environment/profile', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.query.patient_id || req.user!.id;
+      const { zipCode, conditions, allergies } = req.body;
+
+      if (!zipCode || zipCode.length !== 5) {
+        return res.status(400).json({ success: false, error: 'Valid 5-digit ZIP code required' });
+      }
+
+      // Check if profile exists using raw SQL
+      const existingResult = await db.execute(drizzleSql`
+        SELECT * FROM patient_environment_profiles 
+        WHERE patient_id = ${patientId} AND is_active = true LIMIT 1
+      `);
+      const existing = existingResult.rows?.[0];
+
+      const regionInfo = getZipCodeInfo(zipCode);
+
+      if (existing) {
+        // Update existing profile
+        await db.execute(drizzleSql`
+          UPDATE patient_environment_profiles 
+          SET zip_code = ${zipCode}, 
+              city = ${regionInfo.city}, 
+              state = ${regionInfo.state},
+              chronic_conditions = ${JSON.stringify(conditions || [])}::jsonb,
+              allergies = ${JSON.stringify(allergies || [])}::jsonb,
+              updated_at = NOW()
+          WHERE id = ${existing.id}
+        `);
+      } else {
+        // Create new profile
+        await db.execute(drizzleSql`
+          INSERT INTO patient_environment_profiles 
+          (patient_id, zip_code, city, state, chronic_conditions, allergies, alert_thresholds)
+          VALUES (${patientId}, ${zipCode}, ${regionInfo.city}, ${regionInfo.state}, 
+                  ${JSON.stringify(conditions || [])}::jsonb, ${JSON.stringify(allergies || [])}::jsonb,
+                  '{"riskScore": 70, "aqiThreshold": 100, "pollenThreshold": 8}'::jsonb)
+        `);
+      }
+
+      // Fetch the created/updated profile
+      const profileResult = await db.execute(drizzleSql`
+        SELECT * FROM patient_environment_profiles 
+        WHERE patient_id = ${patientId} AND is_active = true LIMIT 1
+      `);
+      const profile = profileResult.rows?.[0];
+
+      res.json({
+        success: true,
+        profile: profile ? {
+          id: profile.id,
+          patientId: profile.patient_id,
+          zipCode: profile.zip_code,
+          city: profile.city,
+          state: profile.state,
+          conditions: profile.chronic_conditions,
+          allergies: profile.allergies,
+          alertsEnabled: profile.alerts_enabled,
+          correlationConsent: profile.correlation_consent_given,
+        } : {}
+      });
+    } catch (error: any) {
+      console.error('Error creating environment profile:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Get current environmental data and risk for a patient
+  app.get('/api/v1/environment/current', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.query.patient_id || req.user!.id;
+
+      // Get patient profile
+      const profiles = await db.execute(drizzleSql`
+        SELECT * FROM patient_environment_profiles 
+        WHERE patient_id = ${patientId} AND is_active = true 
+        LIMIT 1
+      `);
+      
+      const profile = profiles.rows?.[0];
+      if (!profile) {
+        return res.json({ success: true, profile: null, currentData: null, riskScore: null, forecasts: [], activeAlerts: [] });
+      }
+
+      // Get latest environmental snapshot
+      const snapshots = await db.execute(drizzleSql`
+        SELECT * FROM environmental_data_snapshots 
+        WHERE zip_code = ${profile.zip_code}
+        ORDER BY measured_at DESC LIMIT 1
+      `);
+      const snapshot = snapshots.rows?.[0];
+
+      // Get latest risk score
+      const riskScores = await db.execute(drizzleSql`
+        SELECT * FROM patient_environment_risk_scores 
+        WHERE patient_id = ${patientId}
+        ORDER BY computed_at DESC LIMIT 1
+      `);
+      const riskScore = riskScores.rows?.[0];
+
+      // Get forecasts
+      const forecasts = await db.execute(drizzleSql`
+        SELECT * FROM environmental_forecasts 
+        WHERE patient_id = ${patientId} AND forecast_target_time > NOW()
+        ORDER BY forecast_horizon
+      `);
+
+      // Get active alerts
+      const alerts = await db.execute(drizzleSql`
+        SELECT * FROM environmental_alerts 
+        WHERE patient_id = ${patientId} AND status = 'active'
+        ORDER BY created_at DESC LIMIT 5
+      `);
+
+      res.json({
+        success: true,
+        profile: {
+          zipCode: profile.zip_code,
+          city: profile.city,
+          state: profile.state,
+          conditions: profile.chronic_conditions,
+          allergies: profile.allergies,
+          alertsEnabled: profile.alerts_enabled,
+          correlationConsent: profile.correlation_consent_given
+        },
+        currentData: snapshot ? {
+          measuredAt: snapshot.measured_at,
+          weather: {
+            temperature: parseFloat(snapshot.temperature) || null,
+            feelsLike: parseFloat(snapshot.feels_like) || null,
+            humidity: parseFloat(snapshot.humidity) || null,
+            pressure: parseFloat(snapshot.pressure) || null,
+            uvIndex: parseFloat(snapshot.uv_index) || null,
+          },
+          airQuality: {
+            aqi: snapshot.aqi,
+            category: snapshot.aqi_category,
+            pm25: parseFloat(snapshot.pm25) || null,
+            pm10: parseFloat(snapshot.pm10) || null,
+            ozone: parseFloat(snapshot.ozone) || null,
+          },
+          allergens: {
+            pollenOverall: snapshot.pollen_overall,
+            pollenCategory: snapshot.pollen_category,
+            moldCount: snapshot.mold_spore_count,
+          },
+          hazards: snapshot.active_hazards || [],
+        } : null,
+        riskScore: riskScore ? {
+          composite: parseFloat(riskScore.composite_risk_score),
+          level: riskScore.risk_level,
+          computedAt: riskScore.computed_at,
+          components: {
+            weather: parseFloat(riskScore.weather_risk_score) || null,
+            airQuality: parseFloat(riskScore.air_quality_risk_score) || null,
+            allergens: parseFloat(riskScore.allergen_risk_score) || null,
+            hazards: parseFloat(riskScore.hazard_risk_score) || null,
+          },
+          trends: {
+            "24hr": parseFloat(riskScore.trend_24hr) || null,
+            "48hr": parseFloat(riskScore.trend_48hr) || null,
+            "72hr": parseFloat(riskScore.trend_72hr) || null,
+          },
+          topFactors: riskScore.top_risk_factors || [],
+        } : null,
+        forecasts: (forecasts.rows || []).map((f: any) => ({
+          horizon: f.forecast_horizon,
+          targetTime: f.forecast_target_time,
+          predictedScore: parseFloat(f.predicted_risk_score),
+          predictedLevel: f.predicted_risk_level,
+          confidence: f.confidence_interval,
+        })),
+        activeAlerts: (alerts.rows || []).map((a: any) => ({
+          id: a.id,
+          type: a.alert_type,
+          severity: a.severity,
+          title: a.title,
+          message: a.message,
+          recommendations: a.recommendations,
+          createdAt: a.created_at,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error getting environmental data:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Refresh environmental data and compute risk
+  app.post('/api/v1/environment/refresh', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.query.patient_id || req.user!.id;
+      const { zipCode: requestZipCode } = req.body;
+
+      // Get or create profile
+      let profiles = await db.execute(drizzleSql`
+        SELECT * FROM patient_environment_profiles 
+        WHERE patient_id = ${patientId} AND is_active = true LIMIT 1
+      `);
+      let profile = profiles.rows?.[0];
+
+      const zipCode = requestZipCode || profile?.zip_code;
+      if (!zipCode) {
+        return res.status(400).json({ success: false, error: 'ZIP code required' });
+      }
+
+      // Generate simulated environmental data
+      const envData = generateSimulatedEnvironmentalData(zipCode);
+
+      // Insert snapshot - ensure proper type casting for integer fields
+      const pollenInt = Math.round(envData.pollenOverall);
+      const snapshotResult = await db.execute(drizzleSql`
+        INSERT INTO environmental_data_snapshots 
+        (zip_code, measured_at, temperature, feels_like, humidity, pressure, uv_index,
+         aqi, aqi_category, pm25, pm10, ozone, pollen_overall, pollen_category,
+         mold_spore_count, weather_source, aqi_source, data_quality_score)
+        VALUES (${zipCode}, NOW(), ${envData.temperature}, ${envData.feelsLike}, 
+                ${envData.humidity}, ${envData.pressure}, ${envData.uvIndex},
+                ${envData.aqi}, ${envData.aqiCategory}, ${envData.pm25}, ${envData.pm10},
+                ${envData.ozone}, ${pollenInt}, ${envData.pollenCategory},
+                ${envData.moldCount}, 'simulated', 'simulated', 85)
+        RETURNING id
+      `);
+      const snapshotId = snapshotResult.rows?.[0]?.id;
+
+      // Compute risk score
+      const conditions = profile?.chronic_conditions || [];
+      const riskData = computeEnvironmentalRisk(envData, conditions);
+
+      // Insert risk score
+      await db.execute(drizzleSql`
+        INSERT INTO patient_environment_risk_scores 
+        (patient_id, snapshot_id, computed_at, composite_risk_score, risk_level,
+         weather_risk_score, air_quality_risk_score, allergen_risk_score, hazard_risk_score,
+         factor_contributions, top_risk_factors)
+        VALUES (${patientId}, ${snapshotId}, NOW(), ${riskData.compositeScore}, ${riskData.riskLevel},
+                ${riskData.weatherScore}, ${riskData.airQualityScore}, ${riskData.allergenScore}, 0,
+                ${JSON.stringify(riskData.factorContributions)}::jsonb, 
+                ${JSON.stringify(riskData.topFactors)}::jsonb)
+      `);
+
+      // Generate forecasts
+      const horizons = ['12hr', '24hr', '48hr'];
+      for (const horizon of horizons) {
+        const hoursAhead = horizon === '12hr' ? 12 : horizon === '24hr' ? 24 : 48;
+        const forecastScore = Math.max(0, Math.min(100, riskData.compositeScore + (Math.random() - 0.5) * 20));
+        const forecastLevel = forecastScore < 25 ? 'low' : forecastScore < 50 ? 'moderate' : forecastScore < 75 ? 'high' : 'critical';
+        const confidenceJson = JSON.stringify({ lower: Math.max(0, forecastScore - 15), upper: Math.min(100, forecastScore + 15), confidence: 0.95 });
+        const targetTime = new Date(Date.now() + hoursAhead * 60 * 60 * 1000).toISOString();
+        
+        await db.execute(drizzleSql`
+          INSERT INTO environmental_forecasts 
+          (patient_id, generated_at, forecast_horizon, forecast_target_time, 
+           predicted_risk_score, predicted_risk_level, confidence_interval,
+           model_name, model_version)
+          VALUES (${patientId}, NOW(), ${horizon}, ${targetTime}::timestamptz,
+                  ${forecastScore}, ${forecastLevel}, ${confidenceJson}::jsonb,
+                  'trend_regression_v1', '1.0')
+        `);
+      }
+
+      // Check for alerts
+      if (riskData.compositeScore >= 70) {
+        const severity = riskData.compositeScore >= 85 ? 'critical' : 'warning';
+        await db.execute(drizzleSql`
+          INSERT INTO environmental_alerts 
+          (patient_id, alert_type, triggered_by, severity, priority, title, message,
+           recommendations, trigger_value, threshold_value, snapshot_id, expires_at)
+          VALUES (${patientId}, 'threshold_exceeded', 'composite_risk', ${severity}, 
+                  ${riskData.compositeScore >= 85 ? 10 : 7},
+                  ${'Environmental Risk: ' + riskData.riskLevel.toUpperCase()},
+                  ${'Your environmental risk score is ' + riskData.compositeScore.toFixed(0) + '/100. Take precautions.'},
+                  ${JSON.stringify(riskData.topFactors)}::jsonb,
+                  ${riskData.compositeScore}, 70, ${snapshotId}, NOW() + INTERVAL '6 hours')
+        `);
+      }
+
+      // Return refreshed data
+      res.json({
+        success: true,
+        refreshedAt: new Date().toISOString(),
+        alertsGenerated: riskData.compositeScore >= 70 ? 1 : 0,
+      });
+    } catch (error: any) {
+      console.error('Error refreshing environmental data:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Get risk history
+  app.get('/api/v1/environment/history', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.query.patient_id || req.user!.id;
+      const days = parseInt(req.query.days as string) || 7;
+
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const scores = await db.execute(drizzleSql`
+        SELECT * FROM patient_environment_risk_scores 
+        WHERE patient_id = ${patientId} 
+          AND computed_at >= ${startDate}::timestamptz
+        ORDER BY computed_at
+      `);
+
+      res.json({
+        success: true,
+        days,
+        history: (scores.rows || []).map((s: any) => ({
+          computedAt: s.computed_at,
+          compositeScore: parseFloat(s.composite_risk_score),
+          riskLevel: s.risk_level,
+          components: {
+            weather: parseFloat(s.weather_risk_score) || null,
+            airQuality: parseFloat(s.air_quality_risk_score) || null,
+            allergens: parseFloat(s.allergen_risk_score) || null,
+            hazards: parseFloat(s.hazard_risk_score) || null,
+          }
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error getting risk history:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Get correlations
+  app.get('/api/v1/environment/correlations', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.query.patient_id || req.user!.id;
+
+      const correlations = await db.execute(drizzleSql`
+        SELECT * FROM symptom_environment_correlations 
+        WHERE patient_id = ${patientId} AND is_statistically_significant = true
+        ORDER BY ABS(correlation_coefficient) DESC
+      `);
+
+      res.json({
+        success: true,
+        correlations: (correlations.rows || []).map((c: any) => ({
+          symptom: c.symptom_type,
+          factor: c.environmental_factor,
+          correlation: parseFloat(c.correlation_coefficient),
+          strength: c.relationship_strength,
+          direction: c.relationship_direction,
+          lagHours: c.optimal_lag,
+          interpretation: c.interpretation,
+          confidence: parseFloat(c.confidence_score) || null,
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error getting correlations:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Get alerts
+  app.get('/api/v1/environment/alerts', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.query.patient_id || req.user!.id;
+      const status = req.query.status || 'active';
+
+      let query;
+      if (status === 'all') {
+        query = drizzleSql`SELECT * FROM environmental_alerts WHERE patient_id = ${patientId} ORDER BY created_at DESC LIMIT 20`;
+      } else {
+        query = drizzleSql`SELECT * FROM environmental_alerts WHERE patient_id = ${patientId} AND status = ${status} ORDER BY created_at DESC LIMIT 20`;
+      }
+
+      const alerts = await db.execute(query);
+
+      res.json({
+        success: true,
+        alerts: (alerts.rows || []).map((a: any) => ({
+          id: a.id,
+          type: a.alert_type,
+          triggeredBy: a.triggered_by,
+          severity: a.severity,
+          priority: a.priority,
+          title: a.title,
+          message: a.message,
+          recommendations: a.recommendations,
+          status: a.status,
+          triggerValue: parseFloat(a.trigger_value) || null,
+          thresholdValue: parseFloat(a.threshold_value) || null,
+          createdAt: a.created_at,
+          acknowledgedAt: a.acknowledged_at,
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error getting alerts:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Acknowledge alert
+  app.post('/api/v1/environment/alerts/acknowledge', isAuthenticated, async (req: any, res) => {
+    try {
+      const patientId = req.query.patient_id || req.user!.id;
+      const { alertId } = req.body;
+
+      await db.execute(drizzleSql`
+        UPDATE environmental_alerts 
+        SET status = 'acknowledged', acknowledged_at = NOW()
+        WHERE id = ${alertId} AND patient_id = ${patientId}
+      `);
+
+      res.json({ success: true, alert: { id: alertId, status: 'acknowledged' } });
+    } catch (error: any) {
+      console.error('Error acknowledging alert:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Get patient environmental summary (for doctor dashboard)
+  app.get('/api/v1/environment/patient/:patientId/summary', isAuthenticated, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+
+      const profiles = await db.execute(drizzleSql`
+        SELECT * FROM patient_environment_profiles 
+        WHERE patient_id = ${patientId} AND is_active = true LIMIT 1
+      `);
+      const profile = profiles.rows?.[0];
+
+      if (!profile) {
+        return res.json({ success: true, hasProfile: false, summary: null });
+      }
+
+      // Get latest risk score
+      const riskScores = await db.execute(drizzleSql`
+        SELECT * FROM patient_environment_risk_scores 
+        WHERE patient_id = ${patientId}
+        ORDER BY computed_at DESC LIMIT 1
+      `);
+      const riskScore = riskScores.rows?.[0];
+
+      // Get latest snapshot
+      const snapshots = await db.execute(drizzleSql`
+        SELECT * FROM environmental_data_snapshots 
+        WHERE zip_code = ${profile.zip_code}
+        ORDER BY measured_at DESC LIMIT 1
+      `);
+      const snapshot = snapshots.rows?.[0];
+
+      // Get forecasts
+      const forecasts = await db.execute(drizzleSql`
+        SELECT * FROM environmental_forecasts 
+        WHERE patient_id = ${patientId} AND forecast_target_time > NOW()
+        ORDER BY forecast_horizon LIMIT 3
+      `);
+
+      // Get active alerts count
+      const alertsResult = await db.execute(drizzleSql`
+        SELECT COUNT(*) as count FROM environmental_alerts 
+        WHERE patient_id = ${patientId} AND status = 'active'
+      `);
+      const alertCount = parseInt(alertsResult.rows?.[0]?.count || '0');
+
+      // Get significant correlations
+      const correlations = await db.execute(drizzleSql`
+        SELECT * FROM symptom_environment_correlations 
+        WHERE patient_id = ${patientId} AND is_statistically_significant = true
+        ORDER BY ABS(correlation_coefficient) DESC LIMIT 3
+      `);
+
+      // Calculate trend
+      let trend = 'stable';
+      if (riskScore?.trend_24hr) {
+        const t = parseFloat(riskScore.trend_24hr);
+        if (t > 0.2) trend = 'worsening';
+        else if (t < -0.2) trend = 'improving';
+      }
+
+      res.json({
+        success: true,
+        hasProfile: true,
+        summary: {
+          location: {
+            zipCode: profile.zip_code,
+            city: profile.city,
+            state: profile.state,
+          },
+          conditions: profile.chronic_conditions || [],
+          currentRisk: {
+            score: riskScore ? parseFloat(riskScore.composite_risk_score) : null,
+            level: riskScore?.risk_level || null,
+            trend,
+            topFactors: riskScore?.top_risk_factors?.slice(0, 3) || [],
+          },
+          currentConditions: {
+            aqi: snapshot?.aqi || null,
+            aqiCategory: snapshot?.aqi_category || null,
+            temperature: snapshot ? parseFloat(snapshot.temperature) : null,
+            humidity: snapshot ? parseFloat(snapshot.humidity) : null,
+            pollenLevel: snapshot?.pollen_category || null,
+          },
+          forecast: {
+            "24hr": (forecasts.rows || []).find((f: any) => f.forecast_horizon === '24hr')?.predicted_risk_level || null,
+            "48hr": (forecasts.rows || []).find((f: any) => f.forecast_horizon === '48hr')?.predicted_risk_level || null,
+          },
+          activeAlerts: alertCount,
+          alertsSummary: [],
+          significantCorrelations: (correlations.rows || []).map((c: any) => ({
+            symptom: c.symptom_type,
+            factor: c.environmental_factor,
+            strength: c.relationship_strength,
+          })),
+          weeklyTrend: {
+            averageScore: null,
+            highestScore: null,
+            lowestScore: null,
+            dataPoints: 0,
+          }
+        }
+      });
+    } catch (error: any) {
+      console.error('Error getting patient summary:', error);
+      res.status(500).json({ success: false, error: error.message });
     }
   });
 

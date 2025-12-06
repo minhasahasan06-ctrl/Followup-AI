@@ -63,6 +63,7 @@ from app.routers import (
     agent_websocket,  # ✅ Multi-Agent WebSocket - Real-time Communication
     auth_api,  # ✅ Auth0 Authentication API - PRODUCTION READY
     ml_prediction_api,  # ✅ ML Prediction API - Disease Risk, Deterioration, Time-Series, Segmentation
+    environmental_risk_api,  # ✅ Environmental Risk Map - Comprehensive Environmental Health Intelligence
 )
 
 logger = logging.getLogger(__name__)
@@ -289,6 +290,9 @@ app.include_router(auth_api.router)
 
 # ML Prediction API (Disease Risk, Deterioration, Time-Series, Segmentation) - PRODUCTION READY
 app.include_router(ml_prediction_api.router)
+
+# Environmental Risk Map (Comprehensive Environmental Health Intelligence) - PRODUCTION READY
+app.include_router(environmental_risk_api.router)
 
 # ML Training Infrastructure (Consent, Jobs, Datasets, Model Registry) - PRODUCTION READY
 try:

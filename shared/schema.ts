@@ -7713,3 +7713,492 @@ export const insertHealthSectionAnalyticsSchema = createInsertSchema(healthSecti
 
 export type InsertHealthSectionAnalytics = z.infer<typeof insertHealthSectionAnalyticsSchema>;
 export type HealthSectionAnalytics = typeof healthSectionAnalytics.$inferSelect;
+
+// ============================================================================
+// ENVIRONMENTAL RISK MAP SYSTEM - Advanced Environmental Health Intelligence
+// ============================================================================
+
+// Patient Environment Profile - Links patients to their location and condition triggers
+export const patientEnvironmentProfiles = pgTable("patient_environment_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Location (HIPAA compliant - ZIP only, no GPS)
+  zipCode: varchar("zip_code", { length: 10 }).notNull(),
+  city: varchar("city"),
+  state: varchar("state", { length: 2 }),
+  timezone: varchar("timezone").default("America/New_York"),
+  
+  // Patient conditions for personalized triggers
+  chronicConditions: jsonb("chronic_conditions").$type<string[]>(), // ['asthma', 'copd', 'heart_failure', 'arthritis', 'migraines', 'eczema']
+  allergies: jsonb("allergies").$type<string[]>(), // ['pollen', 'mold', 'dust', 'pet_dander']
+  
+  // Alert preferences
+  alertsEnabled: boolean("alerts_enabled").default(true),
+  alertThresholds: jsonb("alert_thresholds").$type<{
+    riskScore: number; // Notify when composite risk exceeds this (0-100)
+    aqiThreshold: number; // Notify when AQI exceeds this
+    pollenThreshold: number; // Notify when pollen exceeds this (0-12)
+    temperatureMin: number; // Notify when temp drops below (Celsius)
+    temperatureMax: number; // Notify when temp exceeds (Celsius)
+    humidityMin: number; // Notify when humidity drops below (%)
+    humidityMax: number; // Notify when humidity exceeds (%)
+  }>(),
+  
+  // Notification channels
+  pushNotifications: boolean("push_notifications").default(true),
+  smsNotifications: boolean("sms_notifications").default(false),
+  emailDigest: boolean("email_digest").default(true),
+  digestFrequency: varchar("digest_frequency").default("daily"), // 'daily', 'weekly', 'never'
+  
+  // Consent for ML correlation
+  correlationConsentGiven: boolean("correlation_consent_given").default(false),
+  correlationConsentAt: timestamp("correlation_consent_at"),
+  
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("env_profile_patient_idx").on(table.patientId),
+  zipIdx: index("env_profile_zip_idx").on(table.zipCode),
+}));
+
+export const insertPatientEnvironmentProfileSchema = createInsertSchema(patientEnvironmentProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientEnvironmentProfile = z.infer<typeof insertPatientEnvironmentProfileSchema>;
+export type PatientEnvironmentProfile = typeof patientEnvironmentProfiles.$inferSelect;
+
+// Condition Trigger Mapping - Maps conditions to environmental factors with weights
+export const conditionTriggerMappings = pgTable("condition_trigger_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Condition this mapping applies to
+  conditionCode: varchar("condition_code").notNull(), // 'asthma', 'copd', 'heart_failure', 'arthritis', 'migraines', 'eczema'
+  conditionName: varchar("condition_name").notNull(),
+  
+  // Environmental factor this condition is sensitive to
+  factorType: varchar("factor_type").notNull(), // 'pm25', 'pm10', 'ozone', 'humidity', 'temperature', 'pressure', 'pollen', 'mold', 'uv'
+  factorName: varchar("factor_name").notNull(),
+  
+  // Trigger thresholds
+  triggerThreshold: decimal("trigger_threshold", { precision: 10, scale: 4 }), // Value at which factor becomes concerning
+  criticalThreshold: decimal("critical_threshold", { precision: 10, scale: 4 }), // Value at which factor becomes critical
+  
+  // Weight in risk calculation (0.0 to 1.0)
+  baseWeight: decimal("base_weight", { precision: 5, scale: 4 }).default("0.5"),
+  
+  // Direction of impact
+  impactDirection: varchar("impact_direction").notNull(), // 'higher_is_worse', 'lower_is_worse', 'both_extremes'
+  
+  // Evidence and recommendations
+  clinicalEvidence: text("clinical_evidence"),
+  recommendations: jsonb("recommendations").$type<string[]>(),
+  
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  conditionIdx: index("trigger_condition_idx").on(table.conditionCode),
+  factorIdx: index("trigger_factor_idx").on(table.factorType),
+}));
+
+export const insertConditionTriggerMappingSchema = createInsertSchema(conditionTriggerMappings).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertConditionTriggerMapping = z.infer<typeof insertConditionTriggerMappingSchema>;
+export type ConditionTriggerMapping = typeof conditionTriggerMappings.$inferSelect;
+
+// Patient Trigger Weights - Personalized weights learned from patient-specific correlations
+export const patientTriggerWeights = pgTable("patient_trigger_weights", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Environmental factor
+  factorType: varchar("factor_type").notNull(),
+  
+  // Personalized weight (learned from correlation analysis)
+  personalizedWeight: decimal("personalized_weight", { precision: 5, scale: 4 }).notNull(),
+  
+  // Confidence in this weight (based on data volume)
+  confidenceScore: decimal("confidence_score", { precision: 5, scale: 4 }),
+  
+  // How the weight was determined
+  source: varchar("source").notNull(), // 'default', 'correlation', 'manual', 'ml_predicted'
+  
+  // Correlation statistics
+  correlationCoefficient: decimal("correlation_coefficient", { precision: 5, scale: 4 }),
+  pValue: decimal("p_value", { precision: 8, scale: 6 }),
+  sampleSize: integer("sample_size"),
+  
+  lastUpdatedAt: timestamp("last_updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientFactorIdx: index("patient_trigger_idx").on(table.patientId, table.factorType),
+}));
+
+export const insertPatientTriggerWeightSchema = createInsertSchema(patientTriggerWeights).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPatientTriggerWeight = z.infer<typeof insertPatientTriggerWeightSchema>;
+export type PatientTriggerWeight = typeof patientTriggerWeights.$inferSelect;
+
+// Environmental Data Snapshots - Time-series environmental readings by ZIP code
+export const environmentalDataSnapshots = pgTable("environmental_data_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  zipCode: varchar("zip_code", { length: 10 }).notNull(),
+  
+  // Timestamp of measurement
+  measuredAt: timestamp("measured_at").notNull(),
+  
+  // Weather data
+  temperature: decimal("temperature", { precision: 6, scale: 2 }), // Celsius
+  feelsLike: decimal("feels_like", { precision: 6, scale: 2 }),
+  humidity: decimal("humidity", { precision: 5, scale: 2 }), // Percentage
+  pressure: decimal("pressure", { precision: 7, scale: 2 }), // hPa
+  windSpeed: decimal("wind_speed", { precision: 6, scale: 2 }), // m/s
+  windDirection: integer("wind_direction"), // Degrees
+  precipitation: decimal("precipitation", { precision: 6, scale: 2 }), // mm
+  uvIndex: decimal("uv_index", { precision: 4, scale: 2 }),
+  cloudCover: integer("cloud_cover"), // Percentage
+  visibility: decimal("visibility", { precision: 8, scale: 2 }), // meters
+  
+  // Air Quality
+  aqi: integer("aqi"), // 0-500 EPA scale
+  aqiCategory: varchar("aqi_category"), // 'good', 'moderate', 'unhealthy_sensitive', 'unhealthy', 'very_unhealthy', 'hazardous'
+  pm25: decimal("pm25", { precision: 7, scale: 3 }), // µg/m³
+  pm10: decimal("pm10", { precision: 7, scale: 3 }),
+  ozone: decimal("ozone", { precision: 7, scale: 3 }), // ppb
+  no2: decimal("no2", { precision: 7, scale: 3 }), // ppb
+  so2: decimal("so2", { precision: 7, scale: 3 }), // ppb
+  co: decimal("co", { precision: 8, scale: 3 }), // ppm
+  
+  // Allergens
+  pollenTreeCount: integer("pollen_tree_count"), // grains/m³
+  pollenGrassCount: integer("pollen_grass_count"),
+  pollenWeedCount: integer("pollen_weed_count"),
+  pollenOverall: integer("pollen_overall"), // 0-12 scale
+  pollenCategory: varchar("pollen_category"), // 'low', 'moderate', 'high', 'very_high'
+  moldSporeCount: integer("mold_spore_count"),
+  moldCategory: varchar("mold_category"),
+  
+  // Environmental Hazards
+  activeHazards: jsonb("active_hazards").$type<{
+    type: string; // 'fire', 'smoke', 'flood', 'heat_wave', 'air_quality_alert', 'disease_outbreak'
+    severity: 'low' | 'moderate' | 'high' | 'extreme';
+    title: string;
+    description: string;
+    source: string;
+    startTime?: string;
+    endTime?: string;
+  }[]>(),
+  
+  // Data sources
+  weatherSource: varchar("weather_source"), // 'openweathermap', 'weatherapi', 'noaa'
+  aqiSource: varchar("aqi_source"), // 'airnow', 'iqair', 'breezometer'
+  pollenSource: varchar("pollen_source"), // 'pollen.com', 'breezometer', 'ambee'
+  hazardSource: varchar("hazard_source"), // 'epa', 'nasa_firms', 'nws'
+  
+  // Data quality
+  dataQualityScore: decimal("data_quality_score", { precision: 4, scale: 2 }), // 0-100
+  missingFields: jsonb("missing_fields").$type<string[]>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  zipTimeIdx: index("env_snapshot_zip_time_idx").on(table.zipCode, table.measuredAt),
+  measuredAtIdx: index("env_snapshot_measured_idx").on(table.measuredAt),
+}));
+
+export const insertEnvironmentalDataSnapshotSchema = createInsertSchema(environmentalDataSnapshots).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEnvironmentalDataSnapshot = z.infer<typeof insertEnvironmentalDataSnapshotSchema>;
+export type EnvironmentalDataSnapshot = typeof environmentalDataSnapshots.$inferSelect;
+
+// Patient Risk Scores - Computed personalized risk scores
+export const patientEnvironmentRiskScores = pgTable("patient_environment_risk_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  snapshotId: varchar("snapshot_id").references(() => environmentalDataSnapshots.id),
+  
+  // Timestamp
+  computedAt: timestamp("computed_at").notNull(),
+  
+  // Composite Risk Score (0-100)
+  compositeRiskScore: decimal("composite_risk_score", { precision: 5, scale: 2 }).notNull(),
+  riskLevel: varchar("risk_level").notNull(), // 'low', 'moderate', 'high', 'critical'
+  
+  // Component scores (each 0-100)
+  weatherRiskScore: decimal("weather_risk_score", { precision: 5, scale: 2 }),
+  airQualityRiskScore: decimal("air_quality_risk_score", { precision: 5, scale: 2 }),
+  allergenRiskScore: decimal("allergen_risk_score", { precision: 5, scale: 2 }),
+  hazardRiskScore: decimal("hazard_risk_score", { precision: 5, scale: 2 }),
+  
+  // Trend scores (normalized slopes)
+  trend24hr: decimal("trend_24hr", { precision: 6, scale: 3 }), // -1 to +1 (negative = improving)
+  trend48hr: decimal("trend_48hr", { precision: 6, scale: 3 }),
+  trend72hr: decimal("trend_72hr", { precision: 6, scale: 3 }),
+  
+  // Volatility score (7-day standard deviation normalized)
+  volatilityScore: decimal("volatility_score", { precision: 5, scale: 2 }),
+  
+  // Individual factor contributions
+  factorContributions: jsonb("factor_contributions").$type<{
+    factor: string;
+    rawValue: number;
+    normalizedValue: number;
+    weight: number;
+    contribution: number; // weight * normalizedValue
+  }[]>(),
+  
+  // Top risk factors
+  topRiskFactors: jsonb("top_risk_factors").$type<{
+    factor: string;
+    severity: 'low' | 'moderate' | 'high' | 'critical';
+    recommendation: string;
+  }[]>(),
+  
+  // Scoring metadata
+  scoringVersion: varchar("scoring_version").default("1.0"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientTimeIdx: index("risk_score_patient_time_idx").on(table.patientId, table.computedAt),
+  riskLevelIdx: index("risk_score_level_idx").on(table.riskLevel),
+}));
+
+export const insertPatientEnvironmentRiskScoreSchema = createInsertSchema(patientEnvironmentRiskScores).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPatientEnvironmentRiskScore = z.infer<typeof insertPatientEnvironmentRiskScoreSchema>;
+export type PatientEnvironmentRiskScore = typeof patientEnvironmentRiskScores.$inferSelect;
+
+// Environmental Forecasts - ML-predicted future risk
+export const environmentalForecasts = pgTable("environmental_forecasts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // When forecast was generated
+  generatedAt: timestamp("generated_at").notNull(),
+  
+  // Forecast horizon
+  forecastHorizon: varchar("forecast_horizon").notNull(), // '12hr', '24hr', '48hr', '72hr'
+  forecastTargetTime: timestamp("forecast_target_time").notNull(),
+  
+  // Predicted risk scores
+  predictedRiskScore: decimal("predicted_risk_score", { precision: 5, scale: 2 }).notNull(),
+  predictedRiskLevel: varchar("predicted_risk_level").notNull(),
+  confidenceInterval: jsonb("confidence_interval").$type<{
+    lower: number;
+    upper: number;
+    confidence: number; // 0.95 for 95% CI
+  }>(),
+  
+  // Component predictions
+  predictedWeatherRisk: decimal("predicted_weather_risk", { precision: 5, scale: 2 }),
+  predictedAirQualityRisk: decimal("predicted_air_quality_risk", { precision: 5, scale: 2 }),
+  predictedAllergenRisk: decimal("predicted_allergen_risk", { precision: 5, scale: 2 }),
+  
+  // Key predicted values
+  predictedValues: jsonb("predicted_values").$type<{
+    factor: string;
+    currentValue: number;
+    predictedValue: number;
+    changeDirection: 'increase' | 'decrease' | 'stable';
+    changePercent: number;
+  }[]>(),
+  
+  // Model metadata
+  modelName: varchar("model_name").notNull(), // 'lightgbm_risk_v1', 'lstm_risk_v2'
+  modelVersion: varchar("model_version").notNull(),
+  featureImportance: jsonb("feature_importance").$type<Record<string, number>>(),
+  
+  // Actual values (filled in after forecast period passes)
+  actualRiskScore: decimal("actual_risk_score", { precision: 5, scale: 2 }),
+  forecastError: decimal("forecast_error", { precision: 5, scale: 2 }), // Absolute error
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientTimeIdx: index("forecast_patient_time_idx").on(table.patientId, table.generatedAt),
+  horizonIdx: index("forecast_horizon_idx").on(table.forecastHorizon),
+}));
+
+export const insertEnvironmentalForecastSchema = createInsertSchema(environmentalForecasts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEnvironmentalForecast = z.infer<typeof insertEnvironmentalForecastSchema>;
+export type EnvironmentalForecast = typeof environmentalForecasts.$inferSelect;
+
+// Symptom-Environment Correlations - Learned correlations between symptoms and environment
+export const symptomEnvironmentCorrelations = pgTable("symptom_environment_correlations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Symptom being correlated
+  symptomType: varchar("symptom_type").notNull(), // 'pain', 'fatigue', 'breathing_difficulty', 'headache', 'joint_stiffness'
+  symptomSeverityMetric: varchar("symptom_severity_metric").notNull(), // 'vas_score', 'frequency', 'duration'
+  
+  // Environmental factor
+  environmentalFactor: varchar("environmental_factor").notNull(), // 'pm25', 'humidity', 'pressure', 'pollen', etc.
+  
+  // Correlation statistics
+  correlationType: varchar("correlation_type").notNull(), // 'spearman', 'pearson', 'cross_correlation'
+  correlationCoefficient: decimal("correlation_coefficient", { precision: 6, scale: 4 }).notNull(),
+  pValue: decimal("p_value", { precision: 10, scale: 8 }),
+  isStatisticallySignificant: boolean("is_statistically_significant").default(false),
+  
+  // Cross-correlation lag analysis
+  optimalLag: integer("optimal_lag"), // Hours of delay between env change and symptom change
+  lagCorrelation: decimal("lag_correlation", { precision: 6, scale: 4 }),
+  
+  // Sample data
+  sampleSize: integer("sample_size").notNull(),
+  dataWindowDays: integer("data_window_days"), // How many days of data used
+  
+  // Interpretation
+  relationshipStrength: varchar("relationship_strength"), // 'weak', 'moderate', 'strong', 'very_strong'
+  relationshipDirection: varchar("relationship_direction"), // 'positive', 'negative', 'non_linear'
+  interpretation: text("interpretation"), // AI-generated explanation
+  
+  // Confidence and quality
+  confidenceScore: decimal("confidence_score", { precision: 5, scale: 4 }),
+  dataQualityScore: decimal("data_quality_score", { precision: 5, scale: 4 }),
+  
+  lastAnalyzedAt: timestamp("last_analyzed_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientSymptomIdx: index("correlation_patient_symptom_idx").on(table.patientId, table.symptomType),
+  significantIdx: index("correlation_significant_idx").on(table.isStatisticallySignificant),
+}));
+
+export const insertSymptomEnvironmentCorrelationSchema = createInsertSchema(symptomEnvironmentCorrelations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSymptomEnvironmentCorrelation = z.infer<typeof insertSymptomEnvironmentCorrelationSchema>;
+export type SymptomEnvironmentCorrelation = typeof symptomEnvironmentCorrelations.$inferSelect;
+
+// Environmental Alerts - Alert history and active alerts
+export const environmentalAlerts = pgTable("environmental_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Alert type and trigger
+  alertType: varchar("alert_type").notNull(), // 'acute_spike', 'forecast_deterioration', 'threshold_exceeded', 'correlation_trigger', 'hazard_warning'
+  triggeredBy: varchar("triggered_by").notNull(), // The factor that triggered the alert (e.g., 'pm25', 'composite_risk')
+  
+  // Severity
+  severity: varchar("severity").notNull(), // 'info', 'warning', 'critical', 'emergency'
+  priority: integer("priority").notNull(), // 1-10 (10 = most urgent)
+  
+  // Alert content
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  recommendations: jsonb("recommendations").$type<{
+    action: string;
+    urgency: 'immediate' | 'today' | 'this_week';
+    category: 'medical' | 'lifestyle' | 'environmental' | 'medication';
+  }[]>(),
+  
+  // Trigger values
+  triggerValue: decimal("trigger_value", { precision: 10, scale: 4 }),
+  thresholdValue: decimal("threshold_value", { precision: 10, scale: 4 }),
+  percentOverThreshold: decimal("percent_over_threshold", { precision: 6, scale: 2 }),
+  
+  // Related data
+  riskScoreId: varchar("risk_score_id").references(() => patientEnvironmentRiskScores.id),
+  forecastId: varchar("forecast_id").references(() => environmentalForecasts.id),
+  snapshotId: varchar("snapshot_id").references(() => environmentalDataSnapshots.id),
+  
+  // Status
+  status: varchar("status").default("active"), // 'active', 'acknowledged', 'resolved', 'dismissed', 'expired'
+  acknowledgedAt: timestamp("acknowledged_at"),
+  resolvedAt: timestamp("resolved_at"),
+  expiresAt: timestamp("expires_at"),
+  
+  // Notification tracking
+  pushNotificationSent: boolean("push_notification_sent").default(false),
+  smsNotificationSent: boolean("sms_notification_sent").default(false),
+  emailNotificationSent: boolean("email_notification_sent").default(false),
+  notificationSentAt: timestamp("notification_sent_at"),
+  
+  // User feedback
+  wasHelpful: boolean("was_helpful"),
+  userFeedback: text("user_feedback"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientStatusIdx: index("env_alert_patient_status_idx").on(table.patientId, table.status),
+  severityIdx: index("env_alert_severity_idx").on(table.severity),
+  createdAtIdx: index("env_alert_created_idx").on(table.createdAt),
+}));
+
+export const insertEnvironmentalAlertSchema = createInsertSchema(environmentalAlerts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEnvironmentalAlert = z.infer<typeof insertEnvironmentalAlertSchema>;
+export type EnvironmentalAlert = typeof environmentalAlerts.$inferSelect;
+
+// Environmental Pipeline Jobs - Track background job execution
+export const environmentalPipelineJobs = pgTable("environmental_pipeline_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Job type
+  jobType: varchar("job_type").notNull(), // 'data_ingestion', 'risk_scoring', 'correlation_analysis', 'forecasting', 'alert_check', 'daily_summary'
+  
+  // Scope
+  targetZipCodes: jsonb("target_zip_codes").$type<string[]>(), // Which ZIP codes were processed
+  targetPatientIds: jsonb("target_patient_ids").$type<string[]>(), // Which patients were processed
+  
+  // Status
+  status: varchar("status").notNull(), // 'pending', 'running', 'completed', 'failed', 'cancelled'
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Results
+  recordsProcessed: integer("records_processed").default(0),
+  recordsCreated: integer("records_created").default(0),
+  recordsUpdated: integer("records_updated").default(0),
+  alertsGenerated: integer("alerts_generated").default(0),
+  
+  // Errors
+  errorMessage: text("error_message"),
+  errorStack: text("error_stack"),
+  retryCount: integer("retry_count").default(0),
+  maxRetries: integer("max_retries").default(3),
+  
+  // Performance
+  executionTimeMs: integer("execution_time_ms"),
+  
+  // Metadata
+  triggerSource: varchar("trigger_source"), // 'scheduled', 'manual', 'webhook', 'on_demand'
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  jobTypeStatusIdx: index("pipeline_job_type_status_idx").on(table.jobType, table.status),
+  createdAtIdx: index("pipeline_job_created_idx").on(table.createdAt),
+}));
+
+export const insertEnvironmentalPipelineJobSchema = createInsertSchema(environmentalPipelineJobs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEnvironmentalPipelineJob = z.infer<typeof insertEnvironmentalPipelineJobSchema>;
+export type EnvironmentalPipelineJob = typeof environmentalPipelineJobs.$inferSelect;
