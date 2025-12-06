@@ -160,12 +160,6 @@ const doctorItems = [
     badge: "AI",
   },
   {
-    title: "Prescriptions",
-    url: "/prescriptions",
-    icon: FileText,
-    badge: "Rx",
-  },
-  {
     title: "Doctor Wellness",
     url: "/doctor-wellness",
     icon: Heart,

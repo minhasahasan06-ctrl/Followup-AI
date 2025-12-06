@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { isAuthenticated, isDoctor, isPatient, getSession } from "./auth";
 import { db } from "./db";
-import { eq, and, desc, gte, sql as drizzleSql } from "drizzle-orm";
+import { eq, and, desc, gte, sql as drizzleSql, isNull } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { z } from "zod";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
@@ -8042,6 +8042,7 @@ All questions and discussions should be focused on this patient.`;
   });
 
   // Lysa Prescription Interaction Check - Drug safety analysis
+  // CROSS-SPECIALTY ONLY: Only checks interactions against medications from OTHER specialties
   app.post('/api/v1/lysa/prescriptions/check-interactions', isAuthenticated, aiRateLimit, async (req: any, res) => {
     try {
       const userId = req.session?.userId;
@@ -8054,29 +8055,151 @@ All questions and discussions should be focused on this patient.`;
         return res.status(403).json({ message: 'Only doctors can check drug interactions' });
       }
 
-      const { medications, allergies, newPrescriptions } = req.body;
+      const { medications, allergies, newPrescriptions, patientId, doctorSpecialty, allowAllMedications } = req.body;
 
-      if (!medications || !Array.isArray(medications) || medications.length === 0) {
-        return res.status(400).json({ message: 'At least one medication is required' });
+      // Get the doctor's specialty from their profile if not provided
+      let currentSpecialty = doctorSpecialty;
+      if (!currentSpecialty) {
+        const doctorProfile = await storage.getDoctorProfile(userId);
+        currentSpecialty = doctorProfile?.specialty || null;
       }
 
-      const medicationList = medications.join(', ');
+      // ENFORCE SPECIALTY: Reject if specialty is missing and patientId is provided (unless explicit override)
+      if (!currentSpecialty && patientId && !allowAllMedications) {
+        return res.status(400).json({
+          message: 'Doctor specialty is required for cross-specialty interaction checking',
+          error: 'SPECIALTY_REQUIRED',
+          hint: 'Please specify your specialty in the request (doctorSpecialty) or update your doctor profile. Set allowAllMedications=true to check against all patient medications instead.',
+          crossSpecialtyCount: 0,
+          sameSpecialtyCount: 0,
+          checkedMedications: [],
+          _note: 'Cross-specialty check requires doctor specialty to be specified.'
+        });
+      }
+
+      // Track if using all-medications mode (explicit override)
+      const usingAllMedicationsMode = !currentSpecialty && patientId && allowAllMedications;
+
+      // If patientId is provided, fetch cross-specialty medications only
+      let crossSpecialtyMedications: string[] = [];
+      let sameSpecialtyMedications: string[] = [];
+      let allPatientMedications: string[] = []; // Used when specialty is unknown
+      
+      if (patientId) {
+        // Get patient's active medications from database
+        const patientMeds = await db.select()
+          .from(schema.medications)
+          .where(and(
+            eq(schema.medications.patientId, patientId),
+            eq(schema.medications.status, 'active'),
+            isNull(schema.medications.archivedAt)
+          ));
+        
+        // Also check prescriptions table for active prescriptions
+        const patientPrescriptions = await db.select()
+          .from(schema.prescriptions)
+          .where(and(
+            eq(schema.prescriptions.patientId, patientId),
+            eq(schema.prescriptions.status, 'active')
+          ));
+
+        if (currentSpecialty) {
+          // Separate medications by specialty
+          for (const med of patientMeds) {
+            if (med.specialty && med.specialty.toLowerCase() === currentSpecialty.toLowerCase()) {
+              sameSpecialtyMedications.push(med.name);
+            } else {
+              crossSpecialtyMedications.push(med.name);
+            }
+          }
+          
+          for (const rx of patientPrescriptions) {
+            if (rx.specialty && rx.specialty.toLowerCase() === currentSpecialty.toLowerCase()) {
+              if (!sameSpecialtyMedications.includes(rx.medicationName)) {
+                sameSpecialtyMedications.push(rx.medicationName);
+              }
+            } else {
+              if (!crossSpecialtyMedications.includes(rx.medicationName)) {
+                crossSpecialtyMedications.push(rx.medicationName);
+              }
+            }
+          }
+        } else {
+          // Specialty unknown - collect ALL patient medications for checking
+          for (const med of patientMeds) {
+            allPatientMedications.push(med.name);
+          }
+          for (const rx of patientPrescriptions) {
+            if (!allPatientMedications.includes(rx.medicationName)) {
+              allPatientMedications.push(rx.medicationName);
+            }
+          }
+        }
+      }
+
+      // Build the medication list for interaction checking
+      // Include new prescriptions + cross-specialty medications (or all meds if specialty unknown)
+      let allMedicationsForCheck: string[];
+      
+      if (currentSpecialty) {
+        // Cross-specialty mode: exclude same-specialty medications
+        allMedicationsForCheck = [
+          ...(newPrescriptions || []),
+          ...crossSpecialtyMedications,
+          // Include any explicitly passed medications that aren't from same specialty
+          ...(medications || []).filter((m: string) => !sameSpecialtyMedications.includes(m))
+        ];
+      } else {
+        // Specialty unknown: check against ALL patient medications
+        allMedicationsForCheck = [
+          ...(newPrescriptions || []),
+          ...allPatientMedications,
+          ...(medications || [])
+        ];
+      }
+
+      // Remove duplicates
+      const uniqueMedications = [...new Set(allMedicationsForCheck)];
+
+      if (uniqueMedications.length === 0) {
+        // No cross-specialty medications to check
+        return res.json({
+          hasInteractions: false,
+          interactions: [],
+          allergicRisks: [],
+          contraindications: [],
+          warnings: [],
+          safeToPresrcibe: true,
+          _note: "No cross-specialty medications to check. Same-specialty medications are managed by supersession rules.",
+          crossSpecialtyCount: 0,
+          sameSpecialtyCount: sameSpecialtyMedications.length,
+          checkedMedications: []
+        });
+      }
+
+      const medicationList = uniqueMedications.join(', ');
       const allergyList = allergies?.length > 0 ? allergies.join(', ') : 'None reported';
       const newMedsList = newPrescriptions?.length > 0 ? newPrescriptions.join(', ') : 'None';
+      const crossSpecialtyList = crossSpecialtyMedications.join(', ') || 'None';
 
-      const systemPrompt = `You are a clinical pharmacology AI assistant specializing in drug interaction analysis. You analyze medication combinations for potential interactions, allergic cross-reactivity, and contraindications.
+      const systemPrompt = `You are a clinical pharmacology AI assistant specializing in CROSS-SPECIALTY drug interaction analysis. You analyze medication combinations prescribed by DIFFERENT medical specialties for potential interactions, allergic cross-reactivity, and contraindications.
+
+IMPORTANT CONTEXT:
+- Same-specialty medications are managed through supersession rules (replacing old with new)
+- Your focus is on detecting interactions between medications from DIFFERENT specialties
+- This is critical for immunocompromised patients who see multiple specialists
 
 Your role is to:
-1. Identify drug-drug interactions between all medications
+1. Identify drug-drug interactions between medications from different specialties
 2. Flag potential allergic cross-reactivity based on drug classes
-3. Identify contraindications
-4. Provide clinical recommendations
+3. Identify contraindications when combining medications from different specialties
+4. Provide clinical recommendations for multi-specialty medication management
 
 Severity levels:
 - minor: Unlikely to cause significant problems, monitor if needed
 - moderate: May require dosage adjustment or monitoring
-- major: Significant interaction requiring intervention
-- contraindicated: Should not be used together
+- major: Significant interaction requiring intervention from both specialists
+- contraindicated: Should not be used together - requires specialist consultation
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -8088,33 +8211,36 @@ Respond ONLY with valid JSON in this exact format:
       "severity": "minor|moderate|major|contraindicated",
       "description": "Description of the interaction",
       "clinicalEffect": "What happens when taken together",
-      "recommendation": "Clinical recommendation"
+      "recommendation": "Clinical recommendation for multi-specialty coordination"
     }
   ],
   "allergicRisks": ["Description of allergy cross-reactivity risks"],
   "contraindications": ["Any absolute contraindications"],
-  "warnings": ["General warnings about the medication combination"],
+  "warnings": ["General warnings about the cross-specialty medication combination"],
   "safeToPresrcibe": true/false
 }`;
 
-      const userPrompt = `Please analyze the following medication combination for potential drug interactions:
+      const userPrompt = `Please analyze the following CROSS-SPECIALTY medication combination for potential drug interactions:
 
-**All Medications (Current + New):**
-${medicationList}
-
-**New Prescriptions Being Added:**
+**New Prescription(s) Being Added (Current Specialty):**
 ${newMedsList}
+
+**Existing Medications from OTHER Specialties:**
+${crossSpecialtyList}
+
+**All Medications Being Checked:**
+${medicationList}
 
 **Patient Allergies:**
 ${allergyList}
 
 Please identify:
-1. Any drug-drug interactions between these medications
+1. Any drug-drug interactions between the NEW prescription and CROSS-SPECIALTY medications
 2. Cross-reactivity risks with known allergies
-3. Contraindications or warnings
-4. Overall safety assessment
+3. Contraindications or warnings when combining these multi-specialty medications
+4. Overall safety assessment for this cross-specialty combination
 
-Provide a comprehensive safety analysis.`;
+Provide a comprehensive safety analysis focused on cross-specialty interaction risks.`;
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",
@@ -8129,10 +8255,34 @@ Provide a comprehensive safety analysis.`;
 
       const analysisResult = JSON.parse(completion.choices[0].message.content || '{}');
 
-      // Log for HIPAA audit
-      console.log(`[HIPAA-AUDIT] Drug interaction check performed by doctor ${userId}`);
+      // Log for HIPAA audit with mode context
+      if (usingAllMedicationsMode) {
+        console.log(`[HIPAA-AUDIT] [ALL-MEDICATIONS-MODE] Drug interaction check performed by doctor ${userId} for patient ${patientId || 'unknown'} - Cross-specialty filtering BYPASSED (explicit override: allowAllMedications=true)`);
+      } else {
+        console.log(`[HIPAA-AUDIT] Cross-specialty drug interaction check performed by doctor ${userId} for patient ${patientId || 'unknown'} - Specialty: ${currentSpecialty}`);
+      }
 
-      res.json(analysisResult);
+      // Enhance response with cross-specialty context
+      let note: string;
+      if (usingAllMedicationsMode) {
+        // All-medications mode (explicit override) - checked all medications
+        note = `ALL-MEDICATIONS MODE: Checked against ${allPatientMedications.length} total patient medication(s). Cross-specialty filtering bypassed by explicit request.`;
+      } else if (crossSpecialtyMedications.length > 0) {
+        note = `Checked against ${crossSpecialtyMedications.length} medication(s) from other specialties. ${sameSpecialtyMedications.length} same-specialty medication(s) excluded (managed by supersession rules).`;
+      } else {
+        note = "Only new prescriptions checked. No existing cross-specialty medications found.";
+      }
+
+      res.json({
+        ...analysisResult,
+        crossSpecialtyCount: usingAllMedicationsMode ? 0 : crossSpecialtyMedications.length,
+        sameSpecialtyCount: sameSpecialtyMedications.length,
+        allMedicationsCount: usingAllMedicationsMode ? allPatientMedications.length : undefined,
+        checkedMedications: uniqueMedications,
+        _note: note,
+        _allMedicationsMode: usingAllMedicationsMode || false,
+        _specialty: currentSpecialty || null
+      });
     } catch (error) {
       console.error('Error checking drug interactions:', error);
       // Return fallback response with warning instead of failing
@@ -8143,6 +8293,10 @@ Provide a comprehensive safety analysis.`;
         contraindications: [],
         warnings: ["AI analysis temporarily unavailable. Please verify interactions manually using clinical references."],
         safeToPresrcibe: true,
+        crossSpecialtyCount: 0,
+        sameSpecialtyCount: 0,
+        checkedMedications: [],
+        _note: "AI service temporarily unavailable. Please verify manually.",
         _fallback: true,
         _message: "AI service temporarily unavailable. This is a fallback response - please verify manually."
       });
