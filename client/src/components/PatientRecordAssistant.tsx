@@ -644,7 +644,15 @@ export function PatientRecordAssistant({ onOpenLysa, className }: PatientRecordA
               </TabsContent>
 
               <TabsContent value="environment" className="space-y-4 mt-0">
-                <PatientEnvironmentRiskCard patientId={selectedPatientId} />
+                {selectedPatientId ? (
+                  <PatientEnvironmentRiskCard patientId={selectedPatientId} />
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CloudSun className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p className="font-medium">No Patient Selected</p>
+                    <p className="text-sm">Select a patient to view environmental risk data</p>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="followups" className="space-y-4 mt-0">

@@ -40,7 +40,7 @@ import {
   Shield,
   Heart,
   Brain,
-  Lungs,
+  Stethoscope,
   Bone,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
@@ -155,8 +155,8 @@ interface EnvironmentalData {
 }
 
 const CONDITION_ICONS: Record<string, any> = {
-  asthma: Lungs,
-  copd: Lungs,
+  asthma: Stethoscope,
+  copd: Stethoscope,
   heart_failure: Heart,
   arthritis: Bone,
   migraines: Brain,
