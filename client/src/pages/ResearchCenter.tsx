@@ -45,6 +45,7 @@ import { StudiesTab } from "@/components/research/StudiesTab";
 import { AIAnalysisTab } from "@/components/research/AIAnalysisTab";
 import { AlertsTab } from "@/components/research/AlertsTab";
 import { DailyFollowupsTab } from "@/components/research/DailyFollowupsTab";
+import { ReportsTab } from "@/components/research/ReportsTab";
 
 const COHORT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00C49F', '#FFBB28'];
 
@@ -772,111 +773,7 @@ export default function ResearchCenter() {
         </TabsContent>
 
         <TabsContent value="reports">
-          <Card>
-            <CardHeader>
-              <CardTitle>Generated Research Reports</CardTitle>
-              <CardDescription>View and manage your AI-generated research analyses</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <Card key={i} className="animate-pulse">
-                      <CardContent className="p-4">
-                        <div className="space-y-2">
-                          <div className="h-4 bg-muted rounded w-3/4" />
-                          <div className="h-3 bg-muted rounded w-1/2" />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : reports && reports.length > 0 ? (
-                <ScrollArea className="h-[600px] pr-4">
-                  <div className="space-y-4">
-                    {reports.map((report) => (
-                      <Card key={report.id} className="hover-elevate" data-testid={`card-report-${report.id}`}>
-                        <CardContent className="p-6">
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex-1">
-                              <h3 className="font-semibold mb-1" data-testid={`text-report-title-${report.id}`}>
-                                {report.title}
-                              </h3>
-                              <p className="text-sm text-muted-foreground line-clamp-2">{report.summary}</p>
-                            </div>
-                            <div className="flex gap-2 flex-shrink-0 ml-4">
-                              <Badge variant="secondary">{report.analysisType}</Badge>
-                              {report.publishReady && <Badge variant="secondary">Ready to Publish</Badge>}
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3 mb-4">
-                            <div className="text-sm">
-                              <span className="text-muted-foreground">Cohort Size: </span>
-                              <span className="font-medium">{report.patientCohortSize} patients</span>
-                            </div>
-                            <div className="text-sm">
-                              <span className="text-muted-foreground">Date: </span>
-                              <span className="font-medium">
-                                {new Date(report.createdAt).toLocaleDateString()}
-                              </span>
-                            </div>
-                          </div>
-
-                          {report.findings && report.findings.length > 0 && (
-                            <div className="space-y-2 mt-4">
-                              <p className="text-sm font-medium">Key Findings:</p>
-                              {report.findings.slice(0, 2).map((finding, idx) => (
-                                <Card key={idx} className="bg-muted/50">
-                                  <CardContent className="p-3">
-                                    <div className="flex items-start gap-2">
-                                      <TrendingUp className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                                      <div className="text-sm">
-                                        <p className="font-medium mb-1">{finding.finding}</p>
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                          <span>Significance: {finding.significance}</span>
-                                          <span>•</span>
-                                          <span>Confidence: {(finding.confidence * 100).toFixed(0)}%</span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              ))}
-                            </div>
-                          )}
-
-                          <div className="flex gap-2 mt-4">
-                            <Button
-                              variant="outline"
-                              className="flex-1"
-                              data-testid={`button-view-report-${report.id}`}
-                            >
-                              <Eye className="h-4 w-4 mr-2" />
-                              View Full Report
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              data-testid={`button-download-report-${report.id}`}
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </ScrollArea>
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No research reports generated yet</p>
-                  <p className="text-sm mt-1">Use the AI Research Agent to create your first report</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <ReportsTab />
         </TabsContent>
       </Tabs>
     </div>
