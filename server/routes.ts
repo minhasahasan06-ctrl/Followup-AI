@@ -3678,6 +3678,71 @@ All questions and discussions should be focused on this patient.`;
     }
   });
 
+  // Research Center - Global Search
+  app.get('/api/research/search', isAuthenticated, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      const query = (req.query.q || req.query['0'] || '').toString().toLowerCase();
+      if (query.length < 3) {
+        return res.json([]);
+      }
+      
+      const results: Array<{ type: string; id: string; title: string; description?: string }> = [];
+      
+      // Search studies (mock data for now)
+      const studies = [
+        { id: 'study-1', title: 'Long-term Outcomes in Post-Transplant Patients', description: 'Post-transplant patient study' },
+        { id: 'study-2', title: 'Mental Health Impact on Physical Recovery', description: 'Mental health correlation study' },
+        { id: 'study-3', title: 'Medication Adherence Patterns Study', description: 'Adherence analysis' },
+      ];
+      
+      for (const study of studies) {
+        if (study.title.toLowerCase().includes(query) || study.description?.toLowerCase().includes(query)) {
+          results.push({ type: 'study', ...study });
+        }
+      }
+      
+      // Search reports
+      const reports = await storage.getResearchReportsByDoctor(req.user.id);
+      for (const report of reports) {
+        if (report.title.toLowerCase().includes(query)) {
+          results.push({ type: 'report', id: report.id, title: report.title, description: report.summary?.substring(0, 100) });
+        }
+      }
+      
+      // Search patients by ID only - HIPAA compliant, consent-verified
+      // Only returns patients the doctor is authorized to access via doctor-patient assignments
+      try {
+        // Get patients assigned to this doctor (uses doctorPatientAssignments)
+        const authorizedPatients = await storage.getDoctorPatients(req.user.id);
+        for (const patient of authorizedPatients) {
+          if (patient.id.toLowerCase().startsWith(query)) {
+            // Return only minimal, de-identified information
+            results.push({ 
+              type: 'patient', 
+              id: patient.id, 
+              title: `Patient ${patient.id.substring(0, 8)}...`, 
+              description: `Assigned Patient` 
+            });
+            // Limit to 5 patient results
+            if (results.filter(r => r.type === 'patient').length >= 5) break;
+          }
+        }
+      } catch (e) {
+        // If getDoctorPatients fails, skip patient search (fail safe)
+        console.log('Patient search skipped - no authorization data available');
+      }
+      
+      res.json(results.slice(0, 20));
+    } catch (error) {
+      console.error("Error in global search:", error);
+      res.status(500).json({ error: 'Search failed' });
+    }
+  });
+
   // Research Center - Get studies
   app.get('/api/research/studies', isAuthenticated, async (req: any, res) => {
     try {

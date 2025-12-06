@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { 
   TrendingUp, 
   BarChart, 
@@ -35,8 +37,12 @@ import {
   Eye,
   Database,
   CalendarDays,
+  Search,
+  Lock,
+  ShieldAlert,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { AIResearchReport } from "@shared/schema";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart as ReBarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line, Legend } from "recharts";
@@ -472,16 +478,45 @@ function CSVImportTab() {
   );
 }
 
+type ResearchRole = 'admin' | 'researcher' | 'viewer';
+
+interface SearchResult {
+  type: 'study' | 'patient' | 'report' | 'cohort';
+  id: string;
+  title: string;
+  description?: string;
+}
+
 export default function ResearchCenter() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [reportTitle, setReportTitle] = useState("");
   const [analysisType, setAnalysisType] = useState<string>("");
   const [createStudyOpen, setCreateStudyOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [newStudy, setNewStudy] = useState({
     title: '',
     description: '',
     dataTypes: [] as string[],
   });
+
+  const userRole: ResearchRole = useMemo(() => {
+    if (!user) return 'viewer';
+    if (user.role === 'admin') return 'admin';
+    if (user.role === 'doctor') return 'researcher';
+    return 'viewer';
+  }, [user]);
+
+  const permissions = useMemo(() => ({
+    canCreateStudies: userRole === 'admin' || userRole === 'researcher',
+    canImportData: userRole === 'admin' || userRole === 'researcher',
+    canRunAnalysis: userRole === 'admin' || userRole === 'researcher',
+    canManageAlerts: userRole === 'admin' || userRole === 'researcher',
+    canViewReports: true,
+    canExportData: userRole === 'admin' || userRole === 'researcher',
+    canAccessPersonalResearch: userRole === 'admin' || userRole === 'researcher',
+  }), [userRole]);
 
   const { data: reports, isLoading } = useQuery<AIResearchReport[]>({
     queryKey: ["/api/doctor/research-reports"],
@@ -494,6 +529,28 @@ export default function ResearchCenter() {
   const { data: studies, isLoading: studiesLoading } = useQuery<ResearchStudy[]>({
     queryKey: ['/api/research/studies'],
   });
+
+  const { data: searchResults } = useQuery<SearchResult[]>({
+    queryKey: ['/api/research/search', searchQuery],
+    enabled: searchQuery.length > 2,
+  });
+
+  const filteredResults = useMemo(() => {
+    if (!searchResults) return [];
+    return searchResults.filter(r => 
+      r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [searchResults, searchQuery]);
+
+  const handleSearchSelect = (result: SearchResult) => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    toast({
+      title: `Opening ${result.type}`,
+      description: result.title,
+    });
+  };
 
   const generateReportMutation = useMutation({
     mutationFn: async (data: { title: string; analysisType: string }) => {
@@ -578,7 +635,7 @@ export default function ResearchCenter() {
 
   return (
     <div className="space-y-6" data-testid="page-research-center">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Beaker className="h-6 w-6 text-purple-500" />
@@ -588,11 +645,85 @@ export default function ResearchCenter() {
             AI-powered research analysis and data visualization for immunocompromised patient populations
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
+          <Badge 
+            variant={userRole === 'admin' ? 'default' : userRole === 'researcher' ? 'secondary' : 'outline'}
+            className="gap-1"
+            data-testid="badge-user-role"
+          >
+            {userRole === 'admin' && <ShieldAlert className="h-3 w-3" />}
+            {userRole === 'viewer' && <Eye className="h-3 w-3" />}
+            {userRole === 'researcher' && <Beaker className="h-3 w-3" />}
+            {userRole.charAt(0).toUpperCase() + userRole.slice(1)}
+          </Badge>
+          
+          <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-64 justify-start gap-2" data-testid="button-global-search">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Search studies, patients, reports...</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0" align="end">
+              <Command>
+                <CommandInput 
+                  placeholder="Search..." 
+                  value={searchQuery}
+                  onValueChange={setSearchQuery}
+                  data-testid="input-global-search"
+                />
+                <CommandList>
+                  <CommandEmpty>
+                    {searchQuery.length < 3 
+                      ? "Type at least 3 characters to search" 
+                      : "No results found"
+                    }
+                  </CommandEmpty>
+                  {filteredResults.length > 0 && (
+                    <>
+                      <CommandGroup heading="Studies">
+                        {filteredResults.filter(r => r.type === 'study').slice(0, 3).map(r => (
+                          <CommandItem key={r.id} onSelect={() => handleSearchSelect(r)} data-testid={`search-result-study-${r.id}`}>
+                            <Beaker className="h-4 w-4 mr-2" />
+                            {r.title}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                      <CommandSeparator />
+                      <CommandGroup heading="Reports">
+                        {filteredResults.filter(r => r.type === 'report').slice(0, 3).map(r => (
+                          <CommandItem key={r.id} onSelect={() => handleSearchSelect(r)} data-testid={`search-result-report-${r.id}`}>
+                            <FileText className="h-4 w-4 mr-2" />
+                            {r.title}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                      <CommandSeparator />
+                      <CommandGroup heading="Patients">
+                        {filteredResults.filter(r => r.type === 'patient').slice(0, 3).map(r => (
+                          <CommandItem key={r.id} onSelect={() => handleSearchSelect(r)} data-testid={`search-result-patient-${r.id}`}>
+                            <Users className="h-4 w-4 mr-2" />
+                            {r.title}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </>
+                  )}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {permissions.canExportData && (
           <Button variant="outline" data-testid="button-export-data">
             <Download className="h-4 w-4 mr-2" />
             Export Data
           </Button>
+        )}
+        {permissions.canCreateStudies && (
           <Dialog open={createStudyOpen} onOpenChange={setCreateStudyOpen}>
             <DialogTrigger asChild>
               <Button data-testid="button-create-study">
@@ -666,7 +797,7 @@ export default function ResearchCenter() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -718,7 +849,7 @@ export default function ResearchCenter() {
       </div>
 
       <Tabs defaultValue="cohort" className="space-y-6">
-        <TabsList className="grid w-full max-w-3xl grid-cols-5">
+        <TabsList className="flex flex-wrap gap-1 w-full max-w-4xl h-auto p-1">
           <TabsTrigger value="cohort" className="gap-2" data-testid="tab-cohort">
             <Users className="h-4 w-4" />
             Cohort
@@ -727,17 +858,35 @@ export default function ResearchCenter() {
             <Beaker className="h-4 w-4" />
             Studies
           </TabsTrigger>
-          <TabsTrigger value="import" className="gap-2" data-testid="tab-import">
+          <TabsTrigger 
+            value="import" 
+            className="gap-2" 
+            data-testid="tab-import"
+            disabled={!permissions.canImportData}
+          >
             <Upload className="h-4 w-4" />
             Import
+            {!permissions.canImportData && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
           </TabsTrigger>
-          <TabsTrigger value="generate" className="gap-2" data-testid="tab-generate">
+          <TabsTrigger 
+            value="generate" 
+            className="gap-2" 
+            data-testid="tab-generate"
+            disabled={!permissions.canRunAnalysis}
+          >
             <Bot className="h-4 w-4" />
             AI Analysis
+            {!permissions.canRunAnalysis && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
           </TabsTrigger>
-          <TabsTrigger value="alerts" className="gap-2" data-testid="tab-alerts">
+          <TabsTrigger 
+            value="alerts" 
+            className="gap-2" 
+            data-testid="tab-alerts"
+            disabled={!permissions.canManageAlerts}
+          >
             <AlertCircle className="h-4 w-4" />
             Alerts
+            {!permissions.canManageAlerts && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
           </TabsTrigger>
           <TabsTrigger value="followups" className="gap-2" data-testid="tab-followups">
             <CalendarDays className="h-4 w-4" />
@@ -747,9 +896,15 @@ export default function ResearchCenter() {
             <FileText className="h-4 w-4" />
             Reports
           </TabsTrigger>
-          <TabsTrigger value="personal" className="gap-2" data-testid="tab-personal">
+          <TabsTrigger 
+            value="personal" 
+            className="gap-2" 
+            data-testid="tab-personal"
+            disabled={!permissions.canAccessPersonalResearch}
+          >
             <Brain className="h-4 w-4" />
             Personal Research
+            {!permissions.canAccessPersonalResearch && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
           </TabsTrigger>
         </TabsList>
 
