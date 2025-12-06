@@ -87,9 +87,10 @@ const patientItems = [
     badge: "AI",
   },
   {
-    title: "Prescriptions",
-    url: "/prescriptions",
+    title: "Patient Records",
+    url: "/patient-records",
     icon: FileText,
+    badge: "Unified",
   },
   {
     title: "Drug Interactions",
@@ -111,12 +112,6 @@ const patientItems = [
     title: "App Connections",
     url: "/consents",
     icon: LinkIcon,
-  },
-  {
-    title: "Medical Files",
-    url: "/medical-files",
-    icon: FileText,
-    badge: "OCR",
   },
   {
     title: "Wearable Devices",
@@ -162,6 +157,24 @@ const doctorItems = [
     title: "Assistant Lysa",
     url: "/agent-hub",
     icon: Headphones,
+    badge: "AI",
+  },
+  {
+    title: "Prescriptions",
+    url: "/prescriptions",
+    icon: FileText,
+    badge: "Rx",
+  },
+  {
+    title: "Drug Interactions",
+    url: "/drug-interactions",
+    icon: AlertTriangle,
+    badge: "AI",
+  },
+  {
+    title: "AI Alerts",
+    url: "/ai-alerts",
+    icon: Bell,
     badge: "AI",
   },
   {

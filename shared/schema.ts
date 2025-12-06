@@ -363,6 +363,15 @@ export const medications = pgTable("medications", {
   discontinuationReason: text("discontinuation_reason"),
   replacementMedicationId: varchar("replacement_medication_id"), // If switched to different medication
   
+  // Archive tracking - links to medical document record when archived
+  archivedAt: timestamp("archived_at"),
+  archiveDocumentId: varchar("archive_document_id"), // Link to medical_documents record when archived
+  archiveReason: varchar("archive_reason"), // 'completed', 'superseded', 'expired', 'discontinued', 'conflict_resolved'
+  
+  // Lifecycle metadata for patient records integration
+  lifecycleStage: varchar("lifecycle_stage").default("active"), // 'pending', 'active', 'ending_soon', 'completed', 'archived'
+  lastLifecycleUpdate: timestamp("last_lifecycle_update"),
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

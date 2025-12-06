@@ -48,7 +48,7 @@ import Referrals from "@/pages/Referrals";
 import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
 import TwoFactorAuth from "@/pages/TwoFactorAuth";
-import MedicalFiles from "@/pages/MedicalFiles";
+import PatientRecords from "@/pages/PatientRecords";
 import ImmuneMonitoring from "@/pages/ImmuneMonitoring";
 import EnvironmentalRiskMap from "@/pages/EnvironmentalRiskMap";
 import CorrelationInsights from "@/pages/CorrelationInsights";
@@ -89,7 +89,9 @@ function PatientRouter() {
       <Route path="/daily-followup/video-exam" component={DailyFollowup} />
       <Route path="/agent-hub" component={AgentHub} />
       <Route path="/medications" component={Medications} />
-      <Route path="/prescriptions" component={Prescriptions} />
+      <Route path="/patient-records" component={PatientRecords} />
+      <Route path="/prescriptions" component={PatientRecords} />
+      <Route path="/medical-files" component={PatientRecords} />
       <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
@@ -107,7 +109,6 @@ function PatientRouter() {
       <Route path="/consultation-requests" component={ConsultationRequests} />
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/consents" component={ConsentManagement} />
-      <Route path="/medical-files" component={MedicalFiles} />
       <Route path="/wearables" component={WearableDevices} />
       <Route path="/device-connect" component={DeviceConnect} />
       <Route path="/immune-monitoring" component={ImmuneMonitoring} />
