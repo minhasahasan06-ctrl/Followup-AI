@@ -28,8 +28,19 @@ from ml_analysis.report_generator import ReportGenerator, ReportConfig
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("ML Analysis Engine starting...")
+    from scheduler import start_scheduler, stop_scheduler
+    try:
+        start_scheduler()
+        print("Background scheduler started")
+    except Exception as e:
+        print(f"Warning: Could not start scheduler: {e}")
     yield
     print("ML Analysis Engine shutting down...")
+    try:
+        stop_scheduler()
+        print("Background scheduler stopped")
+    except Exception as e:
+        print(f"Warning: Error stopping scheduler: {e}")
 
 app = FastAPI(
     title="Research Center ML Analysis API",
@@ -546,6 +557,110 @@ async def parse_nl_query(request: NLQueryRequest, auth: dict = Depends(verify_au
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class SchedulerJobResponse(BaseModel):
+    id: str
+    name: str
+    next_run_time: Optional[str] = None
+    trigger: str
+
+
+class TriggerReanalysisRequest(BaseModel):
+    study_id: str
+    force: bool = False
+
+
+@app.get("/api/v1/scheduler/jobs", response_model=List[SchedulerJobResponse])
+async def get_scheduler_jobs(user_id: str = Depends(verify_auth)):
+    """Get list of scheduled background jobs."""
+    from scheduler import get_scheduler
+    
+    log_audit("VIEW_SCHEDULER_JOBS", "scheduler", user_id)
+    
+    scheduler = get_scheduler()
+    jobs = scheduler.get_jobs()
+    
+    return [SchedulerJobResponse(**job) for job in jobs]
+
+
+@app.get("/api/v1/scheduler/status")
+async def get_scheduler_status(user_id: str = Depends(verify_auth)):
+    """Get scheduler status."""
+    from scheduler import get_scheduler
+    
+    scheduler = get_scheduler()
+    
+    return {
+        "running": scheduler.scheduler.running if scheduler.scheduler else False,
+        "job_count": len(scheduler.get_jobs()),
+        "jobs": scheduler.get_jobs()
+    }
+
+
+@app.post("/api/v1/scheduler/trigger-reanalysis")
+async def trigger_reanalysis(
+    request: TriggerReanalysisRequest,
+    user_id: str = Depends(verify_auth)
+):
+    """Manually trigger reanalysis for a specific study."""
+    from scheduler import get_scheduler
+    import asyncio
+    
+    log_audit("TRIGGER_REANALYSIS", f"study:{request.study_id}", user_id, {
+        "force": request.force
+    })
+    
+    scheduler = get_scheduler()
+    
+    job_id = await scheduler._create_analysis_job(
+        request.study_id, 
+        "reanalysis", 
+        "manual"
+    )
+    
+    if job_id:
+        await scheduler._update_study_reanalysis_timestamp(request.study_id)
+        return {"success": True, "job_id": job_id}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create reanalysis job")
+
+
+@app.post("/api/v1/scheduler/run-now/{job_type}")
+async def run_job_now(
+    job_type: str,
+    user_id: str = Depends(verify_auth)
+):
+    """Manually trigger a scheduled job type immediately."""
+    from scheduler import get_scheduler
+    import threading
+    
+    valid_types = ["auto_reanalysis", "risk_scoring", "data_quality", "daily_summary"]
+    if job_type not in valid_types:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid job type. Must be one of: {valid_types}"
+        )
+    
+    log_audit("RUN_JOB_NOW", f"scheduler:{job_type}", user_id)
+    
+    scheduler = get_scheduler()
+    
+    job_methods = {
+        "auto_reanalysis": scheduler._check_auto_reanalysis,
+        "risk_scoring": scheduler._run_risk_scoring,
+        "data_quality": scheduler._check_data_quality,
+        "daily_summary": scheduler._generate_daily_summary
+    }
+    
+    thread = threading.Thread(target=job_methods[job_type])
+    thread.start()
+    
+    return {
+        "success": True,
+        "message": f"Job {job_type} started in background",
+        "job_type": job_type
+    }
 
 
 if __name__ == "__main__":

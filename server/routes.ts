@@ -18421,6 +18421,114 @@ Provide:
     }
   });
 
+  // Scheduler API Routes - Proxy to Python Backend
+  app.get('/api/v1/research-center/scheduler/status', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/scheduler/status`, {
+        method: 'GET',
+        headers: {
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to get scheduler status' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error fetching scheduler status:', error);
+      res.status(500).json({ error: 'Failed to fetch scheduler status' });
+    }
+  });
+
+  app.get('/api/v1/research-center/scheduler/jobs', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/scheduler/jobs`, {
+        method: 'GET',
+        headers: {
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to get scheduler jobs' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error fetching scheduler jobs:', error);
+      res.status(500).json({ error: 'Failed to fetch scheduler jobs' });
+    }
+  });
+
+  app.post('/api/v1/research-center/scheduler/trigger-reanalysis', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/scheduler/trigger-reanalysis`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+        body: JSON.stringify(req.body),
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to trigger reanalysis' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error triggering reanalysis:', error);
+      res.status(500).json({ error: 'Failed to trigger reanalysis' });
+    }
+  });
+
+  app.post('/api/v1/research-center/scheduler/run-now/:jobType', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/scheduler/run-now/${req.params.jobType}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to run job' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error running scheduled job:', error);
+      res.status(500).json({ error: 'Failed to run scheduled job' });
+    }
+  });
+
   // Research Audit Logs
   app.get('/api/v1/research-center/audit-logs', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
     try {
