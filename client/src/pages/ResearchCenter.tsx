@@ -34,11 +34,17 @@ import {
   Loader2,
   Eye,
   Database,
+  CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { AIResearchReport } from "@shared/schema";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart as ReBarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line, Legend } from "recharts";
+import CohortBuilderTab from "@/components/research/CohortBuilderTab";
+import { StudiesTab } from "@/components/research/StudiesTab";
+import { AIAnalysisTab } from "@/components/research/AIAnalysisTab";
+import { AlertsTab } from "@/components/research/AlertsTab";
+import { DailyFollowupsTab } from "@/components/research/DailyFollowupsTab";
 
 const COHORT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00C49F', '#FFBB28'];
 
@@ -727,6 +733,14 @@ export default function ResearchCenter() {
             <Bot className="h-4 w-4" />
             AI Analysis
           </TabsTrigger>
+          <TabsTrigger value="alerts" className="gap-2" data-testid="tab-alerts">
+            <AlertCircle className="h-4 w-4" />
+            Alerts
+          </TabsTrigger>
+          <TabsTrigger value="followups" className="gap-2" data-testid="tab-followups">
+            <CalendarDays className="h-4 w-4" />
+            Followups
+          </TabsTrigger>
           <TabsTrigger value="reports" className="gap-2" data-testid="tab-reports">
             <FileText className="h-4 w-4" />
             Reports
@@ -734,282 +748,23 @@ export default function ResearchCenter() {
         </TabsList>
 
         <TabsContent value="cohort">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card data-testid="card-gender-distribution">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ChartPie className="h-4 w-4 text-purple-500" />
-                  Gender Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie
-                      data={genderData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={80}
-                      label={({ name, value }) => `${name}: ${value}%`}
-                    >
-                      {genderData.map((entry, index) => (
-                        <Cell key={entry.name} fill={COHORT_COLORS[index % COHORT_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="card-condition-distribution">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Activity className="h-4 w-4 text-blue-500" />
-                  Condition Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <ReBarChart data={conditionData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" />
-                    <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#8884d8" radius={[0, 4, 4, 0]} />
-                  </ReBarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="card-age-distribution">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <BarChart className="h-4 w-4 text-green-500" />
-                  Age Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <ReBarChart data={ageDistribution}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="range" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="#82ca9d" radius={[4, 4, 0, 0]} />
-                  </ReBarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="card-enrollment-trend">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingUp className="h-4 w-4 text-amber-500" />
-                  Enrollment Trend
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={enrollmentTrend}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="patients" stroke="#8884d8" strokeWidth={2} dot={{ r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
+          <CohortBuilderTab />
         </TabsContent>
 
         <TabsContent value="studies">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Beaker className="h-5 w-5 text-purple-500" />
-                Research Studies
-              </CardTitle>
-              <CardDescription>Manage and monitor ongoing research studies</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {studiesLoading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-20 bg-muted animate-pulse rounded-lg" />
-                  ))}
-                </div>
-              ) : studies && studies.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Study</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Cohort</TableHead>
-                      <TableHead>Start Date</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {studies.map((study) => (
-                      <TableRow key={study.id} data-testid={`row-study-${study.id}`}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{study.title}</p>
-                            <p className="text-xs text-muted-foreground line-clamp-1">{study.description}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={
-                            study.status === 'active' ? 'default' :
-                            study.status === 'completed' ? 'secondary' :
-                            study.status === 'paused' ? 'outline' : 'secondary'
-                          }>
-                            {study.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{study.cohort_size} patients</TableCell>
-                        <TableCell>{new Date(study.start_date).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" data-testid={`button-view-study-${study.id}`}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="text-center py-12">
-                  <Beaker className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
-                  <h3 className="text-sm font-medium mb-2">No Studies Yet</h3>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Create your first research study to start collecting data
-                  </p>
-                  <Button onClick={() => setCreateStudyOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Study
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <StudiesTab />
         </TabsContent>
 
         <TabsContent value="generate">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent">
-                  <Bot className="h-5 w-5" />
-                </div>
-                <div>
-                  <CardTitle>AI Research Agent</CardTitle>
-                  <CardDescription>
-                    Generate comprehensive epidemiological research reports using AI analysis
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="title">Report Title</Label>
-                  <Input
-                    id="title"
-                    placeholder="e.g., Correlation between medication adherence and vital stability"
-                    value={reportTitle}
-                    onChange={(e) => setReportTitle(e.target.value)}
-                    data-testid="input-report-title"
-                  />
-                </div>
+          <AIAnalysisTab />
+        </TabsContent>
 
-                <div className="space-y-2">
-                  <Label htmlFor="analysis-type">Analysis Type</Label>
-                  <Select value={analysisType} onValueChange={setAnalysisType}>
-                    <SelectTrigger id="analysis-type" data-testid="select-analysis-type">
-                      <SelectValue placeholder="Select analysis type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="correlation">Correlation Analysis</SelectItem>
-                      <SelectItem value="regression">Regression Analysis</SelectItem>
-                      <SelectItem value="survival">Survival Analysis</SelectItem>
-                      <SelectItem value="pattern">Pattern Recognition</SelectItem>
-                      <SelectItem value="cohort">Cohort Comparison</SelectItem>
-                      <SelectItem value="longitudinal">Longitudinal Study</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+        <TabsContent value="alerts">
+          <AlertsTab />
+        </TabsContent>
 
-                <Card className="bg-muted/50">
-                  <CardContent className="p-4">
-                    <h4 className="font-medium mb-2 text-sm">Data Sources</h4>
-                    <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
-                      <div>
-                        <p className="font-medium text-foreground mb-1">Patient Data</p>
-                        <ul className="space-y-1">
-                          <li className="flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3 text-green-500" />
-                            Daily follow-up assessments
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3 text-green-500" />
-                            Medication adherence records
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3 text-green-500" />
-                            Wearable device data
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3 text-green-500" />
-                            Behavioral insights
-                          </li>
-                        </ul>
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground mb-1">Public Datasets</p>
-                        <ul className="space-y-1">
-                          <li className="flex items-center gap-1">
-                            <Database className="h-3 w-3 text-blue-500" />
-                            PubMed clinical studies
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <Database className="h-3 w-3 text-blue-500" />
-                            PhysioNet datasets
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <Database className="h-3 w-3 text-blue-500" />
-                            WHO Health Observatory
-                          </li>
-                          <li className="flex items-center gap-1">
-                            <Database className="h-3 w-3 text-blue-500" />
-                            MIMIC-IV clinical data
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Button
-                onClick={handleGenerateReport}
-                disabled={generateReportMutation.isPending}
-                className="w-full"
-                data-testid="button-generate-report"
-              >
-                {generateReportMutation.isPending ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Generating Report...</>
-                ) : (
-                  <><Brain className="h-4 w-4 mr-2" /> Generate Research Report</>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
+        <TabsContent value="followups">
+          <DailyFollowupsTab />
         </TabsContent>
 
         <TabsContent value="import">

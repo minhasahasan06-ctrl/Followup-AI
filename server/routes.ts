@@ -17957,7 +17957,8 @@ Provide:
         return res.status(403).json({ error: 'Access denied' });
       }
 
-      const preview = await researchService.previewCohort(req.body.definition);
+      const filters = req.body.filters || req.body.definition || req.body;
+      const preview = await researchService.previewCohort(filters);
       res.json(preview);
     } catch (error) {
       console.error('Error previewing cohort:', error);
