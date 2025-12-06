@@ -18529,6 +18529,261 @@ Provide:
     }
   });
 
+  // Model Registry API Routes - Proxy to Python Backend
+  app.get('/api/v1/research-center/model-registry/models', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { model_type, status } = req.query;
+      let url = `${pythonBackendUrl}/api/v1/model-registry/models`;
+      const params = new URLSearchParams();
+      if (model_type) params.append('model_type', model_type);
+      if (status) params.append('status', status);
+      if (params.toString()) url += `?${params.toString()}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to fetch models' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error fetching models:', error);
+      res.status(500).json({ error: 'Failed to fetch models' });
+    }
+  });
+
+  app.get('/api/v1/research-center/model-registry/models/:modelName/active', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/active`, {
+        method: 'GET',
+        headers: {
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Model not found' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error fetching active model:', error);
+      res.status(500).json({ error: 'Failed to fetch active model' });
+    }
+  });
+
+  app.get('/api/v1/research-center/model-registry/models/:modelName/versions', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/versions`, {
+        method: 'GET',
+        headers: {
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to fetch versions' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error fetching model versions:', error);
+      res.status(500).json({ error: 'Failed to fetch model versions' });
+    }
+  });
+
+  app.post('/api/v1/research-center/model-registry/verify-consent', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/verify-consent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+        body: JSON.stringify(req.body),
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to verify consent' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error verifying consent:', error);
+      res.status(500).json({ error: 'Failed to verify consent' });
+    }
+  });
+
+  app.get('/api/v1/research-center/model-registry/consented-patients/count', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { data_types } = req.query;
+      const url = `${pythonBackendUrl}/api/v1/model-registry/consented-patients/count?data_types=${data_types || ''}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to fetch consented count' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error fetching consented count:', error);
+      res.status(500).json({ error: 'Failed to fetch consented count' });
+    }
+  });
+
+  // NOTE: No endpoint to enumerate patient IDs directly - only counts are exposed
+  // Patient IDs are only used internally in prediction pipeline with proper consent checks
+
+  app.post('/api/v1/research-center/model-registry/predict', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/predict`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+        body: JSON.stringify(req.body),
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to make prediction' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error making prediction:', error);
+      res.status(500).json({ error: 'Failed to make prediction' });
+    }
+  });
+
+  app.post('/api/v1/research-center/model-registry/log-usage', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/log-usage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+        body: JSON.stringify(req.body),
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to log usage' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error logging model usage:', error);
+      res.status(500).json({ error: 'Failed to log model usage' });
+    }
+  });
+
+  app.get('/api/v1/research-center/model-registry/models/:modelName/compare', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { version1, version2 } = req.query;
+      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/compare?version1=${version1}&version2=${version2}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to compare models' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error comparing models:', error);
+      res.status(500).json({ error: 'Failed to compare models' });
+    }
+  });
+
+  app.get('/api/v1/research-center/model-registry/models/:modelName/features', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/features`, {
+        method: 'GET',
+        headers: {
+          'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
+        },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to fetch features' });
+      }
+
+      const result = await response.json();
+      res.json(result);
+    } catch (error) {
+      console.error('Error fetching model features:', error);
+      res.status(500).json({ error: 'Failed to fetch model features' });
+    }
+  });
+
   // Research Audit Logs
   app.get('/api/v1/research-center/audit-logs', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
     try {

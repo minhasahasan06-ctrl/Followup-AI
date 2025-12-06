@@ -559,6 +559,265 @@ async def parse_nl_query(request: NLQueryRequest, auth: dict = Depends(verify_au
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ModelInfoResponse(BaseModel):
+    id: str
+    model_name: str
+    model_type: str
+    version: str
+    status: str
+    is_active: Optional[bool] = None
+    metrics: Optional[Dict[str, Any]] = None
+    feature_names: Optional[List[str]] = None
+
+
+class ConsentVerificationRequest(BaseModel):
+    patient_id: str
+    data_types: List[str]
+
+
+class ConsentVerificationResponse(BaseModel):
+    consented: bool
+    granted_types: Optional[List[str]] = None
+    missing_types: Optional[List[str]] = None
+    reason: Optional[str] = None
+
+
+class PredictionRequest(BaseModel):
+    model_name: str
+    study_id: str  # Required for consent verification and audit logging
+    data_types: List[str]  # Data types being used for consent verification
+    version: Optional[str] = None
+    # NOTE: Client-supplied features are NOT accepted. Server constructs features from verified patient data.
+
+
+class ModelUsageRequest(BaseModel):
+    model_id: str
+    study_id: str
+    analysis_type: str
+    patient_count: int
+
+
+@app.get("/api/v1/model-registry/models", response_model=List[ModelInfoResponse])
+async def get_available_models(
+    model_type: Optional[str] = None,
+    status: str = "active",
+    user_id: str = Depends(verify_auth)
+):
+    """Get list of available trained models from the registry."""
+    from ml_analysis.model_registry import get_model_registry
+    
+    log_audit("VIEW_MODEL_REGISTRY", "models", user_id, {"model_type": model_type, "status": status})
+    
+    registry = get_model_registry()
+    models = await registry.get_available_models(model_type, status)
+    
+    return [ModelInfoResponse(**m) for m in models]
+
+
+@app.get("/api/v1/model-registry/models/{model_name}/active")
+async def get_active_model(
+    model_name: str,
+    user_id: str = Depends(verify_auth)
+):
+    """Get the currently active version of a specific model."""
+    from ml_analysis.model_registry import get_model_registry
+    
+    log_audit("VIEW_ACTIVE_MODEL", f"model:{model_name}", user_id)
+    
+    registry = get_model_registry()
+    model = await registry.get_active_model(model_name)
+    
+    if not model:
+        raise HTTPException(status_code=404, detail=f"No active model found for {model_name}")
+    
+    return model
+
+
+@app.get("/api/v1/model-registry/models/{model_name}/versions")
+async def get_model_versions(
+    model_name: str,
+    user_id: str = Depends(verify_auth)
+):
+    """Get all versions of a specific model."""
+    from ml_analysis.model_registry import get_model_registry
+    
+    registry = get_model_registry()
+    versions = await registry.get_model_versions(model_name)
+    
+    return {"model_name": model_name, "versions": versions}
+
+
+@app.post("/api/v1/model-registry/verify-consent", response_model=ConsentVerificationResponse)
+async def verify_patient_consent(
+    request: ConsentVerificationRequest,
+    user_id: str = Depends(verify_auth)
+):
+    """Verify ML training consent for a patient."""
+    from ml_analysis.model_registry import get_model_registry
+    
+    log_audit("VERIFY_ML_CONSENT", f"patient:{request.patient_id}", user_id, {
+        "data_types": request.data_types
+    })
+    
+    registry = get_model_registry()
+    result = await registry.verify_consent_for_patient(request.patient_id, request.data_types)
+    
+    return ConsentVerificationResponse(**result)
+
+
+@app.get("/api/v1/model-registry/consented-patients/count")
+async def get_consented_patients_count(
+    data_types: str,
+    user_id: str = Depends(verify_auth)
+):
+    """Get count of patients who have consented to ML training for given data types.
+    
+    Returns aggregate count only to prevent PHI exposure.
+    """
+    from ml_analysis.model_registry import get_model_registry
+    
+    log_audit("FETCH_CONSENTED_COUNT", "ml_training_consent", user_id, {
+        "data_types": data_types
+    })
+    
+    data_type_list = [dt.strip() for dt in data_types.split(",")]
+    
+    registry = get_model_registry()
+    result = await registry.get_consented_patients_count(data_type_list)
+    
+    return result
+
+
+@app.get("/api/v1/model-registry/consented-patients/study/{study_id}/count")
+async def get_consented_patients_count_for_study(
+    study_id: str,
+    data_types: str,
+    user_id: str = Depends(verify_auth)
+):
+    """Get count of consented patients for a specific study.
+    
+    SECURITY: Returns aggregate count only to prevent PHI exposure.
+    Verifies user is authorized to access the study before returning data.
+    
+    Patient IDs are never exposed via API - only used internally in prediction pipeline.
+    """
+    from ml_analysis.model_registry import get_model_registry
+    
+    log_audit("FETCH_STUDY_CONSENTED_COUNT", f"study:{study_id}", user_id, {
+        "data_types": data_types
+    })
+    
+    data_type_list = [dt.strip() for dt in data_types.split(",")]
+    
+    registry = get_model_registry()
+    result = await registry.get_consented_patients_count_for_study(study_id, data_type_list, user_id)
+    
+    if result.get("error"):
+        raise HTTPException(status_code=403, detail=result["error"])
+    
+    return result
+
+
+@app.post("/api/v1/model-registry/predict")
+async def model_predict(
+    request: PredictionRequest,
+    user_id: str = Depends(verify_auth)
+):
+    """Make consent-verified predictions using a trained model from the registry.
+    
+    SECURITY: This endpoint uses SERVER-SIDE feature construction only.
+    Client-supplied feature matrices are NOT accepted to prevent data tampering.
+    
+    Requires study_id and data_types for:
+    - User authorization verification (must be assigned to study)
+    - Consent verification for all patients
+    - Audit logging
+    """
+    from ml_analysis.model_registry import get_research_predictor
+    
+    log_audit("MODEL_PREDICTION", f"model:{request.model_name}", user_id, {
+        "study_id": request.study_id,
+        "data_types": request.data_types,
+        "version": request.version
+    })
+    
+    predictor = get_research_predictor()
+    
+    result = await predictor.predict_for_study(
+        model_name=request.model_name,
+        study_id=request.study_id,
+        data_types=request.data_types,
+        user_id=user_id,
+        version=request.version
+    )
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result
+
+
+@app.post("/api/v1/model-registry/log-usage")
+async def log_model_usage(
+    request: ModelUsageRequest,
+    user_id: str = Depends(verify_auth)
+):
+    """Log model usage for audit trail."""
+    from ml_analysis.model_registry import get_model_registry
+    
+    registry = get_model_registry()
+    success = await registry.log_model_usage(
+        request.model_id,
+        request.study_id,
+        request.analysis_type,
+        request.patient_count,
+        user_id
+    )
+    
+    return {"success": success}
+
+
+@app.get("/api/v1/model-registry/models/{model_name}/compare")
+async def compare_model_versions(
+    model_name: str,
+    version1: str,
+    version2: str,
+    user_id: str = Depends(verify_auth)
+):
+    """Compare performance metrics between two model versions."""
+    from ml_analysis.model_registry import get_model_registry
+    
+    log_audit("COMPARE_MODELS", f"model:{model_name}", user_id, {
+        "version1": version1,
+        "version2": version2
+    })
+    
+    registry = get_model_registry()
+    comparison = await registry.compare_model_versions(model_name, version1, version2)
+    
+    if "error" in comparison:
+        raise HTTPException(status_code=404, detail=comparison["error"])
+    
+    return comparison
+
+
+@app.get("/api/v1/model-registry/models/{model_name}/features")
+async def get_model_feature_importance(
+    model_name: str,
+    user_id: str = Depends(verify_auth)
+):
+    """Get feature importance from a trained model."""
+    from ml_analysis.model_registry import get_research_predictor
+    
+    predictor = get_research_predictor()
+    result = await predictor.get_feature_importance(model_name)
+    
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    
+    return result
+
+
 class SchedulerJobResponse(BaseModel):
     id: str
     name: str
