@@ -5,23 +5,29 @@ import { ReminderCard } from "@/components/ReminderCard";
 import { EmergencyAlert } from "@/components/EmergencyAlert";
 import DynamicWelcome from "@/components/DynamicWelcome";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
+import { DailySymptomCheckin } from "@/components/DailySymptomCheckin";
+import { MentalHealthRedFlags } from "@/components/MentalHealthRedFlags";
+import { PatientConsentRequests, PatientFollowupId } from "@/components/PatientConsentRequests";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users, Mic, Volume2, MicOff, Pause, CheckCircle2, AlertCircle, Camera, TrendingDown, Minus, User, Info, GitCompare } from "lucide-react";
+import { Heart, Activity, Droplet, Moon, TrendingUp, Calendar, CheckCircle, Brain, Video, Eye, Hand, Smile, Play, Wind, Palette, Zap, Users, Mic, Volume2, MicOff, Pause, CheckCircle2, AlertCircle, Camera, TrendingDown, Minus, User, Info, GitCompare, ClipboardList, AlertTriangle, Check, FileText, Phone, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "wouter";
-import type { DailyFollowup, Medication, DynamicTask, BehavioralInsight } from "@shared/schema";
+import type { DailyFollowup, Medication, DynamicTask, BehavioralInsight, PaintrackSession } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
 
 // Audio examination types
@@ -60,6 +66,73 @@ interface AudioAnalysisResults {
   cough_count: number;
   analysis_confidence: number;
   recommendations: string[];
+}
+
+// Mental Health types
+interface QuestionnaireTemplate {
+  type: string;
+  full_name: string;
+  description: string;
+  public_domain: boolean;
+  timeframe: string;
+  instructions: string;
+  response_options: Array<{
+    value: number;
+    label: string;
+  }>;
+  questions: Array<{
+    id: string;
+    text: string;
+    cluster: string;
+    crisis_flag?: boolean;
+    reverse_scored?: boolean;
+  }>;
+  scoring: {
+    max_score: number;
+    severity_levels: Array<{
+      range: number[];
+      level: string;
+      description: string;
+    }>;
+  };
+}
+
+interface QuestionnaireResponse {
+  response_id: string;
+  questionnaire_type: string;
+  score: {
+    total_score: number;
+    max_score: number;
+    severity_level: string;
+    severity_description: string;
+    cluster_scores: Record<string, any>;
+    neutral_summary: string;
+    key_observations: string[];
+  };
+  crisis_intervention?: {
+    crisis_detected: boolean;
+    crisis_severity: string;
+    intervention_message: string;
+    crisis_hotlines: Array<{
+      name: string;
+      phone?: string;
+      sms?: string;
+      description: string;
+      website: string;
+    }>;
+    next_steps: string[];
+  };
+  analysis_id?: string;
+}
+
+interface MentalHealthHistoryItem {
+  response_id: string;
+  questionnaire_type: string;
+  completed_at: string;
+  total_score: number;
+  max_score: number;
+  severity_level: string;
+  crisis_detected: boolean;
 }
 
 // Symptom Journal types
@@ -119,6 +192,536 @@ const STAGE_INFO: Record<AudioStage, StageInfo> = {
   }
 };
 
+// Daily Wellness Check questions (for TODAY)
+const DAILY_WELLNESS_QUESTIONS = [
+  {
+    id: "mood",
+    text: "How would you describe your mood today?",
+    options: [
+      { value: 0, label: "Very low" },
+      { value: 1, label: "Low" },
+      { value: 2, label: "Neutral" },
+      { value: 3, label: "Good" },
+      { value: 4, label: "Very good" },
+    ]
+  },
+  {
+    id: "anxiety",
+    text: "How anxious have you felt today?",
+    options: [
+      { value: 0, label: "Not at all" },
+      { value: 1, label: "Slightly" },
+      { value: 2, label: "Moderately" },
+      { value: 3, label: "Very" },
+      { value: 4, label: "Extremely" },
+    ]
+  },
+  {
+    id: "stress",
+    text: "How stressed have you felt today?",
+    options: [
+      { value: 0, label: "Not at all" },
+      { value: 1, label: "Slightly" },
+      { value: 2, label: "Moderately" },
+      { value: 3, label: "Very" },
+      { value: 4, label: "Extremely" },
+    ]
+  },
+  {
+    id: "energy",
+    text: "How would you rate your energy level today?",
+    options: [
+      { value: 0, label: "Very low" },
+      { value: 1, label: "Low" },
+      { value: 2, label: "Moderate" },
+      { value: 3, label: "High" },
+      { value: 4, label: "Very high" },
+    ]
+  },
+  {
+    id: "sleep",
+    text: "How did you sleep last night?",
+    options: [
+      { value: 0, label: "Very poor" },
+      { value: 1, label: "Poor" },
+      { value: 2, label: "Fair" },
+      { value: 3, label: "Good" },
+      { value: 4, label: "Excellent" },
+    ]
+  },
+];
+
+// Medication Adherence Component - Enhanced with backend analytics
+function MedicationAdherenceCard({ medications }: { medications: Medication[] | undefined }) {
+  const { user } = useAuth();
+  
+  // Fetch comprehensive adherence analytics from backend
+  const { data: adherenceData, isLoading, isError } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/medication-adherence/${user?.id}`],
+    enabled: !!user?.id,
+  });
+
+  // Extract backend fields - no client-side calculations
+  const currentAdherence = adherenceData?.currentAdherenceRate 
+    ? Math.round(adherenceData.currentAdherenceRate * 100) 
+    : null;
+  
+  const sevenDayTrend = adherenceData?.sevenDayTrend || [];
+  const regimenRisk = adherenceData?.regimenRisk;
+  const missedDoseEscalation = adherenceData?.missedDoseEscalation;
+
+  // Risk badge styling
+  const riskColors: Record<string, { bg: string; text: string; border: string }> = {
+    low: { bg: "bg-green-50 dark:bg-green-950", text: "text-green-700 dark:text-green-400", border: "border-green-200 dark:border-green-800" },
+    moderate: { bg: "bg-yellow-50 dark:bg-yellow-950", text: "text-yellow-700 dark:text-yellow-400", border: "border-yellow-200 dark:border-yellow-800" },
+    high: { bg: "bg-red-50 dark:bg-red-950", text: "text-red-700 dark:text-red-400", border: "border-red-200 dark:border-red-800" },
+  };
+
+  return (
+    <Card data-testid="card-medication-adherence">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2" data-testid="text-adherence-title">
+            <Activity className="h-4 w-4" />
+            Medication Adherence
+          </CardTitle>
+          {/* Regimen Risk Badge */}
+          {!isLoading && !isError && regimenRisk && regimenRisk.level !== "unknown" && (
+            <Badge 
+              variant="outline" 
+              className={`text-xs ${riskColors[regimenRisk.level as keyof typeof riskColors]?.bg} ${riskColors[regimenRisk.level as keyof typeof riskColors]?.text} ${riskColors[regimenRisk.level as keyof typeof riskColors]?.border}`}
+              data-testid={`badge-regimen-risk-${regimenRisk.level}`}
+            >
+              {regimenRisk.level.charAt(0).toUpperCase() + regimenRisk.level.slice(1)} Risk
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Loading State */}
+        {isLoading && (
+          <div className="text-xs text-muted-foreground" data-testid="loading-adherence">
+            Loading adherence data...
+          </div>
+        )}
+
+        {/* Error State */}
+        {isError && (
+          <div className="text-xs text-destructive" data-testid="error-adherence">
+            Error loading adherence data
+          </div>
+        )}
+
+        {/* Missed Dose Escalation Alert */}
+        {!isLoading && !isError && missedDoseEscalation && missedDoseEscalation.severity !== "none" && (
+          <div 
+            className={`p-3 rounded-md border ${
+              missedDoseEscalation.severity === "critical" 
+                ? "bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800" 
+                : "bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800"
+            }`}
+            data-testid={`alert-missed-doses-${missedDoseEscalation.severity}`}
+          >
+            <div className="flex items-start gap-2">
+              <AlertCircle className={`h-4 w-4 mt-0.5 ${
+                missedDoseEscalation.severity === "critical" 
+                  ? "text-red-600 dark:text-red-400" 
+                  : "text-yellow-600 dark:text-yellow-400"
+              }`} />
+              <div className="text-xs">
+                <p className="font-medium" data-testid="text-missed-doses-count">
+                  {missedDoseEscalation.count} missed {missedDoseEscalation.count === 1 ? 'dose' : 'doses'}
+                </p>
+                <p className="text-muted-foreground mt-1">
+                  Please review your medication schedule
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Current Adherence Rate */}
+        {!isLoading && !isError && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground" data-testid="label-adherence">Current Rate</span>
+              {currentAdherence !== null ? (
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-chart-2" data-testid="value-adherence-percentage">{currentAdherence}%</span>
+                </div>
+              ) : (
+                <span className="text-xs text-muted-foreground" data-testid="text-no-adherence-data">No data</span>
+              )}
+            </div>
+            {currentAdherence !== null && (
+              <div className="w-full bg-muted rounded-full h-2" data-testid="progress-adherence">
+                <div className="bg-chart-2 h-2 rounded-full" style={{ width: `${currentAdherence}%` }} data-testid="progress-adherence-fill" />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 7-Day Trend Sparkline */}
+        {!isLoading && !isError && sevenDayTrend.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground" data-testid="label-trend">7-Day Trend</p>
+            <div className="flex items-end justify-between h-12 gap-1" data-testid="sparkline-trend">
+              {sevenDayTrend.map((point: any, index: number) => {
+                const height = point.adherenceRate * 100;
+                return (
+                  <div 
+                    key={index} 
+                    className="flex-1 bg-chart-2/30 rounded-sm hover:bg-chart-2/50 transition-colors"
+                    style={{ height: `${height}%` }}
+                    data-testid={`sparkline-bar-${index}`}
+                    title={`${new Date(point.date).toLocaleDateString()}: ${Math.round(height)}%`}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Regimen Risk Rationale */}
+        {!isLoading && !isError && regimenRisk && regimenRisk.level !== "unknown" && (
+          <div className="text-xs text-muted-foreground pt-2 border-t" data-testid="text-risk-rationale">
+            {regimenRisk.rationale}
+          </div>
+        )}
+
+        {/* Link to Detailed View */}
+        {!isLoading && !isError && (
+          <div className="pt-2 border-t">
+            <Link href="/medications">
+              <Button variant="outline" size="sm" className="w-full h-7 text-xs" data-testid="button-view-medications">
+                View All Medications
+              </Button>
+            </Link>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Behavioral AI Components
+function BehavioralRiskScore() {
+  const { user } = useAuth();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/dashboard/${user?.id}`],
+    enabled: !!user?.id,
+  });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="loading-risk-score">Loading risk score...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-risk-score">Error loading risk score</div>;
+  }
+
+  const riskScore = data?.risk_score;
+  const riskPercentage = riskScore?.composite_risk 
+    ? Math.round(riskScore.composite_risk * 100) 
+    : null;
+
+  const riskColors: Record<string, string> = {
+    critical: "text-red-600",
+    high: "text-orange-600",
+    moderate: "text-yellow-600",
+    low: "text-green-600",
+    minimal: "text-blue-600"
+  };
+
+  if (!riskScore) {
+    return (
+      <div className="text-xs text-muted-foreground" data-testid="text-no-risk-score">
+        Complete daily check-ins to generate risk assessment
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between" data-testid="behavioral-risk-score">
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">Deterioration Risk</div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-2xl font-bold" data-testid="value-risk-percentage">{riskPercentage}%</span>
+          <Badge 
+            variant="outline" 
+            className={riskColors[riskScore.risk_level] || ""}
+            data-testid="badge-risk-level"
+          >
+            {riskScore.risk_level.toUpperCase()}
+          </Badge>
+        </div>
+      </div>
+      <TrendingUp className={`h-8 w-8 ${riskColors[riskScore.risk_level] || "text-muted-foreground"}`} />
+    </div>
+  );
+}
+
+function BehavioralMetricsPreview() {
+  const { user } = useAuth();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/behavioral-metrics/${user?.id}/latest`],
+    enabled: !!user?.id,
+  });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="loading-behavioral-metrics">Loading...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-behavioral-metrics">Error loading data</div>;
+  }
+
+  const metrics = [
+    { 
+      label: "Check-in Consistency", 
+      value: data?.checkinCompletionRate ? `${Math.round(parseFloat(data.checkinCompletionRate) * 100)}%` : "N/A",
+      icon: <CheckCircle2 className="h-3 w-3" />,
+      trend: data?.checkinCompletionRate ? parseFloat(data.checkinCompletionRate) > 0.8 ? "good" : "warning" : null,
+      testid: "metric-checkin-consistency"
+    },
+    { 
+      label: "Med Adherence", 
+      value: data?.medicationAdherenceRate ? `${Math.round(parseFloat(data.medicationAdherenceRate) * 100)}%` : "N/A",
+      icon: <Activity className="h-3 w-3" />,
+      trend: data?.medicationAdherenceRate ? parseFloat(data.medicationAdherenceRate) > 0.9 ? "good" : "warning" : null,
+      testid: "metric-med-adherence"
+    },
+    { 
+      label: "App Engagement", 
+      value: data?.appEngagementDurationMinutes ? `${Math.round(parseFloat(data.appEngagementDurationMinutes))}m` : "N/A",
+      icon: <TrendingUp className="h-3 w-3" />,
+      trend: null,
+      testid: "metric-app-engagement"
+    },
+    { 
+      label: "Avoidance Detected", 
+      value: data?.avoidancePatternsDetected ? "Yes" : "No",
+      icon: <AlertTriangle className="h-3 w-3" />,
+      trend: data?.avoidancePatternsDetected ? "warning" : "good",
+      testid: "metric-avoidance-detected"
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2" data-testid="behavioral-metrics-preview">
+      {metrics.map((metric) => (
+        <div key={metric.testid} className="flex items-center gap-1.5" data-testid={metric.testid}>
+          {metric.icon}
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
+            <div className={`text-xs font-medium ${
+              metric.trend === "good" ? "text-green-600" : 
+              metric.trend === "warning" ? "text-orange-600" : ""
+            }`} data-testid={`${metric.testid}-value`}>
+              {metric.value}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DigitalBiomarkersPreview() {
+  const { user } = useAuth();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/digital-biomarkers/${user?.id}/latest`],
+    enabled: !!user?.id,
+  });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="loading-digital-biomarkers">Loading...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-digital-biomarkers">Error loading data</div>;
+  }
+
+  const metrics = [
+    { 
+      label: "Daily Steps", 
+      value: data?.dailyStepCount ? data.dailyStepCount.toLocaleString() : "N/A",
+      icon: <Activity className="h-3 w-3" />,
+      testid: "biomarker-daily-steps"
+    },
+    { 
+      label: "Mobility Change", 
+      value: data?.mobilityChangePercent ? `${data.mobilityChangePercent > 0 ? '+' : ''}${Math.round(parseFloat(data.mobilityChangePercent))}%` : "N/A",
+      icon: <TrendingUp className="h-3 w-3" />,
+      trend: data?.mobilityChangePercent ? parseFloat(data.mobilityChangePercent) < -20 ? "warning" : null : null,
+      testid: "biomarker-mobility-change"
+    },
+    { 
+      label: "Circadian Stability", 
+      value: data?.circadianStabilityScore ? `${Math.round(parseFloat(data.circadianStabilityScore) * 100)}%` : "N/A",
+      icon: <Moon className="h-3 w-3" />,
+      testid: "biomarker-circadian-stability"
+    },
+    { 
+      label: "Night Interactions", 
+      value: data?.nightPhoneInteractions || "N/A",
+      icon: <Phone className="h-3 w-3" />,
+      trend: data?.nightPhoneInteractions > 5 ? "warning" : null,
+      testid: "biomarker-night-interactions"
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2" data-testid="digital-biomarkers-preview">
+      {metrics.map((metric) => (
+        <div key={metric.testid} className="flex items-center gap-1.5" data-testid={metric.testid}>
+          {metric.icon}
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
+            <div className={`text-xs font-medium ${
+              metric.trend === "warning" ? "text-orange-600" : ""
+            }`} data-testid={`${metric.testid}-value`}>
+              {metric.value}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CognitiveBiomarkersPreview() {
+  const { user } = useAuth();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/cognitive-tests/${user?.id}/latest`],
+    enabled: !!user?.id,
+  });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="loading-cognitive-biomarkers">Loading...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-cognitive-biomarkers">Error loading data</div>;
+  }
+
+  const metrics = [
+    { 
+      label: "Reaction Time", 
+      value: data?.reactionTimeMs ? `${data.reactionTimeMs}ms` : "N/A",
+      icon: <Zap className="h-3 w-3" />,
+      testid: "cognitive-reaction-time"
+    },
+    { 
+      label: "Tapping Speed", 
+      value: data?.tappingSpeed ? `${parseFloat(data.tappingSpeed).toFixed(1)} t/s` : "N/A",
+      icon: <Hand className="h-3 w-3" />,
+      testid: "cognitive-tapping-speed"
+    },
+    { 
+      label: "Memory Score", 
+      value: data?.memoryScore ? `${Math.round(parseFloat(data.memoryScore) * 100)}%` : "N/A",
+      icon: <Brain className="h-3 w-3" />,
+      testid: "cognitive-memory-score"
+    },
+    { 
+      label: "Cognitive Drift", 
+      value: data?.baselineDeviation ? `${parseFloat(data.baselineDeviation).toFixed(2)}σ` : "N/A",
+      icon: <TrendingDown className="h-3 w-3" />,
+      trend: data?.anomalyDetected ? "warning" : null,
+      testid: "cognitive-drift"
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2" data-testid="cognitive-biomarkers-preview">
+      {metrics.map((metric) => (
+        <div key={metric.testid} className="flex items-center gap-1.5" data-testid={metric.testid}>
+          {metric.icon}
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
+            <div className={`text-xs font-medium ${
+              metric.trend === "warning" ? "text-orange-600" : ""
+            }`} data-testid={`${metric.testid}-value`}>
+              {metric.value}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SentimentBiomarkersPreview() {
+  const { user } = useAuth();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: [`/api/v1/behavior-ai/sentiment/${user?.id}/latest`],
+    enabled: !!user?.id,
+  });
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="loading-sentiment-biomarkers">Loading...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-xs text-destructive" data-testid="error-sentiment-biomarkers">Error loading data</div>;
+  }
+
+  const polarityLabel = (polarity: number) => {
+    if (polarity > 0.3) return "Positive";
+    if (polarity < -0.3) return "Negative";
+    return "Neutral";
+  };
+
+  const metrics = [
+    { 
+      label: "Sentiment Trend", 
+      value: data?.sentimentPolarity ? polarityLabel(parseFloat(data.sentimentPolarity)) : "N/A",
+      icon: <Smile className="h-3 w-3" />,
+      trend: data?.sentimentPolarity ? parseFloat(data.sentimentPolarity) < -0.3 ? "warning" : null : null,
+      testid: "sentiment-trend"
+    },
+    { 
+      label: "Stress Keywords", 
+      value: data?.stressKeywordCount || "N/A",
+      icon: <AlertTriangle className="h-3 w-3" />,
+      trend: data?.stressKeywordCount > 5 ? "warning" : null,
+      testid: "sentiment-stress-keywords"
+    },
+    { 
+      label: "Message Length", 
+      value: data?.avgMessageLength ? `${Math.round(data.avgMessageLength)} chars` : "N/A",
+      icon: <FileText className="h-3 w-3" />,
+      testid: "sentiment-message-length"
+    },
+    { 
+      label: "Hesitation Level", 
+      value: data?.hesitationRatio ? `${Math.round(parseFloat(data.hesitationRatio) * 100)}%` : "N/A",
+      icon: <Info className="h-3 w-3" />,
+      trend: data?.hesitationRatio ? parseFloat(data.hesitationRatio) > 0.3 ? "warning" : null : null,
+      testid: "sentiment-hesitation-level"
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2" data-testid="sentiment-biomarkers-preview">
+      {metrics.map((metric) => (
+        <div key={metric.testid} className="flex items-center gap-1.5" data-testid={metric.testid}>
+          {metric.icon}
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground truncate">{metric.label}</div>
+            <div className={`text-xs font-medium ${
+              metric.trend === "warning" ? "text-orange-600" : ""
+            }`} data-testid={`${metric.testid}-value`}>
+              {metric.value}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [showEmergency, setShowEmergency] = useState(false);
   const { user } = useAuth();
@@ -160,6 +763,49 @@ export default function Dashboard() {
   const symptomMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
+  // Mental Health state
+  const [selectedQuestionnaire, setSelectedQuestionnaire] = useState<QuestionnaireTemplate | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [mentalHealthResponses, setMentalHealthResponses] = useState<Record<string, { response: number; response_text: string }>>({});
+  const [isSubmittingMentalHealth, setIsSubmittingMentalHealth] = useState(false);
+  const [completedMentalHealthResponse, setCompletedMentalHealthResponse] = useState<QuestionnaireResponse | null>(null);
+  const [mentalHealthStartTime, setMentalHealthStartTime] = useState<number | null>(null);
+
+  // Daily Wellness Check state
+  const [showDailyWellness, setShowDailyWellness] = useState(false);
+  const [dailyWellnessResponses, setDailyWellnessResponses] = useState<Record<string, number>>({});
+  const [completedDailyWellness, setCompletedDailyWellness] = useState(false);
+
+  // Symptom Check-in state
+  const [showNewSymptomCheckin, setShowNewSymptomCheckin] = useState(false);
+
+  // PainTrack state
+  const [paintrackStep, setPaintrackStep] = useState<'select-module' | 'select-joint' | 'instructions' | 'recording' | 'pain-report' | 'complete'>('select-module');
+  const [showNewPainAssessment, setShowNewPainAssessment] = useState(false);
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const [selectedJoint, setSelectedJoint] = useState<string | null>(null);
+  const [selectedLaterality, setSelectedLaterality] = useState<'left' | 'right' | 'bilateral' | null>(null);
+  const [painVAS, setPainVAS] = useState<number>(5);
+  const [painNotes, setPainNotes] = useState<string>("");
+  const [medicationTaken, setMedicationTaken] = useState<boolean>(false);
+  const [medicationDetails, setMedicationDetails] = useState<string>("");
+  
+  // Dual-camera capture state
+  const [isRecordingPain, setIsRecordingPain] = useState<boolean>(false);
+  const [painRecordingTime, setPainRecordingTime] = useState<number>(0);
+  const [frontCameraStream, setFrontCameraStream] = useState<MediaStream | null>(null);
+  const [backCameraStream, setBackCameraStream] = useState<MediaStream | null>(null);
+  const [frontVideoBlob, setFrontVideoBlob] = useState<Blob | null>(null);
+  const [backVideoBlob, setBackVideoBlob] = useState<Blob | null>(null);
+  const [dualCameraSupported, setDualCameraSupported] = useState<boolean>(false);
+  const frontVideoRef = useRef<HTMLVideoElement>(null);
+  const backVideoRef = useRef<HTMLVideoElement>(null);
+  const painTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const frontMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const backMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const frontChunksRef = useRef<Blob[]>([]);
+  const backChunksRef = useRef<Blob[]>([]);
+
   const { data: todayFollowup } = useQuery<DailyFollowup>({
     queryKey: ["/api/daily-followup/today"],
   });
@@ -182,10 +828,85 @@ export default function Dashboard() {
     enabled: !!user,
   });
 
-  // Check if metrics are from today (12am-12am)
+  // Fetch latest audio AI metrics via Python backend proxy
+  const { data: latestAudioMetrics } = useQuery<any>({
+    queryKey: ["/api/v1/audio-ai/metrics/latest/me"],
+    enabled: !!user,
+  });
+
+  // Check if video metrics are from today (12am-12am)
   const isMetricsFromToday = latestVideoMetrics?.created_at 
     ? new Date(latestVideoMetrics.created_at).toDateString() === new Date().toDateString()
     : false;
+
+  // Check if audio metrics are from today (12am-12am)
+  const isAudioMetricsFromToday = latestAudioMetrics?.timestamp 
+    ? new Date(latestAudioMetrics.timestamp).toDateString() === new Date().toDateString()
+    : false;
+
+  // Fetch unified symptom feed for checking today's check-ins
+  const { data: unifiedSymptomFeed } = useQuery<any>({
+    queryKey: ["/api/symptom-checkin/feed/unified"],
+    enabled: !!user,
+  });
+
+  // Check if device data exists for today
+  const hasDeviceDataToday = todayFollowup && (
+    todayFollowup.heartRate !== null || 
+    todayFollowup.oxygenSaturation !== null || 
+    todayFollowup.temperature !== null || 
+    todayFollowup.stepsCount !== null
+  );
+
+  // Check if symptom check-in exists for today
+  const todaysSymptomCheckins = unifiedSymptomFeed?.feed?.filter((item: any) => 
+    item.dataSource === 'patient-reported' && 
+    new Date(item.timestamp).toDateString() === new Date().toDateString()
+  ) || [];
+  const hasSymptomCheckinToday = todaysSymptomCheckins.length > 0;
+  const latestSymptomCheckin = todaysSymptomCheckins[0]; // Most recent today's check-in
+
+  // PainTrack mutations
+  const createPaintrackSessionMutation = useMutation({
+    mutationFn: async (sessionData: {
+      module: string;
+      joint: string;
+      laterality: string | null;
+      patientVas: number;
+      patientNotes: string;
+      medicationTaken: boolean;
+      medicationDetails: string;
+    }) => {
+      return await apiRequest("/api/paintrack/sessions", {
+        method: "POST",
+        body: JSON.stringify(sessionData),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/paintrack/sessions"] });
+      setShowNewPainAssessment(false);
+      toast({
+        title: "Session Saved!",
+        description: `Pain level ${painVAS}/10 recorded for ${selectedJoint}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Failed to Save Session",
+        description: error.message
+      });
+    }
+  });
+
+  // PainTrack sessions query
+  const { data: paintrackSessions, isLoading: paintrackSessionsLoading } = useQuery<PaintrackSession[]>({
+    queryKey: ["/api/paintrack/sessions"],
+    enabled: !!user,
+  });
 
   // Symptom Journal queries
   const measurementsUrl = `/api/v1/symptom-journal/measurements/recent?${new URLSearchParams({
@@ -222,6 +943,27 @@ export default function Dashboard() {
     queryKey: [comparisonUrl || "/api/v1/symptom-journal/compare/disabled"],
     enabled: !!comparisonUrl,
   });
+
+  // Mental Health queries
+  const { data: questionnairesData, isLoading: isLoadingQuestionnaires, isError: isErrorQuestionnaires, error: questionnaireError } = useQuery({
+    queryKey: ["/api/v1/mental-health/questionnaires"],
+  });
+
+  const { data: mentalHealthHistoryData, refetch: refetchMentalHealthHistory } = useQuery({
+    queryKey: ["/api/v1/mental-health/history"],
+  });
+
+  // Check if PainTrack session exists from today
+  const todaysPaintrackSession = paintrackSessions?.find(session => 
+    new Date(session.createdAt).toDateString() === new Date().toDateString()
+  );
+  const hasPaintrackToday = !!todaysPaintrackSession;
+
+  // Check if mental health assessment completed today
+  const todaysMentalHealthResponse = (mentalHealthHistoryData as any)?.history?.find((item: MentalHealthHistoryItem) =>
+    new Date(item.completed_at).toDateString() === new Date().toDateString()
+  );
+  const hasMentalHealthToday = !!todaysMentalHealthResponse;
 
   // Audio examination mutations
   const createAudioSessionMutation = useMutation({
@@ -410,6 +1152,223 @@ export default function Dashboard() {
     }
   };
 
+  // PainTrack dual-camera recording functions
+  const startDualCameraRecording = async () => {
+    try {
+      // Reset dual-camera status at start of each session
+      setDualCameraSupported(false);
+      
+      // Check MediaRecorder API availability
+      if (typeof MediaRecorder === 'undefined') {
+        throw new Error('Video recording is not supported on this browser. Please use Chrome, Firefox, or Safari 14.1+');
+      }
+      
+      // Determine best MIME type with fallback chain
+      let mimeType: string;
+      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      
+      // Test MIME types in order of preference
+      if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+        mimeType = 'video/mp4;codecs=h264';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        mimeType = 'video/webm;codecs=vp9';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+        mimeType = 'video/webm;codecs=vp8';
+      } else if (MediaRecorder.isTypeSupported('video/webm')) {
+        mimeType = 'video/webm';
+      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        mimeType = 'video/mp4';
+      } else {
+        throw new Error('MediaRecorder not supported on this device. Please use a modern browser.');
+      }
+      
+      console.log(`[PainTrack] Selected MIME type: ${mimeType}, iOS: ${isIOS}`);
+
+      // Front camera (user-facing)
+      const frontConstraints: MediaStreamConstraints = {
+        video: { facingMode: 'user', width: 1280, height: 720 },
+        audio: false
+      };
+
+      // Back camera (environment-facing for joint)
+      const backConstraints: MediaStreamConstraints = {
+        video: { facingMode: 'environment', width: 1280, height: 720 },
+        audio: false
+      };
+
+      // Attempt to get both streams
+      const frontStream = await navigator.mediaDevices.getUserMedia(frontConstraints);
+      setFrontCameraStream(frontStream);
+      
+      if (frontVideoRef.current) {
+        frontVideoRef.current.srcObject = frontStream;
+      }
+
+      // Try to get back camera (may not be supported on all devices)
+      let backStream: MediaStream | null = null;
+      try {
+        backStream = await navigator.mediaDevices.getUserMedia(backConstraints);
+        setBackCameraStream(backStream);
+        
+        if (backVideoRef.current) {
+          backVideoRef.current.srcObject = backStream;
+        }
+      } catch (backCameraError) {
+        console.warn("Back camera not available, using front camera only:", backCameraError);
+        toast({
+          title: "Single Camera Mode",
+          description: "Using front camera only. Back camera not available on this device.",
+        });
+      }
+
+      // Start recording on both streams using refs for stability
+      frontChunksRef.current = [];
+      const frontRecorder = new MediaRecorder(frontStream, { mimeType });
+      
+      frontRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          frontChunksRef.current.push(event.data);
+        }
+      };
+
+      frontRecorder.onstop = () => {
+        const blob = new Blob(frontChunksRef.current, { type: mimeType });
+        setFrontVideoBlob(blob);
+        frontChunksRef.current = [];
+      };
+
+      frontRecorder.onerror = (event) => {
+        console.error('[PainTrack] Front camera recording error:', event);
+        toast({
+          variant: "destructive",
+          title: "Recording Error",
+          description: "Front camera recording failed. Please try again.",
+        });
+      };
+
+      frontRecorder.start();
+      frontMediaRecorderRef.current = frontRecorder;
+
+      // Record back camera if available (use local backStream variable, not state)
+      if (backStream) {
+        backChunksRef.current = [];
+        const backRecorder = new MediaRecorder(backStream, { mimeType });
+        
+        backRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            backChunksRef.current.push(event.data);
+          }
+        };
+
+        backRecorder.onstop = () => {
+          const blob = new Blob(backChunksRef.current, { type: mimeType });
+          // Only set blob if we have chunks (confirms successful recording)
+          if (backChunksRef.current.length > 0) {
+            setBackVideoBlob(blob);
+          } else {
+            console.warn('[PainTrack] Back camera stopped with no data');
+            setDualCameraSupported(false);
+          }
+          backChunksRef.current = [];
+        };
+
+        backRecorder.onerror = (event) => {
+          console.error('[PainTrack] Back camera recording error:', event);
+          setDualCameraSupported(false);
+          toast({
+            title: "Single Camera Mode",
+            description: "Back camera failed. Continuing with front camera only.",
+          });
+        };
+
+        try {
+          backRecorder.start();
+          backMediaRecorderRef.current = backRecorder;
+          
+          // Set dualCameraSupported only after back camera successfully started
+          setDualCameraSupported(true);
+          console.log('[PainTrack] Dual-camera recording started successfully');
+        } catch (startError) {
+          console.error('[PainTrack] Failed to start back camera recorder:', startError);
+          setDualCameraSupported(false);
+        }
+      } else {
+        // Back camera not available
+        setDualCameraSupported(false);
+        console.log('[PainTrack] Single-camera mode (back camera unavailable)');
+      }
+
+      setIsRecordingPain(true);
+      setPainRecordingTime(0);
+
+      // Auto-stop after 20 seconds
+      setTimeout(() => {
+        stopDualCameraRecording();
+      }, 20000);
+
+    } catch (error) {
+      console.error("Camera access error:", error);
+      toast({
+        variant: "destructive",
+        title: "Camera Access Denied",
+        description: "Please allow camera access to record your movement.",
+      });
+    }
+  };
+
+  const stopDualCameraRecording = () => {
+    // Use refs directly to ensure we have stable references
+    const frontRec = frontMediaRecorderRef.current;
+    const backRec = backMediaRecorderRef.current;
+    
+    if (frontRec && frontRec.state !== 'inactive') {
+      frontRec.stop();
+    }
+    if (backRec && backRec.state !== 'inactive') {
+      backRec.stop();
+    }
+
+    // Stop all tracks
+    frontCameraStream?.getTracks().forEach(track => track.stop());
+    backCameraStream?.getTracks().forEach(track => track.stop());
+
+    setIsRecordingPain(false);
+    
+    if (painTimerRef.current) {
+      clearInterval(painTimerRef.current);
+      painTimerRef.current = null;
+    }
+
+    // Wait for blob creation before moving to next step
+    // DO NOT clear refs here - they're needed for blob creation in onstop handlers
+    setTimeout(() => {
+      setPaintrackStep('pain-report');
+    }, 1000); // Increased to 1s to ensure blobs are ready
+  };
+
+  // Timer effect for pain recording
+  useEffect(() => {
+    if (isRecordingPain) {
+      painTimerRef.current = setInterval(() => {
+        setPainRecordingTime(prev => prev + 1);
+      }, 1000);
+    } else if (painTimerRef.current) {
+      clearInterval(painTimerRef.current);
+      painTimerRef.current = null;
+    }
+    return () => {
+      if (painTimerRef.current) clearInterval(painTimerRef.current);
+    };
+  }, [isRecordingPain]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      frontCameraStream?.getTracks().forEach(track => track.stop());
+      backCameraStream?.getTracks().forEach(track => track.stop());
+    };
+  }, [frontCameraStream, backCameraStream]);
+
   const handleAudioStageStart = () => {
     setShowPrep(true);
   };
@@ -431,6 +1390,155 @@ export default function Dashboard() {
 
   const audioProgressPercent = (completedStages.size / 4) * 100;
 
+  // Mental Health handlers
+  const handleStartQuestionnaire = (template: QuestionnaireTemplate) => {
+    setSelectedQuestionnaire(template);
+    setCurrentQuestionIndex(0);
+    setMentalHealthResponses({});
+    setCompletedMentalHealthResponse(null);
+    setMentalHealthStartTime(Date.now());
+  };
+
+  const handleMentalHealthResponseSelect = (questionId: string, value: number, label: string) => {
+    setMentalHealthResponses(prev => ({
+      ...prev,
+      [questionId]: { response: value, response_text: label }
+    }));
+  };
+
+  const handleMentalHealthNext = () => {
+    if (selectedQuestionnaire && currentQuestionIndex < selectedQuestionnaire.questions.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+    }
+  };
+
+  const handleMentalHealthPrevious = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+    }
+  };
+
+  const handleSubmitMentalHealth = async () => {
+    if (!selectedQuestionnaire) return;
+
+    const allQuestionsAnswered = selectedQuestionnaire.questions.every(q => mentalHealthResponses[q.id]);
+    if (!allQuestionsAnswered) {
+      toast({
+        title: "Incomplete Questionnaire",
+        description: "Please answer all questions before submitting.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmittingMentalHealth(true);
+
+    try {
+      const durationSeconds = mentalHealthStartTime ? Math.round((Date.now() - mentalHealthStartTime) / 1000) : null;
+
+      const formattedResponses = selectedQuestionnaire.questions.map(q => ({
+        question_id: q.id,
+        question_text: q.text,
+        response: mentalHealthResponses[q.id].response,
+        response_text: mentalHealthResponses[q.id].response_text,
+      }));
+
+      const result = await apiRequest<QuestionnaireResponse>("/api/v1/mental-health/submit", {
+        method: "POST",
+        body: JSON.stringify({
+          questionnaire_type: selectedQuestionnaire.type,
+          responses: formattedResponses,
+          duration_seconds: durationSeconds,
+          allow_storage: true,
+          allow_clinical_sharing: true,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      setCompletedMentalHealthResponse(result);
+      refetchMentalHealthHistory();
+      
+      toast({
+        title: "Questionnaire Submitted",
+        description: "Your responses have been recorded and analyzed.",
+      });
+
+    } catch (error: any) {
+      toast({
+        title: "Submission Failed",
+        description: error.message || "Failed to submit questionnaire. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingMentalHealth(false);
+    }
+  };
+
+  const handleStartNewMentalHealth = () => {
+    setSelectedQuestionnaire(null);
+    setCurrentQuestionIndex(0);
+    setMentalHealthResponses({});
+    setCompletedMentalHealthResponse(null);
+    setMentalHealthStartTime(null);
+  };
+
+  // Daily Wellness Check handlers
+  const handleStartDailyWellness = () => {
+    setShowDailyWellness(true);
+    setDailyWellnessResponses({});
+    setCompletedDailyWellness(false);
+  };
+
+  const handleDailyWellnessResponse = (questionId: string, value: number) => {
+    setDailyWellnessResponses(prev => ({
+      ...prev,
+      [questionId]: value
+    }));
+  };
+
+  const handleSubmitDailyWellness = () => {
+    const allAnswered = DAILY_WELLNESS_QUESTIONS.every(q => 
+      dailyWellnessResponses[q.id] !== undefined
+    );
+    
+    if (!allAnswered) {
+      toast({
+        title: "Incomplete",
+        description: "Please answer all questions before submitting.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setCompletedDailyWellness(true);
+    
+    toast({
+      title: "Daily Wellness Check Complete!",
+      description: "Your responses have been recorded.",
+    });
+  };
+
+  const handleCloseDailyWellness = () => {
+    setShowDailyWellness(false);
+    setDailyWellnessResponses({});
+    setCompletedDailyWellness(false);
+  };
+
+  const getSeverityColor = (level: string) => {
+    const colors: Record<string, string> = {
+      minimal: "bg-green-500/10 text-green-700 dark:text-green-400",
+      low: "bg-green-500/10 text-green-700 dark:text-green-400",
+      mild: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
+      moderate: "bg-orange-500/10 text-orange-700 dark:text-orange-400",
+      moderately_severe: "bg-red-500/10 text-red-700 dark:text-red-400",
+      severe: "bg-red-600/10 text-red-700 dark:text-red-400",
+      high: "bg-red-500/10 text-red-700 dark:text-red-400",
+    };
+    return colors[level] || "bg-gray-500/10 text-gray-700 dark:text-gray-400";
+  };
+
   return (
     <div className="space-y-6">
       {showEmergency && (
@@ -449,6 +1557,12 @@ export default function Dashboard() {
 
       {/* Legal Disclaimer */}
       <LegalDisclaimer variant="wellness" />
+
+      {/* Patient Consent Requests from Doctors */}
+      <PatientConsentRequests />
+
+      {/* Patient Followup ID Card */}
+      <PatientFollowupId />
 
       <div>
         <h2 className="text-2xl font-semibold mb-2" data-testid="text-health-summary">Today's Health Summary</h2>
@@ -529,20 +1643,78 @@ export default function Dashboard() {
               />
             </CardContent>
           </Card>
+        </div>
 
-          <Card data-testid="card-daily-followup">
-            <CardHeader>
-              <CardTitle data-testid="text-followup-title">Daily Follow-up</CardTitle>
+        {/* Sidebar content - right column */}
+        <div className="space-y-6">
+          {/* Enhanced Medication Adherence */}
+          <MedicationAdherenceCard medications={medications} />
+
+          {/* Dynamic Tasks */}
+          <Card data-testid="card-dynamic-tasks">
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle data-testid="text-tasks-title">Dynamic Tasks</CardTitle>
+              <Badge variant="secondary" data-testid="badge-tasks-pending">
+                {tasks?.filter(t => !t.completed).length || 0} pending
+              </Badge>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="device" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-4">
-                  <TabsTrigger value="device" data-testid="tab-device">Device Data</TabsTrigger>
-                  <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal">Symptoms</TabsTrigger>
-                  <TabsTrigger value="video-ai" data-testid="tab-video-ai">Video AI</TabsTrigger>
-                  <TabsTrigger value="audio-ai" data-testid="tab-audio-ai">Audio AI</TabsTrigger>
-                </TabsList>
-                <TabsContent value="device" className="space-y-3">
+              {tasks && tasks.length > 0 ? (
+                <div className="space-y-2">
+                  {tasks.slice(0, 5).map((task) => (
+                    <div key={task.id} className="flex items-center gap-2 p-2 rounded-md hover-elevate" data-testid={`task-item-${task.id}`}>
+                      {task.completed ? (
+                        <CheckCircle className="h-4 w-4 text-chart-2 flex-shrink-0" data-testid={`icon-task-completed-${task.id}`} />
+                      ) : (
+                        <div className="h-4 w-4 rounded-full border-2 flex-shrink-0" data-testid={`icon-task-pending-${task.id}`} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" data-testid={`text-task-title-${task.id}`}>{task.title}</p>
+                        {task.description && (
+                          <p className="text-xs text-muted-foreground truncate" data-testid={`text-task-description-${task.id}`}>{task.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground" data-testid="text-no-tasks">No tasks for today</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Daily Follow-up - Full Width Card */}
+      <Card data-testid="card-daily-followup">
+        <CardHeader>
+          <CardTitle data-testid="text-followup-title">Daily Follow-up</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="device" className="space-y-4">
+            <TabsList className="w-full flex gap-2 h-auto p-2">
+              <TabsTrigger value="device" data-testid="tab-device" className="flex-1">Device Data</TabsTrigger>
+              <TabsTrigger value="symptom-journal" data-testid="tab-symptom-journal" className="flex-1">Symptoms</TabsTrigger>
+              <TabsTrigger value="video-ai" data-testid="tab-video-ai" className="flex-1">Video AI</TabsTrigger>
+              <TabsTrigger value="audio-ai" data-testid="tab-audio-ai" className="flex-1">Audio AI</TabsTrigger>
+              <TabsTrigger value="paintrack" data-testid="tab-paintrack" className="flex-1">
+                <Activity className="w-3 h-3 mr-1" />
+                PainTrack
+              </TabsTrigger>
+              <TabsTrigger value="mental-health" data-testid="tab-mental-health" className="flex-1">
+                <Brain className="w-3 h-3 mr-1" />
+                Mental Health
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="device" className="space-y-3">
+              {hasDeviceDataToday ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Today's Device Data</p>
+                    <Badge variant="secondary" className="text-xs" data-testid="badge-device-today">
+                      Synced Today
+                    </Badge>
+                  </div>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div data-testid="data-heart-rate">
                       <span className="text-muted-foreground">Heart Rate: </span>
@@ -561,91 +1733,142 @@ export default function Dashboard() {
                       <span className="font-medium" data-testid="value-steps">{todayFollowup?.stepsCount || "--"}</span>
                     </div>
                   </div>
-                </TabsContent>
-                <TabsContent value="symptom-journal" className="space-y-3">
-                  {/* Symptom Journal - Compact View */}
-                  <div className="space-y-3">
-                    {/* Active Alerts Banner */}
-                    {alertsData && alertsData.alerts.length > 0 && (
-                      <Alert variant="destructive" className="text-xs">
-                        <AlertCircle className="h-3 w-3" />
-                        <AlertDescription>
-                          {alertsData.alerts.length} active alert{alertsData.alerts.length > 1 ? 's' : ''} detected
-                        </AlertDescription>
-                      </Alert>
-                    )}
-
-                    {/* Recent Measurements */}
-                    {loadingRecent ? (
-                      <p className="text-xs text-muted-foreground">Loading measurements...</p>
-                    ) : !recentData || recentData.measurements.length === 0 ? (
-                      <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-3 space-y-2">
-                        <p className="text-xs font-medium">Visual Symptom Tracking</p>
-                        <p className="text-xs text-muted-foreground">
-                          Track changes in legs, face, eyes, or chest over time with AI analysis.
-                        </p>
-                        <Button 
-                          size="sm" 
-                          className="w-full text-xs"
-                          onClick={() => window.location.href = '/symptom-journal'}
-                          data-testid="button-start-symptom-tracking"
-                        >
-                          <Camera className="mr-1 h-3 w-3" />
-                          Start Tracking
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-medium">Latest Measurements</p>
-                          <Button 
-                            variant="outline"
-                            size="sm"
-                            className="h-6 text-xs"
-                            onClick={() => window.location.href = '/symptom-journal'}
-                            data-testid="button-view-all-symptoms"
-                          >
-                            View All
-                          </Button>
-                        </div>
-                        
-                        {recentData.measurements.slice(0, 2).map((measurement) => (
-                          <div key={measurement.id} className="rounded-md border bg-muted/30 p-2 space-y-1">
-                            <div className="flex items-center justify-between">
-                              <Badge variant="secondary" className="text-xs">{measurement.body_area}</Badge>
-                              <span className="text-xs text-muted-foreground">
-                                {format(new Date(measurement.created_at), "MMM d, h:mm a")}
-                              </span>
-                            </div>
-                            {measurement.ai_observations && (
-                              <p className="text-xs line-clamp-2">{measurement.ai_observations}</p>
-                            )}
-                            <div className="flex gap-2 text-xs">
-                              {measurement.color_change_percent !== null && (
-                                <div className="flex items-center gap-0.5">
-                                  <strong>Color:</strong>
-                                  {measurement.color_change_percent > 0 ? (
-                                    <TrendingUp className="h-2 w-2 text-orange-500" />
-                                  ) : measurement.color_change_percent < 0 ? (
-                                    <TrendingDown className="h-2 w-2 text-blue-500" />
-                                  ) : (
-                                    <Minus className="h-2 w-2" />
-                                  )}
-                                  <span>{Math.abs(measurement.color_change_percent).toFixed(1)}%</span>
-                                </div>
-                              )}
-                              {measurement.respiratory_rate_bpm && (
-                                <div>
-                                  <strong>Breathing:</strong> {measurement.respiratory_rate_bpm} /min
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                </>
+              ) : (
+                <div className="text-center py-6 space-y-3" data-testid="device-sync-prompt">
+                  <div className="p-3 rounded-full bg-muted/50 inline-block">
+                    <Activity className="h-6 w-6 text-muted-foreground" />
                   </div>
-                </TabsContent>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">No device data for today</p>
+                    <p className="text-xs text-muted-foreground">
+                      Sync your wearable device to see today's health metrics
+                    </p>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+            <TabsContent value="symptom-journal" className="space-y-3">
+              {/* Today's Symptom Summary */}
+              {hasSymptomCheckinToday && !showNewSymptomCheckin && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-primary" />
+                      <p className="font-medium text-sm">Today's Symptom Check-in</p>
+                    </div>
+                    <Badge variant="secondary" className="text-xs" data-testid="badge-symptom-today">
+                      {latestSymptomCheckin && new Date(latestSymptomCheckin.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Badge>
+                  </div>
+
+                  {latestSymptomCheckin && (
+                    <div className="p-3 rounded-md border bg-muted/30 space-y-2">
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        {latestSymptomCheckin.painLevel !== undefined && latestSymptomCheckin.painLevel !== null && (
+                          <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                            <span className="text-muted-foreground">Pain</span>
+                            <span className="font-bold">{latestSymptomCheckin.painLevel}/10</span>
+                          </div>
+                        )}
+                        {latestSymptomCheckin.fatigueLevel !== undefined && latestSymptomCheckin.fatigueLevel !== null && (
+                          <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                            <span className="text-muted-foreground">Fatigue</span>
+                            <span className="font-bold">{latestSymptomCheckin.fatigueLevel}/10</span>
+                          </div>
+                        )}
+                        {latestSymptomCheckin.mood && (
+                          <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                            <span className="text-muted-foreground">Mood</span>
+                            <span className="font-bold capitalize">{latestSymptomCheckin.mood.replace('_', ' ')}</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {latestSymptomCheckin.symptoms && latestSymptomCheckin.symptoms.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {latestSymptomCheckin.symptoms.slice(0, 5).map((symptom: string, idx: number) => (
+                            <Badge key={idx} variant="outline" className="text-xs capitalize">
+                              {symptom}
+                            </Badge>
+                          ))}
+                          {latestSymptomCheckin.symptoms.length > 5 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{latestSymptomCheckin.symptoms.length - 5} more
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                      
+                      {latestSymptomCheckin.note && (
+                        <p className="text-xs text-muted-foreground italic pt-1">
+                          "{latestSymptomCheckin.note.slice(0, 100)}{latestSymptomCheckin.note.length > 100 ? '...' : ''}"
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {todaysSymptomCheckins.length > 1 && (
+                    <p className="text-xs text-muted-foreground">
+                      {todaysSymptomCheckins.length} check-ins recorded today
+                    </p>
+                  )}
+
+                  <Button
+                    onClick={() => setShowNewSymptomCheckin(true)}
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2"
+                    data-testid="button-add-symptom-checkin"
+                  >
+                    <ClipboardList className="h-3 w-3" />
+                    Add New Check-in
+                  </Button>
+                </div>
+              )}
+
+              {/* No Symptom Check-in Today Prompt */}
+              {!hasSymptomCheckinToday && !showNewSymptomCheckin && (
+                <div className="text-center py-6 space-y-3" data-testid="symptom-checkin-prompt">
+                  <div className="p-3 rounded-full bg-muted/50 inline-block">
+                    <ClipboardList className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">No symptom check-in for today</p>
+                    <p className="text-xs text-muted-foreground">
+                      Track your symptoms, pain levels, and overall wellness
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => setShowNewSymptomCheckin(true)}
+                    size="sm"
+                    className="gap-2"
+                    data-testid="button-start-symptom-checkin"
+                  >
+                    <ClipboardList className="h-3 w-3" />
+                    Start Symptom Check-in
+                  </Button>
+                </div>
+              )}
+
+              {/* Symptom Check-in Form */}
+              {showNewSymptomCheckin && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-sm">New Symptom Check-in</p>
+                    <Button
+                      onClick={() => setShowNewSymptomCheckin(false)}
+                      variant="ghost"
+                      size="sm"
+                      data-testid="button-cancel-symptom-checkin"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                  <DailySymptomCheckin onComplete={() => setShowNewSymptomCheckin(false)} />
+                </div>
+              )}
+            </TabsContent>
                 <TabsContent value="video-ai" className="space-y-3">
                   {isMetricsFromToday && latestVideoMetrics ? (
                     <>
@@ -950,188 +2173,1260 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
+                  ) : isAudioMetricsFromToday && latestAudioMetrics ? (
+                    /* Today's Saved Audio Results */
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                          <p className="font-medium text-sm">Today's Audio Analysis</p>
+                        </div>
+                        <Badge variant="secondary" className="text-xs" data-testid="badge-audio-today">
+                          {new Date(latestAudioMetrics.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Breath Rate</div>
+                          <div className="text-lg font-bold">{latestAudioMetrics.breath_cycles_per_min?.toFixed(0) || "N/A"} /min</div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Speech Pace</div>
+                          <div className="text-lg font-bold">{latestAudioMetrics.speech_pace_wpm?.toFixed(0) || "N/A"} wpm</div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Voice Hoarseness</div>
+                          <div className="text-lg font-bold">{latestAudioMetrics.voice_hoarseness_score?.toFixed(1) || "N/A"}/100</div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-md">
+                          <div className="text-xs text-muted-foreground">Analysis Quality</div>
+                          <div className="text-lg font-bold">{latestAudioMetrics.quality_score?.toFixed(0) || "N/A"}/100</div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                        <p className="text-xs font-medium">Detection Results</p>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">Cough Detected:</span>
+                            <Badge variant={latestAudioMetrics.cough_detected ? "destructive" : "secondary"} className="text-xs">
+                              {latestAudioMetrics.cough_detected ? "Yes" : "No"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">Wheeze Detected:</span>
+                            <Badge variant={latestAudioMetrics.wheeze_detected ? "destructive" : "secondary"} className="text-xs">
+                              {latestAudioMetrics.wheeze_detected ? "Yes" : "No"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">Confidence:</span>
+                            <span className="font-semibold">{(latestAudioMetrics.confidence * 100).toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Button 
+                        onClick={handleStartAudioExam}
+                        disabled={createAudioSessionMutation.isPending || !user}
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-2"
+                        data-testid="button-start-new-audio-exam"
+                      >
+                        {createAudioSessionMutation.isPending ? "Creating Session..." : (
+                          <>
+                            <Play className="h-3 w-3" />
+                            Start New Examination
+                          </>
+                        )}
+                      </Button>
+                      {!user && (
+                        <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">
+                          Please log in to start an audio examination
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     /* Not Started State */
-                    <div className="space-y-3">
-                      <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="rounded-full bg-primary/10 p-2">
-                            <Mic className="h-4 w-4 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-sm">AI Audio Examination</p>
-                            <p className="text-xs text-muted-foreground">4-stage guided examination</p>
-                          </div>
-                        </div>
-
-                        <div className="bg-background/50 p-3 rounded space-y-2">
-                          <p className="text-xs font-medium">What to Expect:</p>
-                          <ul className="text-xs space-y-1 text-muted-foreground">
-                            <li className="flex items-start gap-2">
-                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                              <span>Breathing, Coughing, Speaking, Reading</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                              <span>30-second prep before each stage</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                              <span>YAMNet ML + neurological metrics</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                              <CheckCircle2 className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                              <span>~2-3 minutes total</span>
-                            </li>
-                          </ul>
-                        </div>
-                        
-                        <Button 
-                          onClick={handleStartAudioExam}
-                          disabled={createAudioSessionMutation.isPending || !user}
-                          size="sm"
-                          className="w-full gap-2"
-                          data-testid="button-start-audio-exam"
-                        >
-                          {createAudioSessionMutation.isPending ? "Creating Session..." : (
-                            <>
-                              <Play className="h-3 w-3" />
-                              Start Audio Examination
-                            </>
-                          )}
-                        </Button>
-                        
-                        <p className="text-xs text-center text-muted-foreground">
-                          Microphone access required • Find a quiet space
+                    <div className="text-center py-6 space-y-3" data-testid="audio-exam-prompt">
+                      <div className="p-3 rounded-full bg-muted/50 inline-block">
+                        <Mic className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">No audio analysis for today</p>
+                        <p className="text-xs text-muted-foreground">
+                          Complete a 4-stage audio examination to analyze your voice and breathing
                         </p>
                       </div>
+
+                      <Button 
+                        onClick={handleStartAudioExam}
+                        disabled={createAudioSessionMutation.isPending || !user}
+                        size="sm"
+                        className="gap-2"
+                        data-testid="button-start-audio-exam"
+                      >
+                        {createAudioSessionMutation.isPending ? "Creating Session..." : (
+                          <>
+                            <Play className="h-3 w-3" />
+                            Start Audio Examination
+                          </>
+                        )}
+                      </Button>
                       
-                      <div className="text-xs text-muted-foreground">
-                        <p className="font-medium mb-1">AI tracks:</p>
-                        <ul className="space-y-0.5 ml-4 list-disc">
-                          <li>Breath cycles & respiratory rate</li>
-                          <li>Speech pace & fluency</li>
-                          <li>Cough & wheeze detection</li>
-                          <li>Voice hoarseness & fatigue</li>
-                          <li>Pause patterns & neurological markers</li>
-                        </ul>
+                      {!user && (
+                        <p className="text-xs text-orange-600 dark:text-orange-400">
+                          Please log in to start an audio examination
+                        </p>
+                      )}
+                      
+                      <p className="text-xs text-muted-foreground">
+                        ~2-3 minutes • Microphone required • Find a quiet space
+                      </p>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* PainTrack Tab */}
+                <TabsContent value="paintrack" className="space-y-3">
+                  {/* Today's PainTrack Summary */}
+                  {hasPaintrackToday && todaysPaintrackSession && paintrackStep === 'select-module' && !showNewPainAssessment && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                          <p className="font-medium text-sm">Today's Pain Assessment</p>
+                        </div>
+                        <Badge variant="secondary" className="text-xs" data-testid="badge-paintrack-today">
+                          {new Date(todaysPaintrackSession.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Badge>
+                      </div>
+
+                      <div className="p-3 rounded-md border bg-muted/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-primary" />
+                            <span className="font-medium text-sm capitalize">{todaysPaintrackSession.laterality || ''} {todaysPaintrackSession.joint}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl font-bold">{todaysPaintrackSession.patientVas}</span>
+                            <span className="text-sm text-muted-foreground">/10</span>
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          <span className="font-medium">{todaysPaintrackSession.module}</span>
+                          {todaysPaintrackSession.medicationTaken && (
+                            <span className="ml-2">• Medication taken</span>
+                          )}
+                        </div>
+                        {todaysPaintrackSession.patientNotes && (
+                          <p className="text-xs text-muted-foreground mt-2 italic">
+                            "{todaysPaintrackSession.patientNotes}"
+                          </p>
+                        )}
+                      </div>
+
+                      <Button
+                        onClick={() => setShowNewPainAssessment(true)}
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-2"
+                        data-testid="button-record-new-pain"
+                      >
+                        <Activity className="h-3 w-3" />
+                        Record New Assessment
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Recent Sessions History - only shown if no today session and not adding new */}
+                  {!hasPaintrackToday && !showNewPainAssessment && paintrackSessions && Array.isArray(paintrackSessions) && paintrackSessions.length > 0 && paintrackStep === 'select-module' && (
+                    <div className="p-3 rounded-md border bg-muted/30" data-testid="paintrack-session-history">
+                      <h3 className="font-semibold text-xs mb-2">Recent Sessions</h3>
+                      {paintrackSessionsLoading ? (
+                        <p className="text-xs text-muted-foreground">Loading sessions...</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {paintrackSessions.slice(0, 3).map((session: PaintrackSession) => (
+                            <div key={session.id} className="p-2 rounded-md bg-background border text-xs" data-testid={`paintrack-session-${session.id}`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-3 w-3 text-muted-foreground" />
+                                  <span className="font-medium capitalize">{session.laterality || ''} {session.joint}</span>
+                                </div>
+                                <Badge variant="outline" className="text-xs">
+                                  {session.patientVas}/10
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {session.module} • {new Date(session.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* No PainTrack Today Prompt */}
+                  {!hasPaintrackToday && !showNewPainAssessment && (!paintrackSessions || paintrackSessions.length === 0) && paintrackStep === 'select-module' && (
+                    <div className="text-center py-6 space-y-3" data-testid="paintrack-prompt">
+                      <div className="p-3 rounded-full bg-muted/50 inline-block">
+                        <Activity className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">No pain assessment for today</p>
+                        <p className="text-xs text-muted-foreground">
+                          Track your chronic pain with video-based assessment
+                        </p>
                       </div>
                     </div>
                   )}
+
+                  {paintrackStep === 'select-module' && (!hasPaintrackToday || showNewPainAssessment) && (
+                    <div className="space-y-4" data-testid="paintrack-module-selection">
+                      <div>
+                        <h3 className="font-semibold text-sm mb-1">PainTrack - Select Module</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Choose the type of pain tracking you need
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3">
+                        {['ArthroTrack', 'MuscleTrack', 'PostOpTrack'].map((module) => (
+                          <div
+                            key={module}
+                            className="p-3 rounded-md border hover-elevate cursor-pointer"
+                            onClick={() => {
+                              setSelectedModule(module);
+                              setPaintrackStep('select-joint');
+                            }}
+                            data-testid={`card-module-${module.toLowerCase()}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Activity className="h-4 w-4 text-primary" />
+                              <h4 className="font-medium text-sm">{module}</h4>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {module === 'ArthroTrack' && 'Track arthritis pain across joints'}
+                              {module === 'MuscleTrack' && 'Monitor muscle pain and strain'}
+                              {module === 'PostOpTrack' && 'Post-surgery recovery tracking'}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {paintrackStep === 'select-joint' && (
+                    <div className="space-y-4" data-testid="paintrack-joint-selection">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-semibold text-sm mb-1">Select Joint</h3>
+                          <p className="text-xs text-muted-foreground">
+                            Module: {selectedModule}
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => setPaintrackStep('select-module')}
+                          variant="ghost"
+                          size="sm"
+                          data-testid="button-back-to-modules"
+                        >
+                          Back
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Knee', 'Hip', 'Shoulder', 'Elbow', 'Wrist', 'Ankle'].map((joint) => (
+                          <Button
+                            key={joint}
+                            variant="outline"
+                            className="h-auto p-3 flex-col gap-1"
+                            onClick={() => {
+                              setSelectedJoint(joint.toLowerCase());
+                              setPaintrackStep('instructions');
+                            }}
+                            data-testid={`button-joint-${joint.toLowerCase()}`}
+                          >
+                            <Activity className="h-4 w-4" />
+                            <span className="text-xs">{joint}</span>
+                          </Button>
+                        ))}
+                      </div>
+
+                      {selectedJoint && (
+                        <div className="space-y-2">
+                          <Label className="text-sm">Which side?</Label>
+                          <RadioGroup
+                            value={selectedLaterality || ''}
+                            onValueChange={(value) => setSelectedLaterality(value as 'left' | 'right' | 'bilateral')}
+                            data-testid="radio-group-laterality"
+                          >
+                            {['left', 'right', 'bilateral'].map((side) => (
+                              <div key={side} className="flex items-center space-x-2">
+                                <RadioGroupItem
+                                  value={side}
+                                  id={`laterality-${side}`}
+                                  data-testid={`radio-laterality-${side}`}
+                                />
+                                <Label
+                                  htmlFor={`laterality-${side}`}
+                                  className="text-sm font-normal cursor-pointer capitalize"
+                                >
+                                  {side}
+                                </Label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {paintrackStep === 'instructions' && (
+                    <div className="space-y-4" data-testid="paintrack-instructions">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm">Recording Instructions</h3>
+                        <Button
+                          onClick={() => setPaintrackStep('select-joint')}
+                          variant="ghost"
+                          size="sm"
+                          data-testid="button-back-to-joints"
+                        >
+                          Back
+                        </Button>
+                      </div>
+
+                      <Alert data-testid="alert-instructions">
+                        <Info className="h-4 w-4" />
+                        <AlertTitle className="text-sm">Dual-Camera Recording</AlertTitle>
+                        <AlertDescription className="text-xs space-y-2">
+                          <p>We'll record two simultaneous videos:</p>
+                          <ul className="list-disc ml-4 space-y-1">
+                            <li>Front camera: Your face (for pain indicators)</li>
+                            <li>Back camera: The {selectedJoint} joint</li>
+                          </ul>
+                        </AlertDescription>
+                      </Alert>
+
+                      <div className="space-y-2 text-xs" data-testid="prep-checklist">
+                        <p className="font-medium">Before you start:</p>
+                        <ul className="space-y-1 ml-4 list-disc text-muted-foreground">
+                          <li data-testid="prep-item-lighting">Ensure good lighting on both face and joint</li>
+                          <li data-testid="prep-item-positioning">Position camera to see full joint movement</li>
+                          <li data-testid="prep-item-stability">Keep camera stable (use a stand if possible)</li>
+                          <li data-testid="prep-item-duration">Recording will last 15-20 seconds</li>
+                        </ul>
+                      </div>
+
+                      <div className="p-3 rounded-md bg-muted/30 border text-xs space-y-1" data-testid="movement-instructions">
+                        <p className="font-medium">Guided Movement:</p>
+                        <p className="text-muted-foreground" data-testid={`movement-guidance-${selectedJoint}`}>
+                          {selectedJoint === 'knee' && 'Fully extend your knee, then slowly flex it'}
+                          {selectedJoint === 'hip' && 'Rotate your hip through full range of motion'}
+                          {selectedJoint === 'shoulder' && 'Raise arm overhead, then lower slowly'}
+                          {selectedJoint === 'elbow' && 'Fully extend elbow, then flex slowly'}
+                          {selectedJoint === 'wrist' && 'Rotate wrist through full range'}
+                          {selectedJoint === 'ankle' && 'Point toe down, then flex up'}
+                        </p>
+                      </div>
+
+                      <Button
+                        onClick={() => {
+                          setPaintrackStep('recording');
+                          startDualCameraRecording();
+                        }}
+                        className="w-full gap-2"
+                        data-testid="button-start-recording"
+                      >
+                        <Camera className="h-4 w-4" />
+                        Start Dual-Camera Recording
+                      </Button>
+                    </div>
+                  )}
+
+                  {paintrackStep === 'recording' && (
+                    <div className="space-y-4" data-testid="paintrack-recording">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm">Recording in Progress</h3>
+                        <Badge variant="outline" className="text-xs">
+                          {Math.floor(painRecordingTime / 60)}:{(painRecordingTime % 60).toString().padStart(2, '0')}
+                        </Badge>
+                      </div>
+
+                      {dualCameraSupported && (
+                        <Alert data-testid="alert-iphone17-detected">
+                          <Info className="h-4 w-4" />
+                          <AlertDescription className="text-xs">
+                            iPhone 17 Pro detected - Dual-camera recording active
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium">Front Camera (Face)</p>
+                          <video
+                            ref={frontVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full rounded-md border bg-black aspect-video"
+                            data-testid="video-front-camera"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium">Back Camera (Joint)</p>
+                          <video
+                            ref={backVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full rounded-md border bg-black aspect-video"
+                            data-testid="video-back-camera"
+                          />
+                          {!backCameraStream && (
+                            <p className="text-xs text-muted-foreground">
+                              Single camera mode
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-md bg-muted/30 border text-xs" data-testid="movement-guidance-active">
+                        <p className="font-medium mb-1">Perform movement:</p>
+                        <p className="text-muted-foreground">
+                          {selectedJoint === 'knee' && 'Fully extend your knee, then slowly flex it'}
+                          {selectedJoint === 'hip' && 'Rotate your hip through full range of motion'}
+                          {selectedJoint === 'shoulder' && 'Raise arm overhead, then lower slowly'}
+                          {selectedJoint === 'elbow' && 'Fully extend elbow, then flex slowly'}
+                          {selectedJoint === 'wrist' && 'Rotate wrist through full range'}
+                          {selectedJoint === 'ankle' && 'Point toe down, then flex up'}
+                        </p>
+                      </div>
+
+                      {isRecordingPain && (
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="h-3 w-3 rounded-full bg-red-500 animate-pulse" />
+                          <span className="text-sm font-medium">Recording...</span>
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={stopDualCameraRecording}
+                        variant="outline"
+                        className="w-full"
+                        disabled={!isRecordingPain}
+                        data-testid="button-stop-recording"
+                      >
+                        Stop Recording
+                      </Button>
+                    </div>
+                  )}
+
+                  {paintrackStep === 'pain-report' && (
+                    <div className="space-y-4" data-testid="paintrack-pain-report">
+                      <h3 className="font-semibold text-sm">Self-Report Pain Level</h3>
+
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-sm">Pain Level (0-10)</Label>
+                          <div className="flex items-center gap-3 mt-2">
+                            <span className="text-xs text-muted-foreground">0</span>
+                            <input
+                              type="range"
+                              min="0"
+                              max="10"
+                              value={painVAS}
+                              onChange={(e) => setPainVAS(parseInt(e.target.value))}
+                              className="flex-1"
+                              data-testid="slider-pain-vas"
+                            />
+                            <span className="text-xs text-muted-foreground">10</span>
+                          </div>
+                          <div className="flex justify-between mt-1 text-xs text-muted-foreground">
+                            <span>No pain</span>
+                            <Badge variant="outline" className="font-bold text-base">
+                              {painVAS}
+                            </Badge>
+                            <span>Worst pain</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label className="text-sm">Additional Notes (Optional)</Label>
+                          <textarea
+                            value={painNotes}
+                            onChange={(e) => setPainNotes(e.target.value)}
+                            className="w-full mt-1 p-2 text-sm border rounded-md"
+                            rows={3}
+                            placeholder="Describe your pain, triggers, or any other details..."
+                            data-testid="textarea-pain-notes"
+                          />
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={medicationTaken}
+                            onChange={(e) => setMedicationTaken(e.target.checked)}
+                            id="medication-taken"
+                            data-testid="checkbox-medication-taken"
+                            className="rounded"
+                          />
+                          <Label htmlFor="medication-taken" className="text-sm cursor-pointer">
+                            I took pain medication today
+                          </Label>
+                        </div>
+
+                        {medicationTaken && (
+                          <div>
+                            <Label className="text-sm">Medication Details</Label>
+                            <input
+                              type="text"
+                              value={medicationDetails}
+                              onChange={(e) => setMedicationDetails(e.target.value)}
+                              className="w-full mt-1 p-2 text-sm border rounded-md"
+                              placeholder="e.g., Ibuprofen 400mg at 9am"
+                              data-testid="input-medication-details"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <Button
+                        onClick={() => {
+                          if (!selectedModule || !selectedJoint) {
+                            toast({
+                              variant: "destructive",
+                              title: "Missing Information",
+                              description: "Module and joint are required",
+                            });
+                            return;
+                          }
+                          
+                          // Calculate video metadata
+                          const hasVideos = frontVideoBlob !== null;
+                          const hasDualCamera = backVideoBlob !== null;
+                          const recordingDuration = painRecordingTime;
+                          
+                          // S3 Upload Implementation
+                          const uploadVideosAndSubmit = async () => {
+                            let frontVideoUrl: string | undefined;
+                            let jointVideoUrl: string | undefined;
+                            let frontUploadSuccess = false;
+                            let backUploadSuccess = false;
+
+                            try {
+                              // Upload front camera video if available
+                              if (frontVideoBlob) {
+                                const frontFormData = new FormData();
+                                frontFormData.append('video', frontVideoBlob, `paintrack-front-${Date.now()}.webm`);
+                                frontFormData.append('videoType', 'front');
+                                frontFormData.append('module', selectedModule);
+                                frontFormData.append('joint', selectedJoint || '');
+
+                                const frontUpload = await fetch('/api/paintrack/upload-video', {
+                                  method: 'POST',
+                                  body: frontFormData,
+                                });
+
+                                if (frontUpload.ok) {
+                                  const frontData = await frontUpload.json();
+                                  frontVideoUrl = frontData.videoUrl;
+                                  frontUploadSuccess = true;
+                                } else {
+                                  console.warn("Front camera upload failed, proceeding without video");
+                                }
+                              }
+
+                              // Upload back camera video if available
+                              if (backVideoBlob) {
+                                const backFormData = new FormData();
+                                backFormData.append('video', backVideoBlob, `paintrack-back-${Date.now()}.webm`);
+                                backFormData.append('videoType', 'back');
+                                backFormData.append('module', selectedModule);
+                                backFormData.append('joint', selectedJoint || '');
+
+                                const backUpload = await fetch('/api/paintrack/upload-video', {
+                                  method: 'POST',
+                                  body: backFormData,
+                                });
+
+                                if (backUpload.ok) {
+                                  const backData = await backUpload.json();
+                                  jointVideoUrl = backData.videoUrl;
+                                  backUploadSuccess = true;
+                                } else {
+                                  console.warn("Back camera upload failed, proceeding without joint video");
+                                }
+                              }
+                            } catch (uploadError) {
+                              console.error("Video upload error:", uploadError);
+                              toast({
+                                variant: "destructive",
+                                title: "Video Upload Issue",
+                                description: "Videos could not be uploaded, but your pain report will still be saved.",
+                              });
+                            }
+
+                            // Submit session with video URLs or metadata only
+                            // dualCameraSupported is true ONLY if BOTH uploads succeeded
+                            const actualDualCameraSuccess = frontUploadSuccess && backUploadSuccess;
+                            
+                            console.log(`[PainTrack] Upload summary - Front: ${frontUploadSuccess}, Back: ${backUploadSuccess}, Dual: ${actualDualCameraSuccess}`);
+                            
+                            createPaintrackSessionMutation.mutate({
+                              module: selectedModule,
+                              joint: selectedJoint,
+                              laterality: selectedLaterality,
+                              patientVas: painVAS,
+                              patientNotes: painNotes,
+                              medicationTaken,
+                              medicationDetails,
+                              recordingDuration: hasVideos ? recordingDuration : undefined,
+                              dualCameraSupported: actualDualCameraSuccess, // TRUE only if both uploaded
+                              frontVideoUrl,
+                              jointVideoUrl,
+                            });
+                          };
+
+                          // Execute upload and submission
+                          uploadVideosAndSubmit();
+                          setPaintrackStep('complete');
+                        }}
+                        className="w-full"
+                        disabled={createPaintrackSessionMutation.isPending}
+                        data-testid="button-submit-pain-report"
+                      >
+                        {createPaintrackSessionMutation.isPending ? "Saving..." : "Submit Report"}
+                      </Button>
+                    </div>
+                  )}
+
+                  {paintrackStep === 'complete' && (
+                    <div className="space-y-4" data-testid="paintrack-complete">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5 text-green-600" />
+                        <h3 className="font-semibold">Session Complete!</h3>
+                      </div>
+
+                      <div className="p-3 rounded-md bg-muted/30 border space-y-2 text-sm">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Module</p>
+                            <p className="font-medium">{selectedModule}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Joint</p>
+                            <p className="font-medium capitalize">{selectedLaterality} {selectedJoint}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Pain Level</p>
+                            <p className="font-medium">{painVAS}/10</p>
+                          </div>
+                          {medicationTaken && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Medication</p>
+                              <p className="font-medium text-xs">{medicationDetails || 'Yes'}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {frontVideoBlob && (
+                        <Alert data-testid="alert-videos-captured">
+                          <CheckCircle className="h-4 w-4" />
+                          <AlertDescription className="text-xs">
+                            ✓ Video captured ({backVideoBlob ? 'Dual-camera' : 'Single camera'}) - {painRecordingTime}s recording
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      <p className="text-xs text-muted-foreground">
+                        Your self-reported pain level has been recorded. Optional video analysis (if recorded) will extract technical movement metrics only - pain is always based on your self-report.
+                      </p>
+
+                      <Button
+                        onClick={() => {
+                          setPaintrackStep('select-module');
+                          setSelectedModule(null);
+                          setSelectedJoint(null);
+                          setSelectedLaterality(null);
+                          setPainVAS(5);
+                          setPainNotes('');
+                          setMedicationTaken(false);
+                          setMedicationDetails('');
+                        }}
+                        className="w-full"
+                        data-testid="button-new-session"
+                      >
+                        New Session
+                      </Button>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Mental Health AI Tab */}
+                <TabsContent value="mental-health" className="space-y-3">
+                  {/* Today's Mental Health Assessment Summary */}
+                  {hasMentalHealthToday && todaysMentalHealthResponse && !showDailyWellness && !selectedQuestionnaire && !completedMentalHealthResponse && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                          <p className="font-medium text-sm">Today's Mental Health Assessment</p>
+                        </div>
+                        <Badge variant="secondary" className="text-xs" data-testid="badge-mental-health-today">
+                          {new Date(todaysMentalHealthResponse.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Badge>
+                      </div>
+
+                      <div className="p-3 rounded-md border bg-muted/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Brain className="h-4 w-4 text-primary" />
+                            <span className="font-medium text-sm">{todaysMentalHealthResponse.questionnaire_type}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl font-bold">{todaysMentalHealthResponse.total_score}</span>
+                            <span className="text-sm text-muted-foreground">/{todaysMentalHealthResponse.max_score}</span>
+                          </div>
+                        </div>
+                        <Badge className={getSeverityColor(todaysMentalHealthResponse.severity_level)}>
+                          {todaysMentalHealthResponse.severity_level?.replace(/_/g, ' ') || 'N/A'}
+                        </Badge>
+                      </div>
+
+                      <Link href="/mental-health">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-2"
+                          data-testid="button-view-mental-health-details"
+                        >
+                          <Brain className="h-3 w-3" />
+                          View Full Analysis
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
+
+                  {/* No Mental Health Today Prompt */}
+                  {!hasMentalHealthToday && !showDailyWellness && !selectedQuestionnaire && !completedMentalHealthResponse && (
+                    <div className="text-center py-6 space-y-3" data-testid="mental-health-prompt">
+                      <div className="p-3 rounded-full bg-muted/50 inline-block">
+                        <Brain className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">No mental health assessment for today</p>
+                        <p className="text-xs text-muted-foreground">
+                          Complete a wellness check or standardized questionnaire
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Daily Wellness Check */}
+                  {!hasMentalHealthToday && !showDailyWellness && !selectedQuestionnaire && !completedMentalHealthResponse && (
+                    <div className="p-4 rounded-md border bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 hover-elevate" data-testid="card-daily-wellness">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Heart className="h-4 w-4 text-blue-600" />
+                            <h3 className="font-semibold text-sm">Daily Wellness Check</h3>
+                            <Badge variant="outline" className="text-xs">Quick • 1 min</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Quick check-in about how you're feeling <strong>today</strong>. Track your daily mood, anxiety, stress, energy, and sleep.
+                          </p>
+                          <Button
+                            onClick={handleStartDailyWellness}
+                            size="sm"
+                            className="w-full gap-2"
+                            data-testid="button-start-daily-wellness"
+                          >
+                            <CheckCircle className="h-3 w-3" />
+                            Start Daily Check-In
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Daily Wellness Form */}
+                  {showDailyWellness && !completedDailyWellness && (
+                    <div className="space-y-4" data-testid="daily-wellness-form">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm">Daily Wellness Check</h3>
+                        <Button
+                          onClick={handleCloseDailyWellness}
+                          variant="ghost"
+                          size="sm"
+                          data-testid="button-close-daily-wellness"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+
+                      <div className="space-y-4">
+                        {DAILY_WELLNESS_QUESTIONS.map((question, idx) => (
+                          <div key={question.id} className="space-y-2">
+                            <Label className="text-sm font-medium">
+                              {idx + 1}. {question.text}
+                            </Label>
+                            <RadioGroup
+                              value={dailyWellnessResponses[question.id]?.toString()}
+                              onValueChange={(value) => handleDailyWellnessResponse(question.id, parseInt(value))}
+                              data-testid={`radio-group-${question.id}`}
+                            >
+                              {question.options.map((option) => (
+                                <div key={option.value} className="flex items-center space-x-2">
+                                  <RadioGroupItem
+                                    value={option.value.toString()}
+                                    id={`${question.id}-${option.value}`}
+                                    data-testid={`radio-${question.id}-${option.value}`}
+                                  />
+                                  <Label
+                                    htmlFor={`${question.id}-${option.value}`}
+                                    className="text-sm font-normal cursor-pointer"
+                                  >
+                                    {option.label}
+                                  </Label>
+                                </div>
+                              ))}
+                            </RadioGroup>
+                          </div>
+                        ))}
+                      </div>
+
+                      <Button
+                        onClick={handleSubmitDailyWellness}
+                        className="w-full"
+                        disabled={Object.keys(dailyWellnessResponses).length < DAILY_WELLNESS_QUESTIONS.length}
+                        data-testid="button-submit-daily-wellness"
+                      >
+                        Submit Daily Check-In
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Daily Wellness Completion */}
+                  {completedDailyWellness && (
+                    <div className="space-y-4" data-testid="daily-wellness-complete">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                          Daily Check-In Complete
+                        </h3>
+                        <Button
+                          onClick={handleCloseDailyWellness}
+                          variant="outline"
+                          size="sm"
+                          data-testid="button-done-daily-wellness"
+                        >
+                          Done
+                        </Button>
+                      </div>
+
+                      <div className="p-3 rounded-md bg-muted/30 border text-sm space-y-2">
+                        <p className="text-muted-foreground">
+                          Thank you for completing today's wellness check! Your responses help track patterns and identify changes over time.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {isLoadingQuestionnaires ? (
+                    <div className="flex items-center justify-center py-8" data-testid="loading-questionnaires">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : isErrorQuestionnaires ? (
+                    <Alert variant="destructive" data-testid="alert-questionnaires-error">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Error Loading Questionnaires</AlertTitle>
+                      <AlertDescription>
+                        {questionnaireError?.message || "Failed to load mental health questionnaires. Please try again."}
+                      </AlertDescription>
+                    </Alert>
+                  ) : completedMentalHealthResponse ? (
+                    <div className="space-y-4" data-testid="mental-health-results">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                          Assessment Complete
+                        </h3>
+                        <Button
+                          onClick={handleStartNewMentalHealth}
+                          variant="outline"
+                          size="sm"
+                          data-testid="button-start-new-assessment"
+                        >
+                          New Assessment
+                        </Button>
+                      </div>
+
+                      {completedMentalHealthResponse.crisis_intervention?.crisis_detected && (
+                        <Alert variant="destructive" className="border-red-600" data-testid="alert-crisis-detected">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertTitle>Immediate Support Available</AlertTitle>
+                          <AlertDescription className="space-y-2">
+                            <p>{completedMentalHealthResponse.crisis_intervention.intervention_message}</p>
+                            <div className="mt-3 space-y-2">
+                              {completedMentalHealthResponse.crisis_intervention.crisis_hotlines.map((hotline, idx) => (
+                                <div key={idx} className="flex items-start gap-2 text-sm">
+                                  <Phone className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                                  <div>
+                                    <strong>{hotline.name}:</strong> {hotline.phone || hotline.sms}
+                                    <p className="text-xs opacity-90">{hotline.description}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      <div className="grid gap-3">
+                        <div className="p-3 rounded-md bg-card border">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium">Overall Score</span>
+                            <Badge className={getSeverityColor(completedMentalHealthResponse.score.severity_level)}>
+                              {completedMentalHealthResponse.score.severity_level.replace(/_/g, ' ')}
+                            </Badge>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-bold">{completedMentalHealthResponse.score.total_score}</span>
+                            <span className="text-sm text-muted-foreground">/ {completedMentalHealthResponse.score.max_score}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {completedMentalHealthResponse.score.severity_description}
+                          </p>
+                        </div>
+
+                        <div className="p-3 rounded-md bg-muted/30 border text-sm space-y-2">
+                          <p className="font-medium flex items-center gap-2">
+                            <Brain className="h-3 w-3" />
+                            AI Analysis Summary
+                          </p>
+                          <p className="text-muted-foreground text-xs leading-relaxed">
+                            {completedMentalHealthResponse.score.neutral_summary}
+                          </p>
+                          {completedMentalHealthResponse.score.key_observations.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              <p className="text-xs font-medium">Key Observations:</p>
+                              <ul className="space-y-0.5">
+                                {completedMentalHealthResponse.score.key_observations.map((obs, idx) => (
+                                  <li key={idx} className="text-xs text-muted-foreground flex items-start gap-2">
+                                    <Check className="h-2 w-2 mt-0.5 flex-shrink-0" />
+                                    <span>{obs}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        {mentalHealthHistoryData?.history && mentalHealthHistoryData.history.length > 1 && (
+                          <div className="p-3 rounded-md bg-muted/30 border">
+                            <p className="text-sm font-medium mb-2">Recent History</p>
+                            <div className="space-y-1">
+                              {mentalHealthHistoryData.history.slice(0, 3).map((item: MentalHealthHistoryItem) => (
+                                <div key={item.response_id} className="flex items-center justify-between text-xs">
+                                  <span className="text-muted-foreground">
+                                    {format(new Date(item.completed_at), 'MMM d, yyyy')}
+                                  </span>
+                                  <Badge variant="outline" className={getSeverityColor(item.severity_level)}>
+                                    {item.total_score}/{item.max_score}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                            <Link href="/mental-health">
+                              <Button variant="link" size="sm" className="p-0 h-auto text-xs mt-2">
+                                View Full History →
+                              </Button>
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : selectedQuestionnaire ? (
+                    <div className="space-y-4" data-testid="questionnaire-active">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-semibold text-sm">{selectedQuestionnaire.full_name}</h3>
+                          <p className="text-xs text-muted-foreground">{selectedQuestionnaire.description}</p>
+                        </div>
+                        <Button
+                          onClick={handleStartNewMentalHealth}
+                          variant="ghost"
+                          size="sm"
+                          data-testid="button-cancel-questionnaire"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Question {currentQuestionIndex + 1} of {selectedQuestionnaire.questions.length}</span>
+                          <span>{Math.round(((currentQuestionIndex + 1) / selectedQuestionnaire.questions.length) * 100)}%</span>
+                        </div>
+                        <Progress value={((currentQuestionIndex + 1) / selectedQuestionnaire.questions.length) * 100} />
+                      </div>
+
+                      <ScrollArea className="h-[300px]">
+                        <div className="space-y-4 pr-4">
+                          <div className="p-4 rounded-md bg-muted/30 border">
+                            <p className="text-sm font-medium leading-relaxed">
+                              {selectedQuestionnaire.questions[currentQuestionIndex].text}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              {selectedQuestionnaire.timeframe}
+                            </p>
+                          </div>
+
+                          <RadioGroup
+                            value={mentalHealthResponses[selectedQuestionnaire.questions[currentQuestionIndex].id]?.response.toString() || ""}
+                            onValueChange={(value) => {
+                              const option = selectedQuestionnaire.response_options.find(o => o.value.toString() === value);
+                              if (option) {
+                                handleMentalHealthResponseSelect(
+                                  selectedQuestionnaire.questions[currentQuestionIndex].id,
+                                  option.value,
+                                  option.label
+                                );
+                              }
+                            }}
+                            className="space-y-2"
+                          >
+                            {selectedQuestionnaire.response_options.map((option) => (
+                              <div
+                                key={option.value}
+                                className="flex items-center space-x-2 p-2 rounded-md hover-elevate border"
+                                data-testid={`radio-option-${option.value}`}
+                              >
+                                <RadioGroupItem value={option.value.toString()} id={`option-${option.value}`} />
+                                <Label htmlFor={`option-${option.value}`} className="flex-1 text-sm cursor-pointer">
+                                  {option.label}
+                                </Label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      </ScrollArea>
+
+                      <div className="flex items-center justify-between gap-2 pt-2">
+                        <Button
+                          onClick={handleMentalHealthPrevious}
+                          disabled={currentQuestionIndex === 0}
+                          variant="outline"
+                          size="sm"
+                          data-testid="button-previous-question"
+                        >
+                          Previous
+                        </Button>
+                        
+                        {currentQuestionIndex === selectedQuestionnaire.questions.length - 1 ? (
+                          <Button
+                            onClick={handleSubmitMentalHealth}
+                            disabled={!selectedQuestionnaire.questions.every(q => mentalHealthResponses[q.id]) || isSubmittingMentalHealth}
+                            size="sm"
+                            className="gap-2"
+                            data-testid="button-submit-questionnaire"
+                          >
+                            {isSubmittingMentalHealth ? (
+                              <>
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Analyzing...
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-3 w-3" />
+                                Submit & Analyze
+                              </>
+                            )}
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={handleMentalHealthNext}
+                            disabled={!mentalHealthResponses[selectedQuestionnaire.questions[currentQuestionIndex].id]}
+                            size="sm"
+                            data-testid="button-next-question"
+                          >
+                            Next
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4" data-testid="questionnaire-selection">
+                      <div>
+                        <h3 className="font-semibold text-sm mb-1">Mental Health Screening</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Select a validated questionnaire to assess your mental wellbeing
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3">
+                        {questionnairesData?.questionnaires?.map((template: QuestionnaireTemplate) => (
+                          <div
+                            key={template.type}
+                            className="p-3 rounded-md border hover-elevate cursor-pointer"
+                            onClick={() => handleStartQuestionnaire(template)}
+                            data-testid={`card-questionnaire-${template.type}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <ClipboardList className="h-4 w-4" />
+                                  <h4 className="font-medium text-sm">{template.full_name}</h4>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">{template.description}</p>
+                                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                                  <span>{template.questions.length} questions</span>
+                                  <span>•</span>
+                                  <span>~2-3 min</span>
+                                  {template.public_domain && (
+                                    <>
+                                      <span>•</span>
+                                      <Badge variant="outline" className="h-5 text-xs">Public Domain</Badge>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              <FileText className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <Alert className="text-xs" data-testid="alert-mental-health-disclaimer">
+                        <Info className="h-3 w-3" />
+                        <AlertDescription>
+                          These are screening tools, not diagnostic assessments. Results are analyzed by AI for pattern detection and stored securely for trend tracking.
+                        </AlertDescription>
+                      </Alert>
+
+                      {mentalHealthHistoryData?.history && mentalHealthHistoryData.history.length > 0 && (
+                        <div className="p-3 rounded-md bg-muted/30 border">
+                          <p className="text-sm font-medium mb-2">Recent Assessments</p>
+                          <div className="space-y-1">
+                            {mentalHealthHistoryData.history.slice(0, 2).map((item: MentalHealthHistoryItem) => (
+                              <div key={item.response_id} className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">
+                                  {format(new Date(item.completed_at), 'MMM d, h:mm a')}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className={getSeverityColor(item.severity_level)}>
+                                    {item.total_score}/{item.max_score}
+                                  </Badge>
+                                  {item.crisis_detected && (
+                                    <AlertTriangle className="h-3 w-3 text-red-600" />
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <Link href="/mental-health">
+                            <Button variant="link" size="sm" className="p-0 h-auto text-xs mt-2">
+                              View All History →
+                            </Button>
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Mental Health Red Flag Symptoms from Agent Clona */}
+                  <div className="space-y-3 mt-6 pt-4 border-t">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-semibold text-sm flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-orange-600" />
+                          Mental Health Symptom Indicators
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          AI-observed indicators from your conversations with Agent Clona
+                        </p>
+                      </div>
+                    </div>
+
+                    <MentalHealthRedFlags />
+                  </div>
                 </TabsContent>
               </Tabs>
             </CardContent>
           </Card>
 
-          <Card data-testid="card-dynamic-tasks">
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-              <CardTitle data-testid="text-tasks-title">Dynamic Tasks</CardTitle>
-              <Badge variant="secondary" data-testid="badge-tasks-pending">{tasks?.filter(t => !t.completed).length || 0} pending</Badge>
-            </CardHeader>
-            <CardContent>
-              {tasks && tasks.length > 0 ? (
-                <div className="space-y-2">
-                  {tasks.slice(0, 5).map((task) => (
-                    <div key={task.id} className="flex items-center gap-2 p-2 rounded-md hover-elevate" data-testid={`task-item-${task.id}`}>
-                      {task.completed ? (
-                        <CheckCircle className="h-4 w-4 text-chart-2 flex-shrink-0" data-testid={`icon-task-completed-${task.id}`} />
-                      ) : (
-                        <div className="h-4 w-4 rounded-full border-2 flex-shrink-0" data-testid={`icon-task-pending-${task.id}`} />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate" data-testid={`text-task-title-${task.id}`}>{task.title}</p>
-                        {task.description && (
-                          <p className="text-xs text-muted-foreground truncate" data-testid={`text-task-description-${task.id}`}>{task.description}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground" data-testid="text-no-tasks">No tasks for today</p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      {/* Behavioral AI Insight - Full Width Card */}
+      <Card data-testid="card-behavioral-ai-full">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2" data-testid="text-behavioral-ai-title">
+            <Brain className="h-5 w-5" />
+            Behavioral AI Insight
+          </CardTitle>
+          <p className="text-sm text-muted-foreground" data-testid="text-behavioral-ai-subtitle">
+            Complete daily check-ins to generate risk assessment
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Risk Score Dashboard */}
+          <BehavioralRiskScore />
 
-        <div className="space-y-6">
-          <Card data-testid="card-reminders">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2" data-testid="text-reminders-title">
-                <Calendar className="h-5 w-5" />
-                Reminders
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <ReminderCard
-                type="water"
-                title="Drink Water"
-                time="2:00 PM"
-                description="You've had 4 glasses today. Goal: 8 glasses"
-                testId="reminder-water"
-              />
-              <ReminderCard
-                type="exercise"
-                title="Gentle Stretching"
-                time="3:00 PM"
-                description="15-minute low-impact session"
-                testId="reminder-exercise"
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-primary/5 to-primary/10" data-testid="card-behavioral-insights">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2" data-testid="text-insights-title">
-                <Brain className="h-5 w-5" />
-                Behavioral AI Insight
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {insights && insights.length > 0 ? (
-                insights.slice(0, 2).map((insight, idx) => (
-                  <div key={idx} className="flex items-start gap-2" data-testid={`insight-item-${idx}`}>
-                    <TrendingUp className="h-4 w-4 text-chart-2 mt-0.5 flex-shrink-0" />
-                    <div className="text-sm">
-                      <p className="font-medium mb-1" data-testid={`text-stress-level-${idx}`}>Stress Level: {insight.stressScore}/10</p>
-                      <p className="text-muted-foreground" data-testid={`text-activity-level-${idx}`}>Activity: {insight.activityLevel}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground" data-testid="text-insight-placeholder">
-                  Complete your daily check-ins to unlock AI-powered behavioral insights and health trend detection.
-                </p>
-              )}
-              <Link href="/behavioral-ai-insights">
-                <Button variant="outline" size="sm" className="w-full" data-testid="button-view-insights">
-                  View Full Insights
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-medication-adherence">
-            <CardHeader>
-              <CardTitle className="text-base" data-testid="text-adherence-title">Medication Adherence</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">This Week</span>
-                  <span className="font-semibold text-chart-2" data-testid="value-adherence-percentage">92%</span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-2" data-testid="progress-adherence">
-                  <div className="bg-chart-2 h-2 rounded-full" style={{ width: "92%" }} data-testid="progress-adherence-fill" />
-                </div>
-                <p className="text-xs text-muted-foreground" data-testid="text-active-medications">
-                  {medications?.filter(m => m.active).length || 0} active medications
-                </p>
+          {/* Metrics Grid - 4 Categories */}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {/* Behavioral Metrics */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold text-muted-foreground">BEHAVIORAL METRICS</h3>
               </div>
-            </CardContent>
-          </Card>
+              <BehavioralMetricsPreview />
+            </div>
+
+            {/* Digital Biomarkers */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-chart-2" />
+                <h3 className="text-sm font-semibold text-muted-foreground">DIGITAL BIOMARKERS</h3>
+              </div>
+              <DigitalBiomarkersPreview />
+            </div>
+
+            {/* Cognitive Biomarkers */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-chart-3" />
+                <h3 className="text-sm font-semibold text-muted-foreground">COGNITIVE BIOMARKERS</h3>
+              </div>
+              <CognitiveBiomarkersPreview />
+            </div>
+
+            {/* Sentiment Analysis */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-chart-4" />
+                <h3 className="text-sm font-semibold text-muted-foreground">SENTIMENT ANALYSIS</h3>
+              </div>
+              <SentimentBiomarkersPreview />
+            </div>
+          </div>
+
+          {/* View Full Analysis Button */}
+          <div className="pt-3 border-t">
+            <Link href="/behavioral-ai-insights">
+              <Button variant="outline" className="w-full" data-testid="button-view-full-analysis">
+                View Full Analysis & Trends
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
         </div>
-      </div>
-    </div>
   );
 }

@@ -1,0 +1,22 @@
+# Client audit (Batch 3)
+
+## Observed features
+- Single-page app built with Wouter routing and React Query: QueryClientProvider wraps the app, AuthProvider manages user state, and routers bifurcate doctor vs. patient dashboards with dozens of feature pages (chat, AI dashboards, guided exams, wellness, etc.).【F:client/src/App.tsx†L1-L246】
+- AuthContext persists tokens and user objects in `localStorage`, restores them on load, exposes login/logout/update helpers, and listens for a custom `auth:logout` event to clear state when the API interceptor fires.【F:client/src/contexts/AuthContext.tsx†L21-L70】
+- Axios instance centralizes base URL, JSON headers, Authorization injection from stored access token, and a 401 response interceptor that clears storage and forces navigation to `/login`.【F:client/src/lib/api.ts†L3-L46】
+- Query client helper routes certain API paths to the Python backend, always includes browser credentials, and shares a generic fetch-based query function with customizable 401 handling for React Query consumers.【F:client/src/lib/queryClient.ts†L3-L122】
+- Development-only login screen triggers server-side dev login endpoints and invalidates React Query cache to refresh user data after logging in as patient or doctor.【F:client/src/components/DevLogin.tsx†L8-L88】
+
+## Gaps and risks
+- Auth tokens and user profiles are stored in `localStorage` and reused indefinitely without refresh/expiry checks, exposing them to XSS exfiltration and stale session risk; logout relies on a custom event rather than server-driven revocation or rotation.【F:client/src/contexts/AuthContext.tsx†L21-L70】
+- Public-route detection is string-based and treats the landing page as public when unauthenticated, then forces a hard `window.location` redirect for other unauthenticated paths, bypassing the router and losing state/history; no 403 handling for role-mismatched routes.【F:client/src/App.tsx†L149-L233】
+- Axios interceptor forcefully clears storage and redirects on any 401 without distinguishing network failures vs. expired sessions; no backoff or CSRF protection even though credentials and bearer tokens coexist across fetch/axios clients.【F:client/src/lib/api.ts†L11-L46】【F:client/src/lib/queryClient.ts†L47-L122】
+- Duplicate auth mechanisms: React Context manages tokens/user locally while `useAuth` hook separately calls `/api/auth/user` via React Query, creating split sources of truth and inconsistent caching/error handling across pages that choose one vs. the other.【F:client/src/contexts/AuthContext.tsx†L21-L70】【F:client/src/hooks/useAuth.ts†L1-L19】
+- Dev login utility calls `apiRequest` with an unsupported signature, likely throwing at runtime before reaching the server, and relies on full page reloads instead of context-aware state updates.【F:client/src/components/DevLogin.tsx†L12-L37】【F:client/src/lib/queryClient.ts†L41-L71】
+
+## Recommendations
+- Replace `localStorage` token storage with httpOnly/sameSite cookies issued by the backend plus short-lived access tokens and refresh rotation; add expiry checks and background logout, and gate all auth actions behind centralized context driven from server session state.【F:client/src/contexts/AuthContext.tsx†L21-L70】
+- Normalize routing to keep unauthenticated users within SPA flows (no hard reloads), add 403 handling for role guards, and unify public/landing rules with pattern matching rather than brittle string arrays; ensure doctor/patient route access is enforced client- and server-side.【F:client/src/App.tsx†L149-L233】
+- Harden HTTP clients: distinguish network vs. auth failures, avoid unconditional redirects on 401, add CSRF tokens for cookie-authenticated requests, and align axios/fetch clients on one auth strategy to prevent mixed-credential exposure.【F:client/src/lib/api.ts†L11-L46】【F:client/src/lib/queryClient.ts†L47-L122】
+- Consolidate auth into a single React Query-powered context that sources from the server session, providing consistent caching, refresh, and logout flows; deprecate parallel `useAuth` implementations to avoid divergence.【F:client/src/contexts/AuthContext.tsx†L21-L70】【F:client/src/hooks/useAuth.ts†L1-L19】
+- Fix dev login to use the correct `apiRequest` signature or shared axios client, and replace full-page reloads with context mutations plus query invalidation so state updates stay SPA-friendly; restrict dev login to flagged environments to avoid accidental exposure.【F:client/src/components/DevLogin.tsx†L12-L37】【F:client/src/lib/queryClient.ts†L41-L71】

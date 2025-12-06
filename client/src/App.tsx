@@ -36,22 +36,19 @@ import Chat from "@/pages/Chat";
 import Wellness from "@/pages/Wellness";
 import Files from "@/pages/Files";
 import Profile from "@/pages/Profile";
-import DoctorDashboard from "@/pages/DoctorDashboard";
 import DoctorWellness from "@/pages/DoctorWellness";
 import ReceptionistDashboard from "@/pages/ReceptionistDashboard";
+import CalendarSync from "@/pages/CalendarSync";
 import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
 import Counseling from "@/pages/Counseling";
 import ConsentManagement from "@/pages/ConsentManagement";
-import PreviousSessions from "@/pages/PreviousSessions";
-import EHRIntegrations from "@/pages/EHRIntegrations";
 import WearableDevices from "@/pages/WearableDevices";
 import Referrals from "@/pages/Referrals";
 import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
 import TwoFactorAuth from "@/pages/TwoFactorAuth";
-import MedicalDocuments from "@/pages/MedicalDocuments";
-import DrugInteractions from "@/pages/DrugInteractions";
+import MedicalFiles from "@/pages/MedicalFiles";
 import ImmuneMonitoring from "@/pages/ImmuneMonitoring";
 import EnvironmentalRiskMap from "@/pages/EnvironmentalRiskMap";
 import CorrelationInsights from "@/pages/CorrelationInsights";
@@ -64,35 +61,42 @@ import DoctorProfile from "@/pages/DoctorProfile";
 import MyDoctors from "@/pages/MyDoctors";
 import ConsultationRequests from "@/pages/ConsultationRequests";
 import PainDetection from "@/pages/PainDetection";
-import ExamCoach from "@/pages/ExamCoach";
-import MedicationEffects from "@/pages/MedicationEffects";
+import Medications from "@/pages/Medications";
 import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
 import DeteriorationDashboard from "@/pages/DeteriorationDashboard";
-import AIVideoDashboard from "@/pages/AIVideoDashboard";
 import AIAlertsDashboard from "@/pages/AIAlertsDashboard";
-import GuidedVideoExam from "@/pages/GuidedVideoExam";
 import BehavioralAIInsights from "@/pages/BehavioralAIInsights";
+import AIVideoDashboard from "@/pages/AIVideoDashboard";
+import AIAudioDashboard from "@/pages/AIAudioDashboard";
+import GuidedVideoExam from "@/pages/GuidedVideoExam";
+import GuidedAudioExam from "@/pages/guided-audio-exam";
 import DailyFollowup from "@/pages/DailyFollowup";
+import DailyFollowupHistory from "@/pages/DailyFollowupHistory";
 import MentalHealth from "@/pages/MentalHealth";
+import Prescriptions from "@/pages/Prescriptions";
+import DrugInteractions from "@/pages/DrugInteractions";
+import MLMonitoring from "@/pages/MLMonitoring";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
-      <Route path="/daily-followup" component={DailyFollowup} />
+      <Route path="/daily-followup" component={DailyFollowupHistory} />
+      <Route path="/daily-followup/video-exam" component={DailyFollowup} />
       <Route path="/chat" component={Chat} />
-      <Route path="/pain-detection" component={PainDetection} />
-      <Route path="/exam-coach" component={ExamCoach} />
-      <Route path="/medication-effects" component={MedicationEffects} />
+      <Route path="/medications" component={Medications} />
+      <Route path="/prescriptions" component={Prescriptions} />
+      <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
-      <Route path="/ai-video" component={AIVideoDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
+      <Route path="/ai-video" component={AIVideoDashboard} />
+      <Route path="/ai-audio" component={AIAudioDashboard} />
       <Route path="/guided-exam" component={GuidedVideoExam} />
+      <Route path="/guided-audio-exam" component={GuidedAudioExam} />
       <Route path="/behavioral-ai-insights" component={BehavioralAIInsights} />
       <Route path="/mental-health" component={MentalHealth} />
       <Route path="/habits" component={Habits} />
-      <Route path="/previous-sessions" component={PreviousSessions} />
       <Route path="/doctor-search" component={DoctorSearch} />
       <Route path="/doctor/:doctorId" component={DoctorProfile} />
       <Route path="/my-doctors" component={MyDoctors} />
@@ -100,7 +104,7 @@ function PatientRouter() {
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/counseling" component={Counseling} />
       <Route path="/consents" component={ConsentManagement} />
-      <Route path="/ehr-integrations" component={EHRIntegrations} />
+      <Route path="/medical-files" component={MedicalFiles} />
       <Route path="/wearables" component={WearableDevices} />
       <Route path="/immune-monitoring" component={ImmuneMonitoring} />
       <Route path="/environmental-risk" component={EnvironmentalRiskMap} />
@@ -108,11 +112,8 @@ function PatientRouter() {
       <Route path="/nutrition-insights" component={NutritionInsights} />
       <Route path="/health-companion" component={HealthCompanion} />
       <Route path="/voice-followups" component={VoiceFollowups} />
-      <Route path="/medical-documents" component={MedicalDocuments} />
-      <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
-      <Route path="/files" component={Files} />
       <Route path="/security/2fa" component={TwoFactorAuth} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
@@ -123,12 +124,16 @@ function PatientRouter() {
 function DoctorRouter() {
   return (
     <Switch>
-      <Route path="/" component={DoctorDashboard} />
-      <Route path="/receptionist" component={ReceptionistDashboard} />
+      <Route path="/" component={ReceptionistDashboard} />
+      <Route path="/ai-alerts" component={AIAlertsDashboard} />
+      <Route path="/prescriptions" component={Prescriptions} />
+      <Route path="/drug-interactions" component={DrugInteractions} />
+      <Route path="/calendar-sync" component={CalendarSync} />
       <Route path="/doctor-wellness" component={DoctorWellness} />
       <Route path="/doctor/patient/:id" component={PatientReview} />
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
+      <Route path="/ml-monitoring" component={MLMonitoring} />
       <Route path="/chat" component={Chat} />
       <Route path="/counseling" component={Counseling} />
       <Route path="/referrals" component={Referrals} />

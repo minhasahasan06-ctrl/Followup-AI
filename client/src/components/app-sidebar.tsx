@@ -16,7 +16,6 @@ import {
   LogOut,
   MessageCircle,
   Link as LinkIcon,
-  History,
   Watch,
   Wallet as WalletIcon,
   Gift,
@@ -58,10 +57,10 @@ const patientItems = [
     icon: Home,
   },
   {
-    title: "Daily Followup",
+    title: "Daily Follow-up",
     url: "/daily-followup",
     icon: Activity,
-    badge: "AI",
+    badge: "History",
   },
   {
     title: "Chat with Agent Clona",
@@ -76,48 +75,32 @@ const patientItems = [
     badge: "AI",
   },
   {
-    title: "Pain Detection",
-    url: "/pain-detection",
-    icon: Camera,
-    badge: "AI",
-  },
-  {
     title: "Health Alerts",
     url: "/ai-alerts",
     icon: Bell,
     badge: "AI",
   },
   {
-    title: "Exam Coach",
-    url: "/exam-coach",
-    icon: Camera,
-    badge: "AI",
-  },
-  {
-    title: "Medication Effects",
-    url: "/medication-effects",
+    title: "Medications",
+    url: "/medications",
     icon: Pill,
     badge: "AI",
   },
   {
-    title: "Previous Sessions",
-    url: "/previous-sessions",
-    icon: History,
+    title: "Prescriptions",
+    url: "/prescriptions",
+    icon: FileText,
   },
   {
-    title: "Find Doctors",
-    url: "/doctor-search",
-    icon: Search,
+    title: "Drug Interactions",
+    url: "/drug-interactions",
+    icon: AlertTriangle,
+    badge: "AI",
   },
   {
     title: "My Doctors",
     url: "/my-doctors",
     icon: UserPlus,
-  },
-  {
-    title: "Consultation Requests",
-    url: "/consultation-requests",
-    icon: Calendar,
   },
   {
     title: "Wellness",
@@ -130,20 +113,15 @@ const patientItems = [
     icon: MessageCircle,
   },
   {
-    title: "Mental Health",
-    url: "/mental-health",
-    icon: Brain,
-    badge: "AI",
-  },
-  {
     title: "App Connections",
     url: "/consents",
     icon: LinkIcon,
   },
   {
-    title: "EHR Integrations",
-    url: "/ehr-integrations",
+    title: "Medical Files",
+    url: "/medical-files",
     icon: FileText,
+    badge: "OCR",
   },
   {
     title: "Wearable Devices",
@@ -163,18 +141,6 @@ const patientItems = [
     badge: "LIVE",
   },
   {
-    title: "Medical Documents",
-    url: "/medical-documents",
-    icon: ScanText,
-    badge: "OCR",
-  },
-  {
-    title: "Drug Interactions",
-    url: "/drug-interactions",
-    icon: AlertTriangle,
-    badge: "AI",
-  },
-  {
     title: "Referrals",
     url: "/referrals",
     icon: Gift,
@@ -185,11 +151,6 @@ const patientItems = [
     icon: WalletIcon,
   },
   {
-    title: "Medical Files",
-    url: "/files",
-    icon: FileText,
-  },
-  {
     title: "Profile",
     url: "/profile",
     icon: User,
@@ -198,13 +159,8 @@ const patientItems = [
 
 const doctorItems = [
   {
-    title: "All Patients",
+    title: "Assistant Lysa",
     url: "/",
-    icon: Users,
-  },
-  {
-    title: "Assistant Lysa Receptionist",
-    url: "/receptionist",
     icon: Headphones,
     badge: "AI",
   },

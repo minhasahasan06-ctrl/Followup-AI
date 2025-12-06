@@ -44,6 +44,32 @@ from app.models.video_ai_models import (
     VideoMetrics,
     MediaSession
 )
+from app.models.symptom_checkin_models import (
+    SymptomCheckin,
+    ChatSymptom,
+    PassiveMetric,
+    TrendReport
+)
+from app.models.habit_models import (
+    HabitHabit,
+    HabitCompletion,
+    HabitRoutine,
+    HabitMicroStep,
+    HabitReminder,
+    HabitCoachChat,
+    HabitAiTrigger,
+    HabitMoodEntry,
+    HabitQuitPlan,
+    HabitCravingsLog,
+    HabitRelapseLog,
+    HabitAiRecommendation,
+    HabitBuddy,
+    HabitEncouragement,
+    HabitCbtSession,
+    HabitReward,
+    HabitJournal,
+    HabitRiskAlert
+)
 
 __all__ = [
     "User",
@@ -84,4 +110,26 @@ __all__ = [
     "VideoExamSession",
     "VideoMetrics",
     "MediaSession",
+    "SymptomCheckin",
+    "ChatSymptom",
+    "PassiveMetric",
+    "TrendReport",
+    "HabitHabit",
+    "HabitCompletion",
+    "HabitRoutine",
+    "HabitMicroStep",
+    "HabitReminder",
+    "HabitCoachChat",
+    "HabitAiTrigger",
+    "HabitMoodEntry",
+    "HabitQuitPlan",
+    "HabitCravingsLog",
+    "HabitRelapseLog",
+    "HabitAiRecommendation",
+    "HabitBuddy",
+    "HabitEncouragement",
+    "HabitCbtSession",
+    "HabitReward",
+    "HabitJournal",
+    "HabitRiskAlert",
 ]

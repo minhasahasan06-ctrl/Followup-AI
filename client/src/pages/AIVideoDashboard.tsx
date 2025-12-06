@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Video,
   Camera,
@@ -27,10 +28,38 @@ import {
   Activity,
   MessageSquare,
   XCircle,
+  Vibrate,
+  Footprints,
+  Droplets,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Upload,
+  Target,
+  Smartphone,
+  AlertTriangle,
+  FileVideo,
+  History,
+  RefreshCw,
 } from 'lucide-react';
 import { ExamPrepStep } from '@/components/ExamPrepStep';
 import { VideoRecorder } from '@/components/VideoRecorder';
 import { useGuidedExamWorkflow } from '@/hooks/useGuidedExamWorkflow';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { queryClient } from '@/lib/queryClient';
+import { format } from 'date-fns';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Area,
+  AreaChart,
+} from 'recharts';
 
 function LegalDisclaimer() {
   return (
@@ -48,7 +77,521 @@ function LegalDisclaimer() {
   );
 }
 
+interface TremorAnalysis {
+  patient_id: string;
+  has_data: boolean;
+  tremor_index?: number;
+  tremor_detected?: boolean;
+  dominant_frequency_hz?: number;
+  tremor_amplitude_mg?: number;
+  parkinsonian_likelihood?: number;
+  essential_tremor_likelihood?: number;
+  physiological_tremor?: boolean;
+  created_at?: string;
+}
+
+interface TremorDashboard {
+  patient_id: string;
+  latest_tremor: TremorAnalysis | null;
+  trend: {
+    status: 'stable' | 'increasing' | 'decreasing' | 'insufficient_data';
+    avg_tremor_index_7days: number;
+    recordings_count_7days: number;
+  };
+  history_7days: Array<{
+    tremor_index: number;
+    tremor_detected: boolean;
+    created_at: string;
+  }>;
+}
+
+interface GaitSession {
+  session_id: number;
+  created_at: string;
+  status: string;
+  duration_seconds: number;
+  total_strides: number;
+  walking_detected: boolean;
+  abnormality_detected: boolean;
+  abnormality_score: number;
+  quality_score: number;
+}
+
+interface GaitMetrics {
+  session_id: number;
+  patient_id: string;
+  temporal: {
+    stride_time_avg_sec: number;
+    cadence_steps_per_min: number;
+    walking_speed_m_per_sec: number;
+  };
+  symmetry_stability: {
+    overall_symmetry: number;
+    balance_confidence_score: number;
+    stride_time_variability_percent: number;
+  };
+  clinical_risks: {
+    fall_risk_score: number;
+    parkinson_indicators: number;
+    neuropathy_indicators: number;
+    pain_indicators: number;
+  };
+}
+
+interface EdemaMetrics {
+  id: number;
+  session_id: number;
+  analyzed_at: string;
+  swelling_detected: boolean;
+  swelling_severity: string;
+  overall_expansion_percent: number;
+  regions_affected: number;
+  regional_analysis: {
+    face_upper_body: { swelling_detected: boolean; expansion_percent: number };
+    legs_feet: { swelling_detected: boolean; expansion_percent: number };
+    asymmetry_detected: boolean;
+    asymmetry_difference: number;
+  };
+}
+
+function TremorInsightsCard({ patientId }: { patientId: string }) {
+  const { data: tremorDashboard, isLoading } = useQuery<TremorDashboard>({
+    queryKey: ['/api/v1/tremor/dashboard', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/tremor/dashboard/${patientId}`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return null;
+        throw new Error('Failed to fetch tremor data');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  if (isLoading) {
+    return (
+      <Card data-testid="card-tremor-insights">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Vibrate className="h-4 w-4 text-purple-500" />
+            Tremor Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!tremorDashboard?.latest_tremor) {
+    return (
+      <Card data-testid="card-tremor-insights">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Vibrate className="h-4 w-4 text-purple-500" />
+            Tremor Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-4">
+            <Smartphone className="h-8 w-8 mx-auto text-muted-foreground opacity-50 mb-2" />
+            <p className="text-sm text-muted-foreground">No tremor data recorded yet</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Complete the tremor examination to see analysis
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const latest = tremorDashboard.latest_tremor;
+  const trend = tremorDashboard.trend;
+
+  const getTremorSeverity = (index: number) => {
+    if (index < 2) return { label: 'Normal', color: 'text-green-500 bg-green-100 dark:bg-green-900/30' };
+    if (index < 4) return { label: 'Mild', color: 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30' };
+    if (index < 6) return { label: 'Moderate', color: 'text-orange-500 bg-orange-100 dark:bg-orange-900/30' };
+    return { label: 'Significant', color: 'text-red-500 bg-red-100 dark:bg-red-900/30' };
+  };
+
+  const severity = getTremorSeverity(latest.tremor_index || 0);
+
+  return (
+    <Card data-testid="card-tremor-insights">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center justify-between gap-2 text-base">
+          <div className="flex items-center gap-2">
+            <Vibrate className="h-4 w-4 text-purple-500" />
+            Tremor Analysis
+          </div>
+          <Badge className={`text-xs ${severity.color}`}>
+            {severity.label}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-2 rounded-lg bg-muted/50">
+            <p className="text-xs text-muted-foreground">Tremor Index</p>
+            <p className="text-lg font-bold" data-testid="text-tremor-index">
+              {(latest.tremor_index || 0).toFixed(1)}/10
+            </p>
+          </div>
+          <div className="p-2 rounded-lg bg-muted/50">
+            <p className="text-xs text-muted-foreground">Frequency</p>
+            <p className="text-lg font-bold" data-testid="text-tremor-frequency">
+              {(latest.dominant_frequency_hz || 0).toFixed(1)} Hz
+            </p>
+          </div>
+        </div>
+
+        {(latest.parkinsonian_likelihood !== undefined || latest.essential_tremor_likelihood !== undefined) && (
+          <div className="space-y-2 text-xs">
+            <p className="font-medium text-muted-foreground">Pattern Indicators (Wellness Only)</p>
+            <div className="grid grid-cols-2 gap-2">
+              {latest.parkinsonian_likelihood !== undefined && (
+                <div className="flex items-center justify-between p-1.5 rounded bg-muted/30">
+                  <span>Resting tremor pattern</span>
+                  <span className="font-medium">{(latest.parkinsonian_likelihood * 100).toFixed(0)}%</span>
+                </div>
+              )}
+              {latest.essential_tremor_likelihood !== undefined && (
+                <div className="flex items-center justify-between p-1.5 rounded bg-muted/30">
+                  <span>Action tremor pattern</span>
+                  <span className="font-medium">{(latest.essential_tremor_likelihood * 100).toFixed(0)}%</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {trend.status !== 'insufficient_data' && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground">7-day trend:</span>
+            {trend.status === 'increasing' && (
+              <Badge variant="outline" className="text-orange-500 border-orange-300">
+                <TrendingUp className="h-3 w-3 mr-1" /> Increasing
+              </Badge>
+            )}
+            {trend.status === 'decreasing' && (
+              <Badge variant="outline" className="text-green-500 border-green-300">
+                <TrendingDown className="h-3 w-3 mr-1" /> Decreasing
+              </Badge>
+            )}
+            {trend.status === 'stable' && (
+              <Badge variant="outline" className="text-blue-500 border-blue-300">
+                <Minus className="h-3 w-3 mr-1" /> Stable
+              </Badge>
+            )}
+            <span className="text-muted-foreground">({trend.recordings_count_7days} recordings)</span>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground italic">
+          Wellness monitoring indicator only - discuss changes with your healthcare provider
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function GaitInsightsCard({ patientId }: { patientId: string }) {
+  const { data: gaitSessions, isLoading } = useQuery<{ sessions: GaitSession[] }>({
+    queryKey: ['/api/v1/gait-analysis/sessions', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/gait-analysis/sessions/${patientId}?limit=5`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return { sessions: [] };
+        throw new Error('Failed to fetch gait data');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const latestSession = gaitSessions?.sessions?.[0];
+
+  const { data: gaitMetrics } = useQuery<GaitMetrics>({
+    queryKey: ['/api/v1/gait-analysis/metrics', latestSession?.session_id],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/gait-analysis/metrics/${latestSession?.session_id}`);
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!latestSession?.session_id && latestSession?.status === 'completed',
+  });
+
+  if (isLoading) {
+    return (
+      <Card data-testid="card-gait-insights">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Footprints className="h-4 w-4 text-blue-500" />
+            Gait Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!latestSession || latestSession.status !== 'completed') {
+    return (
+      <Card data-testid="card-gait-insights">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Footprints className="h-4 w-4 text-blue-500" />
+            Gait Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-4">
+            <FileVideo className="h-8 w-8 mx-auto text-muted-foreground opacity-50 mb-2" />
+            <p className="text-sm text-muted-foreground">No gait analysis available</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Upload a walking video to analyze your gait patterns
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const getFallRiskLevel = (score: number) => {
+    if (score < 0.3) return { label: 'Low Risk', color: 'text-green-500 bg-green-100 dark:bg-green-900/30' };
+    if (score < 0.6) return { label: 'Moderate', color: 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30' };
+    return { label: 'Elevated', color: 'text-red-500 bg-red-100 dark:bg-red-900/30' };
+  };
+
+  const fallRisk = getFallRiskLevel(gaitMetrics?.clinical_risks?.fall_risk_score || latestSession.abnormality_score || 0);
+
+  return (
+    <Card data-testid="card-gait-insights">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center justify-between gap-2 text-base">
+          <div className="flex items-center gap-2">
+            <Footprints className="h-4 w-4 text-blue-500" />
+            Gait Analysis
+          </div>
+          <Badge className={`text-xs ${fallRisk.color}`}>
+            {fallRisk.label}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="p-2 rounded-lg bg-muted/50 text-center">
+            <p className="text-xs text-muted-foreground">Strides</p>
+            <p className="text-lg font-bold" data-testid="text-gait-strides">
+              {latestSession.total_strides || 0}
+            </p>
+          </div>
+          <div className="p-2 rounded-lg bg-muted/50 text-center">
+            <p className="text-xs text-muted-foreground">Cadence</p>
+            <p className="text-lg font-bold" data-testid="text-gait-cadence">
+              {gaitMetrics?.temporal?.cadence_steps_per_min?.toFixed(0) || '—'}
+            </p>
+            <p className="text-xs text-muted-foreground">steps/min</p>
+          </div>
+          <div className="p-2 rounded-lg bg-muted/50 text-center">
+            <p className="text-xs text-muted-foreground">Symmetry</p>
+            <p className="text-lg font-bold" data-testid="text-gait-symmetry">
+              {gaitMetrics?.symmetry_stability?.overall_symmetry 
+                ? `${(gaitMetrics.symmetry_stability.overall_symmetry * 100).toFixed(0)}%` 
+                : '—'}
+            </p>
+          </div>
+        </div>
+
+        {gaitMetrics?.clinical_risks && (
+          <div className="space-y-2 text-xs">
+            <p className="font-medium text-muted-foreground">Clinical Indicators (Wellness Only)</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex items-center justify-between p-1.5 rounded bg-muted/30">
+                <span>Fall risk indicator</span>
+                <span className="font-medium">{(gaitMetrics.clinical_risks.fall_risk_score * 100).toFixed(0)}%</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-muted/30">
+                <span>Balance confidence</span>
+                <span className="font-medium">{((gaitMetrics.symmetry_stability?.balance_confidence_score || 0) * 100).toFixed(0)}%</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground italic">
+          Last analyzed: {format(new Date(latestSession.created_at), 'MMM d, h:mm a')}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EdemaInsightsCard({ patientId }: { patientId: string }) {
+  const { data: edemaMetrics, isLoading } = useQuery<EdemaMetrics[]>({
+    queryKey: ['/api/v1/edema/metrics', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/edema/metrics/${patientId}?limit=5`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return [];
+        throw new Error('Failed to fetch edema data');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  if (isLoading) {
+    return (
+      <Card data-testid="card-edema-insights">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Droplets className="h-4 w-4 text-cyan-500" />
+            Edema Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const latest = edemaMetrics?.[0];
+
+  if (!latest) {
+    return (
+      <Card data-testid="card-edema-insights">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Droplets className="h-4 w-4 text-cyan-500" />
+            Edema Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-4">
+            <Target className="h-8 w-8 mx-auto text-muted-foreground opacity-50 mb-2" />
+            <p className="text-sm text-muted-foreground">No edema analysis available</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Complete the swelling examination to see analysis
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const getSeverityBadge = (severity: string) => {
+    switch (severity?.toLowerCase()) {
+      case 'none':
+        return { label: 'None Detected', color: 'text-green-500 bg-green-100 dark:bg-green-900/30' };
+      case 'mild':
+        return { label: 'Mild', color: 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30' };
+      case 'moderate':
+        return { label: 'Moderate', color: 'text-orange-500 bg-orange-100 dark:bg-orange-900/30' };
+      case 'severe':
+        return { label: 'Significant', color: 'text-red-500 bg-red-100 dark:bg-red-900/30' };
+      default:
+        return { label: latest.swelling_detected ? 'Detected' : 'None', color: latest.swelling_detected ? 'text-yellow-500 bg-yellow-100' : 'text-green-500 bg-green-100' };
+    }
+  };
+
+  const severityBadge = getSeverityBadge(latest.swelling_severity);
+
+  return (
+    <Card data-testid="card-edema-insights">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center justify-between gap-2 text-base">
+          <div className="flex items-center gap-2">
+            <Droplets className="h-4 w-4 text-cyan-500" />
+            Edema Analysis
+          </div>
+          <Badge className={`text-xs ${severityBadge.color}`}>
+            {severityBadge.label}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-2 rounded-lg bg-muted/50">
+            <p className="text-xs text-muted-foreground">Overall Expansion</p>
+            <p className="text-lg font-bold" data-testid="text-edema-expansion">
+              {latest.overall_expansion_percent?.toFixed(1) || 0}%
+            </p>
+          </div>
+          <div className="p-2 rounded-lg bg-muted/50">
+            <p className="text-xs text-muted-foreground">Regions Affected</p>
+            <p className="text-lg font-bold" data-testid="text-edema-regions">
+              {latest.regions_affected || 0}
+            </p>
+          </div>
+        </div>
+
+        {latest.regional_analysis && (
+          <div className="space-y-2 text-xs">
+            <p className="font-medium text-muted-foreground">Regional Breakdown</p>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between p-1.5 rounded bg-muted/30">
+                <span className="flex items-center gap-1">
+                  <User className="h-3 w-3" /> Face/Upper Body
+                </span>
+                <span className={`font-medium ${latest.regional_analysis.face_upper_body?.swelling_detected ? 'text-orange-500' : 'text-green-500'}`}>
+                  {latest.regional_analysis.face_upper_body?.swelling_detected ? 'Detected' : 'Normal'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-muted/30">
+                <span className="flex items-center gap-1">
+                  <Footprints className="h-3 w-3" /> Legs/Feet
+                </span>
+                <span className={`font-medium ${latest.regional_analysis.legs_feet?.swelling_detected ? 'text-orange-500' : 'text-green-500'}`}>
+                  {latest.regional_analysis.legs_feet?.swelling_detected ? 'Detected' : 'Normal'}
+                </span>
+              </div>
+              {latest.regional_analysis.asymmetry_detected && (
+                <div className="flex items-center gap-1 p-1.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>Asymmetry detected ({latest.regional_analysis.asymmetry_difference?.toFixed(1)}% difference)</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground italic">
+          Last analyzed: {format(new Date(latest.analyzed_at), 'MMM d, h:mm a')}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function VideoAIInsightsPanel({ patientId }: { patientId: string }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-3" data-testid="panel-video-ai-insights">
+      <TremorInsightsCard patientId={patientId} />
+      <GaitInsightsCard patientId={patientId} />
+      <EdemaInsightsCard patientId={patientId} />
+    </div>
+  );
+}
+
 export default function AIVideoDashboard() {
+  const { user } = useAuth();
+  const patientId = user?.id || 'demo-patient';
+  
   const [customLocation, setCustomLocation] = useState('');
   const [customDescription, setCustomDescription] = useState('');
 
@@ -276,22 +819,24 @@ export default function AIVideoDashboard() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="insights" className="space-y-3 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">AI Video Analysis Insights</CardTitle>
-                <CardDescription>Detailed examination reports with trends (Today, 7 days, 30 days, 1 year)</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-12">
-                  <BarChart3 className="h-16 w-16 mx-auto text-muted-foreground opacity-50 mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Analysis Coming Soon</h3>
-                  <p className="text-muted-foreground max-w-md mx-auto">
-                    Complete your first examination to view AI-powered insights and trends
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+          <TabsContent value="insights" className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                AI Video Analysis Insights
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Tremor, Gait, and Edema analysis from your examinations
+              </p>
+            </div>
+            <VideoAIInsightsPanel patientId={patientId} />
+            <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+              <Info className="h-4 w-4 text-blue-500" />
+              <AlertDescription className="text-xs">
+                These insights are for wellness monitoring only and are not medical diagnoses. 
+                Always discuss any concerns with your healthcare provider.
+              </AlertDescription>
+            </Alert>
           </TabsContent>
         </Tabs>
       </div>
@@ -439,18 +984,40 @@ export default function AIVideoDashboard() {
       )}
 
       {workflowState === 'completed' && (
-        <Card className="border-chart-2">
-          <CardContent className="p-12 text-center">
-            <CheckCircle2 className="h-16 w-16 mx-auto mb-4 text-chart-2" />
-            <h2 className="text-2xl font-bold mb-2">Examination Complete!</h2>
-            <p className="text-muted-foreground mb-6">
-              All recordings have been processed. View your analysis below.
+        <div className="space-y-6">
+          <Card className="border-chart-2">
+            <CardContent className="p-8 text-center">
+              <CheckCircle2 className="h-12 w-12 mx-auto mb-4 text-chart-2" />
+              <h2 className="text-2xl font-bold mb-2">Examination Complete!</h2>
+              <p className="text-muted-foreground mb-4">
+                All recordings have been processed. Your AI analysis is ready.
+              </p>
+              <Button onClick={resetWorkflow} size="lg" data-testid="button-start-new">
+                Start New Examination
+              </Button>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-3">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Your AI Analysis Results
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Tremor, Gait, and Edema analysis from your examination
             </p>
-            <Button onClick={resetWorkflow} size="lg" data-testid="button-start-new">
-              Start New Examination
-            </Button>
-          </CardContent>
-        </Card>
+          </div>
+          
+          <VideoAIInsightsPanel patientId={patientId} />
+
+          <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+            <Info className="h-4 w-4 text-blue-500" />
+            <AlertDescription className="text-xs">
+              These insights are for wellness monitoring only and are not medical diagnoses. 
+              Always discuss any changes with your healthcare provider.
+            </AlertDescription>
+          </Alert>
+        </div>
       )}
     </div>
   );

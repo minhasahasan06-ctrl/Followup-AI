@@ -1,7 +1,32 @@
+import os
+import sys
+
+# ============================================================================
+# SUPPRESS ALL STARTUP WARNINGS - User requested zero warnings
+# ============================================================================
+# Suppress TensorFlow CUDA and logging warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress all TF logs (0=all, 1=info, 2=warning, 3=error only)
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU mode - no CUDA warnings
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN custom ops warnings
+
+# Suppress other library warnings
+import warnings
+warnings.filterwarnings('ignore')
+
+# Configure logging BEFORE any imports
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:%(name)s:%(message)s'
+)
+# Suppress verbose library loggers
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('absl').setLevel(logging.ERROR)
+logging.getLogger('mediapipe').setLevel(logging.ERROR)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import logging
 from app.config import settings, check_openai_baa_compliance
 from app.database import Base, engine
 from app.services.ai_engine_manager import AIEngineManager
@@ -17,16 +42,19 @@ from app.routers import (
     video_consultation,
     pain_tracking,
     symptom_journal,
-    exam_coach,
     medication_timeline,
     symptom_logging,
+    symptom_checkin_api,  # ✅ Daily Follow-up Symptom Tracking - PRODUCTION READY
     medication_side_effects,
     baseline,
     deviation,
     risk_score,
     video_exam_sessions,
     behavior_ai_api,  # ✅ Behavior AI Analysis System - PRODUCTION READY
-    mental_health  # ✅ Mental Health Questionnaires - PRODUCTION READY
+    mental_health,  # ✅ Mental Health Questionnaires - PRODUCTION READY
+    drug_normalization_api,  # ✅ Drug Normalization Service - PRODUCTION READY
+    ai_health_alerts,  # ✅ AI Health Alert Engine - PRODUCTION READY
+    habits,  # ✅ Comprehensive Habit Tracker - 13 Features - PRODUCTION READY
 )
 
 logger = logging.getLogger(__name__)
@@ -147,9 +175,9 @@ app.include_router(agent_clona.router)
 app.include_router(video_consultation.router)
 app.include_router(pain_tracking.router)
 app.include_router(symptom_journal.router)
-app.include_router(exam_coach.router)
 app.include_router(medication_timeline.router)
 app.include_router(symptom_logging.router)
+app.include_router(symptom_checkin_api.router)
 app.include_router(medication_side_effects.router)
 app.include_router(baseline.router)
 app.include_router(deviation.router)
@@ -164,6 +192,15 @@ app.include_router(behavior_ai_api.router)
 
 # Mental Health Questionnaires (PHQ-9, GAD-7, PSS-10) - PRODUCTION READY
 app.include_router(mental_health.router)
+
+# Drug Normalization API (RxNorm Integration) - PRODUCTION READY
+app.include_router(drug_normalization_api.router)
+
+# AI Health Alert Engine (Trend Detection, Engagement Monitoring, QoL Metrics) - PRODUCTION READY
+app.include_router(ai_health_alerts.router)
+
+# Comprehensive Habit Tracker (13 Features: Routines, Streaks, AI Coach, CBT, etc.) - PRODUCTION READY
+app.include_router(habits.router)
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:

@@ -7,6 +7,9 @@ import {
   chatSessions,
   chatMessages,
   medications,
+  prescriptions,
+  medicationChangeLog,
+  dosageChangeRequests,
   drugs,
   drugInteractions,
   interactionAlerts,
@@ -59,6 +62,8 @@ import {
   dailyEngagement,
   doctorWellness,
   appointments,
+  consultations,
+  doctorPatientAssignments,
   doctorAvailability,
   emailThreads,
   emailMessages,
@@ -84,6 +89,12 @@ import {
   type InsertChatMessage,
   type Medication,
   type InsertMedication,
+  type Prescription,
+  type InsertPrescription,
+  type MedicationChangeLog,
+  type InsertMedicationChangeLog,
+  type DosageChangeRequest,
+  type InsertDosageChangeRequest,
   type Drug,
   type InsertDrug,
   type DrugInteraction,
@@ -188,6 +199,11 @@ import {
   type InsertDoctorWellness,
   type Appointment,
   type InsertAppointment,
+  type DoctorPatientAssignment,
+  type InsertDoctorPatientAssignment,
+  patientConsentRequests,
+  type PatientConsentRequest,
+  type InsertPatientConsentRequest,
   type DoctorAvailability,
   type InsertDoctorAvailability,
   type EmailThread,
@@ -206,9 +222,12 @@ import {
   type InsertGmailSync,
   type GmailSyncLog,
   type InsertGmailSyncLog,
+  paintrackSessions,
+  type PaintrackSession,
+  type InsertPaintrackSession,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, desc, sql, gte, lte, like, ilike, inArray, between } from "drizzle-orm";
+import { eq, and, or, desc, sql, gte, lte, gt, like, ilike, inArray, between } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -241,6 +260,26 @@ export interface IStorage {
   getDoctorProfile(userId: string): Promise<DoctorProfile | undefined>;
   upsertDoctorProfile(profile: InsertDoctorProfile): Promise<DoctorProfile>;
   getAllPatients(): Promise<Array<User & { profile?: PatientProfile }>>;
+  getDoctorPatients(doctorId: string): Promise<Array<User & { profile?: PatientProfile }>>;
+  
+  // Doctor-Patient Assignment operations (HIPAA compliance)
+  getDoctorPatientAssignment(doctorId: string, patientId: string): Promise<DoctorPatientAssignment | undefined>;
+  getActiveDoctorAssignments(doctorId: string): Promise<DoctorPatientAssignment[]>;
+  getPatientDoctorAssignments(patientId: string): Promise<DoctorPatientAssignment[]>;
+  createDoctorPatientAssignment(assignment: InsertDoctorPatientAssignment): Promise<DoctorPatientAssignment>;
+  updateDoctorPatientAssignment(id: string, data: Partial<DoctorPatientAssignment>): Promise<DoctorPatientAssignment | undefined>;
+  revokeDoctorPatientAssignment(id: string, revokedBy: string, reason: string): Promise<DoctorPatientAssignment | undefined>;
+  doctorHasPatientAccess(doctorId: string, patientId: string): Promise<boolean>;
+  
+  // Patient Consent Request operations
+  searchPatientsByIdentifier(query: string): Promise<Array<{ user: User; profile: PatientProfile | null }>>;
+  createPatientConsentRequest(request: InsertPatientConsentRequest): Promise<PatientConsentRequest>;
+  getPendingConsentRequestsForPatient(patientId: string): Promise<PatientConsentRequest[]>;
+  getPendingConsentRequestsForDoctor(doctorId: string): Promise<PatientConsentRequest[]>;
+  getConsentRequest(id: string): Promise<PatientConsentRequest | undefined>;
+  respondToConsentRequest(id: string, approved: boolean, responseMessage?: string): Promise<PatientConsentRequest | undefined>;
+  generateFollowupPatientId(): Promise<string>;
+  getPatientByFollowupId(followupPatientId: string): Promise<User | undefined>;
   
   // Daily followup operations
   getDailyFollowup(patientId: string, date: Date): Promise<DailyFollowup | undefined>;
@@ -255,22 +294,49 @@ export interface IStorage {
   getAllVoiceFollowups(patientId: string): Promise<VoiceFollowup[]>;
   
   // Chat session operations
-  getActiveSession(patientId: string, agentType: string): Promise<ChatSession | undefined>;
+  getActiveSession(patientId: string, agentType: string, contextPatientId?: string): Promise<ChatSession | undefined>;
   getPatientSessions(patientId: string, agentType?: string, limit?: number): Promise<ChatSession[]>;
   getSessionsInDateRange(patientId: string, startDate: Date, endDate: Date, agentType?: string): Promise<ChatSession[]>;
-  createSession(session: InsertChatSession): Promise<ChatSession>;
+  createSession(session: InsertChatSession & { contextPatientId?: string }): Promise<ChatSession>;
   endSession(sessionId: string, aiSummary?: string, healthInsights?: any): Promise<ChatSession | undefined>;
   updateSessionMetadata(sessionId: string, data: Partial<ChatSession>): Promise<ChatSession | undefined>;
   getSessionMessages(sessionId: string): Promise<ChatMessage[]>;
   
   // Chat operations
-  getChatMessages(userId: string, agentType: string, limit?: number): Promise<ChatMessage[]>;
+  getChatMessages(userId: string, agentType: string, contextPatientId?: string, limit?: number): Promise<ChatMessage[]>;
   createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
   
   // Medication operations
   getActiveMedications(patientId: string): Promise<Medication[]>;
+  getAllMedications(patientId: string): Promise<Medication[]>;
+  getPendingConfirmationMedications(patientId: string): Promise<Medication[]>;
+  getInactiveMedications(patientId: string): Promise<Medication[]>;
   createMedication(medication: InsertMedication): Promise<Medication>;
   updateMedication(id: string, data: Partial<Medication>): Promise<Medication | undefined>;
+  confirmMedication(id: string, confirmedBy: string): Promise<Medication | undefined>;
+  discontinueMedication(id: string, discontinuedBy: string, reason: string, replacementId?: string): Promise<Medication | undefined>;
+  reactivateMedication(id: string, reactivatedBy: string): Promise<Medication | undefined>;
+  
+  // Prescription operations
+  getPrescriptions(patientId: string): Promise<Prescription[]>;
+  getPrescriptionsByDoctor(doctorId: string): Promise<Prescription[]>;
+  getPrescription(id: string): Promise<Prescription | undefined>;
+  createPrescription(prescription: InsertPrescription): Promise<Prescription>;
+  updatePrescription(id: string, data: Partial<Prescription>): Promise<Prescription | undefined>;
+  acknowledgePrescription(id: string, acknowledgedBy: string): Promise<Prescription | undefined>;
+  
+  // Medication change log operations
+  getMedicationChangelog(medicationId: string): Promise<MedicationChangeLog[]>;
+  getPatientMedicationChangelog(patientId: string, limit?: number): Promise<MedicationChangeLog[]>;
+  createMedicationChangeLog(log: InsertMedicationChangeLog): Promise<MedicationChangeLog>;
+  
+  // Dosage change request operations
+  getDosageChangeRequests(patientId: string): Promise<DosageChangeRequest[]>;
+  getPendingDosageChangeRequests(doctorId: string): Promise<DosageChangeRequest[]>;
+  getDosageChangeRequest(id: string): Promise<DosageChangeRequest | undefined>;
+  createDosageChangeRequest(request: InsertDosageChangeRequest): Promise<DosageChangeRequest>;
+  approveDosageChangeRequest(id: string, doctorId: string, notes?: string): Promise<DosageChangeRequest | undefined>;
+  rejectDosageChangeRequest(id: string, doctorId: string, notes: string): Promise<DosageChangeRequest | undefined>;
   
   // Dynamic task operations
   getActiveTasks(patientId: string): Promise<DynamicTask[]>;
@@ -607,6 +673,11 @@ export interface IStorage {
   createGmailSyncLog(log: InsertGmailSyncLog): Promise<GmailSyncLog>;
   getGmailSyncLogs(doctorId: string, limit?: number): Promise<GmailSyncLog[]>;
   getEmailThreadByExternalId(externalThreadId: string): Promise<EmailThread | undefined>;
+  
+  // PainTrack operations
+  createPaintrackSession(session: InsertPaintrackSession): Promise<PaintrackSession>;
+  getPaintrackSessions(userId: string, limit?: number): Promise<PaintrackSession[]>;
+  getPaintrackSession(id: string, userId: string): Promise<PaintrackSession | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -850,6 +921,315 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  async getDoctorPatients(doctorId: string): Promise<Array<User & { profile?: PatientProfile }>> {
+    // Get unique patient IDs from appointments, prescriptions, and consultations
+    const appointmentPatients = await db
+      .selectDistinct({ patientId: appointments.patientId })
+      .from(appointments)
+      .where(eq(appointments.doctorId, doctorId));
+
+    const prescriptionPatients = await db
+      .selectDistinct({ patientId: prescriptions.patientId })
+      .from(prescriptions)
+      .where(eq(prescriptions.doctorId, doctorId));
+
+    const consultationPatients = await db
+      .selectDistinct({ patientId: consultations.patientId })
+      .from(consultations)
+      .where(eq(consultations.doctorId, doctorId));
+
+    // Combine all patient IDs into a unique set
+    const allPatientIds = new Set<string>();
+    for (const p of appointmentPatients) {
+      if (p.patientId) allPatientIds.add(p.patientId);
+    }
+    for (const p of prescriptionPatients) {
+      if (p.patientId) allPatientIds.add(p.patientId);
+    }
+    for (const p of consultationPatients) {
+      if (p.patientId) allPatientIds.add(p.patientId);
+    }
+
+    if (allPatientIds.size === 0) {
+      return [];
+    }
+
+    // Fetch patient data with profiles
+    const patientsData = await db
+      .select()
+      .from(users)
+      .leftJoin(patientProfiles, eq(users.id, patientProfiles.userId))
+      .where(
+        and(
+          eq(users.role, 'patient'),
+          inArray(users.id, Array.from(allPatientIds))
+        )
+      );
+
+    return patientsData.map(row => ({
+      ...row.users,
+      profile: row.patient_profiles || undefined,
+    }));
+  }
+
+  // Doctor-Patient Assignment operations (HIPAA compliance)
+  async getDoctorPatientAssignment(doctorId: string, patientId: string): Promise<DoctorPatientAssignment | undefined> {
+    const [assignment] = await db
+      .select()
+      .from(doctorPatientAssignments)
+      .where(
+        and(
+          eq(doctorPatientAssignments.doctorId, doctorId),
+          eq(doctorPatientAssignments.patientId, patientId),
+          eq(doctorPatientAssignments.status, 'active')
+        )
+      );
+    return assignment;
+  }
+
+  async getActiveDoctorAssignments(doctorId: string): Promise<DoctorPatientAssignment[]> {
+    return db
+      .select()
+      .from(doctorPatientAssignments)
+      .where(
+        and(
+          eq(doctorPatientAssignments.doctorId, doctorId),
+          eq(doctorPatientAssignments.status, 'active')
+        )
+      )
+      .orderBy(desc(doctorPatientAssignments.createdAt));
+  }
+
+  async getPatientDoctorAssignments(patientId: string): Promise<DoctorPatientAssignment[]> {
+    return db
+      .select()
+      .from(doctorPatientAssignments)
+      .where(
+        and(
+          eq(doctorPatientAssignments.patientId, patientId),
+          eq(doctorPatientAssignments.status, 'active')
+        )
+      )
+      .orderBy(desc(doctorPatientAssignments.createdAt));
+  }
+
+  async createDoctorPatientAssignment(assignmentData: InsertDoctorPatientAssignment): Promise<DoctorPatientAssignment> {
+    // Check if active assignment already exists
+    const existing = await this.getDoctorPatientAssignment(assignmentData.doctorId, assignmentData.patientId);
+    if (existing) {
+      return existing;
+    }
+    
+    const [assignment] = await db
+      .insert(doctorPatientAssignments)
+      .values(assignmentData)
+      .returning();
+    return assignment;
+  }
+
+  async updateDoctorPatientAssignment(id: string, data: Partial<DoctorPatientAssignment>): Promise<DoctorPatientAssignment | undefined> {
+    const [assignment] = await db
+      .update(doctorPatientAssignments)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(doctorPatientAssignments.id, id))
+      .returning();
+    return assignment;
+  }
+
+  async revokeDoctorPatientAssignment(id: string, revokedBy: string, reason: string): Promise<DoctorPatientAssignment | undefined> {
+    const [assignment] = await db
+      .update(doctorPatientAssignments)
+      .set({
+        status: 'revoked',
+        revokedAt: new Date(),
+        revokedBy,
+        revocationReason: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(doctorPatientAssignments.id, id))
+      .returning();
+    return assignment;
+  }
+
+  async doctorHasPatientAccess(doctorId: string, patientId: string): Promise<boolean> {
+    const assignment = await this.getDoctorPatientAssignment(doctorId, patientId);
+    return !!assignment;
+  }
+
+  // Patient Consent Request operations
+  async searchPatientsByIdentifier(query: string): Promise<Array<{ user: User; profile: PatientProfile | null }>> {
+    const normalizedQuery = query.trim().toLowerCase();
+    
+    // Search by email, phone, or followup patient ID
+    const matchingUsers = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.role, 'patient'),
+          or(
+            ilike(users.email, `%${normalizedQuery}%`),
+            ilike(users.phoneNumber, `%${normalizedQuery}%`)
+          )
+        )
+      )
+      .limit(10);
+    
+    // Also search by followup patient ID in profiles
+    const matchingProfiles = await db
+      .select()
+      .from(patientProfiles)
+      .where(ilike(patientProfiles.followupPatientId, `%${normalizedQuery}%`))
+      .limit(10);
+    
+    // Combine results
+    const userIds = new Set<string>();
+    const results: Array<{ user: User; profile: PatientProfile | null }> = [];
+    
+    for (const user of matchingUsers) {
+      userIds.add(user.id);
+      const [profile] = await db
+        .select()
+        .from(patientProfiles)
+        .where(eq(patientProfiles.userId, user.id));
+      results.push({ user, profile: profile || null });
+    }
+    
+    for (const profile of matchingProfiles) {
+      if (!userIds.has(profile.userId)) {
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, profile.userId));
+        if (user) {
+          results.push({ user, profile });
+        }
+      }
+    }
+    
+    return results;
+  }
+
+  async createPatientConsentRequest(request: InsertPatientConsentRequest): Promise<PatientConsentRequest> {
+    // Check if there's already a pending request
+    const existing = await db
+      .select()
+      .from(patientConsentRequests)
+      .where(
+        and(
+          eq(patientConsentRequests.doctorId, request.doctorId),
+          eq(patientConsentRequests.patientId, request.patientId),
+          eq(patientConsentRequests.status, 'pending')
+        )
+      );
+    
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    
+    // Set expiry to 7 days from now
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    
+    const [consentRequest] = await db
+      .insert(patientConsentRequests)
+      .values({
+        ...request,
+        expiresAt,
+      })
+      .returning();
+    return consentRequest;
+  }
+
+  async getPendingConsentRequestsForPatient(patientId: string): Promise<PatientConsentRequest[]> {
+    return await db
+      .select()
+      .from(patientConsentRequests)
+      .where(
+        and(
+          eq(patientConsentRequests.patientId, patientId),
+          eq(patientConsentRequests.status, 'pending'),
+          gt(patientConsentRequests.expiresAt, new Date())
+        )
+      )
+      .orderBy(desc(patientConsentRequests.createdAt));
+  }
+
+  async getPendingConsentRequestsForDoctor(doctorId: string): Promise<PatientConsentRequest[]> {
+    return await db
+      .select()
+      .from(patientConsentRequests)
+      .where(
+        and(
+          eq(patientConsentRequests.doctorId, doctorId),
+          eq(patientConsentRequests.status, 'pending')
+        )
+      )
+      .orderBy(desc(patientConsentRequests.createdAt));
+  }
+
+  async getConsentRequest(id: string): Promise<PatientConsentRequest | undefined> {
+    const [request] = await db
+      .select()
+      .from(patientConsentRequests)
+      .where(eq(patientConsentRequests.id, id));
+    return request;
+  }
+
+  async respondToConsentRequest(id: string, approved: boolean, responseMessage?: string): Promise<PatientConsentRequest | undefined> {
+    const [request] = await db
+      .update(patientConsentRequests)
+      .set({
+        status: approved ? 'approved' : 'rejected',
+        respondedAt: new Date(),
+        responseMessage,
+        updatedAt: new Date(),
+      })
+      .where(eq(patientConsentRequests.id, id))
+      .returning();
+    return request;
+  }
+
+  async generateFollowupPatientId(): Promise<string> {
+    // Generate a unique FAI-XXXXXX format ID
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let patientId: string;
+    let exists = true;
+    
+    while (exists) {
+      let randomPart = '';
+      for (let i = 0; i < 6; i++) {
+        randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      patientId = `FAI-${randomPart}`;
+      
+      // Check if this ID already exists
+      const [existing] = await db
+        .select()
+        .from(patientProfiles)
+        .where(eq(patientProfiles.followupPatientId, patientId));
+      exists = !!existing;
+    }
+    
+    return patientId!;
+  }
+
+  async getPatientByFollowupId(followupPatientId: string): Promise<User | undefined> {
+    const [profile] = await db
+      .select()
+      .from(patientProfiles)
+      .where(eq(patientProfiles.followupPatientId, followupPatientId.toUpperCase()));
+    
+    if (!profile) return undefined;
+    
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, profile.userId));
+    
+    return user;
+  }
+
   // Daily followup operations
   async getDailyFollowup(patientId: string, date: Date): Promise<DailyFollowup | undefined> {
     const startOfDay = new Date(date);
@@ -935,17 +1315,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Chat session operations
-  async getActiveSession(patientId: string, agentType: string): Promise<ChatSession | undefined> {
+  async getActiveSession(patientId: string, agentType: string, contextPatientId?: string): Promise<ChatSession | undefined> {
+    const conditions = [
+      eq(chatSessions.patientId, patientId),
+      eq(chatSessions.agentType, agentType),
+      sql`${chatSessions.endedAt} IS NULL`
+    ];
+    
+    if (contextPatientId) {
+      conditions.push(eq(chatSessions.contextPatientId, contextPatientId));
+    } else {
+      conditions.push(sql`${chatSessions.contextPatientId} IS NULL`);
+    }
+    
     const [session] = await db
       .select()
       .from(chatSessions)
-      .where(
-        and(
-          eq(chatSessions.patientId, patientId),
-          eq(chatSessions.agentType, agentType),
-          sql`${chatSessions.endedAt} IS NULL`
-        )
-      )
+      .where(and(...conditions))
       .orderBy(desc(chatSessions.startedAt))
       .limit(1);
     return session;
@@ -1038,11 +1424,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Chat operations
-  async getChatMessages(userId: string, agentType: string, limit: number = 50): Promise<ChatMessage[]> {
+  async getChatMessages(userId: string, agentType: string, contextPatientId?: string, limit: number = 50): Promise<ChatMessage[]> {
+    const conditions = [
+      eq(chatMessages.userId, userId),
+      eq(chatMessages.agentType, agentType)
+    ];
+    
+    if (contextPatientId) {
+      conditions.push(eq(chatMessages.patientContextId, contextPatientId));
+    } else {
+      conditions.push(sql`${chatMessages.patientContextId} IS NULL`);
+    }
+    
     const messages = await db
       .select()
       .from(chatMessages)
-      .where(and(eq(chatMessages.userId, userId), eq(chatMessages.agentType, agentType)))
+      .where(and(...conditions))
       .orderBy(desc(chatMessages.createdAt))
       .limit(limit);
     return messages.reverse();
@@ -1092,10 +1489,248 @@ export class DatabaseStorage implements IStorage {
   async updateMedication(id: string, data: Partial<Medication>): Promise<Medication | undefined> {
     const [medication] = await db
       .update(medications)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(eq(medications.id, id))
       .returning();
     return medication;
+  }
+
+  async getAllMedications(patientId: string): Promise<Medication[]> {
+    const meds = await db
+      .select()
+      .from(medications)
+      .where(eq(medications.patientId, patientId))
+      .orderBy(medications.name);
+    return meds;
+  }
+
+  async getPendingConfirmationMedications(patientId: string): Promise<Medication[]> {
+    const meds = await db
+      .select()
+      .from(medications)
+      .where(and(
+        eq(medications.patientId, patientId),
+        eq(medications.status, "pending_confirmation")
+      ))
+      .orderBy(medications.createdAt);
+    return meds;
+  }
+
+  async getInactiveMedications(patientId: string): Promise<Medication[]> {
+    const meds = await db
+      .select()
+      .from(medications)
+      .where(and(
+        eq(medications.patientId, patientId),
+        eq(medications.status, "inactive")
+      ))
+      .orderBy(desc(medications.discontinuedAt));
+    return meds;
+  }
+
+  async confirmMedication(id: string, confirmedBy: string): Promise<Medication | undefined> {
+    const [medication] = await db
+      .update(medications)
+      .set({
+        status: "active",
+        confirmedAt: new Date(),
+        confirmedBy,
+        updatedAt: new Date(),
+      })
+      .where(eq(medications.id, id))
+      .returning();
+    return medication;
+  }
+
+  async discontinueMedication(
+    id: string,
+    discontinuedBy: string,
+    reason: string,
+    replacementId?: string
+  ): Promise<Medication | undefined> {
+    const [medication] = await db
+      .update(medications)
+      .set({
+        status: "inactive",
+        active: false,
+        discontinuedAt: new Date(),
+        discontinuedBy,
+        discontinuationReason: reason,
+        replacementMedicationId: replacementId || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(medications.id, id))
+      .returning();
+    return medication;
+  }
+
+  async reactivateMedication(id: string, reactivatedBy: string): Promise<Medication | undefined> {
+    const [medication] = await db
+      .update(medications)
+      .set({
+        status: "active",
+        active: true,
+        discontinuedAt: null,
+        discontinuedBy: null,
+        discontinuationReason: null,
+        replacementMedicationId: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(medications.id, id))
+      .returning();
+    return medication;
+  }
+
+  // Prescription operations
+  async getPrescriptions(patientId: string): Promise<Prescription[]> {
+    const rxs = await db
+      .select()
+      .from(prescriptions)
+      .where(eq(prescriptions.patientId, patientId))
+      .orderBy(desc(prescriptions.createdAt));
+    return rxs;
+  }
+
+  async getPrescriptionsByDoctor(doctorId: string): Promise<Prescription[]> {
+    const rxs = await db
+      .select()
+      .from(prescriptions)
+      .where(eq(prescriptions.doctorId, doctorId))
+      .orderBy(desc(prescriptions.createdAt));
+    return rxs;
+  }
+
+  async getPrescription(id: string): Promise<Prescription | undefined> {
+    const [rx] = await db
+      .select()
+      .from(prescriptions)
+      .where(eq(prescriptions.id, id));
+    return rx;
+  }
+
+  async createPrescription(prescriptionData: InsertPrescription): Promise<Prescription> {
+    const [rx] = await db
+      .insert(prescriptions)
+      .values(prescriptionData)
+      .returning();
+    return rx;
+  }
+
+  async updatePrescription(id: string, data: Partial<Prescription>): Promise<Prescription | undefined> {
+    const [rx] = await db
+      .update(prescriptions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(prescriptions.id, id))
+      .returning();
+    return rx;
+  }
+
+  async acknowledgePrescription(id: string, acknowledgedBy: string): Promise<Prescription | undefined> {
+    const [rx] = await db
+      .update(prescriptions)
+      .set({
+        status: "acknowledged",
+        acknowledgedAt: new Date(),
+        acknowledgedBy,
+        updatedAt: new Date(),
+      })
+      .where(eq(prescriptions.id, id))
+      .returning();
+    return rx;
+  }
+
+  // Medication change log operations
+  async getMedicationChangelog(medicationId: string): Promise<MedicationChangeLog[]> {
+    const logs = await db
+      .select()
+      .from(medicationChangeLog)
+      .where(eq(medicationChangeLog.medicationId, medicationId))
+      .orderBy(desc(medicationChangeLog.createdAt));
+    return logs;
+  }
+
+  async getPatientMedicationChangelog(patientId: string, limit: number = 50): Promise<MedicationChangeLog[]> {
+    const logs = await db
+      .select()
+      .from(medicationChangeLog)
+      .where(eq(medicationChangeLog.patientId, patientId))
+      .orderBy(desc(medicationChangeLog.createdAt))
+      .limit(limit);
+    return logs;
+  }
+
+  async createMedicationChangeLog(logData: InsertMedicationChangeLog): Promise<MedicationChangeLog> {
+    const [log] = await db
+      .insert(medicationChangeLog)
+      .values(logData)
+      .returning();
+    return log;
+  }
+
+  // Dosage change request operations
+  async getDosageChangeRequests(patientId: string): Promise<DosageChangeRequest[]> {
+    const requests = await db
+      .select()
+      .from(dosageChangeRequests)
+      .where(eq(dosageChangeRequests.patientId, patientId))
+      .orderBy(desc(dosageChangeRequests.createdAt));
+    return requests;
+  }
+
+  async getPendingDosageChangeRequests(doctorId: string): Promise<DosageChangeRequest[]> {
+    // Get all pending requests for patients under this doctor
+    const requests = await db
+      .select()
+      .from(dosageChangeRequests)
+      .where(eq(dosageChangeRequests.status, "pending"))
+      .orderBy(dosageChangeRequests.createdAt);
+    return requests;
+  }
+
+  async getDosageChangeRequest(id: string): Promise<DosageChangeRequest | undefined> {
+    const [request] = await db
+      .select()
+      .from(dosageChangeRequests)
+      .where(eq(dosageChangeRequests.id, id));
+    return request;
+  }
+
+  async createDosageChangeRequest(requestData: InsertDosageChangeRequest): Promise<DosageChangeRequest> {
+    const [request] = await db
+      .insert(dosageChangeRequests)
+      .values(requestData)
+      .returning();
+    return request;
+  }
+
+  async approveDosageChangeRequest(id: string, doctorId: string, notes?: string): Promise<DosageChangeRequest | undefined> {
+    const [request] = await db
+      .update(dosageChangeRequests)
+      .set({
+        status: "approved",
+        reviewedByDoctorId: doctorId,
+        reviewedAt: new Date(),
+        doctorNotes: notes || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(dosageChangeRequests.id, id))
+      .returning();
+    return request;
+  }
+
+  async rejectDosageChangeRequest(id: string, doctorId: string, notes: string): Promise<DosageChangeRequest | undefined> {
+    const [request] = await db
+      .update(dosageChangeRequests)
+      .set({
+        status: "rejected",
+        reviewedByDoctorId: doctorId,
+        reviewedAt: new Date(),
+        doctorNotes: notes,
+        updatedAt: new Date(),
+      })
+      .where(eq(dosageChangeRequests.id, id))
+      .returning();
+    return request;
   }
 
   // Dynamic task operations
@@ -3686,6 +4321,29 @@ export class DatabaseStorage implements IStorage {
       .from(emailThreads)
       .where(eq(emailThreads.externalThreadId, externalThreadId));
     return thread;
+  }
+
+  // PainTrack operations
+  async createPaintrackSession(session: InsertPaintrackSession): Promise<PaintrackSession> {
+    const [created] = await db.insert(paintrackSessions).values(session).returning();
+    return created;
+  }
+
+  async getPaintrackSessions(userId: string, limit: number = 30): Promise<PaintrackSession[]> {
+    return await db
+      .select()
+      .from(paintrackSessions)
+      .where(eq(paintrackSessions.userId, userId))
+      .orderBy(desc(paintrackSessions.createdAt))
+      .limit(limit);
+  }
+
+  async getPaintrackSession(id: string, userId: string): Promise<PaintrackSession | undefined> {
+    const [session] = await db
+      .select()
+      .from(paintrackSessions)
+      .where(and(eq(paintrackSessions.id, id), eq(paintrackSessions.userId, userId)));
+    return session;
   }
 }
 

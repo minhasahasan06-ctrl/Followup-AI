@@ -1,13 +1,20 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Search, TrendingUp, AlertCircle, Sparkles, Lightbulb, BookOpen, Beaker } from "lucide-react";
-import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Users, Search, TrendingUp, AlertCircle, Sparkles, Lightbulb, BookOpen, Beaker, Clock, CheckCircle, Bot, Eye, EyeOff } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
+import { AddPatientDialog } from "@/components/AddPatientDialog";
+import { LysaChatPanel } from "@/components/LysaChatPanel";
 
 type Recommendation = {
   id: string;
@@ -20,13 +27,83 @@ type Recommendation = {
   reasoning?: string;
 };
 
+interface MonitoringStatus {
+  patientId: string;
+  isMonitored: boolean;
+}
+
 export default function DoctorDashboard() {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
+  const [lysaDialogOpen, setLysaDialogOpen] = useState(false);
+  const [selectedPatientForLysa, setSelectedPatientForLysa] = useState<User | null>(null);
+  const [monitoringStates, setMonitoringStates] = useState<Record<string, boolean>>({});
+  const { toast } = useToast();
 
   const { data: patients, isLoading } = useQuery<User[]>({
     queryKey: ["/api/doctor/patients"],
   });
+
+  const { data: monitoringStatuses } = useQuery<MonitoringStatus[]>({
+    queryKey: ["/api/v1/lysa/monitoring/status"],
+    queryFn: async () => {
+      try {
+        const res = await fetch('/api/v1/lysa/monitoring/status');
+        if (!res.ok) return [];
+        return res.json();
+      } catch {
+        return [];
+      }
+    }
+  });
+
+  useEffect(() => {
+    if (monitoringStatuses) {
+      const states: Record<string, boolean> = {};
+      monitoringStatuses.forEach(s => {
+        states[s.patientId] = s.isMonitored;
+      });
+      setMonitoringStates(states);
+    }
+  }, [monitoringStatuses]);
+
+  const toggleMonitoringMutation = useMutation({
+    mutationFn: async ({ patientId, enabled }: { patientId: string; enabled: boolean }) => {
+      const response = await apiRequest('/api/v1/lysa/monitoring/toggle', {
+        method: 'POST',
+        body: JSON.stringify({ patientId, enabled })
+      });
+      return response;
+    },
+    onSuccess: (data: any, variables) => {
+      setMonitoringStates(prev => ({ ...prev, [variables.patientId]: variables.enabled }));
+      toast({
+        title: variables.enabled ? "Monitoring Enabled" : "Monitoring Disabled",
+        description: variables.enabled 
+          ? "AI monitoring is now active for this patient"
+          : "AI monitoring has been turned off for this patient"
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/lysa/monitoring/status'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Toggle Failed",
+        description: error.message || "Failed to update monitoring status",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const handleMonitoringToggle = (patientId: string, enabled: boolean, e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleMonitoringMutation.mutate({ patientId, enabled });
+  };
+
+  const openLysaForPatient = (patient: User, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedPatientForLysa(patient);
+    setLysaDialogOpen(true);
+  };
 
   // Fetch Assistant Lysa recommendations for doctors
   const { data: recommendations = [], isLoading: recommendationsLoading, isError: recommendationsError } = useQuery<Recommendation[]>({
@@ -61,11 +138,12 @@ export default function DoctorDashboard() {
           <h1 className="text-4xl font-semibold mb-2" data-testid="text-dashboard-title">Doctor Dashboard</h1>
           <p className="text-muted-foreground">Clinical insights and patient overview powered by Assistant Lysa</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Badge variant="secondary" className="text-sm">
             <Users className="h-3 w-3 mr-1" />
-            {patients?.length || 0} Total Patients
+            {patients?.length || 0} Patients
           </Badge>
+          <AddPatientDialog />
         </div>
       </div>
 
@@ -263,11 +341,53 @@ export default function DoctorDashboard() {
                       0
                     </Badge>
                   </div>
+                  <div className="flex items-center justify-between text-sm pt-1 border-t">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-1.5 text-muted-foreground cursor-help">
+                          {monitoringStates[patient.id] ? (
+                            <Eye className="h-3.5 w-3.5 text-green-500" />
+                          ) : (
+                            <EyeOff className="h-3.5 w-3.5" />
+                          )}
+                          <span>AI Monitoring</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{monitoringStates[patient.id] 
+                          ? "AI is actively monitoring this patient for health changes" 
+                          : "Enable AI monitoring to track health changes"}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Switch
+                      checked={monitoringStates[patient.id] || false}
+                      onCheckedChange={(checked) => handleMonitoringToggle(patient.id, checked, { stopPropagation: () => {} } as React.MouseEvent)}
+                      onClick={(e) => e.stopPropagation()}
+                      disabled={toggleMonitoringMutation.isPending}
+                      data-testid={`switch-monitoring-${patient.id}`}
+                    />
+                  </div>
                 </div>
 
-                <Button className="w-full mt-4" variant="outline" data-testid={`button-view-patient-${patient.id}`}>
-                  View Patient
-                </Button>
+                <div className="flex gap-2 mt-4">
+                  <Button 
+                    className="flex-1" 
+                    variant="outline" 
+                    data-testid={`button-view-patient-${patient.id}`}
+                  >
+                    View Patient
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={(e) => openLysaForPatient(patient, e)}
+                    data-testid={`button-lysa-patient-${patient.id}`}
+                    className="shrink-0"
+                    title="Open Lysa AI Assistant"
+                  >
+                    <Bot className="h-4 w-4" />
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -283,6 +403,35 @@ export default function DoctorDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Lysa AI Assistant Dialog */}
+      <Dialog open={lysaDialogOpen} onOpenChange={setLysaDialogOpen}>
+        <DialogContent className="max-w-4xl h-[80vh]" data-testid="dialog-lysa-assistant">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-primary" />
+              Lysa AI Assistant
+              {selectedPatientForLysa && (
+                <Badge variant="secondary" className="ml-2">
+                  {selectedPatientForLysa.firstName} {selectedPatientForLysa.lastName}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              AI-powered clinical assistant for patient care and decision support
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden -mx-6 -mb-6">
+            {selectedPatientForLysa && (
+              <LysaChatPanel 
+                patientId={selectedPatientForLysa.id}
+                patientName={`${selectedPatientForLysa.firstName} ${selectedPatientForLysa.lastName}`}
+                className="h-full border-0 rounded-none"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

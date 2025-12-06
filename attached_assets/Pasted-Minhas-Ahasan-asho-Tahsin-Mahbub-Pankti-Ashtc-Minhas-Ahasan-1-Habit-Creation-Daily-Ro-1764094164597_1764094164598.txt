@@ -1,0 +1,26 @@
+Minhas Ahasan:	ashoTahsin Mahbub Pankti:	Ashtc Minhas Ahasan:	1.    Habit Creation & Daily Routine Builder
+    •    Acceptance: Create/edit habits with frequency, time, location, micro-steps. Persist in DB and show in calendar view.
+    2.    Streaks + Calendar View
+    •    Acceptance: Dashboard shows streaks and a monthly calendar with completed/failed days.
+    3.    Smart Reminders
+    •    Acceptance: Backend schedules in-app notifications (or simulated reminders) based on user behavior; allow snooze/reschedule.
+    4.    AI Habit Coach (Personalized Agent)
+    •    Acceptance: Chatbox that responds with tailored encouragement, coping tips, and short CBT-style replies. Start with LLM / mock responses and a rules fallback.
+    5.    AI Trigger & Pattern Detection
+    •    Acceptance: Analyze history to produce simple insights like “You skip morning habit when sleep < 6 hrs.” Use rule-based detection from seeded data or lightweight ML model.
+    6.    Addiction-Mode (Quit Plans / Bad Habit Control)
+    •    Acceptance: Users can mark habits as “quit” with a structured quit plan: cravings log, harm-reduction steps, and relapse logging.
+    7.    Emotion + Mood Tracking (text-based)
+    •    Acceptance: Users can journal; system extracts mood tags (happy/anxious/angry/neutral) using a small sentiment model or regex+heuristics; show mood trend chart.
+    8.    Dynamic AI Recommendations (Real-Time Adjustments)
+    •    Acceptance: AI proposes next-step difficulty adjustments based on completion rate (e.g., suggest micro-step if fail rate > 50%).
+    9.    Social Accountability
+    •    Acceptance: Buddy system where two demo users can follow each other’s progress and send pre-built encouragement messages.
+    10.    Guided CBT / Motivational Interventions
+    •    Acceptance: Provide at least two guided flows (e.g., “Urge Surfing” and “Reframe Thought”) with step-by-step prompts and checkpoints.
+    11.    Visual Reward System (Gamification)
+    •    Acceptance: Visual growth object (sunflower / tree) tied to streaks; incremental visuals change per day completed.
+    12.    Smart Journals with AI Reflection
+    •    Acceptance: Weekly summary generated from journal entries: 3 highlights, 2 risks, 2 recommendations. Can be produced via LLM or rules.
+    13.    Preventive Alerts & Prediction Engine
+    •    Acceptance: Flag high-risk days when combined signals (missed tasks, low sleep, negative mood) exceed threshold; show alert in Dashboard.

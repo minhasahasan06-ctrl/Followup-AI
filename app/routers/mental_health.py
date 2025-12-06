@@ -136,14 +136,14 @@ CRISIS_RESOURCES = {
 # ==================== Questionnaire Templates ====================
 
 @router.get("/questionnaires")
-async def get_available_questionnaires(
-    current_user: User = Depends(get_current_user)
-) -> Dict[str, Any]:
+async def get_available_questionnaires() -> Dict[str, Any]:
     """
     Retrieve all available standardized questionnaire templates.
     Returns questionnaire metadata, questions, and scoring information.
+    
+    NOTE: Public endpoint - questionnaire templates are public domain instruments.
     """
-    logger.info(f"[MH-API] User {current_user.id} requesting questionnaire templates")
+    logger.info("[MH-API] Fetching questionnaire templates (public endpoint)")
     
     service = MentalHealthService()
     questionnaires = service.get_all_questionnaire_templates()
@@ -156,16 +156,17 @@ async def get_available_questionnaires(
 
 @router.get("/questionnaires/{questionnaire_type}")
 async def get_questionnaire_template(
-    questionnaire_type: str,
-    current_user: User = Depends(get_current_user)
+    questionnaire_type: str
 ) -> Dict[str, Any]:
     """
     Get a specific questionnaire template with all questions and instructions.
+    
+    NOTE: Public endpoint - questionnaire templates are public domain instruments.
     """
     if questionnaire_type not in ["PHQ9", "GAD7", "PSS10"]:
         raise HTTPException(status_code=400, detail="Invalid questionnaire type")
     
-    logger.info(f"[MH-API] User {current_user.id} requesting {questionnaire_type} template")
+    logger.info(f"[MH-API] Fetching {questionnaire_type} template (public endpoint)")
     
     service = MentalHealthService()
     template = service.get_questionnaire_template(questionnaire_type)

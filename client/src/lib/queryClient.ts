@@ -18,6 +18,9 @@ import { sanitizeError } from "./security/errorSanitizer";
 /**
  * Legacy apiRequest function for backward compatibility
  * @deprecated Use secureApiRequest from './security/secureApiClient' instead
+ * 
+ * Note: URL routing to Python backend is now handled by secureApiRequest
+ * via the urlValidator module, so the old Python backend URL helpers are no longer needed.
  */
 export async function apiRequest(
   url: string,

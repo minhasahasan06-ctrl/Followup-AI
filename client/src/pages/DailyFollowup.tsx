@@ -9,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Video,
   Camera,
@@ -30,11 +31,256 @@ import {
   Zap,
   Smile,
   ExternalLink,
+  Vibrate,
+  Footprints,
+  Droplets,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from 'lucide-react';
 import { ExamPrepStep } from '@/components/ExamPrepStep';
 import { VideoRecorder } from '@/components/VideoRecorder';
 import { useGuidedExamWorkflow } from '@/hooks/useGuidedExamWorkflow';
 import { useAuth } from '@/contexts/AuthContext';
+
+interface TremorDashboard {
+  patient_id: string;
+  latest_tremor: {
+    tremor_index?: number;
+    dominant_frequency_hz?: number;
+    parkinsonian_likelihood?: number;
+    essential_tremor_likelihood?: number;
+    created_at?: string;
+  } | null;
+  trend: {
+    status: 'stable' | 'increasing' | 'decreasing' | 'insufficient_data';
+    avg_tremor_index_7days: number;
+    recordings_count_7days: number;
+  };
+}
+
+interface GaitSession {
+  session_id: number;
+  status: string;
+  total_strides: number;
+  abnormality_score: number;
+  created_at: string;
+}
+
+interface EdemaMetrics {
+  swelling_detected: boolean;
+  swelling_severity: string;
+  overall_expansion_percent: number;
+  analyzed_at: string;
+}
+
+function TremorGaitEdemaInsights24h({ patientId }: { patientId: string }) {
+  const { data: tremorDashboard, isLoading: tremorLoading } = useQuery<TremorDashboard>({
+    queryKey: ['/api/v1/tremor/dashboard', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/tremor/dashboard/${patientId}`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return null;
+        throw new Error('Failed to fetch tremor data');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const { data: gaitSessions, isLoading: gaitLoading } = useQuery<{ sessions: GaitSession[] }>({
+    queryKey: ['/api/v1/gait-analysis/sessions', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/gait-analysis/sessions/${patientId}?limit=1`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return { sessions: [] };
+        throw new Error('Failed to fetch gait data');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const { data: edemaMetrics, isLoading: edemaLoading } = useQuery<EdemaMetrics[]>({
+    queryKey: ['/api/v1/edema/metrics', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/edema/metrics/${patientId}?limit=1`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return [];
+        throw new Error('Failed to fetch edema data');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+  });
+
+  const isLoading = tremorLoading || gaitLoading || edemaLoading;
+  const latestTremor = tremorDashboard?.latest_tremor;
+  const latestGait = gaitSessions?.sessions?.[0];
+  const latestEdema = edemaMetrics?.[0];
+
+  const is24h = (dateStr?: string) => {
+    if (!dateStr) return false;
+    return (Date.now() - new Date(dateStr).getTime()) < 24 * 60 * 60 * 1000;
+  };
+
+  const hasTremorToday = latestTremor && is24h(latestTremor.created_at);
+  const hasGaitToday = latestGait && latestGait.status === 'completed' && is24h(latestGait.created_at);
+  const hasEdemaToday = latestEdema && is24h(latestEdema.analyzed_at);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Advanced AI Analysis (24h)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3">
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!hasTremorToday && !hasGaitToday && !hasEdemaToday) {
+    return null;
+  }
+
+  const getTremorSeverity = (index: number) => {
+    if (index < 2) return { label: 'Normal', color: 'text-green-500' };
+    if (index < 4) return { label: 'Mild', color: 'text-yellow-500' };
+    if (index < 6) return { label: 'Moderate', color: 'text-orange-500' };
+    return { label: 'Significant', color: 'text-red-500' };
+  };
+
+  const getEdemaStatus = (severity: string, detected: boolean) => {
+    if (!detected) return { label: 'None', color: 'text-green-500' };
+    switch (severity?.toLowerCase()) {
+      case 'mild': return { label: 'Mild', color: 'text-yellow-500' };
+      case 'moderate': return { label: 'Moderate', color: 'text-orange-500' };
+      case 'severe': return { label: 'Significant', color: 'text-red-500' };
+      default: return { label: 'Detected', color: 'text-yellow-500' };
+    }
+  };
+
+  const getFallRisk = (score: number) => {
+    if (score < 0.3) return { label: 'Low', color: 'text-green-500' };
+    if (score < 0.6) return { label: 'Moderate', color: 'text-yellow-500' };
+    return { label: 'Elevated', color: 'text-red-500' };
+  };
+
+  return (
+    <Card data-testid="card-24h-advanced-insights">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Activity className="h-4 w-4 text-primary" />
+          Advanced AI Analysis (Last 24 Hours)
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Tremor, Gait, and Edema patterns from your latest examination
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-3 gap-3">
+          {/* Tremor */}
+          <div className={`p-3 rounded-lg border ${hasTremorToday ? 'bg-muted/50' : 'bg-muted/20'}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <Vibrate className="h-4 w-4 text-purple-500" />
+              <span className="text-sm font-medium">Tremor</span>
+            </div>
+            {hasTremorToday && latestTremor ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Index</span>
+                  <span className={`text-sm font-bold ${getTremorSeverity(latestTremor.tremor_index || 0).color}`}>
+                    {(latestTremor.tremor_index || 0).toFixed(1)}/10
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Status</span>
+                  <Badge variant="outline" className="text-xs px-1">
+                    {getTremorSeverity(latestTremor.tremor_index || 0).label}
+                  </Badge>
+                </div>
+                {tremorDashboard?.trend?.status !== 'insufficient_data' && (
+                  <div className="flex items-center gap-1 text-xs pt-1">
+                    {tremorDashboard.trend.status === 'increasing' && <TrendingUp className="h-3 w-3 text-orange-500" />}
+                    {tremorDashboard.trend.status === 'decreasing' && <TrendingDown className="h-3 w-3 text-green-500" />}
+                    {tremorDashboard.trend.status === 'stable' && <Minus className="h-3 w-3 text-blue-500" />}
+                    <span className="text-muted-foreground capitalize">{tremorDashboard.trend.status}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-2">
+                <span className="text-xs text-muted-foreground">No data today</span>
+              </div>
+            )}
+          </div>
+
+          {/* Gait */}
+          <div className={`p-3 rounded-lg border ${hasGaitToday ? 'bg-muted/50' : 'bg-muted/20'}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <Footprints className="h-4 w-4 text-blue-500" />
+              <span className="text-sm font-medium">Gait</span>
+            </div>
+            {hasGaitToday && latestGait ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Strides</span>
+                  <span className="text-sm font-bold">{latestGait.total_strides}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Fall Risk</span>
+                  <Badge variant="outline" className={`text-xs px-1 ${getFallRisk(latestGait.abnormality_score).color}`}>
+                    {getFallRisk(latestGait.abnormality_score).label}
+                  </Badge>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-2">
+                <span className="text-xs text-muted-foreground">No data today</span>
+              </div>
+            )}
+          </div>
+
+          {/* Edema */}
+          <div className={`p-3 rounded-lg border ${hasEdemaToday ? 'bg-muted/50' : 'bg-muted/20'}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <Droplets className="h-4 w-4 text-cyan-500" />
+              <span className="text-sm font-medium">Edema</span>
+            </div>
+            {hasEdemaToday && latestEdema ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Expansion</span>
+                  <span className="text-sm font-bold">{latestEdema.overall_expansion_percent?.toFixed(1) || 0}%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Status</span>
+                  <Badge variant="outline" className={`text-xs px-1 ${getEdemaStatus(latestEdema.swelling_severity, latestEdema.swelling_detected).color}`}>
+                    {getEdemaStatus(latestEdema.swelling_severity, latestEdema.swelling_detected).label}
+                  </Badge>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-2">
+                <span className="text-xs text-muted-foreground">No data today</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-3 italic text-center">
+          Wellness indicators only - discuss changes with your healthcare provider
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
 function LegalDisclaimer() {
   return (
@@ -390,6 +636,11 @@ export default function DailyFollowup() {
             </CardContent>
           </Card>
 
+          {/* Advanced AI Analysis - Tremor, Gait, Edema */}
+          {user?.id && (
+            <TremorGaitEdemaInsights24h patientId={user.id} />
+          )}
+
           {/* Option to do another examination */}
           <Card>
             <CardHeader>
@@ -531,20 +782,20 @@ export default function DailyFollowup() {
         </Card>
       )}
 
-      {/* Link to full analysis page */}
+      {/* Link to history page */}
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <h3 className="font-semibold">View Complete Analysis & History</h3>
+              <h3 className="font-semibold">View All Health History</h3>
               <p className="text-sm text-muted-foreground">
-                Access detailed AI insights, trends, and your examination history
+                Access detailed trends across all wellness categories
               </p>
             </div>
-            <Link href="/ai-video">
-              <Button variant="outline" className="gap-2" data-testid="button-full-analysis-page">
+            <Link href="/daily-followup">
+              <Button variant="outline" className="gap-2" data-testid="button-health-history">
                 <BarChart3 className="h-4 w-4" />
-                Full Analysis Page
+                Health History
                 <ExternalLink className="h-3 w-3" />
               </Button>
             </Link>

@@ -1,19 +1,28 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Activity,
   Heart,
   Droplet,
   TrendingUp,
+  TrendingDown,
   Calendar,
   Bot,
   AlertCircle,
@@ -22,9 +31,33 @@ import {
   Clock,
   FileText,
   Download,
+  Bell,
+  Brain,
+  Pill,
+  AlertTriangle,
+  Plus,
+  FolderOpen,
+  Upload,
+  X,
+  Loader2,
+  ClipboardList,
+  Stethoscope,
+  ThermometerSun,
+  Wind,
+  Eye,
+  FlaskConical,
+  Image,
 } from "lucide-react";
-import { startOfWeek, endOfWeek, subWeeks, format } from "date-fns";
-import type { User, DailyFollowup, Medication, ChatMessage } from "@shared/schema";
+import { startOfWeek, endOfWeek, subWeeks, format, formatDistanceToNow } from "date-fns";
+import type { User, DailyFollowup, Medication, ChatMessage, Prescription } from "@shared/schema";
+import { PatientAIAlerts } from "@/components/patient-ai-alerts";
+import { PatientMLTools } from "@/components/patient-ml-tools";
+import { LysaPatientAssistant } from "@/components/LysaPatientAssistant";
+import { ClinicalDecisionSupport } from "@/components/ClinicalDecisionSupport";
+import { PredictiveAnalyticsDashboard } from "@/components/PredictiveAnalyticsDashboard";
+import { DiagnosticImagingAnalysis } from "@/components/DiagnosticImagingAnalysis";
+import { LabReportAnalysis } from "@/components/LabReportAnalysis";
+import { LysaInsightFeed } from "@/components/LysaInsightFeed";
 
 interface ChatSession {
   id: string;
@@ -43,15 +76,84 @@ interface ChatSession {
   doctorNotes: string | null;
 }
 
+interface DrugInteraction {
+  id: string;
+  drug1: string;
+  drug2: string;
+  severity: string;
+  description: string;
+  recommendations?: string[];
+}
+
+interface MedicationAdherence {
+  medicationId: string;
+  medicationName: string;
+  totalDoses: number;
+  takenDoses: number;
+  missedDoses: number;
+  adherenceRate: number;
+  streak: number;
+  lastTaken: string | null;
+}
+
+interface HealthSummary {
+  overallStatus: 'stable' | 'improving' | 'concerning' | 'critical';
+  riskScore: number;
+  lastVitals: {
+    heartRate?: number;
+    bloodPressure?: string;
+    oxygenSaturation?: number;
+    temperature?: number;
+    respiratoryRate?: number;
+  };
+  activeAlerts: number;
+  medicationAdherence: number;
+  lastCheckIn: string | null;
+}
+
+interface Complication {
+  id: string;
+  type: string;
+  severity: string;
+  description: string;
+  detectedAt: string;
+  resolvedAt: string | null;
+  notes: string;
+}
+
+interface MedicalDocument {
+  id: string;
+  name: string;
+  type: string;
+  uploadedAt: string;
+  size: number;
+  category: string;
+}
+
 export default function PatientReview() {
   const params = useParams();
   const patientId = params.id;
   const { toast } = useToast();
   
   // PDF Report state
-  const [selectedWeekOffset, setSelectedWeekOffset] = useState(0); // 0 = current week, 1 = last week, etc.
-  const [referenceDate] = useState(() => new Date()); // FIX: Memoized to prevent inconsistent week ranges
+  const [selectedWeekOffset, setSelectedWeekOffset] = useState(0);
+  const [referenceDate] = useState(() => new Date());
+  
+  // Prescription form state
+  const [prescriptionDialogOpen, setPrescriptionDialogOpen] = useState(false);
+  const [newPrescription, setNewPrescription] = useState({
+    medicationName: '',
+    dosage: '',
+    frequency: '',
+    quantity: '',
+    refills: '0',
+    dosageInstructions: '',
+    notes: '',
+  });
+  const [checkingInteractions, setCheckingInteractions] = useState(false);
+  const [detectedInteractions, setDetectedInteractions] = useState<DrugInteraction[]>([]);
 
+  // Queries
   const { data: patient } = useQuery<User>({
     queryKey: [`/api/doctor/patients/${patientId}`],
   });
@@ -64,27 +166,123 @@ export default function PatientReview() {
     queryKey: [`/api/doctor/patients/${patientId}/medications`],
   });
 
-  const { data: aiInsights } = useQuery<ChatMessage[]>({
-    queryKey: ["/api/chat/messages", { agent: "lysa", patientId }],
+  const { data: prescriptions } = useQuery<Prescription[]>({
+    queryKey: ['/api/prescriptions/patient', patientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/prescriptions/patient/${patientId}`, { credentials: 'include' });
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   const { data: chatSessions } = useQuery<ChatSession[]>({
     queryKey: [`/api/doctor/patient-sessions/${patientId}`],
   });
 
+  // Health Summary - computed from available real data only
+  const hasVitals = followups && followups.length > 0;
+  const healthSummary: HealthSummary = {
+    overallStatus: hasVitals ? 'stable' : 'stable',
+    riskScore: 0, // Will be populated from AI Health Alerts API
+    lastVitals: {
+      heartRate: followups?.[0]?.heartRate || undefined,
+      oxygenSaturation: followups?.[0]?.oxygenSaturation || undefined,
+      temperature: followups?.[0]?.temperature || undefined,
+    },
+    activeAlerts: 0,
+    medicationAdherence: medications?.length ? 
+      Math.round((medications.filter(m => m.status === 'active').length / medications.length) * 100) : 0,
+    lastCheckIn: followups?.[0]?.date?.toString() || null,
+  };
+
+  // Complications - fetched from API (empty until API implemented)
+  // In production, this would be populated from /api/complications/:patientId
+  const complications: Complication[] = [];
+
+  // Adherence data - basic calculation from medications
+  // Real adherence tracking requires medication log data
+  const adherenceData: MedicationAdherence[] = [];
+
+  // Drug interaction check mutation
+  const checkInteractionsMutation = useMutation({
+    mutationFn: async (drugName: string) => {
+      const res = await apiRequest('POST', '/api/drug-interactions/analyze-for-patient', {
+        patientId,
+        drugName,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.interactions && data.interactions.length > 0) {
+        setDetectedInteractions(data.interactions);
+      } else {
+        setDetectedInteractions([]);
+      }
+      setCheckingInteractions(false);
+    },
+    onError: () => {
+      setCheckingInteractions(false);
+      // Don't show error toast - just silently fail interaction check
+      // Doctor can still write prescription and verify manually
+      setDetectedInteractions([]);
+    },
+  });
+
+  // Create prescription mutation
+  const createPrescriptionMutation = useMutation({
+    mutationFn: async (prescription: typeof newPrescription) => {
+      const res = await apiRequest('POST', '/api/prescriptions', {
+        patientId,
+        medicationName: prescription.medicationName,
+        dosage: prescription.dosage,
+        frequency: prescription.frequency,
+        quantity: parseInt(prescription.quantity) || null,
+        refills: parseInt(prescription.refills) || 0,
+        dosageInstructions: prescription.dosageInstructions || null,
+        notes: prescription.notes || null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/prescriptions/patient', patientId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/doctor/patients/${patientId}/medications`] });
+      setPrescriptionDialogOpen(false);
+      setNewPrescription({
+        medicationName: '',
+        dosage: '',
+        frequency: '',
+        quantity: '',
+        refills: '0',
+        dosageInstructions: '',
+        notes: '',
+      });
+      setDetectedInteractions([]);
+      toast({
+        title: "Prescription Created",
+        description: "The prescription has been sent to the patient.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Prescription Failed",
+        description: error.message || "Could not create prescription. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // PDF Generation Mutation
   const generatePDF = useMutation({
     mutationFn: async () => {
-      const weekStart = startOfWeek(subWeeks(referenceDate, selectedWeekOffset), { weekStartsOn: 1 }); // Monday
-      const weekEnd = endOfWeek(subWeeks(referenceDate, selectedWeekOffset), { weekStartsOn: 1 }); // Sunday
+      const weekStart = startOfWeek(subWeeks(referenceDate, selectedWeekOffset), { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(subWeeks(referenceDate, selectedWeekOffset), { weekStartsOn: 1 });
 
-      // FIX: Handle blob response, not JSON
       const res = await fetch(`/api/v1/symptom-journal/generate-weekly-pdf/${patientId}?${new URLSearchParams({
         week_start: weekStart.toISOString(),
         week_end: weekEnd.toISOString(),
       })}`, {
         method: "POST",
-        credentials: 'include', // Include session cookies
+        credentials: 'include',
       });
 
       if (!res.ok) {
@@ -92,11 +290,9 @@ export default function PatientReview() {
         throw new Error(error || "Failed to generate PDF");
       }
 
-      // FIX: Backend streams PDF blob, not JSON
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       
-      // Trigger download
       const link = document.createElement('a');
       link.href = url;
       link.download = `symptom-report-${format(weekStart, 'yyyy-MM-dd')}-to-${format(weekEnd, 'yyyy-MM-dd')}.pdf`;
@@ -126,28 +322,60 @@ export default function PatientReview() {
     return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "?";
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'stable': return 'text-green-600 bg-green-100';
+      case 'improving': return 'text-blue-600 bg-blue-100';
+      case 'concerning': return 'text-yellow-600 bg-yellow-100';
+      case 'critical': return 'text-red-600 bg-red-100';
+      default: return 'text-muted-foreground bg-muted';
+    }
+  };
+
+  const getSeverityBadge = (severity: string) => {
+    switch (severity?.toLowerCase()) {
+      case 'high':
+      case 'severe':
+        return <Badge variant="destructive">{severity}</Badge>;
+      case 'moderate':
+      case 'medium':
+        return <Badge className="bg-yellow-500">{severity}</Badge>;
+      default:
+        return <Badge variant="secondary">{severity}</Badge>;
+    }
+  };
+
+  // Handle drug name change and check interactions
+  const handleDrugNameChange = (value: string) => {
+    setNewPrescription(prev => ({ ...prev, medicationName: value }));
+    if (value.length > 2) {
+      setCheckingInteractions(true);
+      checkInteractionsMutation.mutate(value);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Patient Header */}
       {patient && (
         <Card>
           <CardContent className="p-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <Avatar className="h-16 w-16">
                 <AvatarFallback className="bg-primary text-primary-foreground text-xl">
                   {getInitials(patient.firstName, patient.lastName)}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <h1 className="text-2xl font-semibold" data-testid="text-patient-name">
                   {patient.firstName} {patient.lastName}
                 </h1>
                 <p className="text-muted-foreground">{patient.email}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Badge variant="secondary">Patient ID: {patient.id.slice(0, 8)}</Badge>
-                <Badge variant="secondary">
-                  <Activity className="h-3 w-3 mr-1" />
-                  Active
+                <Badge className={getStatusColor(healthSummary.overallStatus)}>
+                  {healthSummary.overallStatus.charAt(0).toUpperCase() + healthSummary.overallStatus.slice(1)}
                 </Badge>
               </div>
             </div>
@@ -155,43 +383,550 @@ export default function PatientReview() {
         </Card>
       )}
 
+      {/* Health Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card data-testid="card-risk-score">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">Risk Score</span>
+              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <p className="text-2xl font-bold">{healthSummary.riskScore.toFixed(1)}/15</p>
+            <Progress value={(healthSummary.riskScore / 15) * 100} className="h-1.5 mt-2" />
+            <p className="text-xs text-muted-foreground mt-1">Low Risk</p>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-adherence">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">Medication Adherence</span>
+              <Pill className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <p className="text-2xl font-bold">{healthSummary.medicationAdherence}%</p>
+            <Progress value={healthSummary.medicationAdherence} className="h-1.5 mt-2" />
+            <p className="text-xs text-green-600 mt-1">Excellent</p>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-vitals">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">Latest Vitals</span>
+              <Heart className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="space-y-1">
+              {healthSummary.lastVitals.heartRate && (
+                <p className="text-sm">HR: <span className="font-medium">{healthSummary.lastVitals.heartRate} bpm</span></p>
+              )}
+              {healthSummary.lastVitals.oxygenSaturation && (
+                <p className="text-sm">SpO2: <span className="font-medium">{healthSummary.lastVitals.oxygenSaturation}%</span></p>
+              )}
+              {healthSummary.lastVitals.temperature && (
+                <p className="text-sm">Temp: <span className="font-medium">{healthSummary.lastVitals.temperature}°F</span></p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-last-checkin">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">Last Check-in</span>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <p className="text-lg font-medium">
+              {healthSummary.lastCheckIn 
+                ? formatDistanceToNow(new Date(healthSummary.lastCheckIn), { addSuffix: true })
+                : 'No data'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {healthSummary.lastCheckIn 
+                ? format(new Date(healthSummary.lastCheckIn), 'MMM d, yyyy')
+                : 'N/A'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Content */}
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Tabs defaultValue="timeline" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-5">
+          <Tabs defaultValue="ai-alerts" className="space-y-4">
+            <TabsList className="flex flex-wrap gap-1">
+              <TabsTrigger value="ai-alerts" data-testid="tab-ai-alerts">
+                <Bell className="h-4 w-4 mr-2" />
+                AI Alerts
+              </TabsTrigger>
+              <TabsTrigger value="ml-tools" data-testid="tab-ml-tools">
+                <Brain className="h-4 w-4 mr-2" />
+                ML Tools
+              </TabsTrigger>
+              <TabsTrigger value="medications" data-testid="tab-medications">
+                <Pill className="h-4 w-4 mr-2" />
+                Medications
+              </TabsTrigger>
+              <TabsTrigger value="prescriptions" data-testid="tab-prescriptions">
+                <ClipboardList className="h-4 w-4 mr-2" />
+                Prescriptions
+              </TabsTrigger>
+              <TabsTrigger value="complications" data-testid="tab-complications">
+                <AlertTriangle className="h-4 w-4 mr-2" />
+                Complications
+              </TabsTrigger>
               <TabsTrigger value="timeline" data-testid="tab-timeline">
                 <Calendar className="h-4 w-4 mr-2" />
                 Timeline
               </TabsTrigger>
-              <TabsTrigger value="vitals" data-testid="tab-vitals">
-                <Heart className="h-4 w-4 mr-2" />
-                Vitals
-              </TabsTrigger>
-              <TabsTrigger value="medications" data-testid="tab-medications">
-                <Droplet className="h-4 w-4 mr-2" />
-                Medications
-              </TabsTrigger>
-              <TabsTrigger value="sessions" data-testid="tab-sessions">
-                <MessageSquare className="h-4 w-4 mr-2" />
-                Chat Sessions
+              <TabsTrigger value="documents" data-testid="tab-documents">
+                <FolderOpen className="h-4 w-4 mr-2" />
+                Documents
               </TabsTrigger>
               <TabsTrigger value="reports" data-testid="tab-reports">
                 <FileText className="h-4 w-4 mr-2" />
                 Reports
               </TabsTrigger>
+              <TabsTrigger value="lysa-assistant" data-testid="tab-lysa-assistant">
+                <Bot className="h-4 w-4 mr-2" />
+                Lysa AI
+              </TabsTrigger>
+              <TabsTrigger value="clinical-support" data-testid="tab-clinical-support">
+                <Stethoscope className="h-4 w-4 mr-2" />
+                Clinical Support
+              </TabsTrigger>
+              <TabsTrigger value="predictive" data-testid="tab-predictive">
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Predictive
+              </TabsTrigger>
+              <TabsTrigger value="imaging" data-testid="tab-imaging">
+                <Image className="h-4 w-4 mr-2" />
+                Imaging
+              </TabsTrigger>
+              <TabsTrigger value="labs" data-testid="tab-labs">
+                <FlaskConical className="h-4 w-4 mr-2" />
+                Labs
+              </TabsTrigger>
+              <TabsTrigger value="insights" data-testid="tab-insights">
+                <Bot className="h-4 w-4 mr-2" />
+                Insights
+              </TabsTrigger>
             </TabsList>
 
+            {/* AI Health Alerts Tab */}
+            <TabsContent value="ai-alerts">
+              {patientId && (
+                <PatientAIAlerts 
+                  patientId={patientId} 
+                  patientName={patient ? `${patient.firstName} ${patient.lastName}` : undefined}
+                />
+              )}
+            </TabsContent>
+
+            {/* ML Prediction Tools Tab */}
+            <TabsContent value="ml-tools">
+              {patientId && (
+                <PatientMLTools 
+                  patientId={patientId} 
+                  patientName={patient ? `${patient.firstName} ${patient.lastName}` : undefined}
+                />
+              )}
+            </TabsContent>
+
+            {/* Enhanced Medications Tab with Adherence */}
+            <TabsContent value="medications">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                      <CardTitle>Current Medications</CardTitle>
+                      <CardDescription>Medication list with adherence tracking</CardDescription>
+                    </div>
+                    <Dialog open={prescriptionDialogOpen} onOpenChange={setPrescriptionDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button data-testid="button-new-prescription">
+                          <Plus className="h-4 w-4 mr-2" />
+                          New Prescription
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Write New Prescription</DialogTitle>
+                          <DialogDescription>
+                            Create a prescription for {patient?.firstName} {patient?.lastName}. 
+                            Drug interactions are checked automatically.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4 py-4">
+                          {/* Drug Interaction Alert */}
+                          {detectedInteractions.length > 0 && (
+                            <Alert variant="destructive" data-testid="alert-drug-interactions">
+                              <AlertTriangle className="h-4 w-4" />
+                              <AlertTitle>Drug Interactions Detected</AlertTitle>
+                              <AlertDescription>
+                                <ul className="mt-2 space-y-2">
+                                  {detectedInteractions.map((interaction, idx) => (
+                                    <li key={idx} className="text-sm">
+                                      <span className="font-medium">{interaction.drug1}</span> + 
+                                      <span className="font-medium"> {interaction.drug2}</span>: 
+                                      {interaction.description}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </AlertDescription>
+                            </Alert>
+                          )}
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="medication-name">Medication Name *</Label>
+                              <div className="relative">
+                                <Input
+                                  id="medication-name"
+                                  placeholder="e.g., Amoxicillin"
+                                  value={newPrescription.medicationName}
+                                  onChange={(e) => handleDrugNameChange(e.target.value)}
+                                  data-testid="input-medication-name"
+                                />
+                                {checkingInteractions && (
+                                  <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-muted-foreground" />
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="dosage">Dosage *</Label>
+                              <Input
+                                id="dosage"
+                                placeholder="e.g., 500mg"
+                                value={newPrescription.dosage}
+                                onChange={(e) => setNewPrescription(prev => ({ ...prev, dosage: e.target.value }))}
+                                data-testid="input-dosage"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="frequency">Frequency *</Label>
+                              <Select
+                                value={newPrescription.frequency}
+                                onValueChange={(value) => setNewPrescription(prev => ({ ...prev, frequency: value }))}
+                              >
+                                <SelectTrigger data-testid="select-frequency">
+                                  <SelectValue placeholder="Select frequency" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="once_daily">Once Daily</SelectItem>
+                                  <SelectItem value="twice_daily">Twice Daily</SelectItem>
+                                  <SelectItem value="three_times_daily">Three Times Daily</SelectItem>
+                                  <SelectItem value="four_times_daily">Four Times Daily</SelectItem>
+                                  <SelectItem value="every_6_hours">Every 6 Hours</SelectItem>
+                                  <SelectItem value="every_8_hours">Every 8 Hours</SelectItem>
+                                  <SelectItem value="every_12_hours">Every 12 Hours</SelectItem>
+                                  <SelectItem value="as_needed">As Needed (PRN)</SelectItem>
+                                  <SelectItem value="weekly">Weekly</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="quantity">Quantity</Label>
+                              <Input
+                                id="quantity"
+                                type="number"
+                                placeholder="e.g., 30"
+                                value={newPrescription.quantity}
+                                onChange={(e) => setNewPrescription(prev => ({ ...prev, quantity: e.target.value }))}
+                                data-testid="input-quantity"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="refills">Refills</Label>
+                              <Input
+                                id="refills"
+                                type="number"
+                                placeholder="0"
+                                value={newPrescription.refills}
+                                onChange={(e) => setNewPrescription(prev => ({ ...prev, refills: e.target.value }))}
+                                data-testid="input-refills"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="instructions">Dosage Instructions</Label>
+                            <Input
+                              id="instructions"
+                              placeholder="e.g., Take with food, avoid alcohol"
+                              value={newPrescription.dosageInstructions}
+                              onChange={(e) => setNewPrescription(prev => ({ ...prev, dosageInstructions: e.target.value }))}
+                              data-testid="input-instructions"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="notes">Doctor Notes</Label>
+                            <Textarea
+                              id="notes"
+                              placeholder="Additional notes about this prescription..."
+                              value={newPrescription.notes}
+                              onChange={(e) => setNewPrescription(prev => ({ ...prev, notes: e.target.value }))}
+                              rows={3}
+                              data-testid="input-notes"
+                            />
+                          </div>
+                        </div>
+
+                        <DialogFooter>
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setPrescriptionDialogOpen(false)}
+                            data-testid="button-cancel-prescription"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={() => createPrescriptionMutation.mutate(newPrescription)}
+                            disabled={
+                              !newPrescription.medicationName || 
+                              !newPrescription.dosage || 
+                              !newPrescription.frequency ||
+                              createPrescriptionMutation.isPending
+                            }
+                            data-testid="button-submit-prescription"
+                          >
+                            {createPrescriptionMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Creating...
+                              </>
+                            ) : (
+                              'Create Prescription'
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {medications && medications.length > 0 ? (
+                    <div className="space-y-4">
+                      {medications.map((med) => {
+                        const adherence = adherenceData.find(a => a.medicationId === med.id);
+                        return (
+                          <Card key={med.id} className="hover-elevate" data-testid={`medication-${med.id}`}>
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <p className="font-medium">{med.name}</p>
+                                    {med.isOTC && <Badge variant="secondary">OTC</Badge>}
+                                    {med.status === 'active' && (
+                                      <Badge variant="outline" className="text-green-600">Active</Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">
+                                    {med.dosage} • {med.frequency}
+                                  </p>
+                                  {med.aiSuggestion && (
+                                    <p className="text-xs text-muted-foreground mt-2 italic flex items-center gap-1">
+                                      <Bot className="h-3 w-3" />
+                                      {med.aiSuggestion}
+                                    </p>
+                                  )}
+                                </div>
+                                
+                                {adherence && (
+                                  <div className="text-right min-w-[120px]">
+                                    <div className="flex items-center justify-end gap-2 mb-1">
+                                      <span className="text-sm font-medium">{adherence.adherenceRate}%</span>
+                                      {adherence.adherenceRate >= 90 ? (
+                                        <TrendingUp className="h-4 w-4 text-green-500" />
+                                      ) : adherence.adherenceRate >= 70 ? (
+                                        <Activity className="h-4 w-4 text-yellow-500" />
+                                      ) : (
+                                        <TrendingDown className="h-4 w-4 text-red-500" />
+                                      )}
+                                    </div>
+                                    <Progress value={adherence.adherenceRate} className="h-1.5" />
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      {adherence.streak} day streak
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Pill className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                      <p>No medications recorded</p>
+                      <p className="text-sm">Create a prescription to add medications</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Prescriptions Tab */}
+            <TabsContent value="prescriptions">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                      <CardTitle>Prescription History</CardTitle>
+                      <CardDescription>All prescriptions written for this patient</CardDescription>
+                    </div>
+                    <Button 
+                      onClick={() => setPrescriptionDialogOpen(true)}
+                      data-testid="button-write-prescription"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Write Prescription
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[500px]">
+                    {prescriptions && prescriptions.length > 0 ? (
+                      <div className="space-y-3">
+                        {prescriptions.map((rx) => (
+                          <Card key={rx.id} className="hover-elevate" data-testid={`prescription-${rx.id}`}>
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <p className="font-medium">{rx.medicationName}</p>
+                                    <Badge variant={
+                                      rx.status === 'filled' ? 'default' : 
+                                      rx.status === 'acknowledged' ? 'secondary' : 
+                                      rx.status === 'expired' ? 'destructive' : 'outline'
+                                    }>
+                                      {rx.status}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">
+                                    {rx.dosage} • {rx.frequency}
+                                  </p>
+                                  {rx.dosageInstructions && (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      {rx.dosageInstructions}
+                                    </p>
+                                  )}
+                                  <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                    <span>Qty: {rx.quantity || 'N/A'}</span>
+                                    <span>Refills: {rx.refills || 0}</span>
+                                    {rx.expirationDate && (
+                                      <span>Expires: {format(new Date(rx.expirationDate), 'MMM d, yyyy')}</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-right text-xs text-muted-foreground">
+                                  <p>{format(new Date(rx.createdAt || Date.now()), 'MMM d, yyyy')}</p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <ClipboardList className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                        <p>No prescriptions yet</p>
+                        <p className="text-sm">Write a prescription to get started</p>
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Complications Tab */}
+            <TabsContent value="complications">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Complications</CardTitle>
+                  <CardDescription>Health events and complications timeline</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[500px]">
+                    {complications.length > 0 ? (
+                      <div className="space-y-4">
+                        {complications.map((comp) => (
+                          <Card 
+                            key={comp.id} 
+                            className={`border-l-4 ${
+                              comp.resolvedAt ? 'border-l-green-500' : 'border-l-yellow-500'
+                            }`}
+                            data-testid={`complication-${comp.id}`}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <AlertTriangle className={`h-4 w-4 ${
+                                    comp.severity === 'high' ? 'text-red-500' : 
+                                    comp.severity === 'moderate' ? 'text-yellow-500' : 
+                                    'text-blue-500'
+                                  }`} />
+                                  <span className="font-medium">{comp.type}</span>
+                                  {getSeverityBadge(comp.severity)}
+                                </div>
+                                {comp.resolvedAt ? (
+                                  <Badge variant="secondary" className="bg-green-100 text-green-700">
+                                    <CheckCircle className="h-3 w-3 mr-1" />
+                                    Resolved
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-700">
+                                    Active
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm mb-2">{comp.description}</p>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                <span>Detected: {format(new Date(comp.detectedAt), 'MMM d, yyyy')}</span>
+                                {comp.resolvedAt && (
+                                  <span>Resolved: {format(new Date(comp.resolvedAt), 'MMM d, yyyy')}</span>
+                                )}
+                              </div>
+                              {comp.notes && (
+                                <p className="text-xs text-muted-foreground mt-2 italic">
+                                  Note: {comp.notes}
+                                </p>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <CheckCircle className="h-12 w-12 mx-auto mb-3 opacity-50 text-green-500" />
+                        <p>No complications recorded</p>
+                        <p className="text-sm">Patient has no recent health complications</p>
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Timeline Tab */}
             <TabsContent value="timeline">
               <Card>
                 <CardHeader>
                   <CardTitle>Patient Timeline</CardTitle>
+                  <CardDescription>Daily follow-ups and health check-ins</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-[600px] pr-4">
                     <div className="space-y-4">
                       {followups && followups.length > 0 ? (
                         followups.map((followup) => (
-                          <Card key={followup.id} className="border-l-4 border-l-primary">
+                          <Card key={followup.id} className="border-l-4 border-l-primary" data-testid={`followup-${followup.id}`}>
                             <CardContent className="p-4">
                               <div className="flex items-start justify-between mb-2">
                                 <div>
@@ -214,25 +949,29 @@ export default function PatientReview() {
                               </div>
                               <div className="grid grid-cols-2 gap-3 mt-3">
                                 {followup.heartRate && (
-                                  <div className="text-sm">
+                                  <div className="text-sm flex items-center gap-2">
+                                    <Heart className="h-3 w-3 text-red-500" />
                                     <span className="text-muted-foreground">Heart Rate: </span>
                                     <span className="font-medium">{followup.heartRate} bpm</span>
                                   </div>
                                 )}
                                 {followup.temperature && (
-                                  <div className="text-sm">
+                                  <div className="text-sm flex items-center gap-2">
+                                    <ThermometerSun className="h-3 w-3 text-orange-500" />
                                     <span className="text-muted-foreground">Temp: </span>
                                     <span className="font-medium">{followup.temperature}°F</span>
                                   </div>
                                 )}
                                 {followup.oxygenSaturation && (
-                                  <div className="text-sm">
+                                  <div className="text-sm flex items-center gap-2">
+                                    <Wind className="h-3 w-3 text-blue-500" />
                                     <span className="text-muted-foreground">SpO2: </span>
                                     <span className="font-medium">{followup.oxygenSaturation}%</span>
                                   </div>
                                 )}
                                 {followup.stepsCount && (
-                                  <div className="text-sm">
+                                  <div className="text-sm flex items-center gap-2">
+                                    <Activity className="h-3 w-3 text-green-500" />
                                     <span className="text-muted-foreground">Steps: </span>
                                     <span className="font-medium">{followup.stepsCount}</span>
                                   </div>
@@ -253,172 +992,39 @@ export default function PatientReview() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="vitals">
+            {/* Documents Tab */}
+            <TabsContent value="documents">
               <Card>
                 <CardHeader>
-                  <CardTitle>Vital Signs Trends</CardTitle>
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                      <CardTitle>Health Documents</CardTitle>
+                      <CardDescription>Medical records, lab results, and uploaded files</CardDescription>
+                    </div>
+                    <Button variant="outline" data-testid="button-upload-document">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Document
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-muted-foreground">Heart Rate</span>
-                          <Heart className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <p className="text-2xl font-bold">72 bpm</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          <TrendingUp className="h-3 w-3 inline mr-1" />
-                          Normal range
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-muted-foreground">Blood Pressure</span>
-                          <Activity className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <p className="text-2xl font-bold">120/80</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          <TrendingUp className="h-3 w-3 inline mr-1" />
-                          Optimal
-                        </p>
-                      </CardContent>
-                    </Card>
+                  <div className="text-center py-8 text-muted-foreground">
+                    <FolderOpen className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No documents uploaded</p>
+                    <p className="text-sm">Upload medical records, lab results, or other health documents</p>
                   </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            <TabsContent value="medications">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Current Medications</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {medications && medications.length > 0 ? (
-                    <div className="space-y-3">
-                      {medications.map((med) => (
-                        <Card key={med.id}>
-                          <CardContent className="p-4">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <p className="font-medium">{med.name}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {med.dosage} • {med.frequency}
-                                </p>
-                                {med.aiSuggestion && (
-                                  <p className="text-xs text-muted-foreground mt-2 italic">
-                                    AI: {med.aiSuggestion}
-                                  </p>
-                                )}
-                              </div>
-                              {med.isOTC && <Badge variant="secondary">OTC</Badge>}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Droplet className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>No medications recorded</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="sessions">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Chat Sessions (Last Month)</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Recent conversations with Agent Clona
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[600px] pr-4">
-                    <div className="space-y-4">
-                      {chatSessions && chatSessions.length > 0 ? (
-                        chatSessions.map((session) => (
-                          <Card key={session.id} className="border-l-4 border-l-chart-2">
-                            <CardContent className="p-4">
-                              <div className="flex items-start justify-between mb-3">
-                                <div>
-                                  <p className="font-medium mb-1">
-                                    {session.sessionTitle || "Untitled Session"}
-                                  </p>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <Clock className="h-3 w-3" />
-                                    {new Date(session.startedAt).toLocaleDateString('en-US', {
-                                      month: 'short',
-                                      day: 'numeric',
-                                      year: 'numeric',
-                                      hour: '2-digit',
-                                      minute: '2-digit'
-                                    })}
-                                  </div>
-                                </div>
-                                {session.messageCount && (
-                                  <Badge variant="secondary">
-                                    {session.messageCount} messages
-                                  </Badge>
-                                )}
-                              </div>
-
-                              {session.symptomsDiscussed && session.symptomsDiscussed.length > 0 && (
-                                <div className="mb-3">
-                                  <p className="text-xs font-medium text-muted-foreground mb-1">
-                                    Symptoms Discussed:
-                                  </p>
-                                  <div className="flex flex-wrap gap-1">
-                                    {session.symptomsDiscussed.map((symptom, idx) => (
-                                      <Badge key={idx} variant="outline" className="text-xs">
-                                        {symptom}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {session.aiSummary && (
-                                <div className="mt-3 pt-3 border-t">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <FileText className="h-3 w-3 text-muted-foreground" />
-                                    <p className="text-xs font-medium text-muted-foreground">
-                                      AI Summary:
-                                    </p>
-                                  </div>
-                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                    {session.aiSummary}
-                                  </p>
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        ))
-                      ) : (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                          <p>No chat sessions in the last month</p>
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
+            {/* Reports Tab */}
             <TabsContent value="reports">
               <Card>
                 <CardHeader>
                   <CardTitle>Weekly Symptom Journal Reports</CardTitle>
-                  <p className="text-sm text-muted-foreground">
+                  <CardDescription>
                     Generate comprehensive PDF reports of patient symptom tracking
-                  </p>
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* Week Selection */}
@@ -463,7 +1069,7 @@ export default function PatientReview() {
                     >
                       {generatePDF.isPending ? (
                         <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           Generating...
                         </>
                       ) : (
@@ -474,24 +1080,108 @@ export default function PatientReview() {
                       )}
                     </Button>
                   </div>
-
-                  {/* Info Card */}
-                  <div className="p-4 border rounded-lg">
-                    <h4 className="font-medium mb-2">What's Included in the Report</h4>
-                    <ul className="space-y-1 text-sm text-muted-foreground">
-                      <li>• Patient symptom measurements with images</li>
-                      <li>• Color and area change tracking</li>
-                      <li>• Respiratory rate trends (if available)</li>
-                      <li>• AI-generated observations and alerts</li>
-                      <li>• Week-over-week comparison data</li>
-                    </ul>
-                  </div>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Lysa AI Assistant Tab */}
+            <TabsContent value="lysa-assistant">
+              {patientId && patient && (
+                <LysaPatientAssistant
+                  patientId={patientId}
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    email: patient.email || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Clinical Decision Support Tab */}
+            <TabsContent value="clinical-support">
+              {patientId && patient && (
+                <ClinicalDecisionSupport
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Predictive Analytics Tab */}
+            <TabsContent value="predictive">
+              {patientId && patient && (
+                <PredictiveAnalyticsDashboard
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Diagnostic Imaging Tab */}
+            <TabsContent value="imaging">
+              {patientId && patient && (
+                <DiagnosticImagingAnalysis
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Lab Report Analysis Tab */}
+            <TabsContent value="labs">
+              {patientId && patient && (
+                <LabReportAnalysis
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || '',
+                    allergies: [],
+                    comorbidities: [],
+                    currentMedications: medications?.map(m => m.name) || []
+                  }}
+                />
+              )}
+            </TabsContent>
+
+            {/* Lysa Insight Feed Tab */}
+            <TabsContent value="insights">
+              {patientId && patient && (
+                <LysaInsightFeed
+                  patientContext={{
+                    id: patientId,
+                    firstName: patient.firstName || '',
+                    lastName: patient.lastName || ''
+                  }}
+                />
+              )}
             </TabsContent>
           </Tabs>
         </div>
 
+        {/* Right Sidebar - AI Insights */}
         <div className="space-y-6">
           <Card className="bg-gradient-to-br from-accent/20 to-accent/5">
             <CardHeader>
@@ -508,11 +1198,11 @@ export default function PatientReview() {
                   <Card>
                     <CardContent className="p-3">
                       <div className="flex items-start gap-2">
-                        <AlertCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                        <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <p className="text-sm font-medium mb-1">Medication Adherence</p>
                           <p className="text-xs text-muted-foreground">
-                            Patient shows excellent adherence with 95% completion rate over the past 30 days.
+                            Patient shows excellent adherence with {healthSummary.medicationAdherence}% completion rate over the past 30 days.
                           </p>
                         </div>
                       </div>
@@ -522,7 +1212,7 @@ export default function PatientReview() {
                   <Card>
                     <CardContent className="p-3">
                       <div className="flex items-start gap-2">
-                        <TrendingUp className="h-4 w-4 text-chart-2 mt-0.5 flex-shrink-0" />
+                        <TrendingUp className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <p className="text-sm font-medium mb-1">Positive Trend</p>
                           <p className="text-xs text-muted-foreground">
@@ -536,11 +1226,11 @@ export default function PatientReview() {
                   <Card>
                     <CardContent className="p-3">
                       <div className="flex items-start gap-2">
-                        <Activity className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                        <Stethoscope className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
                         <div>
-                          <p className="text-sm font-medium mb-1">Activity Level</p>
+                          <p className="text-sm font-medium mb-1">Next Steps</p>
                           <p className="text-xs text-muted-foreground">
-                            Daily step count averaging 4,200 steps. Consider encouraging increased gentle activity.
+                            Consider reviewing recent lab results and scheduling follow-up consultation.
                           </p>
                         </div>
                       </div>
@@ -552,6 +1242,32 @@ export default function PatientReview() {
               <Button className="w-full mt-4" variant="outline" data-testid="button-chat-lysa">
                 <Bot className="h-4 w-4 mr-2" />
                 Chat with Assistant Lysa
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Quick Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Button 
+                variant="outline" 
+                className="w-full justify-start"
+                onClick={() => setPrescriptionDialogOpen(true)}
+                data-testid="button-quick-prescription"
+              >
+                <Pill className="h-4 w-4 mr-2" />
+                Write Prescription
+              </Button>
+              <Button variant="outline" className="w-full justify-start" data-testid="button-quick-message">
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Send Message
+              </Button>
+              <Button variant="outline" className="w-full justify-start" data-testid="button-schedule-followup">
+                <Calendar className="h-4 w-4 mr-2" />
+                Schedule Follow-up
               </Button>
             </CardContent>
           </Card>

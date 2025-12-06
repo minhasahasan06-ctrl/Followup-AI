@@ -1,0 +1,66 @@
+Build a general Symptom Tracking module for chronic-care patients (cardiac, respiratory, renal, metabolic, neuro, multimorbidity). The module collects structured daily check-ins, conversationally extracted symptoms, optional functional videos and passive device data; stores structured data securely; runs ML for trend detection, anomaly detection, and correlational insight only (explicitly non-diagnostic); and provides clinician-ready summaries.
+
+Hard product rule (enforced in code + tests):
+
+No endpoint or UI element will produce or present automated clinical diagnoses, clinical severity scores, or prescriptive medical advice. All outputs must be labeled “observational” or “patient-reported” and require clinician interpretation.
+
+⸻
+
+FRONTEND (React + PWA + Tailwind)
+
+Required pages/components:
+    1.    Patient Dashboard
+    •    Quick check-in CTA
+    •    Last 7/30/90 day summaries
+    •    Medication adherence widget
+    •    Alerts/notifications (informational only)
+    2.    Daily Check-In Flow
+    •    Structured fields (see Data Schema)
+    •    Optional free-text / voice note
+    •    Optional quick functional test (video) — client only; if used, show how to record & preview
+    3.    Conversational Agent UI
+    •    Chat interface for conversational check-ins
+    •    Agent prompts and follow-ups
+    •    “Send to clinician” button (shares timeline PDF)
+    4.    Clinician Dashboard
+    •    Patient list with last check-in time, adherence %, trend badge
+    •    Patient timeline view (structured check-ins, free text, videos, passive data)
+    •    Export/print summary (PDF)
+    •    Notes field for clinician (audit logged)
+    5.    Admin
+    •    Org management, RBAC, consent templates, data retention settings
+
+UI copy must include persistent disclaimers:
+    •    “SymptomTrack collects self-reported and observational data. It is not a diagnostic tool. Clinical decisions require provider review.”
+
+⸻
+
+DATA SCHEMA (Postgres / JSONB)
+
+Tables (minimum):
+
+users
+    •    id UUID, name, email, dob, demographics, created_at
+
+symptom_checkins
+    •    id UUID, user_id, ts, pain (0–10), fatigue (0–10), breathlessness (0–10), sleep_quality (0–10), mood, mobility_score, meds_taken bool, triggers array, symptoms array, note text, source (app/agent), created_at
+
+chat_symptoms
+    •    id, user_id, raw_text, extracted_json (locations, symptom_types, intensity_mention), confidence, created_at
+
+video_assessments
+    •    id, user_id, video_url, metrics_json, quality_json, created_at
+
+passive_metrics
+    •    id, user_id, date, steps, hr_mean, hrv, sleep_minutes, device_meta, created_at
+
+trend_reports
+    •    id, user_id, period_start, period_end, aggregated_metrics_json, anomalies_json, generated_at
+
+clinician_notes
+    •    id, clinician_id, user_id, note_text, tags, created_at
+
+audit_logs
+    •    id, user_id, action, object_type, object_id, performed_by, timestamp
+
+Storage: raw media → HIPAA-ready object store (S3 with SSE). Derived features → Postgres JSONB.
