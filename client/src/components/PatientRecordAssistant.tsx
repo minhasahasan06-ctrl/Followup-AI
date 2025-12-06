@@ -173,7 +173,7 @@ export function PatientRecordAssistant({ onOpenLysa, className }: PatientRecordA
     enabled: !!selectedPatientId
   });
 
-  const { data: healthAlerts, isLoading: alertsLoading } = useQuery<HealthAlert[]>({
+  const { data: healthAlerts, isLoading: alertsLoading, error: alertsError } = useQuery<HealthAlert[]>({
     queryKey: ['/api/ai-health-alerts/alerts', selectedPatientId],
     queryFn: async () => {
       if (!selectedPatientId) return [];
@@ -187,7 +187,7 @@ export function PatientRecordAssistant({ onOpenLysa, className }: PatientRecordA
     enabled: !!selectedPatientId
   });
 
-  const { data: riskData, isLoading: riskLoading } = useQuery<RiskScore>({
+  const { data: riskData, isLoading: riskLoading, error: riskError } = useQuery<RiskScore | null>({
     queryKey: ['/api/ai-health-alerts/risk-score', selectedPatientId],
     queryFn: async () => {
       if (!selectedPatientId) return null;
@@ -201,7 +201,7 @@ export function PatientRecordAssistant({ onOpenLysa, className }: PatientRecordA
     enabled: !!selectedPatientId
   });
 
-  const { data: dailyFollowups, isLoading: followupsLoading } = useQuery<DailyFollowup[]>({
+  const { data: dailyFollowups, isLoading: followupsLoading, error: followupsError } = useQuery<DailyFollowup[]>({
     queryKey: ['/api/daily-followup/patient', selectedPatientId],
     queryFn: async () => {
       if (!selectedPatientId) return [];
@@ -526,6 +526,14 @@ export function PatientRecordAssistant({ onOpenLysa, className }: PatientRecordA
                     <Skeleton className="h-16 w-full" />
                     <Skeleton className="h-16 w-full" />
                   </div>
+                ) : alertsError || riskError ? (
+                  <div className="text-center py-8">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive opacity-50" />
+                    <p className="font-medium text-destructive">Failed to Load Alerts</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {alertsError?.message || riskError?.message || 'Unable to fetch health alert data'}
+                    </p>
+                  </div>
                 ) : (
                   <>
                     {riskData && (
@@ -635,6 +643,14 @@ export function PatientRecordAssistant({ onOpenLysa, className }: PatientRecordA
                     <Skeleton className="h-24 w-full" />
                     <Skeleton className="h-24 w-full" />
                     <Skeleton className="h-24 w-full" />
+                  </div>
+                ) : followupsError ? (
+                  <div className="text-center py-8">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive opacity-50" />
+                    <p className="font-medium text-destructive">Failed to Load Followups</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {followupsError?.message || 'Unable to fetch daily followup data'}
+                    </p>
                   </div>
                 ) : dailyFollowups && dailyFollowups.length > 0 ? (
                   <ScrollArea className="h-[350px]">
