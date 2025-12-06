@@ -62,15 +62,18 @@ def get_openai_client() -> OpenAI:
 
 
 def check_openai_baa_compliance():
+    """Check OpenAI BAA compliance - uses secure logging"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if not settings.OPENAI_BAA_SIGNED:
-        print("⚠️  HIPAA COMPLIANCE WARNINGS:")
-        print("   - CRITICAL: Business Associate Agreement (BAA) with OpenAI NOT signed. AI features BLOCKED.")
-        print("   - Set OPENAI_BAA_SIGNED=true after signing BAA.")
+        logger.warning("HIPAA COMPLIANCE WARNINGS:")
+        logger.warning("CRITICAL: Business Associate Agreement (BAA) with OpenAI NOT signed. AI features BLOCKED.")
+        logger.warning("Set OPENAI_BAA_SIGNED=true after signing BAA.")
         if not settings.OPENAI_ZDR_ENABLED:
-            print("   - IMPORTANT: Zero Data Retention (ZDR) not enabled. Set OPENAI_ZDR_ENABLED=true for HIPAA compliance.")
+            logger.warning("IMPORTANT: Zero Data Retention (ZDR) not enabled. Set OPENAI_ZDR_ENABLED=true for HIPAA compliance.")
         if not settings.OPENAI_ENTERPRISE:
-            print("   - NOTICE: OpenAI Enterprise plan recommended for HIPAA compliance. Set OPENAI_ENTERPRISE=true.")
-        print("   🚫 AI FEATURES BLOCKED until BAA is signed.")
-        print("   Visit: https://openai.com/enterprise")
+            logger.warning("NOTICE: OpenAI Enterprise plan recommended for HIPAA compliance. Set OPENAI_ENTERPRISE=true.")
+        logger.warning("AI FEATURES BLOCKED until BAA is signed. Visit: https://openai.com/enterprise")
         return False
     return True

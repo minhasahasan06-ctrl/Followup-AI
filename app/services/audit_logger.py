@@ -88,7 +88,10 @@ class AuditLogger:
         }
         
         # Log to stdout (CloudWatch will capture this)
-        print(f"[AUDIT] {json.dumps(audit_entry)}")
+        # Use secure logging instead of print to prevent information leakage
+        import logging
+        logger = logging.getLogger("audit")
+        logger.info(f"[AUDIT] {json.dumps(audit_entry)}")
         
         # TODO: Store in dedicated audit_logs table for long-term retention
         # TODO: Send to AWS CloudWatch Logs for centralized monitoring

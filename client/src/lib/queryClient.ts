@@ -88,8 +88,19 @@ export const getQueryFn: <T>(options: {
         }
       }
 
-      // Re-throw sanitized error
-      throw sanitizeError(error, `Query function for ${url}`);
+      // Re-throw sanitized error as Error instance (not plain object)
+      // This ensures React Query and other error handlers can properly process it
+      const sanitized = sanitizeError(error, `Query function for ${url}`);
+      const errorInstance = new Error(sanitized.userMessage) as any;
+      errorInstance.statusCode = sanitized.statusCode;
+      errorInstance.code = sanitized.code;
+      errorInstance.userMessage = sanitized.userMessage;
+      errorInstance.message = sanitized.message;
+      // Preserve original error for debugging in development
+      if (import.meta.env.DEV && sanitized.originalError) {
+        errorInstance.originalError = sanitized.originalError;
+      }
+      throw errorInstance;
     }
   };
 

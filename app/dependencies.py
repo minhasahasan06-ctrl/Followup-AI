@@ -1,73 +1,56 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+"""
+Dependencies module - DEPRECATED
+Use app.core.authentication instead for all authentication dependencies
+"""
+
+from typing import Optional
+from fastapi import Depends, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.utils.security import verify_token
 from app.models.user import User
+from app.core.authentication import (
+    get_current_user as _get_current_user,
+    get_current_doctor as _get_current_doctor,
+    get_current_patient as _get_current_patient,
+    require_role as _require_role
+)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+security = HTTPBearer(auto_error=False)
 
-
+# Re-export for backward compatibility
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    """
+    Backward compatibility wrapper - use app.core.authentication.get_current_user
     
-    payload = verify_token(token)
-    if payload is None:
-        raise credentials_exception
+    This wrapper properly extracts credentials from FastAPI's dependency injection
+    and passes them to the new authentication function, maintaining backward
+    compatibility with existing code that uses this module.
     
-    user_id = payload.get("sub")
-    if user_id is None or not isinstance(user_id, str):
-        raise credentials_exception
-    
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise credentials_exception
-    
-    return user
+    Note: With HTTPBearer(auto_error=False), credentials will be None if no
+    Authorization header is present, which the underlying function handles correctly.
+    """
+    return await _get_current_user(request, credentials, db)
 
 
 async def get_current_doctor(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    user_role = str(current_user.role) if current_user.role else ""
-    if user_role != "doctor":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only doctors can access this resource"
-        )
-    return current_user
+    """Backward compatibility wrapper"""
+    return await _get_current_doctor(current_user)
 
 
 async def get_current_patient(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    user_role = str(current_user.role) if current_user.role else ""
-    if user_role != "patient":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only patients can access this resource"
-        )
-    return current_user
+    """Backward compatibility wrapper"""
+    return await _get_current_patient(current_user)
 
 
 def require_role(role: str):
-    """
-    Dependency factory that creates a role-checking dependency.
-    Usage: current_user = Depends(require_role("patient"))
-    """
-    async def role_checker(current_user: User = Depends(get_current_user)) -> User:
-        user_role = str(current_user.role) if current_user.role else ""
-        if user_role != role:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Only {role}s can access this resource"
-            )
-        return current_user
-    return role_checker
+    """Backward compatibility wrapper"""
+    return _require_role(role)

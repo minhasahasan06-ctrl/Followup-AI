@@ -1,6 +1,7 @@
 import { type RequestHandler } from "express";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
+import crypto from "crypto";
 import { storage } from "./storage";
 
 // Extend Express Request to include user
@@ -36,8 +37,23 @@ export function getSession(maxAge?: number) {
     store = new session.MemoryStore();
   }
 
+  // SECURITY: Require secure session secret in production
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (isProduction && (!sessionSecret || sessionSecret.length < 32)) {
+    throw new Error(
+      "SECURITY ERROR: SESSION_SECRET must be set and at least 32 characters in production"
+    );
+  }
+  
+  if (!sessionSecret) {
+    console.warn(
+      "[SECURITY WARNING] SESSION_SECRET not set - using temporary secret. " +
+      "Sessions will not persist across restarts and are insecure."
+    );
+  }
+  
   const sessionConfig = session({
-    secret: process.env.SESSION_SECRET || "dev-insecure-secret",
+    secret: sessionSecret || crypto.randomBytes(32).toString('hex'),
     store,
     resave: false,
     saveUninitialized: false, // Only save sessions that have been modified (e.g., have userId set)
@@ -47,7 +63,7 @@ export function getSession(maxAge?: number) {
       httpOnly: true,
       // Use Secure cookies in production (HTTPS) to ensure browsers accept the session
       secure: isProduction,
-      sameSite: "lax",
+      sameSite: isProduction ? "strict" : "lax", // Stricter in production
       maxAge: sessionTtl,
       domain: undefined,
       path: '/',
