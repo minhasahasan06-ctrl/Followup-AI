@@ -17718,6 +17718,691 @@ Provide:
   // END MEDICAL NLP ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // ENHANCED RESEARCH CENTER ROUTES
+  // =============================================================================
+
+  // Helper middleware to set audit context for research service
+  const setResearchAuditContext = (req: any, res: any, next: any) => {
+    researchService.setAuditContext({
+      userId: req.user?.id || 'anonymous',
+      ipAddress: req.ip || req.connection?.remoteAddress,
+      userAgent: req.headers['user-agent'],
+    });
+    next();
+  };
+
+  // Research Data Consent - Patient consent for research use
+  app.get('/api/v1/research-center/consent', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const consent = await researchService.getResearchDataConsent(req.user.id);
+      res.json(consent || { patientId: req.user.id, consentEnabled: false });
+    } catch (error) {
+      console.error('Error fetching research consent:', error);
+      res.status(500).json({ error: 'Failed to fetch consent' });
+    }
+  });
+
+  app.post('/api/v1/research-center/consent', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'patient') {
+        return res.status(403).json({ error: 'Only patients can manage research consent' });
+      }
+
+      const consent = await researchService.upsertResearchDataConsent({
+        patientId: req.user.id,
+        ...req.body,
+      });
+
+      console.log(`[HIPAA-AUDIT] Research consent updated by patient ${req.user.id}`);
+      res.json(consent);
+    } catch (error) {
+      console.error('Error updating research consent:', error);
+      res.status(500).json({ error: 'Failed to update consent' });
+    }
+  });
+
+  // Research Center Metrics
+  app.get('/api/v1/research-center/metrics', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const metrics = await researchService.getResearchMetrics();
+      res.json(metrics);
+    } catch (error) {
+      console.error('Error fetching research metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch metrics' });
+    }
+  });
+
+  // Research Projects (Personal Research Mode)
+  app.get('/api/v1/research-center/projects', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const projects = await researchService.getResearchProjects(req.user.id);
+      res.json(projects);
+    } catch (error) {
+      console.error('Error fetching research projects:', error);
+      res.status(500).json({ error: 'Failed to fetch projects' });
+    }
+  });
+
+  app.post('/api/v1/research-center/projects', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const project = await researchService.createResearchProject({
+        ...req.body,
+        ownerId: req.user.id,
+      });
+
+      console.log(`[HIPAA-AUDIT] Research project created: ${project.id} by ${req.user.id}`);
+      res.json(project);
+    } catch (error) {
+      console.error('Error creating research project:', error);
+      res.status(500).json({ error: 'Failed to create project' });
+    }
+  });
+
+  app.get('/api/v1/research-center/projects/:id', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const project = await researchService.getResearchProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      res.json(project);
+    } catch (error) {
+      console.error('Error fetching research project:', error);
+      res.status(500).json({ error: 'Failed to fetch project' });
+    }
+  });
+
+  app.patch('/api/v1/research-center/projects/:id', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const project = await researchService.updateResearchProject(req.params.id, req.body);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      res.json(project);
+    } catch (error) {
+      console.error('Error updating research project:', error);
+      res.status(500).json({ error: 'Failed to update project' });
+    }
+  });
+
+  // Research Studies
+  app.get('/api/v1/research-center/studies', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { projectId, status, limit } = req.query;
+      const studies = await researchService.getResearchStudies({
+        projectId: projectId as string,
+        ownerId: req.user.id,
+        status: status as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+      res.json(studies);
+    } catch (error) {
+      console.error('Error fetching research studies:', error);
+      res.status(500).json({ error: 'Failed to fetch studies' });
+    }
+  });
+
+  app.post('/api/v1/research-center/studies', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const study = await researchService.createResearchStudy({
+        ...req.body,
+        ownerUserId: req.user.id,
+      });
+
+      console.log(`[HIPAA-AUDIT] Research study created: ${study.id} by ${req.user.id}`);
+      res.json(study);
+    } catch (error) {
+      console.error('Error creating research study:', error);
+      res.status(500).json({ error: 'Failed to create study' });
+    }
+  });
+
+  app.get('/api/v1/research-center/studies/:id', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const study = await researchService.getResearchStudy(req.params.id);
+      if (!study) {
+        return res.status(404).json({ error: 'Study not found' });
+      }
+      res.json(study);
+    } catch (error) {
+      console.error('Error fetching research study:', error);
+      res.status(500).json({ error: 'Failed to fetch study' });
+    }
+  });
+
+  app.patch('/api/v1/research-center/studies/:id', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const study = await researchService.updateResearchStudy(req.params.id, req.body);
+      if (!study) {
+        return res.status(404).json({ error: 'Study not found' });
+      }
+      res.json(study);
+    } catch (error) {
+      console.error('Error updating research study:', error);
+      res.status(500).json({ error: 'Failed to update study' });
+    }
+  });
+
+  // Research Cohorts
+  app.get('/api/v1/research-center/cohorts', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { projectId, status } = req.query;
+      const cohorts = await researchService.getResearchCohorts({
+        projectId: projectId as string,
+        createdBy: req.user.id,
+        status: status as string,
+      });
+      res.json(cohorts);
+    } catch (error) {
+      console.error('Error fetching research cohorts:', error);
+      res.status(500).json({ error: 'Failed to fetch cohorts' });
+    }
+  });
+
+  app.post('/api/v1/research-center/cohorts', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const cohort = await researchService.createResearchCohort({
+        ...req.body,
+        createdBy: req.user.id,
+      });
+
+      console.log(`[HIPAA-AUDIT] Research cohort created: ${cohort.id} by ${req.user.id}`);
+      res.json(cohort);
+    } catch (error) {
+      console.error('Error creating research cohort:', error);
+      res.status(500).json({ error: 'Failed to create cohort' });
+    }
+  });
+
+  app.post('/api/v1/research-center/cohorts/preview', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const preview = await researchService.previewCohort(req.body.definition);
+      res.json(preview);
+    } catch (error) {
+      console.error('Error previewing cohort:', error);
+      res.status(500).json({ error: 'Failed to preview cohort' });
+    }
+  });
+
+  app.get('/api/v1/research-center/cohorts/:id', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const cohort = await researchService.getResearchCohort(req.params.id);
+      if (!cohort) {
+        return res.status(404).json({ error: 'Cohort not found' });
+      }
+      res.json(cohort);
+    } catch (error) {
+      console.error('Error fetching research cohort:', error);
+      res.status(500).json({ error: 'Failed to fetch cohort' });
+    }
+  });
+
+  // Study Enrollments
+  app.get('/api/v1/research-center/studies/:studyId/enrollments', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const enrollments = await researchService.getStudyEnrollments(req.params.studyId);
+      res.json(enrollments);
+    } catch (error) {
+      console.error('Error fetching study enrollments:', error);
+      res.status(500).json({ error: 'Failed to fetch enrollments' });
+    }
+  });
+
+  app.post('/api/v1/research-center/studies/:studyId/enrollments', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const enrollment = await researchService.createStudyEnrollment({
+        studyId: req.params.studyId,
+        ...req.body,
+      });
+
+      console.log(`[HIPAA-AUDIT] Patient enrolled in study ${req.params.studyId} by ${req.user.id}`);
+      res.json(enrollment);
+    } catch (error) {
+      console.error('Error creating study enrollment:', error);
+      res.status(500).json({ error: 'Failed to create enrollment' });
+    }
+  });
+
+  app.post('/api/v1/research-center/enrollments/:id/withdraw', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const { reason } = req.body;
+      const enrollment = await researchService.withdrawFromStudy(req.params.id, reason);
+      if (!enrollment) {
+        return res.status(404).json({ error: 'Enrollment not found' });
+      }
+
+      console.log(`[HIPAA-AUDIT] Patient withdrawn from study enrollment ${req.params.id}`);
+      res.json(enrollment);
+    } catch (error) {
+      console.error('Error withdrawing from study:', error);
+      res.status(500).json({ error: 'Failed to withdraw' });
+    }
+  });
+
+  // Research Visits
+  app.get('/api/v1/research-center/visits', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const { studyId, patientId, status } = req.query;
+      const visits = await researchService.getResearchVisits({
+        studyId: studyId as string,
+        patientId: patientId as string,
+        status: status as string,
+      });
+      res.json(visits);
+    } catch (error) {
+      console.error('Error fetching research visits:', error);
+      res.status(500).json({ error: 'Failed to fetch visits' });
+    }
+  });
+
+  app.post('/api/v1/research-center/visits', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const visit = await researchService.createResearchVisit(req.body);
+      res.json(visit);
+    } catch (error) {
+      console.error('Error creating research visit:', error);
+      res.status(500).json({ error: 'Failed to create visit' });
+    }
+  });
+
+  // Research Measurements
+  app.get('/api/v1/research-center/measurements', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const { patientId, studyId, category, limit } = req.query;
+      const measurements = await researchService.getResearchMeasurements({
+        patientId: patientId as string,
+        studyId: studyId as string,
+        category: category as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+      res.json(measurements);
+    } catch (error) {
+      console.error('Error fetching research measurements:', error);
+      res.status(500).json({ error: 'Failed to fetch measurements' });
+    }
+  });
+
+  app.post('/api/v1/research-center/measurements', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (Array.isArray(req.body)) {
+        const measurements = await researchService.createResearchMeasurements(req.body);
+        res.json(measurements);
+      } else {
+        const measurement = await researchService.createResearchMeasurement(req.body);
+        res.json(measurement);
+      }
+    } catch (error) {
+      console.error('Error creating research measurement:', error);
+      res.status(500).json({ error: 'Failed to create measurement' });
+    }
+  });
+
+  // Research Immune Markers
+  app.get('/api/v1/research-center/immune-markers', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const { patientId, studyId, markerName, limit } = req.query;
+      const markers = await researchService.getResearchImmuneMarkers({
+        patientId: patientId as string,
+        studyId: studyId as string,
+        markerName: markerName as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+      res.json(markers);
+    } catch (error) {
+      console.error('Error fetching immune markers:', error);
+      res.status(500).json({ error: 'Failed to fetch immune markers' });
+    }
+  });
+
+  // Research Analysis Reports
+  app.get('/api/v1/research-center/reports', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { studyId, cohortId, analysisType, status, limit } = req.query;
+      const reports = await researchService.getResearchAnalysisReports({
+        studyId: studyId as string,
+        cohortId: cohortId as string,
+        createdBy: req.user.id,
+        analysisType: analysisType as string,
+        status: status as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+      res.json(reports);
+    } catch (error) {
+      console.error('Error fetching research reports:', error);
+      res.status(500).json({ error: 'Failed to fetch reports' });
+    }
+  });
+
+  app.post('/api/v1/research-center/reports', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const report = await researchService.createResearchAnalysisReport({
+        ...req.body,
+        createdBy: req.user.id,
+      });
+
+      console.log(`[HIPAA-AUDIT] Research report created: ${report.id} by ${req.user.id}`);
+      res.json(report);
+    } catch (error) {
+      console.error('Error creating research report:', error);
+      res.status(500).json({ error: 'Failed to create report' });
+    }
+  });
+
+  app.get('/api/v1/research-center/reports/:id', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const report = await researchService.getResearchAnalysisReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ error: 'Report not found' });
+      }
+      res.json(report);
+    } catch (error) {
+      console.error('Error fetching research report:', error);
+      res.status(500).json({ error: 'Failed to fetch report' });
+    }
+  });
+
+  // AI-Powered Report Generation
+  app.post('/api/v1/research-center/reports/generate-ai', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { studyId, cohortId, analysisType, prompt } = req.body;
+
+      // Generate AI report using OpenAI
+      let aiContent = '';
+      try {
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert epidemiological research analyst. Generate comprehensive research reports for clinical studies on immunocompromised patients. Include statistical analysis, trends, risk factors, and actionable recommendations. Format with clear sections: Executive Summary, Methodology, Findings, Statistical Analysis, Conclusions, and Recommendations.`,
+            },
+            {
+              role: 'user',
+              content: prompt || `Generate a ${analysisType || 'descriptive'} analysis report for the research study. Focus on patient outcomes, risk factors, and clinical patterns.`,
+            },
+          ],
+          max_tokens: 2000,
+        });
+        aiContent = completion.choices[0].message.content || '';
+      } catch (aiError) {
+        console.error('OpenAI error:', aiError);
+        aiContent = 'AI report generation is currently unavailable. Please try again later.';
+      }
+
+      const report = await researchService.createResearchAnalysisReport({
+        studyId,
+        cohortId,
+        analysisType: analysisType || 'descriptive',
+        title: `AI-Generated ${analysisType || 'Analysis'} Report`,
+        reportContent: { content: aiContent, generatedAt: new Date().toISOString() },
+        aiGeneratedSummary: aiContent.substring(0, 500),
+        status: 'completed',
+        createdBy: req.user.id,
+      });
+
+      console.log(`[HIPAA-AUDIT] AI research report generated: ${report.id} by ${req.user.id}`);
+      res.json(report);
+    } catch (error) {
+      console.error('Error generating AI report:', error);
+      res.status(500).json({ error: 'Failed to generate AI report' });
+    }
+  });
+
+  // Research Alerts
+  app.get('/api/v1/research-center/alerts', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const { patientId, studyId, severity, status, limit } = req.query;
+      const alerts = await researchService.getResearchAlerts({
+        patientId: patientId as string,
+        studyId: studyId as string,
+        severity: severity as string,
+        status: status as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+      res.json(alerts);
+    } catch (error) {
+      console.error('Error fetching research alerts:', error);
+      res.status(500).json({ error: 'Failed to fetch alerts' });
+    }
+  });
+
+  app.post('/api/v1/research-center/alerts/:id/acknowledge', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const alert = await researchService.acknowledgeResearchAlert(req.params.id, req.user.id);
+      if (!alert) {
+        return res.status(404).json({ error: 'Alert not found' });
+      }
+      res.json(alert);
+    } catch (error) {
+      console.error('Error acknowledging alert:', error);
+      res.status(500).json({ error: 'Failed to acknowledge alert' });
+    }
+  });
+
+  app.post('/api/v1/research-center/alerts/:id/resolve', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const { resolution } = req.body;
+      const alert = await researchService.resolveResearchAlert(req.params.id, req.user.id, resolution);
+      if (!alert) {
+        return res.status(404).json({ error: 'Alert not found' });
+      }
+      res.json(alert);
+    } catch (error) {
+      console.error('Error resolving alert:', error);
+      res.status(500).json({ error: 'Failed to resolve alert' });
+    }
+  });
+
+  // Daily Followup Templates
+  app.get('/api/v1/research-center/followup-templates', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const templates = await researchService.getDailyFollowupTemplates(req.user.id);
+      res.json(templates);
+    } catch (error) {
+      console.error('Error fetching followup templates:', error);
+      res.status(500).json({ error: 'Failed to fetch templates' });
+    }
+  });
+
+  app.post('/api/v1/research-center/followup-templates', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const template = await researchService.createDailyFollowupTemplate({
+        ...req.body,
+        createdBy: req.user.id,
+      });
+      res.json(template);
+    } catch (error) {
+      console.error('Error creating followup template:', error);
+      res.status(500).json({ error: 'Failed to create template' });
+    }
+  });
+
+  // Analysis Jobs
+  app.get('/api/v1/research-center/analysis-jobs', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const jobs = await researchService.getPendingAnalysisJobs();
+      res.json(jobs);
+    } catch (error) {
+      console.error('Error fetching analysis jobs:', error);
+      res.status(500).json({ error: 'Failed to fetch jobs' });
+    }
+  });
+
+  app.post('/api/v1/research-center/analysis-jobs', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const job = await researchService.createAnalysisJob({
+        ...req.body,
+        createdBy: req.user.id,
+      });
+      res.json(job);
+    } catch (error) {
+      console.error('Error creating analysis job:', error);
+      res.status(500).json({ error: 'Failed to create job' });
+    }
+  });
+
+  app.get('/api/v1/research-center/analysis-jobs/:id', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      const job = await researchService.getAnalysisJob(req.params.id);
+      if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
+      }
+      res.json(job);
+    } catch (error) {
+      console.error('Error fetching analysis job:', error);
+      res.status(500).json({ error: 'Failed to fetch job' });
+    }
+  });
+
+  // Research Audit Logs
+  app.get('/api/v1/research-center/audit-logs', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { userId, actionType, objectType, limit } = req.query;
+      const logs = await researchService.getResearchAuditLogs({
+        userId: userId as string,
+        actionType: actionType as string,
+        objectType: objectType as string,
+        limit: limit ? parseInt(limit as string) : 100,
+      });
+      res.json(logs);
+    } catch (error) {
+      console.error('Error fetching audit logs:', error);
+      res.status(500).json({ error: 'Failed to fetch audit logs' });
+    }
+  });
+
+  // Demographics Distribution
+  app.get('/api/v1/research-center/demographics/age', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const distribution = await researchService.getAgeDistribution();
+      res.json(distribution);
+    } catch (error) {
+      console.error('Error fetching age distribution:', error);
+      res.status(500).json({ error: 'Failed to fetch age distribution' });
+    }
+  });
+
+  app.get('/api/v1/research-center/demographics/conditions', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const distribution = await researchService.getConditionDistribution();
+      res.json(distribution);
+    } catch (error) {
+      console.error('Error fetching condition distribution:', error);
+      res.status(500).json({ error: 'Failed to fetch condition distribution' });
+    }
+  });
+
+  app.get('/api/v1/research-center/enrollment-trend', isAuthenticated, setResearchAuditContext, async (req: any, res) => {
+    try {
+      if (!['doctor', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const days = req.query.days ? parseInt(req.query.days as string) : 30;
+      const trend = await researchService.getEnrollmentTrend(days);
+      res.json(trend);
+    } catch (error) {
+      console.error('Error fetching enrollment trend:', error);
+      res.status(500).json({ error: 'Failed to fetch enrollment trend' });
+    }
+  });
+
+  // =============================================================================
+  // END ENHANCED RESEARCH CENTER ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
 
   // WebSocket proxy for agent communication
