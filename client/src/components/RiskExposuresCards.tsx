@@ -20,8 +20,11 @@ import {
   Building,
   Plus,
   Edit,
-  Save
+  Save,
+  UserCheck,
+  MessageSquare
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState } from "react";
 import { format } from "date-fns";
 
@@ -40,6 +43,11 @@ export interface InfectiousEvent {
   ventilator_required: boolean;
   auto_generated: boolean;
   manual_override: boolean;
+  overridden_by?: string;
+  overridden_at?: string;
+  doctor_notes?: string;
+  modifier_first_name?: string;
+  modifier_last_name?: string;
 }
 
 export interface Immunization {
@@ -70,6 +78,14 @@ export interface Occupation {
   end_date?: string;
   is_current: boolean;
   auto_enriched: boolean;
+  created_by?: string;
+  modified_by?: string;
+  modified_at?: string;
+  doctor_notes?: string;
+  creator_first_name?: string;
+  creator_last_name?: string;
+  modifier_first_name?: string;
+  modifier_last_name?: string;
 }
 
 export interface OccupationalExposure {
@@ -93,6 +109,58 @@ export interface GeneticRiskFlag {
   affected_conditions?: string[];
   source: string;
   auto_generated: boolean;
+  manual_override: boolean;
+  overridden_by?: string;
+  overridden_at?: string;
+  doctor_notes?: string;
+  modifier_first_name?: string;
+  modifier_last_name?: string;
+}
+
+function DoctorModBadge({ 
+  firstName, 
+  lastName, 
+  modifiedAt,
+  notes 
+}: { 
+  firstName?: string; 
+  lastName?: string; 
+  modifiedAt?: string;
+  notes?: string;
+}) {
+  if (!firstName && !lastName) return null;
+  
+  const doctorName = `Dr. ${firstName || ''} ${lastName || ''}`.trim();
+  const dateStr = modifiedAt ? format(new Date(modifiedAt), 'MMM d, yyyy h:mm a') : '';
+  
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge 
+          variant="outline" 
+          className="text-xs bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 gap-1"
+          data-testid="badge-doctor-modified"
+        >
+          <UserCheck className="h-3 w-3" />
+          Doctor Modified
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        <div className="space-y-1">
+          <p className="font-medium text-sm">{doctorName}</p>
+          {dateStr && <p className="text-xs text-muted-foreground">{dateStr}</p>}
+          {notes && (
+            <div className="pt-1 border-t mt-1">
+              <p className="text-xs flex items-start gap-1">
+                <MessageSquare className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                <span>{notes}</span>
+              </p>
+            </div>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 function getSeverityColor(severity: string): string {
@@ -230,7 +298,15 @@ export function InfectionHistoryCard({ patientId, isDoctor, compact = false }: C
                     {infection.duration_days && ` (${infection.duration_days} days)`}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {infection.manual_override && infection.modifier_first_name && (
+                    <DoctorModBadge
+                      firstName={infection.modifier_first_name}
+                      lastName={infection.modifier_last_name}
+                      modifiedAt={infection.overridden_at}
+                      notes={infection.doctor_notes}
+                    />
+                  )}
                   {infection.auto_generated && !infection.manual_override && (
                     <Badge variant="outline" className="text-xs">Auto</Badge>
                   )}
@@ -538,6 +614,14 @@ export function OccupationCard({ patientId, isDoctor, compact = false }: CardPro
                   )}
                 </div>
                 <div className="text-right flex flex-wrap gap-1 justify-end">
+                  {occupation.modifier_first_name && (
+                    <DoctorModBadge
+                      firstName={occupation.modifier_first_name}
+                      lastName={occupation.modifier_last_name}
+                      modifiedAt={occupation.modified_at}
+                      notes={occupation.doctor_notes}
+                    />
+                  )}
                   {occupation.physical_demand_level && (
                     <Badge variant="outline" className="capitalize text-xs">
                       {occupation.physical_demand_level.replace(/_/g, ' ')}
@@ -738,13 +822,24 @@ export function GeneticRiskCard({ patientId, isDoctor, compact = false }: CardPr
                 data-testid={`item-genetic-${flag.id}`}
               >
                 <div className="flex items-start justify-between">
-                  <div className="space-y-1">
+                  <div className="space-y-1 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm">{flag.flag_name}</span>
                       {flag.risk_level && (
                         <Badge className={getRiskLevelColor(flag.risk_level)} variant="secondary">
                           {flag.risk_level} risk
                         </Badge>
+                      )}
+                      {flag.manual_override && flag.modifier_first_name && (
+                        <DoctorModBadge
+                          firstName={flag.modifier_first_name}
+                          lastName={flag.modifier_last_name}
+                          modifiedAt={flag.overridden_at}
+                          notes={flag.doctor_notes}
+                        />
+                      )}
+                      {flag.auto_generated && !flag.manual_override && (
+                        <Badge variant="outline" className="text-xs">Auto</Badge>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground capitalize">

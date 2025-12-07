@@ -19655,9 +19655,13 @@ Provide:
       }
 
       const result = await db.execute(drizzleSql`
-        SELECT * FROM infectious_events 
-        WHERE patient_id = ${patientId}
-        ORDER BY onset_date DESC NULLS LAST
+        SELECT ie.*, 
+          u.first_name as modifier_first_name, 
+          u.last_name as modifier_last_name
+        FROM infectious_events ie
+        LEFT JOIN users u ON ie.overridden_by = u.id
+        WHERE ie.patient_id = ${patientId}
+        ORDER BY ie.onset_date DESC NULLS LAST
       `);
       
       console.log(`[HIPAA-AUDIT] User ${userId} accessed infections for patient ${patientId}`);
@@ -19718,11 +19722,18 @@ Provide:
         }
       }
 
-      // Get current occupation
+      // Get current occupation with doctor info
       const occupationResult = await db.execute(drizzleSql`
-        SELECT * FROM patient_occupations 
-        WHERE patient_id = ${patientId} AND is_current = true
-        ORDER BY start_date DESC NULLS LAST
+        SELECT po.*, 
+          u.first_name as creator_first_name, 
+          u.last_name as creator_last_name,
+          u2.first_name as modifier_first_name,
+          u2.last_name as modifier_last_name
+        FROM patient_occupations po
+        LEFT JOIN users u ON po.created_by = u.id
+        LEFT JOIN users u2 ON po.modified_by = u2.id
+        WHERE po.patient_id = ${patientId} AND po.is_current = true
+        ORDER BY po.start_date DESC NULLS LAST
         LIMIT 1
       `);
       
@@ -19765,9 +19776,13 @@ Provide:
       }
 
       const result = await db.execute(drizzleSql`
-        SELECT * FROM genetic_risk_flags 
-        WHERE patient_id = ${patientId}
-        ORDER BY risk_level DESC NULLS LAST, flag_name ASC
+        SELECT grf.*, 
+          u.first_name as modifier_first_name, 
+          u.last_name as modifier_last_name
+        FROM genetic_risk_flags grf
+        LEFT JOIN users u ON grf.overridden_by = u.id
+        WHERE grf.patient_id = ${patientId}
+        ORDER BY grf.risk_level DESC NULLS LAST, grf.flag_name ASC
       `);
       
       console.log(`[HIPAA-AUDIT] User ${userId} accessed genetics for patient ${patientId}`);
@@ -19830,7 +19845,7 @@ Provide:
         return res.status(403).json({ error: 'Access denied - no patient assignment' });
       }
 
-      const { infectionType, pathogen, severity, onsetDate, resolutionDate, hospitalization, icuAdmission } = req.body;
+      const { infectionType, pathogen, severity, onsetDate, resolutionDate, hospitalization, icuAdmission, doctorNotes } = req.body;
       
       await db.execute(drizzleSql`
         UPDATE infectious_events SET
@@ -19841,6 +19856,7 @@ Provide:
           resolution_date = COALESCE(${resolutionDate ? new Date(resolutionDate) : null}, resolution_date),
           hospitalization = COALESCE(${hospitalization}, hospitalization),
           icu_admission = COALESCE(${icuAdmission}, icu_admission),
+          doctor_notes = COALESCE(${doctorNotes}, doctor_notes),
           manual_override = TRUE,
           overridden_by = ${userId},
           overridden_at = NOW(),
@@ -19911,7 +19927,7 @@ Provide:
         }
       }
 
-      const { jobTitle, industry, employer, startDate, shiftWork, nightShift, hoursPerWeek } = req.body;
+      const { jobTitle, industry, employer, startDate, shiftWork, nightShift, hoursPerWeek, doctorNotes } = req.body;
       
       if (!jobTitle) {
         return res.status(400).json({ error: 'Job title is required' });
@@ -19923,16 +19939,18 @@ Provide:
         WHERE patient_id = ${patientId} AND is_current = TRUE
       `);
       
-      // Create new occupation
+      // Create new occupation with doctor tracking
       const result = await db.execute(drizzleSql`
         INSERT INTO patient_occupations (
           patient_id, job_title, industry, employer, start_date, 
-          shift_work, night_shift, hours_per_week, is_current, status
+          shift_work, night_shift, hours_per_week, is_current, status,
+          created_by, doctor_notes
         ) VALUES (
           ${patientId}, ${jobTitle}, ${industry || null}, ${employer || null},
           ${startDate ? new Date(startDate) : new Date()},
           ${shiftWork || false}, ${nightShift || false}, ${hoursPerWeek || null},
-          TRUE, 'active'
+          TRUE, 'active',
+          ${isDoctor ? userId : null}, ${doctorNotes || null}
         ) RETURNING *
       `);
       
@@ -19941,6 +19959,44 @@ Provide:
     } catch (error) {
       console.error('Error creating occupation:', error);
       res.status(500).json({ error: 'Failed to create occupation' });
+    }
+  });
+
+  // POST new genetic risk flag - doctors only
+  app.post('/api/patients/:patientId/risk/genetics', isDoctor, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const userId = req.user!.id;
+      
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        console.log(`[HIPAA-AUDIT] DENIED: Doctor ${userId} attempted to add genetic flag for unassigned patient ${patientId}`);
+        return res.status(403).json({ error: 'Access denied - no patient assignment' });
+      }
+
+      const { flagName, flagType, riskLevel, clinicalImplications, doctorNotes } = req.body;
+      
+      if (!flagName || !flagType) {
+        return res.status(400).json({ error: 'Flag name and type are required' });
+      }
+
+      const result = await db.execute(drizzleSql`
+        INSERT INTO genetic_risk_flags (
+          patient_id, flag_name, flag_type, value, risk_level,
+          clinical_implications, source, auto_generated, manual_override,
+          overridden_by, overridden_at, doctor_notes
+        ) VALUES (
+          ${patientId}, ${flagName}, ${flagType}, 'present', ${riskLevel || 'moderate'},
+          ${clinicalImplications || null}, 'doctor_entered', FALSE, TRUE,
+          ${userId}, NOW(), ${doctorNotes || null}
+        ) RETURNING *
+      `);
+      
+      console.log(`[HIPAA-AUDIT] Doctor ${userId} added genetic flag for patient ${patientId}: ${flagName}`);
+      res.json(result.rows?.[0] || { success: true });
+    } catch (error) {
+      console.error('Error creating genetic flag:', error);
+      res.status(500).json({ error: 'Failed to create genetic flag' });
     }
   });
 
