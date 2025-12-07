@@ -1,0 +1,216 @@
+{
+  "_description": "Job titles and industries mapped to physical demand levels and default occupational exposures",
+  "_version": "1.0",
+  "industries": {
+    "healthcare": {
+      "physical_demand_level": "moderate",
+      "default_exposures": [
+        {"type": "biological", "agent": "Pathogens", "level": "high"},
+        {"type": "ergonomic", "agent": "Patient handling", "level": "high"},
+        {"type": "chemicals", "agent": "Disinfectants", "level": "medium"}
+      ]
+    },
+    "construction": {
+      "physical_demand_level": "heavy",
+      "default_exposures": [
+        {"type": "dust", "agent": "Silica dust", "level": "high"},
+        {"type": "noise", "agent": "Power tools", "level": "high"},
+        {"type": "ergonomic", "agent": "Heavy lifting", "level": "high"},
+        {"type": "heat", "agent": "Outdoor work", "level": "medium"}
+      ]
+    },
+    "manufacturing": {
+      "physical_demand_level": "moderate",
+      "default_exposures": [
+        {"type": "noise", "agent": "Machinery", "level": "high"},
+        {"type": "chemicals", "agent": "Industrial solvents", "level": "medium"},
+        {"type": "ergonomic", "agent": "Repetitive motion", "level": "medium"}
+      ]
+    },
+    "mining": {
+      "physical_demand_level": "very_heavy",
+      "default_exposures": [
+        {"type": "dust", "agent": "Coal dust/Silica", "level": "high"},
+        {"type": "noise", "agent": "Heavy equipment", "level": "high"},
+        {"type": "radiation", "agent": "Radon", "level": "medium"},
+        {"type": "ergonomic", "agent": "Physical labor", "level": "high"}
+      ]
+    },
+    "agriculture": {
+      "physical_demand_level": "heavy",
+      "default_exposures": [
+        {"type": "chemicals", "agent": "Pesticides", "level": "high"},
+        {"type": "biological", "agent": "Zoonotic pathogens", "level": "medium"},
+        {"type": "dust", "agent": "Agricultural dust", "level": "medium"},
+        {"type": "heat", "agent": "Outdoor work", "level": "medium"}
+      ]
+    },
+    "transportation": {
+      "physical_demand_level": "moderate",
+      "default_exposures": [
+        {"type": "ergonomic", "agent": "Prolonged sitting", "level": "high"},
+        {"type": "noise", "agent": "Traffic noise", "level": "medium"}
+      ]
+    },
+    "office": {
+      "physical_demand_level": "sedentary",
+      "default_exposures": [
+        {"type": "ergonomic", "agent": "Computer work", "level": "medium"}
+      ]
+    },
+    "food_service": {
+      "physical_demand_level": "moderate",
+      "default_exposures": [
+        {"type": "heat", "agent": "Kitchen environment", "level": "medium"},
+        {"type": "ergonomic", "agent": "Standing", "level": "medium"},
+        {"type": "chemicals", "agent": "Cleaning agents", "level": "low"}
+      ]
+    },
+    "retail": {
+      "physical_demand_level": "light",
+      "default_exposures": [
+        {"type": "ergonomic", "agent": "Standing/walking", "level": "medium"}
+      ]
+    },
+    "education": {
+      "physical_demand_level": "light",
+      "default_exposures": [
+        {"type": "biological", "agent": "Respiratory pathogens", "level": "medium"}
+      ]
+    },
+    "first_responders": {
+      "physical_demand_level": "heavy",
+      "default_exposures": [
+        {"type": "biological", "agent": "Bloodborne pathogens", "level": "high"},
+        {"type": "chemicals", "agent": "Smoke/Hazmat", "level": "high"},
+        {"type": "noise", "agent": "Sirens", "level": "medium"},
+        {"type": "ergonomic", "agent": "Physical exertion", "level": "high"}
+      ]
+    },
+    "laboratory": {
+      "physical_demand_level": "light",
+      "default_exposures": [
+        {"type": "chemicals", "agent": "Laboratory chemicals", "level": "medium"},
+        {"type": "biological", "agent": "Specimens", "level": "medium"},
+        {"type": "radiation", "agent": "X-ray/Isotopes", "level": "low"}
+      ]
+    },
+    "automotive": {
+      "physical_demand_level": "moderate",
+      "default_exposures": [
+        {"type": "chemicals", "agent": "Solvents/Oils", "level": "medium"},
+        {"type": "noise", "agent": "Machinery", "level": "medium"},
+        {"type": "ergonomic", "agent": "Repetitive motion", "level": "medium"}
+      ]
+    },
+    "cleaning_services": {
+      "physical_demand_level": "moderate",
+      "default_exposures": [
+        {"type": "chemicals", "agent": "Cleaning agents", "level": "high"},
+        {"type": "biological", "agent": "Waste materials", "level": "medium"},
+        {"type": "ergonomic", "agent": "Repetitive motion", "level": "medium"}
+      ]
+    }
+  },
+  "job_titles": {
+    "nurse": {
+      "industry": "healthcare",
+      "physical_demand_level": "moderate",
+      "overrides": [
+        {"type": "biological", "agent": "Bloodborne pathogens", "level": "high"}
+      ]
+    },
+    "doctor": {
+      "industry": "healthcare",
+      "physical_demand_level": "light"
+    },
+    "surgeon": {
+      "industry": "healthcare",
+      "physical_demand_level": "moderate",
+      "overrides": [
+        {"type": "biological", "agent": "Bloodborne pathogens", "level": "high"},
+        {"type": "ergonomic", "agent": "Prolonged standing", "level": "high"}
+      ]
+    },
+    "construction worker": {
+      "industry": "construction",
+      "physical_demand_level": "heavy"
+    },
+    "electrician": {
+      "industry": "construction",
+      "physical_demand_level": "moderate",
+      "overrides": [
+        {"type": "electrical", "agent": "Electrical current", "level": "high"}
+      ]
+    },
+    "welder": {
+      "industry": "manufacturing",
+      "physical_demand_level": "moderate",
+      "overrides": [
+        {"type": "radiation", "agent": "UV radiation", "level": "high"},
+        {"type": "fumes", "agent": "Metal fumes", "level": "high"}
+      ]
+    },
+    "software engineer": {
+      "industry": "office",
+      "physical_demand_level": "sedentary"
+    },
+    "teacher": {
+      "industry": "education",
+      "physical_demand_level": "light"
+    },
+    "firefighter": {
+      "industry": "first_responders",
+      "physical_demand_level": "very_heavy"
+    },
+    "paramedic": {
+      "industry": "first_responders",
+      "physical_demand_level": "heavy"
+    },
+    "farmer": {
+      "industry": "agriculture",
+      "physical_demand_level": "heavy"
+    },
+    "truck driver": {
+      "industry": "transportation",
+      "physical_demand_level": "light",
+      "overrides": [
+        {"type": "ergonomic", "agent": "Prolonged sitting", "level": "high"}
+      ]
+    },
+    "chef": {
+      "industry": "food_service",
+      "physical_demand_level": "moderate",
+      "overrides": [
+        {"type": "heat", "agent": "Kitchen heat", "level": "high"}
+      ]
+    },
+    "miner": {
+      "industry": "mining",
+      "physical_demand_level": "very_heavy"
+    },
+    "lab technician": {
+      "industry": "laboratory",
+      "physical_demand_level": "light"
+    },
+    "mechanic": {
+      "industry": "automotive",
+      "physical_demand_level": "moderate"
+    },
+    "janitor": {
+      "industry": "cleaning_services",
+      "physical_demand_level": "moderate"
+    },
+    "cashier": {
+      "industry": "retail",
+      "physical_demand_level": "light"
+    },
+    "warehouse worker": {
+      "industry": "transportation",
+      "physical_demand_level": "heavy",
+      "overrides": [
+        {"type": "ergonomic", "agent": "Heavy lifting", "level": "high"}
+      ]
+    }
+  }
+}

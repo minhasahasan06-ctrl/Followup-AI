@@ -1,0 +1,174 @@
+{
+  "_description": "Lab codes and genetic markers mapped to risk flags",
+  "_version": "1.0",
+  "genetic_markers": {
+    "HLA-B*57:01": {
+      "flag_name": "HLA-B*57:01 Positive",
+      "flag_type": "pharmacogenomic",
+      "clinical_implications": "Increased risk of severe hypersensitivity reaction to abacavir. Do NOT prescribe abacavir.",
+      "affected_medications": ["abacavir"],
+      "risk_level_if_present": "critical"
+    },
+    "HLA-B*58:01": {
+      "flag_name": "HLA-B*58:01 Positive",
+      "flag_type": "pharmacogenomic",
+      "clinical_implications": "Increased risk of severe cutaneous adverse reactions to allopurinol.",
+      "affected_medications": ["allopurinol"],
+      "risk_level_if_present": "high"
+    },
+    "CYP2D6*4": {
+      "flag_name": "CYP2D6 Poor Metabolizer",
+      "flag_type": "pharmacogenomic",
+      "clinical_implications": "Reduced metabolism of codeine, tramadol, and many antidepressants. May need dose adjustments.",
+      "affected_medications": ["codeine", "tramadol", "fluoxetine", "paroxetine", "venlafaxine"],
+      "risk_level_if_present": "moderate"
+    },
+    "CYP2C19*2": {
+      "flag_name": "CYP2C19 Poor Metabolizer",
+      "flag_type": "pharmacogenomic",
+      "clinical_implications": "Reduced metabolism of clopidogrel (reduced efficacy), PPIs, and some antidepressants.",
+      "affected_medications": ["clopidogrel", "omeprazole", "pantoprazole", "citalopram"],
+      "risk_level_if_present": "moderate"
+    },
+    "CYP2C19*17": {
+      "flag_name": "CYP2C19 Ultrarapid Metabolizer",
+      "flag_type": "pharmacogenomic",
+      "clinical_implications": "Increased metabolism may reduce drug efficacy. May need higher doses.",
+      "affected_medications": ["clopidogrel", "omeprazole", "citalopram"],
+      "risk_level_if_present": "low"
+    },
+    "Factor V Leiden": {
+      "flag_name": "Factor V Leiden",
+      "flag_type": "monogenic",
+      "clinical_implications": "Increased risk of venous thromboembolism (VTE). Avoid estrogen-containing contraceptives.",
+      "affected_conditions": ["DVT", "PE", "Thrombophilia"],
+      "risk_level_if_present": "high"
+    },
+    "Prothrombin G20210A": {
+      "flag_name": "Prothrombin G20210A Mutation",
+      "flag_type": "monogenic",
+      "clinical_implications": "Increased risk of blood clots. Consider anticoagulation in high-risk situations.",
+      "affected_conditions": ["DVT", "PE", "Stroke"],
+      "risk_level_if_present": "moderate"
+    },
+    "MTHFR C677T": {
+      "flag_name": "MTHFR C677T Variant",
+      "flag_type": "monogenic",
+      "clinical_implications": "May affect folate metabolism. Consider folate supplementation.",
+      "affected_medications": ["methotrexate"],
+      "risk_level_if_present": "low"
+    },
+    "BRCA1": {
+      "flag_name": "BRCA1 Mutation",
+      "flag_type": "monogenic",
+      "clinical_implications": "Significantly increased risk of breast and ovarian cancer. Recommend genetic counseling.",
+      "affected_conditions": ["Breast cancer", "Ovarian cancer"],
+      "risk_level_if_present": "critical"
+    },
+    "BRCA2": {
+      "flag_name": "BRCA2 Mutation",
+      "flag_type": "monogenic",
+      "clinical_implications": "Significantly increased risk of breast, ovarian, and prostate cancer. Recommend genetic counseling.",
+      "affected_conditions": ["Breast cancer", "Ovarian cancer", "Prostate cancer"],
+      "risk_level_if_present": "critical"
+    },
+    "APOE e4": {
+      "flag_name": "APOE e4 Carrier",
+      "flag_type": "polygenic_score",
+      "clinical_implications": "Increased risk of Alzheimer's disease and cardiovascular disease.",
+      "affected_conditions": ["Alzheimer's disease", "Cardiovascular disease"],
+      "risk_level_if_present": "moderate"
+    },
+    "TPMT*3A": {
+      "flag_name": "TPMT Poor Metabolizer",
+      "flag_type": "pharmacogenomic",
+      "clinical_implications": "High risk of severe myelosuppression with thiopurines. Reduce dose or use alternative.",
+      "affected_medications": ["azathioprine", "mercaptopurine", "thioguanine"],
+      "risk_level_if_present": "critical"
+    },
+    "DPYD*2A": {
+      "flag_name": "DPD Deficiency",
+      "flag_type": "pharmacogenomic",
+      "clinical_implications": "High risk of severe toxicity from fluoropyrimidines. Contraindicated or major dose reduction.",
+      "affected_medications": ["5-fluorouracil", "capecitabine", "tegafur"],
+      "risk_level_if_present": "critical"
+    },
+    "UGT1A1*28": {
+      "flag_name": "UGT1A1 Poor Metabolizer",
+      "flag_type": "pharmacogenomic",
+      "clinical_implications": "Increased risk of irinotecan toxicity. Consider dose reduction.",
+      "affected_medications": ["irinotecan"],
+      "risk_level_if_present": "high"
+    },
+    "G6PD Deficiency": {
+      "flag_name": "G6PD Deficiency",
+      "flag_type": "monogenic",
+      "clinical_implications": "Risk of hemolytic anemia with certain drugs and foods (fava beans).",
+      "affected_medications": ["primaquine", "dapsone", "sulfonamides", "nitrofurantoin"],
+      "risk_level_if_present": "high"
+    },
+    "SLCO1B1*5": {
+      "flag_name": "SLCO1B1 Reduced Function",
+      "flag_type": "pharmacogenomic",
+      "clinical_implications": "Increased risk of statin-induced myopathy. Use lower doses or alternatives.",
+      "affected_medications": ["simvastatin", "atorvastatin", "pravastatin"],
+      "risk_level_if_present": "moderate"
+    }
+  },
+  "lab_markers": {
+    "HLA-B57:01": {
+      "maps_to": "HLA-B*57:01"
+    },
+    "HLA-B5801": {
+      "maps_to": "HLA-B*58:01"
+    },
+    "CYP2D6_PM": {
+      "maps_to": "CYP2D6*4"
+    },
+    "CYP2C19_PM": {
+      "maps_to": "CYP2C19*2"
+    },
+    "CYP2C19_UM": {
+      "maps_to": "CYP2C19*17"
+    },
+    "FVL": {
+      "maps_to": "Factor V Leiden"
+    },
+    "F5_LEIDEN": {
+      "maps_to": "Factor V Leiden"
+    },
+    "PROTHROMBIN_MUTATION": {
+      "maps_to": "Prothrombin G20210A"
+    },
+    "F2_G20210A": {
+      "maps_to": "Prothrombin G20210A"
+    },
+    "MTHFR_C677T": {
+      "maps_to": "MTHFR C677T"
+    },
+    "BRCA1_PATHOGENIC": {
+      "maps_to": "BRCA1"
+    },
+    "BRCA2_PATHOGENIC": {
+      "maps_to": "BRCA2"
+    },
+    "APOE_E4": {
+      "maps_to": "APOE e4"
+    },
+    "TPMT_PM": {
+      "maps_to": "TPMT*3A"
+    },
+    "DPYD_DEFICIENT": {
+      "maps_to": "DPYD*2A"
+    },
+    "UGT1A1_28": {
+      "maps_to": "UGT1A1*28"
+    },
+    "G6PD_DEFICIENCY": {
+      "maps_to": "G6PD Deficiency"
+    },
+    "SLCO1B1_RF": {
+      "maps_to": "SLCO1B1*5"
+    }
+  }
+}

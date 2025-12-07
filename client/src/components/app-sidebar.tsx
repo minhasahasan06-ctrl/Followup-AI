@@ -126,10 +126,10 @@ const patientItems = [
     icon: Watch,
   },
   {
-    title: "Immune Monitoring",
-    url: "/immune-monitoring",
+    title: "Risk & Exposures",
+    url: "/risk-exposures",
     icon: Shield,
-    badge: "AI",
+    badge: "Auto",
   },
   {
     title: "Environmental Risk",

@@ -1,0 +1,228 @@
+{
+  "_description": "CVX codes and drug codes mapped to vaccine names and series information",
+  "_version": "1.0",
+  "cvx_codes": {
+    "207": {
+      "vaccine_name": "COVID-19 mRNA (Moderna)",
+      "series_name": "primary",
+      "manufacturer": "Moderna"
+    },
+    "208": {
+      "vaccine_name": "COVID-19 mRNA (Pfizer-BioNTech)",
+      "series_name": "primary",
+      "manufacturer": "Pfizer-BioNTech"
+    },
+    "212": {
+      "vaccine_name": "COVID-19 Viral Vector (Janssen)",
+      "series_name": "primary",
+      "manufacturer": "Janssen"
+    },
+    "228": {
+      "vaccine_name": "COVID-19 Bivalent Booster (Moderna)",
+      "series_name": "booster",
+      "manufacturer": "Moderna"
+    },
+    "229": {
+      "vaccine_name": "COVID-19 Bivalent Booster (Pfizer)",
+      "series_name": "booster",
+      "manufacturer": "Pfizer-BioNTech"
+    },
+    "3": {
+      "vaccine_name": "MMR",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "21": {
+      "vaccine_name": "Varicella (Chickenpox)",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "33": {
+      "vaccine_name": "Pneumococcal (PPSV23)",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "133": {
+      "vaccine_name": "Pneumococcal (PCV13)",
+      "series_name": "primary",
+      "manufacturer": "Pfizer"
+    },
+    "140": {
+      "vaccine_name": "Influenza (IIV)",
+      "series_name": "annual",
+      "manufacturer": "Various"
+    },
+    "141": {
+      "vaccine_name": "Influenza (IIV)",
+      "series_name": "annual",
+      "manufacturer": "Various"
+    },
+    "150": {
+      "vaccine_name": "Influenza (IIV4)",
+      "series_name": "annual",
+      "manufacturer": "Various"
+    },
+    "155": {
+      "vaccine_name": "Influenza (LAIV4)",
+      "series_name": "annual",
+      "manufacturer": "Various"
+    },
+    "158": {
+      "vaccine_name": "Influenza (IIV4)",
+      "series_name": "annual",
+      "manufacturer": "Various"
+    },
+    "113": {
+      "vaccine_name": "Tdap",
+      "series_name": "booster",
+      "manufacturer": "Various"
+    },
+    "115": {
+      "vaccine_name": "Tdap",
+      "series_name": "booster",
+      "manufacturer": "Various"
+    },
+    "121": {
+      "vaccine_name": "Zoster (Shingrix)",
+      "series_name": "primary",
+      "manufacturer": "GSK"
+    },
+    "187": {
+      "vaccine_name": "Zoster Recombinant (Shingrix)",
+      "series_name": "primary",
+      "manufacturer": "GSK"
+    },
+    "62": {
+      "vaccine_name": "HPV",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "165": {
+      "vaccine_name": "HPV9 (Gardasil 9)",
+      "series_name": "primary",
+      "manufacturer": "Merck"
+    },
+    "43": {
+      "vaccine_name": "Hepatitis B",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "44": {
+      "vaccine_name": "Hepatitis B",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "45": {
+      "vaccine_name": "Hepatitis B",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "52": {
+      "vaccine_name": "Hepatitis A",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "83": {
+      "vaccine_name": "Hepatitis A",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "85": {
+      "vaccine_name": "Hepatitis A",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "104": {
+      "vaccine_name": "Hepatitis A-Hepatitis B",
+      "series_name": "primary",
+      "manufacturer": "GSK"
+    },
+    "114": {
+      "vaccine_name": "Meningococcal ACWY (MenACWY)",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "136": {
+      "vaccine_name": "Meningococcal ACWY (MenACWY)",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "162": {
+      "vaccine_name": "Meningococcal B (MenB)",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "163": {
+      "vaccine_name": "Meningococcal B (MenB)",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "10": {
+      "vaccine_name": "IPV (Polio)",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "20": {
+      "vaccine_name": "DTaP",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "106": {
+      "vaccine_name": "DTaP",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "130": {
+      "vaccine_name": "DTaP-IPV",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    },
+    "120": {
+      "vaccine_name": "DTaP-Hib-IPV",
+      "series_name": "primary",
+      "manufacturer": "Various"
+    }
+  },
+  "atc_codes": {
+    "J07BM01": {
+      "vaccine_name": "HPV Vaccine",
+      "series_name": "primary",
+      "is_vaccine": true
+    },
+    "J07BM02": {
+      "vaccine_name": "HPV9 Vaccine",
+      "series_name": "primary",
+      "is_vaccine": true
+    },
+    "J07BB01": {
+      "vaccine_name": "Influenza Vaccine",
+      "series_name": "annual",
+      "is_vaccine": true
+    },
+    "J07BB02": {
+      "vaccine_name": "Influenza Vaccine (Live)",
+      "series_name": "annual",
+      "is_vaccine": true
+    },
+    "J07BB03": {
+      "vaccine_name": "Influenza Vaccine (Inactivated)",
+      "series_name": "annual",
+      "is_vaccine": true
+    },
+    "J07AL01": {
+      "vaccine_name": "Pneumococcal Vaccine",
+      "series_name": "primary",
+      "is_vaccine": true
+    },
+    "J07AL02": {
+      "vaccine_name": "Pneumococcal Conjugate Vaccine",
+      "series_name": "primary",
+      "is_vaccine": true
+    },
+    "J07BX03": {
+      "vaccine_name": "COVID-19 Vaccine",
+      "series_name": "primary",
+      "is_vaccine": true
+    }
+  }
+}

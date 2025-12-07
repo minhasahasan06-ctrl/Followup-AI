@@ -19630,6 +19630,360 @@ Provide:
   // END ENHANCED RESEARCH CENTER ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // RISK & EXPOSURES ROUTES
+  // Auto-populated risk profile from infections, vaccinations, occupation, genetics
+  // =============================================================================
+
+  // GET infections for a patient
+  app.get('/api/patients/:patientId/risk/infections', isAuthenticated, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const userId = req.user!.id;
+      const isDoctor = req.user!.role === 'doctor';
+      
+      // Authorization: patient can view own data, doctor needs assignment
+      if (!isDoctor && userId !== patientId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      if (isDoctor) {
+        const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+        if (!hasAccess) {
+          console.log(`[HIPAA-AUDIT] DENIED: Doctor ${userId} attempted to access infections for unassigned patient ${patientId}`);
+          return res.status(403).json({ error: 'Access denied - no patient assignment' });
+        }
+      }
+
+      const result = await db.execute(drizzleSql`
+        SELECT * FROM infectious_events 
+        WHERE patient_id = ${patientId}
+        ORDER BY onset_date DESC NULLS LAST
+      `);
+      
+      console.log(`[HIPAA-AUDIT] User ${userId} accessed infections for patient ${patientId}`);
+      res.json(result.rows || []);
+    } catch (error) {
+      console.error('Error fetching infections:', error);
+      res.status(500).json({ error: 'Failed to fetch infections' });
+    }
+  });
+
+  // GET immunizations for a patient
+  app.get('/api/patients/:patientId/risk/immunizations', isAuthenticated, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const userId = req.user!.id;
+      const isDoctor = req.user!.role === 'doctor';
+      
+      if (!isDoctor && userId !== patientId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      if (isDoctor) {
+        const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+        if (!hasAccess) {
+          console.log(`[HIPAA-AUDIT] DENIED: Doctor ${userId} attempted to access immunizations for unassigned patient ${patientId}`);
+          return res.status(403).json({ error: 'Access denied - no patient assignment' });
+        }
+      }
+
+      const result = await db.execute(drizzleSql`
+        SELECT * FROM patient_immunizations 
+        WHERE patient_id = ${patientId}
+        ORDER BY administration_date DESC NULLS LAST
+      `);
+      
+      console.log(`[HIPAA-AUDIT] User ${userId} accessed immunizations for patient ${patientId}`);
+      res.json(result.rows || []);
+    } catch (error) {
+      console.error('Error fetching immunizations:', error);
+      res.status(500).json({ error: 'Failed to fetch immunizations' });
+    }
+  });
+
+  // GET occupation and exposures for a patient
+  app.get('/api/patients/:patientId/risk/occupation', isAuthenticated, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const userId = req.user!.id;
+      const isDoctor = req.user!.role === 'doctor';
+      
+      if (!isDoctor && userId !== patientId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      if (isDoctor) {
+        const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+        if (!hasAccess) {
+          console.log(`[HIPAA-AUDIT] DENIED: Doctor ${userId} attempted to access occupation for unassigned patient ${patientId}`);
+          return res.status(403).json({ error: 'Access denied - no patient assignment' });
+        }
+      }
+
+      // Get current occupation
+      const occupationResult = await db.execute(drizzleSql`
+        SELECT * FROM patient_occupations 
+        WHERE patient_id = ${patientId} AND is_current = true
+        ORDER BY start_date DESC NULLS LAST
+        LIMIT 1
+      `);
+      
+      const occupation = occupationResult.rows?.[0] || null;
+      
+      let exposures: any[] = [];
+      if (occupation) {
+        const exposuresResult = await db.execute(drizzleSql`
+          SELECT * FROM occupational_exposures 
+          WHERE occupation_id = ${occupation.id}
+          ORDER BY exposure_level DESC
+        `);
+        exposures = exposuresResult.rows || [];
+      }
+      
+      console.log(`[HIPAA-AUDIT] User ${userId} accessed occupation for patient ${patientId}`);
+      res.json({ occupation, exposures });
+    } catch (error) {
+      console.error('Error fetching occupation:', error);
+      res.status(500).json({ error: 'Failed to fetch occupation' });
+    }
+  });
+
+  // GET genetic risk flags for a patient
+  app.get('/api/patients/:patientId/risk/genetics', isAuthenticated, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const userId = req.user!.id;
+      const isDoctor = req.user!.role === 'doctor';
+      
+      if (!isDoctor && userId !== patientId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      if (isDoctor) {
+        const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+        if (!hasAccess) {
+          console.log(`[HIPAA-AUDIT] DENIED: Doctor ${userId} attempted to access genetics for unassigned patient ${patientId}`);
+          return res.status(403).json({ error: 'Access denied - no patient assignment' });
+        }
+      }
+
+      const result = await db.execute(drizzleSql`
+        SELECT * FROM genetic_risk_flags 
+        WHERE patient_id = ${patientId}
+        ORDER BY risk_level DESC NULLS LAST, flag_name ASC
+      `);
+      
+      console.log(`[HIPAA-AUDIT] User ${userId} accessed genetics for patient ${patientId}`);
+      res.json(result.rows || []);
+    } catch (error) {
+      console.error('Error fetching genetic flags:', error);
+      res.status(500).json({ error: 'Failed to fetch genetic flags' });
+    }
+  });
+
+  // GET full risk summary for a patient
+  app.get('/api/patients/:patientId/risk/summary', isAuthenticated, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const userId = req.user!.id;
+      const isDoctor = req.user!.role === 'doctor';
+      
+      if (!isDoctor && userId !== patientId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      if (isDoctor) {
+        const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+        if (!hasAccess) {
+          return res.status(403).json({ error: 'Access denied - no patient assignment' });
+        }
+      }
+
+      // Fetch all risk data in parallel
+      const [infectionsResult, immunizationsResult, occupationResult, geneticsResult] = await Promise.all([
+        db.execute(drizzleSql`SELECT COUNT(*) as count FROM infectious_events WHERE patient_id = ${patientId}`),
+        db.execute(drizzleSql`SELECT COUNT(*) as count FROM patient_immunizations WHERE patient_id = ${patientId}`),
+        db.execute(drizzleSql`SELECT COUNT(*) as count FROM patient_occupations WHERE patient_id = ${patientId}`),
+        db.execute(drizzleSql`SELECT COUNT(*) as count FROM genetic_risk_flags WHERE patient_id = ${patientId}`),
+      ]);
+      
+      const summary = {
+        infectionsCount: parseInt(infectionsResult.rows?.[0]?.count || '0'),
+        immunizationsCount: parseInt(immunizationsResult.rows?.[0]?.count || '0'),
+        occupationsCount: parseInt(occupationResult.rows?.[0]?.count || '0'),
+        geneticFlagsCount: parseInt(geneticsResult.rows?.[0]?.count || '0'),
+      };
+      
+      console.log(`[HIPAA-AUDIT] User ${userId} accessed risk summary for patient ${patientId}`);
+      res.json(summary);
+    } catch (error) {
+      console.error('Error fetching risk summary:', error);
+      res.status(500).json({ error: 'Failed to fetch risk summary' });
+    }
+  });
+
+  // PATCH infection (manual override) - doctors only
+  app.patch('/api/patients/:patientId/risk/infections/:id', isDoctor, async (req: any, res) => {
+    try {
+      const { patientId, id } = req.params;
+      const userId = req.user!.id;
+      
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        console.log(`[HIPAA-AUDIT] DENIED: Doctor ${userId} attempted to modify infection for unassigned patient ${patientId}`);
+        return res.status(403).json({ error: 'Access denied - no patient assignment' });
+      }
+
+      const { infectionType, pathogen, severity, onsetDate, resolutionDate, hospitalization, icuAdmission } = req.body;
+      
+      await db.execute(drizzleSql`
+        UPDATE infectious_events SET
+          infection_type = COALESCE(${infectionType}, infection_type),
+          pathogen = COALESCE(${pathogen}, pathogen),
+          severity = COALESCE(${severity}, severity),
+          onset_date = COALESCE(${onsetDate ? new Date(onsetDate) : null}, onset_date),
+          resolution_date = COALESCE(${resolutionDate ? new Date(resolutionDate) : null}, resolution_date),
+          hospitalization = COALESCE(${hospitalization}, hospitalization),
+          icu_admission = COALESCE(${icuAdmission}, icu_admission),
+          manual_override = TRUE,
+          overridden_by = ${userId},
+          overridden_at = NOW(),
+          updated_at = NOW()
+        WHERE id = ${id} AND patient_id = ${patientId}
+      `);
+      
+      console.log(`[HIPAA-AUDIT] Doctor ${userId} modified infection ${id} for patient ${patientId}`);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating infection:', error);
+      res.status(500).json({ error: 'Failed to update infection' });
+    }
+  });
+
+  // PATCH immunization (manual override) - doctors only
+  app.patch('/api/patients/:patientId/risk/immunizations/:id', isDoctor, async (req: any, res) => {
+    try {
+      const { patientId, id } = req.params;
+      const userId = req.user!.id;
+      
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        console.log(`[HIPAA-AUDIT] DENIED: Doctor ${userId} attempted to modify immunization for unassigned patient ${patientId}`);
+        return res.status(403).json({ error: 'Access denied - no patient assignment' });
+      }
+
+      const { vaccineName, vaccineCode, doseNumber, seriesName, administrationDate, adverseReaction, reactionDetails } = req.body;
+      
+      await db.execute(drizzleSql`
+        UPDATE patient_immunizations SET
+          vaccine_name = COALESCE(${vaccineName}, vaccine_name),
+          vaccine_code = COALESCE(${vaccineCode}, vaccine_code),
+          dose_number = COALESCE(${doseNumber}, dose_number),
+          series_name = COALESCE(${seriesName}, series_name),
+          administration_date = COALESCE(${administrationDate ? new Date(administrationDate) : null}, administration_date),
+          adverse_reaction = COALESCE(${adverseReaction}, adverse_reaction),
+          reaction_details = COALESCE(${reactionDetails}, reaction_details),
+          manual_override = TRUE,
+          overridden_by = ${userId},
+          overridden_at = NOW(),
+          updated_at = NOW()
+        WHERE id = ${id} AND patient_id = ${patientId}
+      `);
+      
+      console.log(`[HIPAA-AUDIT] Doctor ${userId} modified immunization ${id} for patient ${patientId}`);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating immunization:', error);
+      res.status(500).json({ error: 'Failed to update immunization' });
+    }
+  });
+
+  // POST new occupation - doctors or patients
+  app.post('/api/patients/:patientId/risk/occupation', isAuthenticated, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const userId = req.user!.id;
+      const isDoctor = req.user!.role === 'doctor';
+      
+      if (!isDoctor && userId !== patientId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      if (isDoctor) {
+        const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+        if (!hasAccess) {
+          return res.status(403).json({ error: 'Access denied - no patient assignment' });
+        }
+      }
+
+      const { jobTitle, industry, employer, startDate, shiftWork, nightShift, hoursPerWeek } = req.body;
+      
+      if (!jobTitle) {
+        return res.status(400).json({ error: 'Job title is required' });
+      }
+
+      // Mark existing occupations as not current
+      await db.execute(drizzleSql`
+        UPDATE patient_occupations SET is_current = FALSE, end_date = NOW()
+        WHERE patient_id = ${patientId} AND is_current = TRUE
+      `);
+      
+      // Create new occupation
+      const result = await db.execute(drizzleSql`
+        INSERT INTO patient_occupations (
+          patient_id, job_title, industry, employer, start_date, 
+          shift_work, night_shift, hours_per_week, is_current, status
+        ) VALUES (
+          ${patientId}, ${jobTitle}, ${industry || null}, ${employer || null},
+          ${startDate ? new Date(startDate) : new Date()},
+          ${shiftWork || false}, ${nightShift || false}, ${hoursPerWeek || null},
+          TRUE, 'active'
+        ) RETURNING *
+      `);
+      
+      console.log(`[HIPAA-AUDIT] User ${userId} created occupation for patient ${patientId}`);
+      res.json(result.rows?.[0] || { success: true });
+    } catch (error) {
+      console.error('Error creating occupation:', error);
+      res.status(500).json({ error: 'Failed to create occupation' });
+    }
+  });
+
+  // POST new condition (for auto-ETL to pick up)
+  app.post('/api/patients/:patientId/risk/conditions', isDoctor, async (req: any, res) => {
+    try {
+      const { patientId } = req.params;
+      const userId = req.user!.id;
+      
+      const hasAccess = await storage.doctorHasPatientAccess(userId, patientId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied - no patient assignment' });
+      }
+
+      const { conditionCode, conditionName, conditionCategory, onsetDate, severity, notes } = req.body;
+      
+      if (!conditionCode || !conditionName) {
+        return res.status(400).json({ error: 'Condition code and name are required' });
+      }
+
+      const result = await db.execute(drizzleSql`
+        INSERT INTO patient_conditions (
+          patient_id, condition_code, condition_name, condition_category,
+          onset_date, diagnosis_date, severity, notes, diagnosed_by, source_type
+        ) VALUES (
+          ${patientId}, ${conditionCode}, ${conditionName}, ${conditionCategory || 'other'},
+          ${onsetDate ? new Date(onsetDate) : new Date()}, NOW(),
+          ${severity || 'moderate'}, ${notes || null}, ${userId}, 'manual'
+        ) RETURNING *
+      `);
+      
+      console.log(`[HIPAA-AUDIT] Doctor ${userId} added condition for patient ${patientId}: ${conditionCode}`);
+      res.json(result.rows?.[0] || { success: true });
+    } catch (error) {
+      console.error('Error creating condition:', error);
+      res.status(500).json({ error: 'Failed to create condition' });
+    }
+  });
+
+  // =============================================================================
+  // END RISK & EXPOSURES ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
 
   // WebSocket proxy for agent communication

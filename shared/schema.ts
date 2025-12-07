@@ -9187,3 +9187,425 @@ export const insertAnalysisJobSchema = createInsertSchema(analysisJobs).omit({
 
 export type InsertAnalysisJob = z.infer<typeof insertAnalysisJobSchema>;
 export type AnalysisJob = typeof analysisJobs.$inferSelect;
+
+// ============================================
+// RISK & EXPOSURES TABLES
+// ============================================
+
+// Healthcare Locations - For tracking where events occurred
+export const healthcareLocations = pgTable("healthcare_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(),
+  locationType: varchar("location_type").notNull(), // 'hospital', 'clinic', 'pharmacy', 'lab', 'home', 'other'
+  address: text("address"),
+  city: varchar("city"),
+  state: varchar("state"),
+  zipCode: varchar("zip_code"),
+  country: varchar("country").default("USA"),
+  latitude: decimal("latitude"),
+  longitude: decimal("longitude"),
+  phoneNumber: varchar("phone_number"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHealthcareLocationSchema = createInsertSchema(healthcareLocations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHealthcareLocation = z.infer<typeof insertHealthcareLocationSchema>;
+export type HealthcareLocation = typeof healthcareLocations.$inferSelect;
+
+// Patient Conditions - Diagnosis codes and conditions
+export const patientConditions = pgTable("patient_conditions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Diagnosis information
+  conditionCode: varchar("condition_code").notNull(), // ICD-10 code
+  conditionName: varchar("condition_name").notNull(),
+  conditionCategory: varchar("condition_category"), // 'infectious', 'chronic', 'acute', 'genetic', 'other'
+  
+  // Status
+  status: varchar("status").default("active"), // 'active', 'resolved', 'chronic', 'in_remission'
+  severity: varchar("severity"), // 'mild', 'moderate', 'severe'
+  
+  // Dates
+  onsetDate: timestamp("onset_date"),
+  diagnosisDate: timestamp("diagnosis_date"),
+  resolutionDate: timestamp("resolution_date"),
+  
+  // Source
+  diagnosedBy: varchar("diagnosed_by").references(() => users.id),
+  sourceType: varchar("source_type").default("ehr"), // 'ehr', 'manual', 'import', 'self_reported'
+  sourceRecordId: varchar("source_record_id"),
+  
+  // Notes
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("patient_condition_patient_idx").on(table.patientId),
+  codeIdx: index("patient_condition_code_idx").on(table.conditionCode),
+  statusIdx: index("patient_condition_status_idx").on(table.status),
+  categoryIdx: index("patient_condition_category_idx").on(table.conditionCategory),
+}));
+
+export const insertPatientConditionSchema = createInsertSchema(patientConditions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientCondition = z.infer<typeof insertPatientConditionSchema>;
+export type PatientCondition = typeof patientConditions.$inferSelect;
+
+// Patient Visits - Hospitalizations and clinic visits
+export const patientVisits = pgTable("patient_visits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Visit type
+  visitType: varchar("visit_type").notNull(), // 'outpatient', 'inpatient', 'emergency', 'telehealth', 'home_visit'
+  
+  // Location
+  locationId: varchar("location_id").references(() => healthcareLocations.id),
+  facilityName: varchar("facility_name"),
+  
+  // Timing
+  admissionDate: timestamp("admission_date").notNull(),
+  dischargeDate: timestamp("discharge_date"),
+  lengthOfStay: integer("length_of_stay"), // in days
+  
+  // Severity indicators
+  isHospitalization: boolean("is_hospitalization").default(false),
+  icuAdmission: boolean("icu_admission").default(false),
+  icuDays: integer("icu_days"),
+  ventilatorRequired: boolean("ventilator_required").default(false),
+  
+  // Reason
+  chiefComplaint: text("chief_complaint"),
+  primaryDiagnosisCode: varchar("primary_diagnosis_code"),
+  secondaryDiagnosesCodes: jsonb("secondary_diagnoses_codes").$type<string[]>(),
+  
+  // Outcome
+  dischargeDisposition: varchar("discharge_disposition"), // 'home', 'skilled_nursing', 'rehab', 'deceased', 'other'
+  
+  // Source
+  sourceType: varchar("source_type").default("ehr"), // 'ehr', 'manual', 'import'
+  sourceRecordId: varchar("source_record_id"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("patient_visit_patient_idx").on(table.patientId),
+  dateIdx: index("patient_visit_date_idx").on(table.admissionDate),
+  typeIdx: index("patient_visit_type_idx").on(table.visitType),
+}));
+
+export const insertPatientVisitSchema = createInsertSchema(patientVisits).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientVisit = z.infer<typeof insertPatientVisitSchema>;
+export type PatientVisit = typeof patientVisits.$inferSelect;
+
+// Infectious Events - Auto-derived from conditions + visits
+export const infectiousEvents = pgTable("infectious_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Infection details
+  infectionType: varchar("infection_type").notNull(), // 'pneumonia', 'UTI', 'COVID-19', 'influenza', 'sepsis', etc.
+  pathogen: varchar("pathogen"), // 'Streptococcus pneumoniae', 'E. coli', 'SARS-CoV-2', etc.
+  pathogenCategory: varchar("pathogen_category"), // 'bacterial', 'viral', 'fungal', 'parasitic', 'unknown'
+  
+  // Severity
+  severity: varchar("severity").notNull().default("moderate"), // 'mild', 'moderate', 'severe', 'critical'
+  
+  // Timeline
+  onsetDate: timestamp("onset_date"),
+  resolutionDate: timestamp("resolution_date"),
+  durationDays: integer("duration_days"),
+  
+  // Hospitalization
+  hospitalization: boolean("hospitalization").default(false),
+  icuAdmission: boolean("icu_admission").default(false),
+  ventilatorRequired: boolean("ventilator_required").default(false),
+  
+  // Source tracking (for ETL)
+  relatedConditionId: varchar("related_condition_id").references(() => patientConditions.id),
+  relatedConditionCode: varchar("related_condition_code"),
+  relatedVisitId: varchar("related_visit_id").references(() => patientVisits.id),
+  locationId: varchar("location_id").references(() => healthcareLocations.id),
+  
+  // Override tracking
+  autoGenerated: boolean("auto_generated").default(true),
+  manualOverride: boolean("manual_override").default(false),
+  overriddenBy: varchar("overridden_by").references(() => users.id),
+  overriddenAt: timestamp("overridden_at"),
+  
+  // Processing metadata
+  lastEtlProcessedAt: timestamp("last_etl_processed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("infectious_event_patient_idx").on(table.patientId),
+  typeIdx: index("infectious_event_type_idx").on(table.infectionType),
+  onsetIdx: index("infectious_event_onset_idx").on(table.onsetDate),
+  severityIdx: index("infectious_event_severity_idx").on(table.severity),
+}));
+
+export const insertInfectiousEventSchema = createInsertSchema(infectiousEvents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertInfectiousEvent = z.infer<typeof insertInfectiousEventSchema>;
+export type InfectiousEvent = typeof infectiousEvents.$inferSelect;
+
+// Immunizations - Vaccine records
+export const patientImmunizations = pgTable("patient_immunizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Vaccine information
+  vaccineCode: varchar("vaccine_code"), // CVX code
+  vaccineName: varchar("vaccine_name").notNull(),
+  vaccineManufacturer: varchar("vaccine_manufacturer"),
+  lotNumber: varchar("lot_number"),
+  
+  // Dosing
+  doseNumber: integer("dose_number"),
+  seriesName: varchar("series_name"), // 'primary', 'booster', 'annual'
+  seriesComplete: boolean("series_complete").default(false),
+  
+  // Administration
+  administrationDate: timestamp("administration_date").notNull(),
+  administrationRoute: varchar("administration_route"), // 'intramuscular', 'subcutaneous', 'oral', 'intranasal'
+  administrationSite: varchar("administration_site"), // 'left_arm', 'right_arm', 'thigh', etc.
+  
+  // Location
+  locationId: varchar("location_id").references(() => healthcareLocations.id),
+  administeredBy: varchar("administered_by").references(() => users.id),
+  
+  // Status
+  status: varchar("status").default("completed"), // 'completed', 'not_done', 'entered_in_error'
+  
+  // Reactions
+  adverseReaction: boolean("adverse_reaction").default(false),
+  reactionDetails: text("reaction_details"),
+  
+  // Source tracking
+  sourceType: varchar("source_type").default("ehr"), // 'ehr', 'import', 'manual', 'prescription'
+  sourceRecordId: varchar("source_record_id"),
+  
+  // Override tracking
+  autoGenerated: boolean("auto_generated").default(false),
+  manualOverride: boolean("manual_override").default(false),
+  overriddenBy: varchar("overridden_by").references(() => users.id),
+  overriddenAt: timestamp("overridden_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("immunization_patient_idx").on(table.patientId),
+  vaccineIdx: index("immunization_vaccine_idx").on(table.vaccineCode),
+  dateIdx: index("immunization_date_idx").on(table.administrationDate),
+}));
+
+export const insertPatientImmunizationSchema = createInsertSchema(patientImmunizations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientImmunization = z.infer<typeof insertPatientImmunizationSchema>;
+export type PatientImmunization = typeof patientImmunizations.$inferSelect;
+
+// Occupations - Patient job history
+export const patientOccupations = pgTable("patient_occupations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Job details
+  jobTitle: varchar("job_title").notNull(),
+  industry: varchar("industry"), // 'healthcare', 'construction', 'manufacturing', 'office', etc.
+  employer: varchar("employer"),
+  
+  // Work characteristics
+  physicalDemandLevel: varchar("physical_demand_level"), // 'sedentary', 'light', 'moderate', 'heavy', 'very_heavy'
+  shiftWork: boolean("shift_work").default(false),
+  nightShift: boolean("night_shift").default(false),
+  hoursPerWeek: integer("hours_per_week"),
+  
+  // Duration
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  isCurrent: boolean("is_current").default(true),
+  
+  // Status
+  status: varchar("status").default("active"), // 'active', 'inactive', 'retired'
+  
+  // Auto-enrichment tracking
+  autoEnriched: boolean("auto_enriched").default(false),
+  enrichedAt: timestamp("enriched_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("occupation_patient_idx").on(table.patientId),
+  industryIdx: index("occupation_industry_idx").on(table.industry),
+  currentIdx: index("occupation_current_idx").on(table.isCurrent),
+}));
+
+export const insertPatientOccupationSchema = createInsertSchema(patientOccupations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientOccupation = z.infer<typeof insertPatientOccupationSchema>;
+export type PatientOccupation = typeof patientOccupations.$inferSelect;
+
+// Occupational Exposures - Hazards associated with jobs
+export const occupationalExposures = pgTable("occupational_exposures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  occupationId: varchar("occupation_id").notNull().references(() => patientOccupations.id, { onDelete: "cascade" }),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Exposure details
+  exposureType: varchar("exposure_type").notNull(), // 'dust', 'chemicals', 'noise', 'heat', 'radiation', 'biological', 'ergonomic'
+  exposureAgent: varchar("exposure_agent"), // Specific agent: 'silica', 'asbestos', 'lead', 'benzene', etc.
+  exposureLevel: varchar("exposure_level").notNull().default("medium"), // 'low', 'medium', 'high'
+  
+  // Duration and frequency
+  exposureFrequency: varchar("exposure_frequency"), // 'daily', 'weekly', 'occasional', 'rare'
+  exposureDurationYears: decimal("exposure_duration_years"),
+  
+  // Protection
+  protectiveEquipmentUsed: boolean("protective_equipment_used").default(false),
+  protectiveEquipmentDetails: text("protective_equipment_details"),
+  
+  // Health impact
+  healthImpactNotes: text("health_impact_notes"),
+  
+  // Auto-generation tracking
+  autoGenerated: boolean("auto_generated").default(true),
+  manualOverride: boolean("manual_override").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  occupationIdx: index("exposure_occupation_idx").on(table.occupationId),
+  patientIdx: index("exposure_patient_idx").on(table.patientId),
+  typeIdx: index("exposure_type_idx").on(table.exposureType),
+}));
+
+export const insertOccupationalExposureSchema = createInsertSchema(occupationalExposures).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertOccupationalExposure = z.infer<typeof insertOccupationalExposureSchema>;
+export type OccupationalExposure = typeof occupationalExposures.$inferSelect;
+
+// Genetic Risk Flags - Auto-derived from lab/genetic results
+export const geneticRiskFlags = pgTable("genetic_risk_flags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Flag details
+  flagName: varchar("flag_name").notNull(), // 'HLA-B*57:01', 'Factor V Leiden', 'BRCA1', 'MTHFR C677T'
+  flagType: varchar("flag_type").notNull(), // 'monogenic', 'pharmacogenomic', 'polygenic_score', 'family_history'
+  
+  // Value and interpretation
+  value: varchar("value").notNull(), // 'present', 'absent', 'high', 'intermediate', 'low', 'carrier'
+  riskLevel: varchar("risk_level"), // 'low', 'moderate', 'high', 'critical'
+  
+  // Clinical significance
+  clinicalImplications: text("clinical_implications"),
+  affectedMedications: jsonb("affected_medications").$type<string[]>(),
+  affectedConditions: jsonb("affected_conditions").$type<string[]>(),
+  
+  // Source
+  source: varchar("source").notNull(), // 'genetic_panel', 'lab_result', 'external_report', 'self_reported'
+  sourceRecordId: varchar("source_record_id"),
+  testingProvider: varchar("testing_provider"),
+  recordedDate: timestamp("recorded_date"),
+  
+  // Override tracking
+  autoGenerated: boolean("auto_generated").default(true),
+  manualOverride: boolean("manual_override").default(false),
+  overriddenBy: varchar("overridden_by").references(() => users.id),
+  overriddenAt: timestamp("overridden_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("genetic_flag_patient_idx").on(table.patientId),
+  flagIdx: index("genetic_flag_name_idx").on(table.flagName),
+  typeIdx: index("genetic_flag_type_idx").on(table.flagType),
+}));
+
+export const insertGeneticRiskFlagSchema = createInsertSchema(geneticRiskFlags).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertGeneticRiskFlag = z.infer<typeof insertGeneticRiskFlagSchema>;
+export type GeneticRiskFlag = typeof geneticRiskFlags.$inferSelect;
+
+// Risk Exposures ETL Job Tracking - For background job management
+export const riskExposuresEtlJobs = pgTable("risk_exposures_etl_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Job type
+  jobType: varchar("job_type").notNull(), // 'infectious_events', 'immunizations', 'occupational_exposures', 'genetic_flags'
+  
+  // Status
+  status: varchar("status").notNull().default("pending"), // 'pending', 'running', 'completed', 'failed'
+  
+  // Progress
+  recordsProcessed: integer("records_processed").default(0),
+  recordsCreated: integer("records_created").default(0),
+  recordsUpdated: integer("records_updated").default(0),
+  recordsSkipped: integer("records_skipped").default(0),
+  
+  // Timing
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  executionTimeMs: integer("execution_time_ms"),
+  
+  // Error handling
+  errorMessage: text("error_message"),
+  errorStack: text("error_stack"),
+  
+  // Last processed marker (for incremental processing)
+  lastProcessedId: varchar("last_processed_id"),
+  lastProcessedAt: timestamp("last_processed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  jobTypeIdx: index("etl_job_type_idx").on(table.jobType),
+  statusIdx: index("etl_job_status_idx").on(table.status),
+  createdIdx: index("etl_job_created_idx").on(table.createdAt),
+}));
+
+export const insertRiskExposuresEtlJobSchema = createInsertSchema(riskExposuresEtlJobs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRiskExposuresEtlJob = z.infer<typeof insertRiskExposuresEtlJobSchema>;
+export type RiskExposuresEtlJob = typeof riskExposuresEtlJobs.$inferSelect;

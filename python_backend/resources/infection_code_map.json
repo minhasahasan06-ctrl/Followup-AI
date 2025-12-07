@@ -1,0 +1,177 @@
+{
+  "_description": "ICD-10 codes mapped to infection types, pathogens, and severity",
+  "_version": "1.0",
+  "codes": {
+    "J18.9": {
+      "infection_type": "Pneumonia",
+      "pathogen_category": "unknown",
+      "default_severity": "moderate",
+      "description": "Pneumonia, unspecified organism"
+    },
+    "J12.89": {
+      "infection_type": "Viral Pneumonia",
+      "pathogen": "Other viral pneumonia",
+      "pathogen_category": "viral",
+      "default_severity": "moderate"
+    },
+    "J13": {
+      "infection_type": "Pneumonia",
+      "pathogen": "Streptococcus pneumoniae",
+      "pathogen_category": "bacterial",
+      "default_severity": "moderate"
+    },
+    "J15.9": {
+      "infection_type": "Bacterial Pneumonia",
+      "pathogen_category": "bacterial",
+      "default_severity": "moderate"
+    },
+    "U07.1": {
+      "infection_type": "COVID-19",
+      "pathogen": "SARS-CoV-2",
+      "pathogen_category": "viral",
+      "default_severity": "moderate"
+    },
+    "U07.2": {
+      "infection_type": "COVID-19",
+      "pathogen": "SARS-CoV-2",
+      "pathogen_category": "viral",
+      "default_severity": "moderate",
+      "description": "COVID-19, virus not identified"
+    },
+    "J09.X1": {
+      "infection_type": "Influenza",
+      "pathogen": "Avian influenza virus",
+      "pathogen_category": "viral",
+      "default_severity": "moderate"
+    },
+    "J10.1": {
+      "infection_type": "Influenza",
+      "pathogen": "Influenza virus",
+      "pathogen_category": "viral",
+      "default_severity": "mild"
+    },
+    "J11.1": {
+      "infection_type": "Influenza",
+      "pathogen_category": "viral",
+      "default_severity": "mild",
+      "description": "Influenza with other respiratory manifestations"
+    },
+    "N39.0": {
+      "infection_type": "UTI",
+      "pathogen_category": "bacterial",
+      "default_severity": "mild",
+      "description": "Urinary tract infection, site not specified"
+    },
+    "N30.0": {
+      "infection_type": "Cystitis",
+      "pathogen_category": "bacterial",
+      "default_severity": "mild"
+    },
+    "N10": {
+      "infection_type": "Pyelonephritis",
+      "pathogen_category": "bacterial",
+      "default_severity": "moderate"
+    },
+    "A41.9": {
+      "infection_type": "Sepsis",
+      "pathogen_category": "bacterial",
+      "default_severity": "severe",
+      "description": "Sepsis, unspecified organism"
+    },
+    "A41.0": {
+      "infection_type": "Sepsis",
+      "pathogen": "Staphylococcus aureus",
+      "pathogen_category": "bacterial",
+      "default_severity": "severe"
+    },
+    "A41.01": {
+      "infection_type": "Sepsis",
+      "pathogen": "MRSA",
+      "pathogen_category": "bacterial",
+      "default_severity": "severe"
+    },
+    "A41.51": {
+      "infection_type": "Sepsis",
+      "pathogen": "E. coli",
+      "pathogen_category": "bacterial",
+      "default_severity": "severe"
+    },
+    "B34.9": {
+      "infection_type": "Viral Infection",
+      "pathogen_category": "viral",
+      "default_severity": "mild",
+      "description": "Viral infection, unspecified"
+    },
+    "B37.9": {
+      "infection_type": "Candidiasis",
+      "pathogen": "Candida",
+      "pathogen_category": "fungal",
+      "default_severity": "mild"
+    },
+    "B37.0": {
+      "infection_type": "Oral Candidiasis",
+      "pathogen": "Candida",
+      "pathogen_category": "fungal",
+      "default_severity": "mild"
+    },
+    "A04.72": {
+      "infection_type": "C. difficile Infection",
+      "pathogen": "Clostridioides difficile",
+      "pathogen_category": "bacterial",
+      "default_severity": "moderate"
+    },
+    "L03.9": {
+      "infection_type": "Cellulitis",
+      "pathogen_category": "bacterial",
+      "default_severity": "mild"
+    },
+    "J06.9": {
+      "infection_type": "Upper Respiratory Infection",
+      "pathogen_category": "viral",
+      "default_severity": "mild"
+    },
+    "A09": {
+      "infection_type": "Gastroenteritis",
+      "pathogen_category": "unknown",
+      "default_severity": "mild"
+    },
+    "B00.9": {
+      "infection_type": "Herpes Simplex",
+      "pathogen": "HSV",
+      "pathogen_category": "viral",
+      "default_severity": "mild"
+    },
+    "B02.9": {
+      "infection_type": "Herpes Zoster",
+      "pathogen": "VZV",
+      "pathogen_category": "viral",
+      "default_severity": "moderate"
+    },
+    "A49.9": {
+      "infection_type": "Bacterial Infection",
+      "pathogen_category": "bacterial",
+      "default_severity": "moderate",
+      "description": "Bacterial infection, unspecified"
+    },
+    "T81.4": {
+      "infection_type": "Surgical Site Infection",
+      "pathogen_category": "bacterial",
+      "default_severity": "moderate"
+    }
+  },
+  "severity_modifiers": {
+    "hospitalization": {
+      "mild": "moderate",
+      "moderate": "moderate"
+    },
+    "icu_admission": {
+      "mild": "severe",
+      "moderate": "severe"
+    },
+    "ventilator": {
+      "mild": "critical",
+      "moderate": "critical",
+      "severe": "critical"
+    }
+  }
+}

@@ -50,7 +50,7 @@ import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
 import TwoFactorAuth from "@/pages/TwoFactorAuth";
 import PatientRecords from "@/pages/PatientRecords";
-import ImmuneMonitoring from "@/pages/ImmuneMonitoring";
+import RiskExposures from "@/pages/RiskExposures";
 import EnvironmentalRiskMap from "@/pages/EnvironmentalRiskMap";
 import CorrelationInsights from "@/pages/CorrelationInsights";
 import NutritionInsights from "@/pages/NutritionInsights";
@@ -113,7 +113,7 @@ function PatientRouter() {
       <Route path="/research-consent" component={ResearchConsentSettings} />
       <Route path="/wearables" component={WearableDevices} />
       <Route path="/device-connect" component={DeviceConnect} />
-      <Route path="/immune-monitoring" component={ImmuneMonitoring} />
+      <Route path="/risk-exposures" component={RiskExposures} />
       <Route path="/environmental-risk" component={EnvironmentalRiskMap} />
       <Route path="/correlation-insights" component={CorrelationInsights} />
       <Route path="/nutrition-insights" component={NutritionInsights} />
