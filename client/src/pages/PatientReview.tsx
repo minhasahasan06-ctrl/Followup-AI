@@ -51,6 +51,7 @@ import {
   Lock,
   Users,
   BarChart3,
+  Shield,
 } from "lucide-react";
 import { startOfWeek, endOfWeek, subWeeks, format, formatDistanceToNow } from "date-fns";
 import type { User, DailyFollowup, Medication, ChatMessage, Prescription, DoctorPatientConsentPermissions } from "@shared/schema";
@@ -63,6 +64,7 @@ import { DiagnosticImagingAnalysis } from "@/components/DiagnosticImagingAnalysi
 import { LabReportAnalysis } from "@/components/LabReportAnalysis";
 import { LysaInsightFeed } from "@/components/LysaInsightFeed";
 import { PatientSummaryCard } from "@/components/PatientSummaryCard";
+import { RiskExposuresPanel } from "@/components/RiskExposuresCards";
 
 interface ChatSession {
   id: string;
@@ -440,6 +442,10 @@ export default function PatientReview() {
                 <Pill className="h-4 w-4 mr-2" />
                 Medications
                 {!hasPermission('shareMedications') && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
+              </TabsTrigger>
+              <TabsTrigger value="risk-exposures" data-testid="tab-risk-exposures">
+                <Shield className="h-4 w-4 mr-2" />
+                Risk & Exposures
               </TabsTrigger>
               <TabsTrigger value="prescriptions" data-testid="tab-prescriptions">
                 <ClipboardList className="h-4 w-4 mr-2" />
@@ -1006,6 +1012,27 @@ export default function PatientReview() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Risk & Exposures Tab */}
+            <TabsContent value="risk-exposures">
+              {patientId && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold">Risk & Exposures Profile</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Auto-populated from clinical data. Edit to add manual corrections.
+                      </p>
+                    </div>
+                  </div>
+                  <RiskExposuresPanel 
+                    patientId={patientId} 
+                    isDoctor={true}
+                    compact={false}
+                  />
+                </div>
+              )}
             </TabsContent>
 
             {/* Prescriptions Tab */}
