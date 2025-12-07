@@ -24,6 +24,10 @@ from ml_analysis.analysis_causal import CausalAnalysis, CausalConfig
 from ml_analysis.alert_engine import AlertEngine
 from ml_analysis.report_generator import ReportGenerator, ReportConfig
 
+from epidemiology.pharmaco_router import router as pharmaco_router
+from epidemiology.infectious_router import router as infectious_router
+from epidemiology.vaccine_router import router as vaccine_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -56,6 +60,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(pharmaco_router)
+app.include_router(infectious_router)
+app.include_router(vaccine_router)
 
 
 class CohortRequest(BaseModel):

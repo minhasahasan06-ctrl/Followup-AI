@@ -25,6 +25,8 @@ from risk_exposures_etl import (
     OccupationalExposuresETL,
     GeneticRiskFlagsETL
 )
+from epidemiology.drug_scanner import run_scheduled_drug_scan
+from epidemiology.ml_training_integration import run_ml_feature_materialization
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -81,8 +83,24 @@ class ResearchScheduler:
                 name='Risk & Exposures ETL'
             )
             
+            self.scheduler.add_job(
+                self._run_drug_safety_scan,
+                IntervalTrigger(hours=4),
+                id='drug_safety_scan',
+                replace_existing=True,
+                name='Drug Safety Signal Scan'
+            )
+            
+            self.scheduler.add_job(
+                self._run_ml_feature_materialization,
+                CronTrigger(hour=2, minute=0),
+                id='ml_feature_materialization',
+                replace_existing=True,
+                name='ML Feature Materialization'
+            )
+            
             self.scheduler.start()
-            logger.info("Research scheduler started with background jobs (including Risk & Exposures ETL)")
+            logger.info("Research scheduler started with background jobs (including Epidemiology pipelines)")
     
     def stop(self):
         """Stop the background scheduler."""
@@ -453,6 +471,26 @@ class ResearchScheduler:
             logger.error(f"Error in genetic risk flags ETL: {e}")
         
         logger.info("Risk & Exposures ETL jobs completed")
+
+    def _run_drug_safety_scan(self):
+        """Run drug safety signal scanning job."""
+        logger.info("Running drug safety signal scan...")
+        
+        try:
+            result = run_scheduled_drug_scan()
+            logger.info(f"Drug safety scan completed: {result}")
+        except Exception as e:
+            logger.error(f"Error in drug safety scan: {e}")
+    
+    def _run_ml_feature_materialization(self):
+        """Run ML feature materialization job."""
+        logger.info("Running ML feature materialization...")
+        
+        try:
+            result = run_ml_feature_materialization()
+            logger.info(f"ML feature materialization completed: {result}")
+        except Exception as e:
+            logger.error(f"Error in ML feature materialization: {e}")
 
     def _generate_daily_summary(self):
         """Generate daily summary of research activities."""

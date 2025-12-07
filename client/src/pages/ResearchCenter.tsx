@@ -53,6 +53,7 @@ import { AlertsTab } from "@/components/research/AlertsTab";
 import { DailyFollowupsTab } from "@/components/research/DailyFollowupsTab";
 import { ReportsTab } from "@/components/research/ReportsTab";
 import { PersonalResearchTab } from "@/components/research/PersonalResearchTab";
+import { EpidemiologyTab } from "@/components/research/EpidemiologyTab";
 
 const COHORT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00C49F', '#FFBB28'];
 
@@ -906,6 +907,14 @@ export default function ResearchCenter() {
             Personal Research
             {!permissions.canAccessPersonalResearch && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
           </TabsTrigger>
+          <TabsTrigger 
+            value="epidemiology" 
+            className="gap-2" 
+            data-testid="tab-epidemiology"
+          >
+            <ShieldAlert className="h-4 w-4" />
+            Epidemiology
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="cohort">
@@ -938,6 +947,10 @@ export default function ResearchCenter() {
 
         <TabsContent value="personal">
           <PersonalResearchTab />
+        </TabsContent>
+
+        <TabsContent value="epidemiology">
+          <EpidemiologyTab />
         </TabsContent>
       </Tabs>
     </div>
