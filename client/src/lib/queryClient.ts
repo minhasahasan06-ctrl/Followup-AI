@@ -27,7 +27,13 @@ function getPythonBackendUrl(url: string): string {
     normalizedUrl.startsWith("/api/v1/automation") ||
     normalizedUrl.startsWith("/api/v1/webhooks") ||
     normalizedUrl.startsWith("/api/v1/devices") ||
-    normalizedUrl.startsWith("/api/v1/health-analytics")
+    normalizedUrl.startsWith("/api/v1/health-analytics") ||
+    normalizedUrl.startsWith("/api/v1/epidemiology") ||
+    normalizedUrl.startsWith("/api/v1/occupational") ||
+    normalizedUrl.startsWith("/api/v1/genetic") ||
+    normalizedUrl.startsWith("/api/v1/pharmaco") ||
+    normalizedUrl.startsWith("/api/v1/infectious") ||
+    normalizedUrl.startsWith("/api/v1/vaccine")
   ) {
     return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
   }
@@ -81,6 +87,20 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
+
+// Check if URL requires Python backend authentication
+function requiresPythonAuth(url: string): boolean {
+  const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
+  return (
+    normalizedUrl.startsWith("/api/v1/epidemiology") ||
+    normalizedUrl.startsWith("/api/v1/occupational") ||
+    normalizedUrl.startsWith("/api/v1/genetic") ||
+    normalizedUrl.startsWith("/api/v1/pharmaco") ||
+    normalizedUrl.startsWith("/api/v1/infectious") ||
+    normalizedUrl.startsWith("/api/v1/vaccine")
+  );
+}
+
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
@@ -94,18 +114,47 @@ export const getQueryFn: <T>(options: {
     // Build URL from query key
     // Support both simple string keys and array keys with optional trailing params
     let url: string;
+    let queryParams: Record<string, string | boolean> = {};
+    
     if (queryKey.length === 1) {
       url = queryKey[0] as string;
     } else {
-      // Join only the string elements, ignore objects/arrays (they're for cache invalidation)
-      const stringParts = queryKey.filter(k => typeof k === 'string') as string[];
-      url = stringParts.join("/");
+      // First element is URL, second element may be query params object
+      url = queryKey[0] as string;
+      if (queryKey.length > 1 && typeof queryKey[1] === 'object' && queryKey[1] !== null) {
+        queryParams = queryKey[1] as Record<string, string | boolean>;
+      }
     }
     
-    const finalUrl = getPythonBackendUrl(url);
+    // Build query string from params object
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(queryParams)) {
+      if (value !== undefined && value !== null && value !== '') {
+        params.append(key, String(value));
+      }
+    }
+    const queryString = params.toString();
+    const urlWithParams = queryString ? `${url}?${queryString}` : url;
+    
+    const finalUrl = getPythonBackendUrl(urlWithParams);
+    
+    // Add Authorization header for Python backend epidemiology endpoints
+    const headers: Record<string, string> = {};
+    if (requiresPythonAuth(url)) {
+      // SECURITY: Token must come from environment variable in production
+      // Development mode uses VITE_EPIDEMIOLOGY_AUTH_TOKEN env var
+      // Production deployments MUST set this environment variable
+      const authToken = import.meta.env.VITE_EPIDEMIOLOGY_AUTH_TOKEN;
+      if (!authToken && import.meta.env.PROD) {
+        console.error('SECURITY: VITE_EPIDEMIOLOGY_AUTH_TOKEN not set in production');
+        throw new Error('Authentication configuration missing');
+      }
+      headers['Authorization'] = `Bearer ${authToken || 'dev-token'}`;
+    }
     
     const res = await fetch(finalUrl, {
       credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

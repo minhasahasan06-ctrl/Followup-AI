@@ -13,10 +13,22 @@ import psycopg2
 import psycopg2.extras
 import json
 import math
+from decimal import Decimal
 
 from .privacy import PrivacyGuard, PrivacyConfig, MIN_CELL_SIZE
 from .audit import EpidemiologyAuditLogger, AuditAction
 from .auth import verify_epidemiology_auth, AuthenticatedUser
+
+
+def normalize_row(row: dict) -> dict:
+    """Convert Decimal and other non-JSON-serializable types to native Python types."""
+    result = {}
+    for key, value in row.items():
+        if isinstance(value, Decimal):
+            result[key] = float(value)
+        else:
+            result[key] = value
+    return result
 
 router = APIRouter(prefix="/api/v1/infectious", tags=["Infectious Disease Epidemiology"])
 
@@ -133,7 +145,7 @@ async def get_epicurve(
         query += f" GROUP BY DATE_TRUNC('{date_trunc}', event_date) ORDER BY period"
         
         cur.execute(query, params)
-        rows = cur.fetchall()
+        rows = [normalize_row(dict(row)) for row in cur.fetchall()]
         
         cur.execute("""
             SELECT pathogen_name FROM infectious_events_aggregated 
@@ -451,7 +463,7 @@ async def list_pathogens(
             ORDER BY case_count DESC
         """)
         
-        pathogens = [dict(row) for row in cur.fetchall()]
+        pathogens = [normalize_row(dict(row)) for row in cur.fetchall()]
         conn.close()
         
         return {"pathogens": pathogens}

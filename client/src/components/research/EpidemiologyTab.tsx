@@ -36,7 +36,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { LineChart as ReLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
 
-const PYTHON_BACKEND_URL = import.meta.env.VITE_PYTHON_BACKEND_URL || "http://localhost:8000";
+// Note: Python backend routing is now handled by queryClient.ts getPythonBackendUrl()
+// No need to use PYTHON_BACKEND_URL directly - use relative paths and the shared queryFn
 
 interface DrugSignal {
   id: number;
@@ -188,50 +189,29 @@ function DrugSafetyPanel() {
   const [scope, setScope] = useState<string>("all");
 
   const { data: signalData, isLoading: loadingSignals, refetch } = useQuery<SignalResponse>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/pharmaco/signals', drugQuery, outcomeQuery, selectedLocation, scope],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (drugQuery) params.append('drug_query', drugQuery);
-      if (outcomeQuery) params.append('outcome_query', outcomeQuery);
-      if (selectedLocation && selectedLocation !== "all") params.append('patient_location_id', selectedLocation);
-      params.append('scope', scope);
-      params.append('limit', '50');
-      
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/pharmaco/signals?${params}`, {
-        headers: { 'Authorization': 'Bearer token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch signals');
-      return response.json();
-    },
-    enabled: true
+    queryKey: ['/api/v1/pharmaco/signals', {
+      drug_query: drugQuery || undefined,
+      outcome_query: outcomeQuery || undefined,
+      patient_location_id: selectedLocation !== "all" ? selectedLocation : undefined,
+      scope: scope,
+      limit: '50'
+    }],
+    staleTime: 30000,
   });
 
   const { data: locations } = useQuery<{ locations: Location[] }>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/pharmaco/locations'],
-    queryFn: async () => {
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/pharmaco/locations`, {
-        headers: { 'Authorization': 'Bearer token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch locations');
-      return response.json();
-    }
+    queryKey: ['/api/v1/pharmaco/locations'],
+    staleTime: 60000,
   });
 
   const triggerScanMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/pharmaco/run-scan`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': 'Bearer token',
-          'Content-Type': 'application/json'
-        }
-      });
-      if (!response.ok) throw new Error('Failed to trigger scan');
+      const response = await apiRequest('/api/v1/pharmaco/run-scan', { method: 'POST' });
       return response.json();
     },
     onSuccess: () => {
       toast({ title: "Scan Started", description: "Drug safety scan has been triggered" });
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/pharmaco/signals'] });
     }
   });
 
@@ -457,44 +437,26 @@ function InfectiousDiseasePanel() {
   const [selectedLocation, setSelectedLocation] = useState("all");
 
   const { data: epicurveData, isLoading: loadingEpicurve } = useQuery<EpicurveResponse>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/infectious/epicurve', pathogenCode, selectedLocation],
-    queryFn: async () => {
-      const params = new URLSearchParams({ pathogen_code: pathogenCode });
-      if (selectedLocation && selectedLocation !== "all") params.append('location_id', selectedLocation);
-      
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/infectious/epicurve?${params}`, {
-        headers: { 'Authorization': 'Bearer token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch epicurve');
-      return response.json();
-    },
+    queryKey: ['/api/v1/infectious/epicurve', {
+      pathogen_code: pathogenCode,
+      location_id: selectedLocation !== "all" ? selectedLocation : undefined
+    }],
+    staleTime: 30000,
     enabled: !!pathogenCode
   });
 
   const { data: r0Data, isLoading: loadingR0 } = useQuery<R0Response>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/infectious/r0', pathogenCode, selectedLocation],
-    queryFn: async () => {
-      const params = new URLSearchParams({ pathogen_code: pathogenCode });
-      if (selectedLocation && selectedLocation !== "all") params.append('location_id', selectedLocation);
-      
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/infectious/r0?${params}`, {
-        headers: { 'Authorization': 'Bearer token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch R0');
-      return response.json();
-    },
+    queryKey: ['/api/v1/infectious/r0', {
+      pathogen_code: pathogenCode,
+      location_id: selectedLocation !== "all" ? selectedLocation : undefined
+    }],
+    staleTime: 30000,
     enabled: !!pathogenCode
   });
 
   const { data: pathogens } = useQuery<{ pathogens: Array<{ pathogen_code: string; pathogen_name: string; case_count: number }> }>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/infectious/pathogens'],
-    queryFn: async () => {
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/infectious/pathogens`, {
-        headers: { 'Authorization': 'Bearer token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch pathogens');
-      return response.json();
-    }
+    queryKey: ['/api/v1/infectious/pathogens'],
+    staleTime: 60000,
   });
 
   const getR0Color = (r: number) => {
@@ -643,47 +605,27 @@ function VaccineAnalyticsPanel() {
   const [outcomeCode, setOutcomeCode] = useState("COVID-19");
 
   const { data: coverageData, isLoading: loadingCoverage } = useQuery<VaccineCoverage>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/vaccine/coverage', vaccineCode, selectedLocation],
-    queryFn: async () => {
-      const params = new URLSearchParams({ vaccine_code: vaccineCode });
-      if (selectedLocation && selectedLocation !== "all") params.append('location_id', selectedLocation);
-      
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/vaccine/coverage?${params}`, {
-        headers: { 'Authorization': 'Bearer token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch coverage');
-      return response.json();
-    },
+    queryKey: ['/api/v1/vaccine/coverage', {
+      vaccine_code: vaccineCode,
+      location_id: selectedLocation !== "all" ? selectedLocation : undefined
+    }],
+    staleTime: 30000,
     enabled: !!vaccineCode
   });
 
   const { data: effectivenessData, isLoading: loadingEffectiveness } = useQuery<VaccineEffectiveness>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/vaccine/effectiveness', vaccineCode, outcomeCode, selectedLocation],
-    queryFn: async () => {
-      const params = new URLSearchParams({ 
-        vaccine_code: vaccineCode,
-        outcome_code: outcomeCode
-      });
-      if (selectedLocation && selectedLocation !== "all") params.append('location_id', selectedLocation);
-      
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/vaccine/effectiveness?${params}`, {
-        headers: { 'Authorization': 'Bearer token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch effectiveness');
-      return response.json();
-    },
+    queryKey: ['/api/v1/vaccine/effectiveness', {
+      vaccine_code: vaccineCode,
+      outcome_code: outcomeCode,
+      location_id: selectedLocation !== "all" ? selectedLocation : undefined
+    }],
+    staleTime: 30000,
     enabled: !!vaccineCode && !!outcomeCode
   });
 
   const { data: vaccines } = useQuery<Array<{ vaccine_code: string; vaccine_name: string; total_doses: number }>>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/vaccine/vaccines'],
-    queryFn: async () => {
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/vaccine/vaccines`, {
-        headers: { 'Authorization': 'Bearer token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch vaccines');
-      return response.json();
-    }
+    queryKey: ['/api/v1/vaccine/vaccines'],
+    staleTime: 60000,
   });
 
   const getEffectivenessColor = (ve: number) => {
@@ -845,20 +787,12 @@ function OccupationalEpidemiologyPanel() {
   const [flaggedOnly, setFlaggedOnly] = useState(false);
 
   const { data: signalData, isLoading, refetch } = useQuery<OccupationalResponse>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/occupational/signals', industryQuery, hazardQuery, flaggedOnly],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (industryQuery) params.append('industry_query', industryQuery);
-      if (hazardQuery) params.append('hazard_query', hazardQuery);
-      if (flaggedOnly) params.append('flagged_only', 'true');
-      params.append('limit', '50');
-      
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/occupational/signals?${params}`, {
-        headers: { 'Authorization': 'Bearer dev-token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch occupational signals');
-      return response.json();
-    },
+    queryKey: ['/api/v1/occupational/signals', { 
+      industry_query: industryQuery || undefined, 
+      hazard_query: hazardQuery || undefined, 
+      flagged_only: flaggedOnly ? 'true' : undefined,
+      limit: '50' 
+    }],
     staleTime: 30000,
   });
 
@@ -1006,36 +940,20 @@ function GeneticEpidemiologyPanel() {
   const [activeSubTab, setActiveSubTab] = useState("associations");
 
   const { data: associationData, isLoading: loadingAssoc, refetch: refetchAssoc } = useQuery<GeneticResponse>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/genetic/variant-associations', geneQuery, variantQuery, flaggedOnly],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (geneQuery) params.append('gene_query', geneQuery);
-      if (variantQuery) params.append('rsid_query', variantQuery);
-      if (flaggedOnly) params.append('flagged_only', 'true');
-      params.append('limit', '50');
-      
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/genetic/variant-associations?${params}`, {
-        headers: { 'Authorization': 'Bearer dev-token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch genetic associations');
-      return response.json();
-    },
+    queryKey: ['/api/v1/genetic/variant-associations', {
+      gene_query: geneQuery || undefined,
+      rsid_query: variantQuery || undefined,
+      flagged_only: flaggedOnly ? 'true' : undefined,
+      limit: '50'
+    }],
     staleTime: 30000,
   });
 
   const { data: pgxData, isLoading: loadingPgx } = useQuery<{ interactions: PharmacogenomicInteraction[]; total_count: number }>({
-    queryKey: [PYTHON_BACKEND_URL, '/api/v1/genetic/pharmacogenomics', geneQuery],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (geneQuery) params.append('gene_query', geneQuery);
-      params.append('limit', '50');
-      
-      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/genetic/pharmacogenomics?${params}`, {
-        headers: { 'Authorization': 'Bearer dev-token' }
-      });
-      if (!response.ok) throw new Error('Failed to fetch pharmacogenomics');
-      return response.json();
-    },
+    queryKey: ['/api/v1/genetic/pharmacogenomics', {
+      gene_query: geneQuery || undefined,
+      limit: '50'
+    }],
     staleTime: 30000,
     enabled: activeSubTab === "pharmacogenomics",
   });

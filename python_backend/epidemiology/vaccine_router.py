@@ -13,10 +13,22 @@ import psycopg2
 import psycopg2.extras
 import json
 import math
+from decimal import Decimal
 
 from .privacy import PrivacyGuard, PrivacyConfig, MIN_CELL_SIZE
 from .audit import EpidemiologyAuditLogger, AuditAction
 from .auth import verify_epidemiology_auth, AuthenticatedUser
+
+
+def normalize_row(row: dict) -> dict:
+    """Convert Decimal and other non-JSON-serializable types to native Python types."""
+    result = {}
+    for key, value in row.items():
+        if isinstance(value, Decimal):
+            result[key] = float(value)
+        else:
+            result[key] = value
+    return result
 
 router = APIRouter(prefix="/api/v1/vaccine", tags=["Vaccine Epidemiology"])
 

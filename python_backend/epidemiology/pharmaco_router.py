@@ -13,10 +13,22 @@ from pydantic import BaseModel
 import psycopg2
 import psycopg2.extras
 import json
+from decimal import Decimal
 
 from .privacy import PrivacyGuard, PrivacyConfig, RoleBasedAccessControl, MIN_CELL_SIZE
 from .audit import EpidemiologyAuditLogger, AuditAction
 from .auth import verify_epidemiology_auth, AuthenticatedUser
+
+
+def normalize_row(row: dict) -> dict:
+    """Convert Decimal and other non-JSON-serializable types to native Python types."""
+    result = {}
+    for key, value in row.items():
+        if isinstance(value, Decimal):
+            result[key] = float(value)
+        else:
+            result[key] = value
+    return result
 
 router = APIRouter(prefix="/api/v1/pharmaco", tags=["Pharmaco-Epidemiology"])
 
@@ -120,7 +132,7 @@ async def get_drug_signals(
         params.extend([limit, offset])
         
         cur.execute(query, params)
-        raw_signals = [dict(row) for row in cur.fetchall()]
+        raw_signals = [normalize_row(dict(row)) for row in cur.fetchall()]
         
         conn.close()
         
@@ -211,7 +223,7 @@ async def get_drug_summaries(
         params.extend([limit, offset])
         
         cur.execute(query, params)
-        raw_summaries = [dict(row) for row in cur.fetchall()]
+        raw_summaries = [normalize_row(dict(row)) for row in cur.fetchall()]
         
         conn.close()
         
@@ -274,7 +286,7 @@ async def list_drugs(
         params.append(limit)
         
         cur.execute(sql, params)
-        drugs = [dict(row) for row in cur.fetchall()]
+        drugs = [normalize_row(dict(row)) for row in cur.fetchall()]
         
         conn.close()
         return {"drugs": drugs}
@@ -308,7 +320,7 @@ async def list_outcomes(
         params.append(limit)
         
         cur.execute(sql, params)
-        outcomes = [dict(row) for row in cur.fetchall()]
+        outcomes = [normalize_row(dict(row)) for row in cur.fetchall()]
         
         conn.close()
         return {"outcomes": outcomes}
@@ -336,7 +348,7 @@ async def list_locations_with_signals(
             LIMIT %s
         """, (limit,))
         
-        locations = [dict(row) for row in cur.fetchall()]
+        locations = [normalize_row(dict(row)) for row in cur.fetchall()]
         conn.close()
         
         return {"locations": locations}
@@ -370,7 +382,7 @@ async def get_signal_detail(
         if not signal:
             raise HTTPException(status_code=404, detail="Signal not found")
         
-        signal = dict(signal)
+        signal = normalize_row(dict(signal))
         if signal.get('details_json') and isinstance(signal['details_json'], str):
             signal['details_json'] = json.loads(signal['details_json'])
         if signal.get('updated_at'):

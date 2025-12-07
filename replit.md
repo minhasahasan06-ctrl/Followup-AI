@@ -56,6 +56,9 @@ The backend comprises a Node.js Express server (Port 5000) for chatbot, appointm
   - Vaccine Analytics (coverage rates, effectiveness metrics)
   - Occupational Epidemiology (workplace hazard analysis, industry risk signals)
   - Genetic/Molecular Epidemiology (variant-outcome associations, GWAS results, pharmacogenomics)
+  - Privacy-first architecture: All epidemiology routers use normalize_row() for Decimal-to-float JSON serialization, PrivacyGuard enforcement with MIN_CELL_SIZE=10, and comprehensive audit logging
+  - Frontend uses centralized queryFn pattern with object-style query keys for proper cache invalidation
+  - Production security: VITE_EPIDEMIOLOGY_AUTH_TOKEN required in production mode
 - **Unified Medication System**: Production-grade medication management with patient records, active medication dashboard, and doctor-only prescription authoring with AI assistance and conflict detection, supporting role-based routing.
 
 ### Multi-Agent Communication System

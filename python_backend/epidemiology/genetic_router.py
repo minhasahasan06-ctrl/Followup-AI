@@ -452,6 +452,8 @@ async def get_traits(
     user: AuthenticatedUser = Depends(verify_epidemiology_auth)
 ) -> Dict[str, Any]:
     """Get list of traits from GWAS studies (privacy-protected)."""
+    privacy_guard = PrivacyGuard(PrivacyConfig(min_cell_size=MIN_CELL_SIZE))
+    
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -468,7 +470,18 @@ async def get_traits(
             ORDER BY variant_count DESC
         """)
         
-        traits = [normalize_row(dict(row)) for row in cur.fetchall()]
+        traits = []
+        for row in cur.fetchall():
+            row_dict = normalize_row(dict(row))
+            # Suppress traits with too few variants (proxy for sample size)
+            if not privacy_guard.check_cell_size(row_dict.get('variant_count', 0)):
+                row_dict['variant_count'] = None
+                row_dict['significant_hits'] = None
+                row_dict['top_p_value'] = None
+                row_dict['suppressed'] = True
+            else:
+                row_dict['suppressed'] = False
+            traits.append(row_dict)
         
         audit_logger.log(
             action=AuditAction.VIEW_GENETIC,
@@ -488,6 +501,8 @@ async def get_drugs_with_pgx(
     user: AuthenticatedUser = Depends(verify_epidemiology_auth)
 ) -> Dict[str, Any]:
     """Get list of drugs with pharmacogenomic interactions (privacy-protected)."""
+    privacy_guard = PrivacyGuard(PrivacyConfig(min_cell_size=MIN_CELL_SIZE))
+    
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -498,13 +513,27 @@ async def get_drugs_with_pgx(
                 drug_name,
                 COUNT(*) as interaction_count,
                 COUNT(DISTINCT gene_symbol) as genes_affected,
-                SUM(CASE WHEN clinical_impact = 'high' THEN 1 ELSE 0 END) as high_impact_count
+                SUM(CASE WHEN clinical_impact = 'high' THEN 1 ELSE 0 END) as high_impact_count,
+                SUM(n_patients) as total_patients
             FROM pharmacogenomic_interactions
             GROUP BY drug_code, drug_name
             ORDER BY interaction_count DESC
         """)
         
-        drugs = [normalize_row(dict(row)) for row in cur.fetchall()]
+        drugs = []
+        for row in cur.fetchall():
+            row_dict = normalize_row(dict(row))
+            # Suppress drugs with too few patients across all interactions
+            if not privacy_guard.check_cell_size(row_dict.get('total_patients', 0)):
+                row_dict['interaction_count'] = None
+                row_dict['genes_affected'] = None
+                row_dict['high_impact_count'] = None
+                row_dict['suppressed'] = True
+            else:
+                row_dict['suppressed'] = False
+            # Remove internal count field
+            row_dict.pop('total_patients', None)
+            drugs.append(row_dict)
         
         audit_logger.log(
             action=AuditAction.VIEW_GENETIC,

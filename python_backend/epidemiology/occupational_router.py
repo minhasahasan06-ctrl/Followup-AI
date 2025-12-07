@@ -348,11 +348,21 @@ async def get_exposure_distribution(
         distribution = []
         
         for row in cur.fetchall():
-            row_dict = dict(row)
+            row_dict = normalize_row(dict(row))
             if not privacy_guard.check_cell_size(row_dict.get('worker_count', 0)):
-                row_dict['worker_count'] = '<10'
+                row_dict['worker_count'] = None
                 row_dict['avg_risk_estimate'] = None
+                row_dict['suppressed'] = True
+            else:
+                row_dict['suppressed'] = False
             distribution.append(row_dict)
+        
+        audit_logger.log(
+            action=AuditAction.VIEW_OCCUPATIONAL,
+            user_id=user.user_id,
+            resource_type='exposure_distribution',
+            details={'industry_code': industry_code, 'hazard_code': hazard_code, 'result_count': len(distribution)}
+        )
         
         return {"distribution": distribution}
     
@@ -363,8 +373,10 @@ async def get_exposure_distribution(
 @router.get("/locations")
 async def get_locations_with_signals(
     user: AuthenticatedUser = Depends(verify_epidemiology_auth)
-) -> Dict[str, List[Dict[str, Any]]]:
-    """Get locations with occupational signal counts."""
+) -> Dict[str, Any]:
+    """Get locations with occupational signal counts (privacy-protected)."""
+    privacy_guard = PrivacyGuard(PrivacyConfig(min_cell_size=MIN_CELL_SIZE))
+    
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -375,7 +387,8 @@ async def get_locations_with_signals(
                 COALESCE(l.name, o.location_id) as name,
                 l.city,
                 l.state,
-                COUNT(*) as signal_count
+                COUNT(*) as signal_count,
+                SUM(n_workers) as total_workers
             FROM occupational_risk_signals o
             LEFT JOIN locations l ON o.location_id = l.id
             WHERE o.location_id IS NOT NULL
@@ -383,7 +396,25 @@ async def get_locations_with_signals(
             ORDER BY signal_count DESC
         """)
         
-        return {"locations": [dict(row) for row in cur.fetchall()]}
+        locations = []
+        for row in cur.fetchall():
+            row_dict = normalize_row(dict(row))
+            if not privacy_guard.check_cell_size(row_dict.get('total_workers', 0)):
+                row_dict['signal_count'] = None
+                row_dict['suppressed'] = True
+            else:
+                row_dict['suppressed'] = False
+            row_dict.pop('total_workers', None)
+            locations.append(row_dict)
+        
+        audit_logger.log(
+            action=AuditAction.VIEW_OCCUPATIONAL,
+            user_id=user.user_id,
+            resource_type='locations_list',
+            details={'result_count': len(locations)}
+        )
+        
+        return {"locations": locations}
     
     finally:
         conn.close()
