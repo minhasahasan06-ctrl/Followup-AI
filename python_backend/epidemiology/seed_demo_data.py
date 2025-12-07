@@ -374,6 +374,258 @@ def seed_ml_features(cur, location_ids: List[str]):
     print("ML features seeded")
 
 
+INDUSTRIES = [
+    ("HEALTHCARE", "Healthcare"),
+    ("MANUFACTURING", "Manufacturing"),
+    ("CONSTRUCTION", "Construction"),
+    ("MINING", "Mining"),
+    ("AGRICULTURE", "Agriculture"),
+    ("CHEMICAL", "Chemical Industry"),
+    ("TRANSPORTATION", "Transportation"),
+]
+
+HAZARDS = [
+    ("ASBESTOS", "Asbestos Exposure"),
+    ("SILICA", "Silica Dust"),
+    ("LEAD", "Lead Exposure"),
+    ("RADIATION", "Ionizing Radiation"),
+    ("NOISE", "Occupational Noise"),
+    ("CHEMICAL_SOLVENTS", "Chemical Solvents"),
+    ("BIOLOGICAL_AGENTS", "Biological Agents"),
+    ("ERGONOMIC", "Ergonomic Hazards"),
+]
+
+OCCUPATIONAL_OUTCOMES = [
+    ("MESOTHELIOMA", "Mesothelioma"),
+    ("SILICOSIS", "Silicosis"),
+    ("HEARING_LOSS", "Occupational Hearing Loss"),
+    ("LEUKEMIA", "Leukemia"),
+    ("DERMATITIS", "Occupational Dermatitis"),
+    ("ASTHMA", "Occupational Asthma"),
+    ("CARPAL_TUNNEL", "Carpal Tunnel Syndrome"),
+]
+
+GENES = [
+    ("CYP2D6", "Cytochrome P450 2D6"),
+    ("CYP2C19", "Cytochrome P450 2C19"),
+    ("CYP3A4", "Cytochrome P450 3A4"),
+    ("VKORC1", "Vitamin K epoxide reductase"),
+    ("SLCO1B1", "Solute carrier organic anion transporter"),
+    ("HLA-B", "Human Leukocyte Antigen B"),
+    ("TPMT", "Thiopurine methyltransferase"),
+    ("DPYD", "Dihydropyrimidine dehydrogenase"),
+]
+
+VARIANTS = [
+    ("rs1065852", "CYP2D6", "*4 allele"),
+    ("rs4244285", "CYP2C19", "*2 allele"),
+    ("rs12248560", "CYP2C19", "*17 allele"),
+    ("rs9923231", "VKORC1", "-1639G>A"),
+    ("rs4149056", "SLCO1B1", "521T>C"),
+    ("rs2395029", "HLA-B", "*5701"),
+    ("rs1800460", "TPMT", "*3B"),
+    ("rs1801265", "DPYD", "*2A"),
+]
+
+GENETIC_OUTCOMES = [
+    ("DRUG_TOXICITY", "Drug Toxicity"),
+    ("POOR_RESPONSE", "Poor Drug Response"),
+    ("BLEEDING_RISK", "Increased Bleeding Risk"),
+    ("MYOPATHY_RISK", "Statin-Induced Myopathy"),
+    ("HYPERSENSITIVITY", "Drug Hypersensitivity"),
+    ("METABOLISM_SLOW", "Slow Drug Metabolism"),
+    ("METABOLISM_FAST", "Ultra-Rapid Metabolism"),
+]
+
+
+def seed_occupational_signals(cur, location_ids: List[str]):
+    """Seed occupational risk signals."""
+    cur.execute("SELECT id FROM occupational_risk_signals LIMIT 1")
+    if cur.fetchone():
+        print("Occupational signals already seeded")
+        return
+    
+    print("Seeding occupational risk signals...")
+    
+    for industry_code, industry_name in INDUSTRIES:
+        for hazard_code, hazard_name in random.sample(HAZARDS, k=random.randint(2, 4)):
+            for outcome_code, outcome_name in random.sample(OCCUPATIONAL_OUTCOMES, k=random.randint(1, 3)):
+                for location_id in random.sample(location_ids, k=random.randint(1, 3)):
+                    n_workers = random.randint(50, 5000)
+                    n_events = random.randint(5, n_workers // 10)
+                    
+                    estimate = random.uniform(1.2, 8.0)
+                    ci_margin = random.uniform(0.2, 1.0)
+                    
+                    cur.execute("""
+                        INSERT INTO occupational_risk_signals (
+                            industry_code, industry_name, occupation_code, occupation_name,
+                            hazard_code, hazard_name, outcome_code, outcome_name,
+                            location_id, model_type, effect_measure, estimate, ci_lower, ci_upper,
+                            p_value, signal_strength, n_workers, n_events, mean_exposure_years,
+                            flagged, suppressed, calculated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    """, (
+                        industry_code, industry_name,
+                        f"{industry_code}_WORKER", f"{industry_name} Worker",
+                        hazard_code, hazard_name,
+                        outcome_code, outcome_name,
+                        location_id, 'cox', 'HR',
+                        estimate, estimate - ci_margin, estimate + ci_margin,
+                        random.uniform(0.001, 0.1),
+                        random.uniform(30, 95),
+                        n_workers, n_events,
+                        random.uniform(1, 25),
+                        estimate > 2 and random.random() > 0.3,
+                        False
+                    ))
+    
+    print("Occupational signals seeded successfully")
+
+
+def seed_genetic_associations(cur, location_ids: List[str]):
+    """Seed variant-outcome associations."""
+    cur.execute("SELECT id FROM variant_outcome_associations LIMIT 1")
+    if cur.fetchone():
+        print("Genetic associations already seeded")
+        return
+    
+    print("Seeding genetic variant associations...")
+    
+    for rsid, gene_symbol, variant_desc in VARIANTS:
+        gene_name = next((g[1] for g in GENES if g[0] == gene_symbol), None)
+        
+        for outcome_code, outcome_name in random.sample(GENETIC_OUTCOMES, k=random.randint(1, 3)):
+            for location_id in random.sample(location_ids, k=random.randint(1, 2)):
+                n_carriers = random.randint(100, 2000)
+                n_non_carriers = random.randint(500, 5000)
+                events_carriers = random.randint(10, n_carriers // 5)
+                events_non_carriers = random.randint(10, n_non_carriers // 10)
+                
+                estimate = random.uniform(1.5, 5.0)
+                ci_margin = random.uniform(0.2, 0.8)
+                
+                cur.execute("""
+                    INSERT INTO variant_outcome_associations (
+                        rsid, gene_symbol, gene_name, outcome_code, outcome_name,
+                        location_id, model_type, effect_measure, estimate, ci_lower, ci_upper,
+                        p_value, signal_strength, n_carriers, n_non_carriers,
+                        events_carriers, events_non_carriers, flagged, suppressed, calculated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                """, (
+                    rsid, gene_symbol, gene_name,
+                    outcome_code, outcome_name,
+                    location_id, 'logistic', 'OR',
+                    estimate, estimate - ci_margin, estimate + ci_margin,
+                    random.uniform(0.0001, 0.05),
+                    random.uniform(40, 90),
+                    n_carriers, n_non_carriers,
+                    events_carriers, events_non_carriers,
+                    estimate > 2 and random.random() > 0.4,
+                    False
+                ))
+    
+    print("Genetic associations seeded successfully")
+
+
+def seed_gwas_results(cur):
+    """Seed GWAS summary statistics."""
+    cur.execute("SELECT id FROM gwas_results LIMIT 1")
+    if cur.fetchone():
+        print("GWAS results already seeded")
+        return
+    
+    print("Seeding GWAS results...")
+    
+    traits = [
+        ("T2D", "Type 2 Diabetes"),
+        ("CAD", "Coronary Artery Disease"),
+        ("HYPERTENSION", "Hypertension"),
+        ("OBESITY", "Obesity"),
+        ("ASTHMA", "Asthma"),
+        ("RA", "Rheumatoid Arthritis"),
+    ]
+    
+    for trait_code, trait_name in traits:
+        for rsid, gene_symbol, _ in random.sample(VARIANTS, k=random.randint(3, 6)):
+            p_value = 10 ** (-random.uniform(3, 12))
+            
+            cur.execute("""
+                INSERT INTO gwas_results (
+                    study_id, study_name, trait_code, trait_name,
+                    rsid, gene_symbol, chromosome, position,
+                    effect_allele, other_allele, beta, se, p_value,
+                    odds_ratio, ci_lower, ci_upper, sample_size, ancestry,
+                    genome_wide_significant, calculated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            """, (
+                f"GWAS_{trait_code}_{random.randint(2020, 2024)}",
+                f"{trait_name} GWAS Study",
+                trait_code, trait_name,
+                rsid, gene_symbol,
+                str(random.randint(1, 22)),
+                random.randint(1000000, 250000000),
+                random.choice(['A', 'G', 'C', 'T']),
+                random.choice(['A', 'G', 'C', 'T']),
+                random.uniform(-0.5, 0.5),
+                random.uniform(0.01, 0.1),
+                p_value,
+                random.uniform(0.8, 1.5),
+                random.uniform(0.7, 0.9),
+                random.uniform(1.1, 1.6),
+                random.randint(10000, 500000),
+                random.choice(['European', 'East Asian', 'African', 'Mixed']),
+                p_value < 5e-8
+            ))
+    
+    print("GWAS results seeded successfully")
+
+
+def seed_pharmacogenomics(cur):
+    """Seed pharmacogenomic interactions."""
+    cur.execute("SELECT id FROM pharmacogenomic_interactions LIMIT 1")
+    if cur.fetchone():
+        print("Pharmacogenomics already seeded")
+        return
+    
+    print("Seeding pharmacogenomic interactions...")
+    
+    pgx_drugs = [
+        ("WARFARIN", "Warfarin"),
+        ("CLOPIDOGREL", "Clopidogrel"),
+        ("SIMVASTATIN", "Simvastatin"),
+        ("CODEINE", "Codeine"),
+        ("TAMOXIFEN", "Tamoxifen"),
+        ("ABACAVIR", "Abacavir"),
+        ("AZATHIOPRINE", "Azathioprine"),
+        ("FLUOROURACIL", "5-Fluorouracil"),
+    ]
+    
+    for drug_code, drug_name in pgx_drugs:
+        for rsid, gene_symbol, _ in random.sample(VARIANTS, k=random.randint(1, 3)):
+            gene_name = next((g[1] for g in GENES if g[0] == gene_symbol), None)
+            
+            cur.execute("""
+                INSERT INTO pharmacogenomic_interactions (
+                    rsid, gene_symbol, gene_name, drug_code, drug_name,
+                    interaction_type, phenotype, recommendation,
+                    evidence_level, clinical_impact, n_patients, suppressed, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            """, (
+                rsid, gene_symbol, gene_name,
+                drug_code, drug_name,
+                random.choice(['Metabolism', 'Sensitivity', 'Toxicity', 'Response']),
+                random.choice(['Poor Metabolizer', 'Intermediate Metabolizer', 'Normal Metabolizer', 'Ultra-Rapid Metabolizer']),
+                random.choice(['Consider dose reduction', 'Use alternative drug', 'Standard dosing', 'Avoid use', 'Increased monitoring']),
+                random.choice(['1A', '1B', '2A', '2B', '3']),
+                random.choice(['high', 'moderate', 'low']),
+                random.randint(50, 2000),
+                False
+            ))
+    
+    print("Pharmacogenomics seeded successfully")
+
+
 def run_seeder():
     """Run all seeders."""
     if not DB_URL:
@@ -408,6 +660,19 @@ def run_seeder():
         conn.commit()
         
         seed_ml_features(cur, location_ids)
+        conn.commit()
+        
+        # New occupational and genetic epidemiology data
+        seed_occupational_signals(cur, location_ids)
+        conn.commit()
+        
+        seed_genetic_associations(cur, location_ids)
+        conn.commit()
+        
+        seed_gwas_results(cur)
+        conn.commit()
+        
+        seed_pharmacogenomics(cur)
         conn.commit()
         
         cur.close()

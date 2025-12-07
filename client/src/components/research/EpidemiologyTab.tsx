@@ -27,7 +27,10 @@ import {
   Info,
   BarChart3,
   LineChart,
-  Users
+  Users,
+  HardHat,
+  Dna,
+  FlaskConical
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -110,6 +113,71 @@ interface Location {
   city?: string;
   state?: string;
   signal_count?: number;
+}
+
+interface OccupationalSignal {
+  id: number;
+  industry_code: string;
+  industry_name: string;
+  hazard_code: string;
+  hazard_name: string;
+  outcome_code: string;
+  outcome_name: string;
+  estimate: number;
+  ci_lower: number;
+  ci_upper: number;
+  p_value: number;
+  signal_strength: number;
+  n_workers: number;
+  n_events: number;
+  mean_exposure_years: number;
+  flagged: boolean;
+}
+
+interface OccupationalResponse {
+  signals: OccupationalSignal[];
+  total_count: number;
+  suppressed_count: number;
+  privacy_note: string;
+}
+
+interface GeneticAssociation {
+  id: number;
+  rsid: string;
+  gene_symbol: string;
+  gene_name?: string;
+  outcome_code: string;
+  outcome_name: string;
+  estimate: number;
+  ci_lower: number;
+  ci_upper: number;
+  p_value: number;
+  signal_strength: number;
+  n_carriers: number;
+  n_non_carriers: number;
+  flagged: boolean;
+}
+
+interface GeneticResponse {
+  associations: GeneticAssociation[];
+  total_count: number;
+  suppressed_count: number;
+  privacy_note: string;
+}
+
+interface PharmacogenomicInteraction {
+  id: number;
+  rsid: string;
+  gene_symbol: string;
+  gene_name?: string;
+  drug_code: string;
+  drug_name: string;
+  interaction_type: string;
+  phenotype: string;
+  recommendation: string;
+  evidence_level: string;
+  clinical_impact: string;
+  n_patients: number;
 }
 
 function DrugSafetyPanel() {
@@ -770,6 +838,438 @@ function VaccineAnalyticsPanel() {
   );
 }
 
+function OccupationalEpidemiologyPanel() {
+  const { toast } = useToast();
+  const [industryQuery, setIndustryQuery] = useState("");
+  const [hazardQuery, setHazardQuery] = useState("");
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
+
+  const { data: signalData, isLoading, refetch } = useQuery<OccupationalResponse>({
+    queryKey: [PYTHON_BACKEND_URL, '/api/v1/occupational/signals', industryQuery, hazardQuery, flaggedOnly],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (industryQuery) params.append('industry_query', industryQuery);
+      if (hazardQuery) params.append('hazard_query', hazardQuery);
+      if (flaggedOnly) params.append('flagged_only', 'true');
+      params.append('limit', '50');
+      
+      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/occupational/signals?${params}`, {
+        headers: { 'Authorization': 'Bearer dev-token' }
+      });
+      if (!response.ok) throw new Error('Failed to fetch occupational signals');
+      return response.json();
+    },
+    staleTime: 30000,
+  });
+
+  const signals = signalData?.signals || [];
+
+  return (
+    <div className="space-y-6">
+      <Alert>
+        <HardHat className="h-4 w-4" />
+        <AlertTitle>Occupational Epidemiology</AlertTitle>
+        <AlertDescription>
+          Workplace hazard analysis and industry-specific health risk signals. Data aggregated with privacy protection.
+        </AlertDescription>
+      </Alert>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <HardHat className="h-5 w-5" />
+            Workplace Hazard Signals
+          </CardTitle>
+          <CardDescription>
+            Industry-specific risk signals for occupational exposures
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <div className="flex-1 min-w-[200px]">
+              <Input
+                placeholder="Filter by industry code..."
+                value={industryQuery}
+                onChange={(e) => setIndustryQuery(e.target.value)}
+                className="w-full"
+                data-testid="input-industry-filter"
+              />
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <Input
+                placeholder="Filter by hazard code..."
+                value={hazardQuery}
+                onChange={(e) => setHazardQuery(e.target.value)}
+                className="w-full"
+                data-testid="input-hazard-filter"
+              />
+            </div>
+            <Button
+              variant={flaggedOnly ? "default" : "outline"}
+              onClick={() => setFlaggedOnly(!flaggedOnly)}
+              className="gap-2"
+              data-testid="button-flagged-only"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Flagged Only
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => refetch()}
+              className="gap-2"
+              data-testid="button-refresh-occupational"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <ScrollArea className="h-[400px]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Industry</TableHead>
+                    <TableHead>Hazard</TableHead>
+                    <TableHead>Outcome</TableHead>
+                    <TableHead className="text-right">HR</TableHead>
+                    <TableHead className="text-right">95% CI</TableHead>
+                    <TableHead className="text-right">Workers</TableHead>
+                    <TableHead className="text-right">Signal</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {signals.map((signal) => (
+                    <TableRow key={signal.id} data-testid={`row-occupational-signal-${signal.id}`}>
+                      <TableCell>
+                        <div className="font-medium">{signal.industry_name}</div>
+                        <div className="text-xs text-muted-foreground">{signal.industry_code}</div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          {signal.hazard_name}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{signal.outcome_name}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {signal.estimate.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                        ({signal.ci_lower.toFixed(2)} - {signal.ci_upper.toFixed(2)})
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {signal.n_workers.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {signal.flagged ? (
+                          <Badge variant="destructive" className="gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            {signal.signal_strength?.toFixed(0)}%
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">{signal.signal_strength?.toFixed(0)}%</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {signals.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        No occupational signals found
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          )}
+
+          {signalData?.privacy_note && (
+            <p className="text-xs text-muted-foreground">{signalData.privacy_note}</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function GeneticEpidemiologyPanel() {
+  const { toast } = useToast();
+  const [geneQuery, setGeneQuery] = useState("");
+  const [variantQuery, setVariantQuery] = useState("");
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState("associations");
+
+  const { data: associationData, isLoading: loadingAssoc, refetch: refetchAssoc } = useQuery<GeneticResponse>({
+    queryKey: [PYTHON_BACKEND_URL, '/api/v1/genetic/variant-associations', geneQuery, variantQuery, flaggedOnly],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (geneQuery) params.append('gene_query', geneQuery);
+      if (variantQuery) params.append('rsid_query', variantQuery);
+      if (flaggedOnly) params.append('flagged_only', 'true');
+      params.append('limit', '50');
+      
+      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/genetic/variant-associations?${params}`, {
+        headers: { 'Authorization': 'Bearer dev-token' }
+      });
+      if (!response.ok) throw new Error('Failed to fetch genetic associations');
+      return response.json();
+    },
+    staleTime: 30000,
+  });
+
+  const { data: pgxData, isLoading: loadingPgx } = useQuery<{ interactions: PharmacogenomicInteraction[]; total_count: number }>({
+    queryKey: [PYTHON_BACKEND_URL, '/api/v1/genetic/pharmacogenomics', geneQuery],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (geneQuery) params.append('gene_query', geneQuery);
+      params.append('limit', '50');
+      
+      const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/genetic/pharmacogenomics?${params}`, {
+        headers: { 'Authorization': 'Bearer dev-token' }
+      });
+      if (!response.ok) throw new Error('Failed to fetch pharmacogenomics');
+      return response.json();
+    },
+    staleTime: 30000,
+    enabled: activeSubTab === "pharmacogenomics",
+  });
+
+  const associations = associationData?.associations || [];
+  const pgxInteractions = pgxData?.interactions || [];
+
+  return (
+    <div className="space-y-6">
+      <Alert>
+        <Dna className="h-4 w-4" />
+        <AlertTitle>Genetic/Molecular Epidemiology</AlertTitle>
+        <AlertDescription>
+          Variant-outcome associations, GWAS results, and pharmacogenomic interactions. Privacy-protected aggregated data.
+        </AlertDescription>
+      </Alert>
+
+      <Tabs value={activeSubTab} onValueChange={setActiveSubTab}>
+        <TabsList className="flex flex-wrap gap-1 h-auto p-1">
+          <TabsTrigger value="associations" className="gap-2" data-testid="subtab-associations">
+            <Dna className="h-4 w-4" />
+            Variant Associations
+          </TabsTrigger>
+          <TabsTrigger value="pharmacogenomics" className="gap-2" data-testid="subtab-pharmacogenomics">
+            <FlaskConical className="h-4 w-4" />
+            Pharmacogenomics
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="associations" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Dna className="h-5 w-5" />
+                Variant-Outcome Associations
+              </CardTitle>
+              <CardDescription>
+                Genetic variant associations with health outcomes
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-3">
+                <div className="flex-1 min-w-[200px]">
+                  <Input
+                    placeholder="Filter by gene (e.g., CYP2D6)..."
+                    value={geneQuery}
+                    onChange={(e) => setGeneQuery(e.target.value)}
+                    className="w-full"
+                    data-testid="input-gene-filter"
+                  />
+                </div>
+                <div className="flex-1 min-w-[200px]">
+                  <Input
+                    placeholder="Filter by variant (e.g., rs1065852)..."
+                    value={variantQuery}
+                    onChange={(e) => setVariantQuery(e.target.value)}
+                    className="w-full"
+                    data-testid="input-variant-filter"
+                  />
+                </div>
+                <Button
+                  variant={flaggedOnly ? "default" : "outline"}
+                  onClick={() => setFlaggedOnly(!flaggedOnly)}
+                  className="gap-2"
+                  data-testid="button-genetic-flagged"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  Flagged Only
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => refetchAssoc()}
+                  className="gap-2"
+                  data-testid="button-refresh-genetic"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </Button>
+              </div>
+
+              {loadingAssoc ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Variant</TableHead>
+                        <TableHead>Gene</TableHead>
+                        <TableHead>Outcome</TableHead>
+                        <TableHead className="text-right">OR</TableHead>
+                        <TableHead className="text-right">95% CI</TableHead>
+                        <TableHead className="text-right">P-value</TableHead>
+                        <TableHead className="text-right">Signal</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {associations.map((assoc) => (
+                        <TableRow key={assoc.id} data-testid={`row-genetic-assoc-${assoc.id}`}>
+                          <TableCell className="font-mono">{assoc.rsid}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{assoc.gene_symbol}</Badge>
+                          </TableCell>
+                          <TableCell>{assoc.outcome_name}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {assoc.estimate.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                            ({assoc.ci_lower.toFixed(2)} - {assoc.ci_upper.toFixed(2)})
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-sm">
+                            {assoc.p_value < 0.001 ? assoc.p_value.toExponential(2) : assoc.p_value.toFixed(4)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {assoc.flagged ? (
+                              <Badge variant="destructive" className="gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                {assoc.signal_strength?.toFixed(0)}%
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary">{assoc.signal_strength?.toFixed(0)}%</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {associations.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No genetic associations found
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              )}
+
+              {associationData?.privacy_note && (
+                <p className="text-xs text-muted-foreground">{associationData.privacy_note}</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="pharmacogenomics" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FlaskConical className="h-5 w-5" />
+                Pharmacogenomic Interactions
+              </CardTitle>
+              <CardDescription>
+                Gene-drug interactions affecting drug response and toxicity
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-3">
+                <div className="flex-1 min-w-[200px]">
+                  <Input
+                    placeholder="Filter by gene (e.g., CYP2D6)..."
+                    value={geneQuery}
+                    onChange={(e) => setGeneQuery(e.target.value)}
+                    className="w-full"
+                    data-testid="input-pgx-gene-filter"
+                  />
+                </div>
+              </div>
+
+              {loadingPgx ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Variant</TableHead>
+                        <TableHead>Gene</TableHead>
+                        <TableHead>Drug</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Phenotype</TableHead>
+                        <TableHead>Recommendation</TableHead>
+                        <TableHead className="text-center">Evidence</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pgxInteractions.map((pgx) => (
+                        <TableRow key={pgx.id} data-testid={`row-pgx-${pgx.id}`}>
+                          <TableCell className="font-mono">{pgx.rsid}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{pgx.gene_symbol}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="gap-1">
+                              <Pill className="h-3 w-3" />
+                              {pgx.drug_name}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{pgx.interaction_type}</TableCell>
+                          <TableCell className="text-sm">{pgx.phenotype}</TableCell>
+                          <TableCell className="text-sm max-w-[200px] truncate">
+                            {pgx.recommendation}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge 
+                              variant={pgx.evidence_level.startsWith('1') ? 'default' : 'secondary'}
+                            >
+                              {pgx.evidence_level}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {pgxInteractions.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No pharmacogenomic interactions found
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
 export function AdvancedAnalyticsTab() {
   return (
     <div className="space-y-6">
@@ -787,7 +1287,7 @@ export function AdvancedAnalyticsTab() {
       </div>
 
       <Tabs defaultValue="drug-safety" className="space-y-6">
-        <TabsList className="flex flex-wrap gap-1 w-full max-w-xl h-auto p-1">
+        <TabsList className="flex flex-wrap gap-1 w-full max-w-3xl h-auto p-1">
           <TabsTrigger value="drug-safety" className="gap-2" data-testid="tab-drug-safety">
             <Pill className="h-4 w-4" />
             Drug Safety
@@ -799,6 +1299,14 @@ export function AdvancedAnalyticsTab() {
           <TabsTrigger value="vaccine" className="gap-2" data-testid="tab-vaccine">
             <Syringe className="h-4 w-4" />
             Vaccine Analytics
+          </TabsTrigger>
+          <TabsTrigger value="occupational" className="gap-2" data-testid="tab-occupational">
+            <HardHat className="h-4 w-4" />
+            Occupational
+          </TabsTrigger>
+          <TabsTrigger value="genetic" className="gap-2" data-testid="tab-genetic">
+            <Dna className="h-4 w-4" />
+            Genetic
           </TabsTrigger>
         </TabsList>
 
@@ -812,6 +1320,14 @@ export function AdvancedAnalyticsTab() {
 
         <TabsContent value="vaccine">
           <VaccineAnalyticsPanel />
+        </TabsContent>
+
+        <TabsContent value="occupational">
+          <OccupationalEpidemiologyPanel />
+        </TabsContent>
+
+        <TabsContent value="genetic">
+          <GeneticEpidemiologyPanel />
         </TabsContent>
       </Tabs>
     </div>

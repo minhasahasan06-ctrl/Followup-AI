@@ -21,6 +21,8 @@ class AuditAction(str, Enum):
     VIEW_INFECTIOUS = "view_infectious_data"
     VIEW_VACCINE = "view_vaccine_data"
     VIEW_OUTBREAK = "view_outbreak_data"
+    VIEW_OCCUPATIONAL = "view_occupational_data"
+    VIEW_GENETIC = "view_genetic_data"
     RUN_ANALYSIS = "run_epidemiology_analysis"
     EXPORT_DATA = "export_epidemiology_data"
     RUN_SCAN = "run_drug_scan"
@@ -74,8 +76,8 @@ class EpidemiologyAuditLogger:
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO audit_logs (
-                        action, user_id, object_type, object_id, 
-                        details, created_at
+                        action_type, user_id, resource_type, resource_id, 
+                        request_details, timestamp
                     ) VALUES (%s, %s, %s, %s, %s, NOW())
                     ON CONFLICT DO NOTHING
                 """, (

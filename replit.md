@@ -50,6 +50,12 @@ The backend comprises a Node.js Express server (Port 5000) for chatbot, appointm
 - **Admin ML Training Hub**: Dashboard for managing ML training datasets, jobs, models, device data extraction, and consent.
 - **Medical NLP Dashboard**: AI-powered document analysis with entity recognition, PHI redaction, and Q&A.
 - **Enhanced Research Center**: Epidemiology research hub for cohort visualization, study management, and AI-powered report generation.
+- **Advanced Analytics Platform**: Comprehensive epidemiology research covering:
+  - Drug Safety (pharmacovigilance) with adverse event signals
+  - Infectious Disease Surveillance (outbreak tracking, R₀ calculation)
+  - Vaccine Analytics (coverage rates, effectiveness metrics)
+  - Occupational Epidemiology (workplace hazard analysis, industry risk signals)
+  - Genetic/Molecular Epidemiology (variant-outcome associations, GWAS results, pharmacogenomics)
 - **Unified Medication System**: Production-grade medication management with patient records, active medication dashboard, and doctor-only prescription authoring with AI assistance and conflict detection, supporting role-based routing.
 
 ### Multi-Agent Communication System

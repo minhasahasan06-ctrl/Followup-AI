@@ -16,8 +16,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
     roc_auc_score, average_precision_score, roc_curve,
     precision_recall_curve, brier_score_loss, log_loss,
-    confusion_matrix, classification_report, calibration_curve
+    confusion_matrix, classification_report
 )
+try:
+    from sklearn.calibration import calibration_curve
+except ImportError:
+    from sklearn.metrics import calibration_curve
 from sklearn.impute import SimpleImputer
 import warnings
 warnings.filterwarnings('ignore')

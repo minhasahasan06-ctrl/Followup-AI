@@ -27,6 +27,8 @@ from ml_analysis.report_generator import ReportGenerator, ReportConfig
 from epidemiology.pharmaco_router import router as pharmaco_router
 from epidemiology.infectious_router import router as infectious_router
 from epidemiology.vaccine_router import router as vaccine_router
+from epidemiology.occupational_router import router as occupational_router
+from epidemiology.genetic_router import router as genetic_router
 
 
 @asynccontextmanager
@@ -64,6 +66,8 @@ app.add_middleware(
 app.include_router(pharmaco_router)
 app.include_router(infectious_router)
 app.include_router(vaccine_router)
+app.include_router(occupational_router)
+app.include_router(genetic_router)
 
 
 class CohortRequest(BaseModel):
