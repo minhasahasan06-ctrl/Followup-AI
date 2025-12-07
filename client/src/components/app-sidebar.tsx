@@ -20,7 +20,6 @@ import {
   Wallet as WalletIcon,
   Gift,
   ScanText,
-  AlertTriangle,
   Shield,
   Target,
   Headphones,
@@ -91,12 +90,6 @@ const patientItems = [
     url: "/patient-records",
     icon: FileText,
     badge: "Unified",
-  },
-  {
-    title: "Drug Interactions",
-    url: "/drug-interactions",
-    icon: AlertTriangle,
-    badge: "AI",
   },
   {
     title: "My Doctors",
