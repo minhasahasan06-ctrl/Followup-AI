@@ -1486,7 +1486,7 @@ function AdvancedMLTab() {
     model_info: { model_type: string; ensemble_size: number; hidden_units: number };
     prediction: { confidence: number; trend_direction: string };
   }>({
-    queryKey: ['/api/python/ml-analysis/outbreak-predict'],
+    queryKey: ['/api/v1/ml/advanced/outbreak/status'],
     enabled: selectedSection === "outbreak",
   });
 
@@ -1496,7 +1496,7 @@ function AdvancedMLTab() {
     location_embeddings_count: number;
     model_info: { architecture: string; embedding_dim: number };
   }>({
-    queryKey: ['/api/python/ml-analysis/embeddings/status'],
+    queryKey: ['/api/v1/ml/advanced/embeddings/status'],
     enabled: selectedSection === "embeddings",
   });
 
@@ -1507,7 +1507,7 @@ function AdvancedMLTab() {
     pre_specified_count: number;
     exploratory_count: number;
   }>({
-    queryKey: ['/api/python/ml-analysis/governance/stats'],
+    queryKey: ['/api/v1/ml/advanced/governance/stats'],
     enabled: selectedSection === "governance",
   });
 
@@ -1519,13 +1519,13 @@ function AdvancedMLTab() {
       checks_failed: number;
     };
   }>({
-    queryKey: ['/api/python/ml-analysis/robustness/latest'],
+    queryKey: ['/api/v1/ml/advanced/robustness/latest'],
     enabled: selectedSection === "robustness",
   });
 
   const trainOutbreakMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('/api/python/ml-analysis/outbreak-train', {
+      const response = await apiRequest('/api/v1/ml/advanced/outbreak/train', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1548,7 +1548,7 @@ function AdvancedMLTab() {
 
   const trainEmbeddingsMutation = useMutation({
     mutationFn: async (entityType: string) => {
-      const response = await apiRequest('/api/python/ml-analysis/embeddings/train', {
+      const response = await apiRequest('/api/v1/ml/advanced/embeddings/train', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entity_type: entityType, embedding_dim: 64 })
