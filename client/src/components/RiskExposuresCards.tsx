@@ -143,11 +143,13 @@ export function InfectionHistoryCard({ patientId, isDoctor, compact = false }: C
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: { id: string; severity?: string; notes?: string }) =>
-      apiRequest(`/api/patients/${patientId}/risk/infections/${data.id}`, {
+    mutationFn: async (data: { id: string; severity?: string; notes?: string }) => {
+      const res = await apiRequest(`/api/patients/${patientId}/risk/infections/${data.id}`, {
         method: 'PATCH',
         json: { severity: data.severity, notes: data.notes },
-      }),
+      });
+      return res.json();
+    },
     onSuccess: () => {
       toast({ title: 'Infection record updated' });
       queryClient.invalidateQueries({ queryKey: ['/api/patients', patientId, 'risk', 'infections'] });
@@ -408,11 +410,13 @@ export function OccupationCard({ patientId, isDoctor, compact = false }: CardPro
   });
 
   const addOccupationMutation = useMutation({
-    mutationFn: (data: { jobTitle: string; industry?: string }) =>
-      apiRequest(`/api/patients/${patientId}/risk/occupation`, {
+    mutationFn: async (data: { jobTitle: string; industry?: string }) => {
+      const res = await apiRequest(`/api/patients/${patientId}/risk/occupation`, {
         method: 'POST',
         json: data,
-      }),
+      });
+      return res.json();
+    },
     onSuccess: () => {
       toast({ title: 'Occupation added successfully' });
       queryClient.invalidateQueries({ queryKey: ['/api/patients', patientId, 'risk', 'occupation'] });
@@ -598,11 +602,13 @@ export function GeneticRiskCard({ patientId, isDoctor, compact = false }: CardPr
   });
 
   const addFlagMutation = useMutation({
-    mutationFn: (data: { flagName: string; flagType: string; riskLevel: string; notes?: string }) =>
-      apiRequest(`/api/patients/${patientId}/risk/genetics`, {
+    mutationFn: async (data: { flagName: string; flagType: string; riskLevel: string; notes?: string }) => {
+      const res = await apiRequest(`/api/patients/${patientId}/risk/genetics`, {
         method: 'POST',
         json: data,
-      }),
+      });
+      return res.json();
+    },
     onSuccess: () => {
       toast({ title: 'Genetic flag added' });
       queryClient.invalidateQueries({ queryKey: ['/api/patients', patientId, 'risk', 'genetics'] });
