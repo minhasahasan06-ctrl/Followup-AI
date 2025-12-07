@@ -29,6 +29,7 @@ from epidemiology.infectious_router import router as infectious_router
 from epidemiology.vaccine_router import router as vaccine_router
 from epidemiology.occupational_router import router as occupational_router
 from epidemiology.genetic_router import router as genetic_router
+from ml_analysis.advanced_ml_router import router as advanced_ml_router
 
 
 @asynccontextmanager
@@ -68,6 +69,7 @@ app.include_router(infectious_router)
 app.include_router(vaccine_router)
 app.include_router(occupational_router)
 app.include_router(genetic_router)
+app.include_router(advanced_ml_router)
 
 
 class CohortRequest(BaseModel):

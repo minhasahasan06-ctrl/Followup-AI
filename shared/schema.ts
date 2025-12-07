@@ -9620,3 +9620,141 @@ export const insertRiskExposuresEtlJobSchema = createInsertSchema(riskExposuresE
 
 export type InsertRiskExposuresEtlJob = z.infer<typeof insertRiskExposuresEtlJobSchema>;
 export type RiskExposuresEtlJob = typeof riskExposuresEtlJobs.$inferSelect;
+
+// ============================================
+// ADVANCED ML GOVERNANCE & REPRODUCIBILITY SYSTEM
+// ============================================
+
+// Research Protocols - Governance tracking for research studies
+export const researchProtocols = pgTable("research_protocols", {
+  id: varchar("id").primaryKey(),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  principalInvestigator: varchar("principal_investigator").notNull(),
+  status: varchar("status").notNull().default("draft"),
+  analysisSpec: jsonb("analysis_spec").$type<Record<string, unknown>>(),
+  dataSnapshotId: varchar("data_snapshot_id"),
+  version: varchar("version").default("1.0.0"),
+  irbNumber: varchar("irb_number"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusIdx: index("research_protocol_status_idx").on(table.status),
+  piIdx: index("research_protocol_pi_idx").on(table.principalInvestigator),
+}));
+
+export const insertResearchProtocolSchema = createInsertSchema(researchProtocols).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertResearchProtocol = z.infer<typeof insertResearchProtocolSchema>;
+export type ResearchProtocol = typeof researchProtocols.$inferSelect;
+
+// Data Snapshots - Version control for analysis data
+export const dataSnapshots = pgTable("data_snapshots", {
+  id: varchar("id").primaryKey(),
+  createdAt: timestamp("created_at").defaultNow(),
+  tableChecksums: jsonb("table_checksums").$type<Record<string, string>>(),
+  rowCounts: jsonb("row_counts").$type<Record<string, number>>(),
+  dateRange: jsonb("date_range").$type<string[]>(),
+  createdBy: varchar("created_by").notNull(),
+  description: text("description"),
+  contentHash: varchar("content_hash"),
+}, (table) => ({
+  createdByIdx: index("data_snapshot_created_by_idx").on(table.createdBy),
+}));
+
+export const insertDataSnapshotSchema = createInsertSchema(dataSnapshots).omit({
+  createdAt: true,
+});
+
+export type InsertDataSnapshot = z.infer<typeof insertDataSnapshotSchema>;
+export type DataSnapshot = typeof dataSnapshots.$inferSelect;
+
+// Protocol Version Audit Log - Track all governance version changes
+export const protocolVersionAuditLog = pgTable("protocol_version_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  protocolId: varchar("protocol_id").notNull(),
+  action: varchar("action").notNull(),
+  oldVersion: varchar("old_version"),
+  newVersion: varchar("new_version"),
+  userId: varchar("user_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  protocolIdx: index("protocol_version_audit_protocol_idx").on(table.protocolId),
+  actionIdx: index("protocol_version_audit_action_idx").on(table.action),
+}));
+
+export const insertProtocolVersionAuditLogSchema = createInsertSchema(protocolVersionAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertProtocolVersionAuditLog = z.infer<typeof insertProtocolVersionAuditLogSchema>;
+export type ProtocolVersionAuditLog = typeof protocolVersionAuditLog.$inferSelect;
+
+// Robustness Reports - Automated bias/robustness check results
+export const robustnessReports = pgTable("robustness_reports", {
+  id: varchar("id").primaryKey(),
+  protocolId: varchar("protocol_id"),
+  overallStatus: varchar("overall_status").notNull(),
+  reportJson: jsonb("report_json").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  protocolIdx: index("robustness_protocol_idx").on(table.protocolId),
+  statusIdx: index("robustness_status_idx").on(table.overallStatus),
+}));
+
+export const insertRobustnessReportSchema = createInsertSchema(robustnessReports).omit({
+  createdAt: true,
+});
+
+export type InsertRobustnessReport = z.infer<typeof insertRobustnessReportSchema>;
+export type RobustnessReport = typeof robustnessReports.$inferSelect;
+
+// Entity Embeddings - Learned embeddings for patients, drugs, locations
+export const entityEmbeddings = pgTable("entity_embeddings", {
+  id: varchar("id").primaryKey(),
+  entityType: varchar("entity_type").notNull(),
+  method: varchar("method").notNull(),
+  embeddingDim: integer("embedding_dim").notNull(),
+  nEntities: integer("n_entities").notNull(),
+  entityMapping: jsonb("entity_mapping").$type<Record<string, number>>(),
+  trainingLoss: decimal("training_loss", { precision: 10, scale: 6 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  entityTypeIdx: index("embedding_entity_type_idx").on(table.entityType),
+  methodIdx: index("embedding_method_idx").on(table.method),
+}));
+
+export const insertEntityEmbeddingSchema = createInsertSchema(entityEmbeddings).omit({
+  createdAt: true,
+});
+
+export type InsertEntityEmbedding = z.infer<typeof insertEntityEmbeddingSchema>;
+export type EntityEmbedding = typeof entityEmbeddings.$inferSelect;
+
+// ML Extraction Audit Log - Consent-aware data extraction tracking
+export const mlExtractionAuditLog = pgTable("ml_extraction_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  requestId: varchar("request_id").notNull(),
+  requesterId: varchar("requester_id").notNull(),
+  purpose: text("purpose").notNull(),
+  policyId: varchar("policy_id").notNull(),
+  nPatientsConsented: integer("n_patients_consented").notNull(),
+  nRecordsExtracted: integer("n_records_extracted").notNull(),
+  differentialPrivacyApplied: boolean("differential_privacy_applied").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  requesterIdx: index("ml_extraction_requester_idx").on(table.requesterId),
+  policyIdx: index("ml_extraction_policy_idx").on(table.policyId),
+}));
+
+export const insertMlExtractionAuditLogSchema = createInsertSchema(mlExtractionAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMlExtractionAuditLog = z.infer<typeof insertMlExtractionAuditLogSchema>;
+export type MlExtractionAuditLog = typeof mlExtractionAuditLog.$inferSelect;
