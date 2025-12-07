@@ -167,12 +167,6 @@ const doctorItems = [
     badge: "AI",
   },
   {
-    title: "Doctor Wellness",
-    url: "/doctor-wellness",
-    icon: Heart,
-    badge: "AI",
-  },
-  {
     title: "Research Center",
     url: "/research",
     icon: Beaker,

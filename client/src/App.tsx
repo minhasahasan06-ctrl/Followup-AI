@@ -36,7 +36,6 @@ import AgentHub from "@/pages/AgentHub";
 import Wellness from "@/pages/Wellness";
 import Files from "@/pages/Files";
 import Profile from "@/pages/Profile";
-import DoctorWellness from "@/pages/DoctorWellness";
 import ReceptionistDashboard from "@/pages/ReceptionistDashboard";
 import CalendarSync from "@/pages/CalendarSync";
 import PatientReview from "@/pages/PatientReview";
@@ -136,8 +135,7 @@ function DoctorRouter() {
       <Route path="/prescriptions" component={Prescriptions} />
       <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/calendar-sync" component={CalendarSync} />
-      <Route path="/doctor-wellness" component={DoctorWellness} />
-      <Route path="/doctor/patient/:id" component={PatientReview} />
+            <Route path="/doctor/patient/:id" component={PatientReview} />
       <Route path="/doctor/patient/:patientId/ml-insights" component={MLInsightsPage} />
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
