@@ -22,7 +22,6 @@ import {
   ScanText,
   AlertTriangle,
   Shield,
-  MapPin,
   Target,
   Headphones,
   Search,
@@ -130,12 +129,6 @@ const patientItems = [
     url: "/risk-exposures",
     icon: Shield,
     badge: "Auto",
-  },
-  {
-    title: "Environmental Risk",
-    url: "/environmental-risk",
-    icon: MapPin,
-    badge: "LIVE",
   },
   {
     title: "Referrals",

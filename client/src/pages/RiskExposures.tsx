@@ -1,17 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
 import { 
   Shield, 
   Syringe, 
   Briefcase, 
   Dna, 
-  Activity
+  Activity,
+  MapPin
 } from "lucide-react";
 import {
   RiskExposuresPanel,
 } from "@/components/RiskExposuresCards";
+import { EnvironmentalRiskSection } from "@/components/EnvironmentalRiskSection";
 
 interface RiskSummary {
   infectionsCount: number;
@@ -47,7 +50,24 @@ export default function RiskExposures() {
           Risk & Exposures
         </h1>
         <p className="text-muted-foreground mt-1">
-          Auto-generated risk profile based on infections, vaccinations, work, and genetic/family risk.
+          Auto-generated risk profile based on environment, infections, vaccinations, work, and genetic/family risk.
+        </p>
+      </div>
+
+      <EnvironmentalRiskSection 
+        patientId={patientId} 
+        showHeader={true}
+      />
+
+      <Separator className="my-8" />
+
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-health-records">
+          <Shield className="h-5 w-5 text-primary" />
+          Health Risk Records
+        </h2>
+        <p className="text-muted-foreground text-sm mt-1">
+          Your infection history, vaccinations, occupational exposures, and genetic risk factors.
         </p>
       </div>
 

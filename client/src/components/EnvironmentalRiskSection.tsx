@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Droplets,
-  Sun,
   Sparkles,
   RefreshCw,
   Thermometer,
@@ -29,7 +28,6 @@ import {
   Bell,
   BellOff,
   Clock,
-  Calendar,
   BarChart3,
   Gauge,
   CloudRain,
@@ -44,7 +42,7 @@ import {
   Bone,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 interface EnvironmentalProfile {
   id: string;
@@ -84,6 +82,7 @@ interface RiskScore {
   composite: number | null;
   level: string | null;
   computedAt: string | null;
+  volatility?: number;
   components: {
     weather: number | null;
     airQuality: number | null;
@@ -172,45 +171,52 @@ const CONDITION_LABELS: Record<string, string> = {
   eczema: "Eczema",
 };
 
-export default function EnvironmentalRiskMap() {
+interface EnvironmentalRiskSectionProps {
+  patientId: string;
+  showHeader?: boolean;
+}
+
+export function EnvironmentalRiskSection({ patientId, showHeader = true }: EnvironmentalRiskSectionProps) {
   const { toast } = useToast();
   const [zipCode, setZipCode] = useState("");
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState("overview");
 
-  const { data: authData } = useQuery({
-    queryKey: ["/api/auth/user"],
-  });
-  const patientId = (authData as any)?.id || "demo-patient";
-
   const { data: envData, isLoading, refetch } = useQuery<EnvironmentalData>({
     queryKey: ["/api/v1/environment/current", patientId],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/environment/current?patient_id=${patientId}`);
+      const res = await fetch(`/api/v1/environment/current?patient_id=${patientId}`, {
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error("Failed to fetch environmental data");
       return res.json();
     },
     refetchInterval: 5 * 60 * 1000,
+    enabled: !!patientId,
   });
 
   const { data: historyData } = useQuery({
     queryKey: ["/api/v1/environment/history", patientId],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/environment/history?patient_id=${patientId}&days=7`);
+      const res = await fetch(`/api/v1/environment/history?patient_id=${patientId}&days=7`, {
+        credentials: 'include',
+      });
       if (!res.ok) return { history: [] };
       return res.json();
     },
-    enabled: !!envData?.profile,
+    enabled: !!envData?.profile && !!patientId,
   });
 
   const { data: correlationData } = useQuery({
     queryKey: ["/api/v1/environment/correlations", patientId],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/environment/correlations?patient_id=${patientId}`);
+      const res = await fetch(`/api/v1/environment/correlations?patient_id=${patientId}`, {
+        credentials: 'include',
+      });
       if (!res.ok) return { correlations: [] };
       return res.json();
     },
-    enabled: !!envData?.profile?.correlationConsent,
+    enabled: !!envData?.profile?.correlationConsent && !!patientId,
   });
 
   const refreshMutation = useMutation({
@@ -218,6 +224,7 @@ export default function EnvironmentalRiskMap() {
       const res = await fetch(`/api/v1/environment/refresh?patient_id=${patientId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: 'include',
         body: JSON.stringify({ zipCode: zipCode || envData?.profile?.zipCode }),
       });
       if (!res.ok) throw new Error("Failed to refresh data");
@@ -245,6 +252,7 @@ export default function EnvironmentalRiskMap() {
       const res = await fetch(`/api/v1/environment/profile?patient_id=${patientId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: 'include',
         body: JSON.stringify({
           zipCode: data.zipCode,
           conditions: data.conditions,
@@ -275,6 +283,7 @@ export default function EnvironmentalRiskMap() {
       const res = await fetch(`/api/v1/environment/alerts/acknowledge?patient_id=${patientId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: 'include',
         body: JSON.stringify({ alertId }),
       });
       if (!res.ok) throw new Error("Failed to acknowledge alert");
@@ -351,15 +360,18 @@ export default function EnvironmentalRiskMap() {
 
   if (!envData?.profile) {
     return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight" data-testid="heading-environmental-risk">
-            Environmental Risk Map
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Get personalized environmental health insights based on your location and conditions
-          </p>
-        </div>
+      <div className="space-y-6">
+        {showHeader && (
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="heading-environmental-risk">
+              <MapPin className="h-6 w-6 text-primary" />
+              Environmental Risk Map
+            </h2>
+            <p className="text-muted-foreground mt-2">
+              Get personalized environmental health insights based on your location and conditions
+            </p>
+          </div>
+        )}
 
         <Card data-testid="card-setup-profile">
           <CardHeader>
@@ -448,22 +460,38 @@ export default function EnvironmentalRiskMap() {
   const correlations: Correlation[] = correlationData?.correlations || [];
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight" data-testid="heading-environmental-risk">
-            Environmental Risk Map
-          </h1>
-          <p className="text-muted-foreground flex items-center gap-2 mt-1">
-            <MapPin className="h-4 w-4" />
-            {profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.zipCode}
+        {showHeader && (
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="heading-environmental-risk">
+              <MapPin className="h-6 w-6 text-primary" />
+              Environmental Risk Map
+            </h2>
+            <p className="text-muted-foreground flex items-center gap-2 mt-1">
+              <MapPin className="h-4 w-4" />
+              {profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.zipCode}
+              {currentData?.measuredAt && (
+                <span className="text-xs">
+                  (Updated {formatDistanceToNow(new Date(currentData.measuredAt), { addSuffix: true })})
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+        {!showHeader && (
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              {profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.zipCode}
+            </span>
             {currentData?.measuredAt && (
-              <span className="text-xs">
+              <span className="text-xs text-muted-foreground">
                 (Updated {formatDistanceToNow(new Date(currentData.measuredAt), { addSuffix: true })})
               </span>
             )}
-          </p>
-        </div>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -960,3 +988,5 @@ export default function EnvironmentalRiskMap() {
     </div>
   );
 }
+
+export default EnvironmentalRiskSection;
