@@ -6,6 +6,7 @@ Implements APScheduler-based background jobs for:
 - Periodic risk scoring and alert generation
 - Data quality monitoring
 - Comparative analysis result tracking
+- Risk & Exposures ETL (infectious events, immunizations, occupational exposures, genetic flags)
 """
 
 import os
@@ -17,6 +18,13 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 import asyncio
 import json
+
+from risk_exposures_etl import (
+    InfectiousEventsETL,
+    ImmunizationsETL, 
+    OccupationalExposuresETL,
+    GeneticRiskFlagsETL
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -65,8 +73,16 @@ class ResearchScheduler:
                 name='Generate Daily Summary'
             )
             
+            self.scheduler.add_job(
+                self._run_risk_exposures_etl,
+                IntervalTrigger(minutes=30),
+                id='risk_exposures_etl',
+                replace_existing=True,
+                name='Risk & Exposures ETL'
+            )
+            
             self.scheduler.start()
-            logger.info("Research scheduler started with background jobs")
+            logger.info("Research scheduler started with background jobs (including Risk & Exposures ETL)")
     
     def stop(self):
         """Stop the background scheduler."""
@@ -404,6 +420,40 @@ class ResearchScheduler:
         except Exception as e:
             logger.error(f"Error in data quality check: {e}")
     
+    def _run_risk_exposures_etl(self):
+        """Run Risk & Exposures ETL jobs to populate derived risk data."""
+        logger.info("Running Risk & Exposures ETL jobs...")
+        
+        try:
+            infectious_etl = InfectiousEventsETL()
+            infectious_stats = infectious_etl.run()
+            logger.info(f"Infectious events ETL: {infectious_stats}")
+        except Exception as e:
+            logger.error(f"Error in infectious events ETL: {e}")
+        
+        try:
+            immunizations_etl = ImmunizationsETL()
+            immunizations_stats = immunizations_etl.run()
+            logger.info(f"Immunizations ETL: {immunizations_stats}")
+        except Exception as e:
+            logger.error(f"Error in immunizations ETL: {e}")
+        
+        try:
+            occupational_etl = OccupationalExposuresETL()
+            occupational_stats = occupational_etl.run()
+            logger.info(f"Occupational exposures ETL: {occupational_stats}")
+        except Exception as e:
+            logger.error(f"Error in occupational exposures ETL: {e}")
+        
+        try:
+            genetic_etl = GeneticRiskFlagsETL()
+            genetic_stats = genetic_etl.run()
+            logger.info(f"Genetic risk flags ETL: {genetic_stats}")
+        except Exception as e:
+            logger.error(f"Error in genetic risk flags ETL: {e}")
+        
+        logger.info("Risk & Exposures ETL jobs completed")
+
     def _generate_daily_summary(self):
         """Generate daily summary of research activities."""
         logger.info("Generating daily research summary...")
