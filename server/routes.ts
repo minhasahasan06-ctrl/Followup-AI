@@ -16911,7 +16911,7 @@ Provide:
           lockedUntil: null,
           lastVerifiedAt: new Date(),
           lastVerifiedBy: req.user?.id || 'anonymous',
-          verificationCount: sql`COALESCE(verification_count, 0) + 1`,
+          verificationCount: drizzleSql`COALESCE(verification_count, 0) + 1`,
           updatedAt: new Date()
         })
         .where(eq(schema.adminTotpSecrets.secretName, 'ml-training-hub'));
