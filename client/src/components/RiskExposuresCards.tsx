@@ -211,10 +211,10 @@ export function InfectionHistoryCard({ patientId, isDoctor, compact = false }: C
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: { id: string; severity?: string; notes?: string }) => {
+    mutationFn: async (data: { id: string; severity?: string; doctorNotes?: string }) => {
       const res = await apiRequest(`/api/patients/${patientId}/risk/infections/${data.id}`, {
         method: 'PATCH',
-        json: { severity: data.severity, notes: data.notes },
+        json: { severity: data.severity, doctorNotes: data.doctorNotes },
       });
       return res.json();
     },
@@ -315,6 +315,7 @@ export function InfectionHistoryCard({ patientId, isDoctor, compact = false }: C
                       if (open) {
                         setEditingId(infection.id);
                         setEditSeverity(infection.severity);
+                        setEditNotes(infection.doctor_notes ?? '');
                       } else {
                         setEditingId(null);
                       }
@@ -358,7 +359,7 @@ export function InfectionHistoryCard({ patientId, isDoctor, compact = false }: C
                         </div>
                         <DialogFooter className="mt-4">
                           <Button
-                            onClick={() => updateMutation.mutate({ id: infection.id, severity: editSeverity, notes: editNotes })}
+                            onClick={() => updateMutation.mutate({ id: infection.id, severity: editSeverity, doctorNotes: editNotes })}
                             disabled={updateMutation.isPending}
                           >
                             <Save className="h-4 w-4 mr-2" />
