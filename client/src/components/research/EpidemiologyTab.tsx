@@ -116,7 +116,7 @@ function DrugSafetyPanel() {
   const { toast } = useToast();
   const [drugQuery, setDrugQuery] = useState("");
   const [outcomeQuery, setOutcomeQuery] = useState("");
-  const [selectedLocation, setSelectedLocation] = useState<string>("");
+  const [selectedLocation, setSelectedLocation] = useState<string>("all");
   const [scope, setScope] = useState<string>("all");
 
   const { data: signalData, isLoading: loadingSignals, refetch } = useQuery<SignalResponse>({
@@ -125,7 +125,7 @@ function DrugSafetyPanel() {
       const params = new URLSearchParams();
       if (drugQuery) params.append('drug_query', drugQuery);
       if (outcomeQuery) params.append('outcome_query', outcomeQuery);
-      if (selectedLocation) params.append('patient_location_id', selectedLocation);
+      if (selectedLocation && selectedLocation !== "all") params.append('patient_location_id', selectedLocation);
       params.append('scope', scope);
       params.append('limit', '50');
       
@@ -210,7 +210,7 @@ function DrugSafetyPanel() {
               <SelectValue placeholder="All locations" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All locations</SelectItem>
+              <SelectItem value="all">All locations</SelectItem>
               {locations?.locations?.map((loc) => (
                 <SelectItem key={loc.id} value={loc.id}>
                   {loc.name} ({loc.signal_count || 0})
@@ -386,13 +386,13 @@ function DrugSafetyPanel() {
 
 function InfectiousDiseasePanel() {
   const [pathogenCode, setPathogenCode] = useState("COVID-19");
-  const [selectedLocation, setSelectedLocation] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState("all");
 
   const { data: epicurveData, isLoading: loadingEpicurve } = useQuery<EpicurveResponse>({
     queryKey: [PYTHON_BACKEND_URL, '/api/v1/infectious/epicurve', pathogenCode, selectedLocation],
     queryFn: async () => {
       const params = new URLSearchParams({ pathogen_code: pathogenCode });
-      if (selectedLocation) params.append('location_id', selectedLocation);
+      if (selectedLocation && selectedLocation !== "all") params.append('location_id', selectedLocation);
       
       const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/infectious/epicurve?${params}`, {
         headers: { 'Authorization': 'Bearer token' }
@@ -407,7 +407,7 @@ function InfectiousDiseasePanel() {
     queryKey: [PYTHON_BACKEND_URL, '/api/v1/infectious/r0', pathogenCode, selectedLocation],
     queryFn: async () => {
       const params = new URLSearchParams({ pathogen_code: pathogenCode });
-      if (selectedLocation) params.append('location_id', selectedLocation);
+      if (selectedLocation && selectedLocation !== "all") params.append('location_id', selectedLocation);
       
       const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/infectious/r0?${params}`, {
         headers: { 'Authorization': 'Bearer token' }
@@ -466,7 +466,7 @@ function InfectiousDiseasePanel() {
               <SelectValue placeholder="All locations" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All locations</SelectItem>
+              <SelectItem value="all">All locations</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -571,14 +571,14 @@ function InfectiousDiseasePanel() {
 
 function VaccineAnalyticsPanel() {
   const [vaccineCode, setVaccineCode] = useState("COVID-19-MRNA");
-  const [selectedLocation, setSelectedLocation] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState("all");
   const [outcomeCode, setOutcomeCode] = useState("COVID-19");
 
   const { data: coverageData, isLoading: loadingCoverage } = useQuery<VaccineCoverage>({
     queryKey: [PYTHON_BACKEND_URL, '/api/v1/vaccine/coverage', vaccineCode, selectedLocation],
     queryFn: async () => {
       const params = new URLSearchParams({ vaccine_code: vaccineCode });
-      if (selectedLocation) params.append('location_id', selectedLocation);
+      if (selectedLocation && selectedLocation !== "all") params.append('location_id', selectedLocation);
       
       const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/vaccine/coverage?${params}`, {
         headers: { 'Authorization': 'Bearer token' }
@@ -596,7 +596,7 @@ function VaccineAnalyticsPanel() {
         vaccine_code: vaccineCode,
         outcome_code: outcomeCode
       });
-      if (selectedLocation) params.append('location_id', selectedLocation);
+      if (selectedLocation && selectedLocation !== "all") params.append('location_id', selectedLocation);
       
       const response = await fetch(`${PYTHON_BACKEND_URL}/api/v1/vaccine/effectiveness?${params}`, {
         headers: { 'Authorization': 'Bearer token' }
@@ -675,7 +675,7 @@ function VaccineAnalyticsPanel() {
               <SelectValue placeholder="All locations" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All locations</SelectItem>
+              <SelectItem value="all">All locations</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -770,14 +770,14 @@ function VaccineAnalyticsPanel() {
   );
 }
 
-export function EpidemiologyTab() {
+export function AdvancedAnalyticsTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Epidemiology Research</h2>
+          <h2 className="text-2xl font-bold">Advanced Analytics</h2>
           <p className="text-muted-foreground">
-            Drug safety signals, infectious disease surveillance, and vaccine analytics
+            Drug safety signals, infectious disease surveillance, vaccine analytics, occupational and genetic epidemiology
           </p>
         </div>
         <Badge variant="outline" className="gap-1">
@@ -817,3 +817,6 @@ export function EpidemiologyTab() {
     </div>
   );
 }
+
+// Backward compatible export
+export const EpidemiologyTab = AdvancedAnalyticsTab;
