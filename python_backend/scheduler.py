@@ -99,8 +99,32 @@ class ResearchScheduler:
                 name='ML Feature Materialization'
             )
             
+            self.scheduler.add_job(
+                self._run_autopilot_daily_aggregation,
+                CronTrigger(hour=3, minute=0),
+                id='autopilot_daily_aggregation',
+                replace_existing=True,
+                name='Autopilot Daily Aggregation'
+            )
+            
+            self.scheduler.add_job(
+                self._run_autopilot_inference_sweep,
+                IntervalTrigger(hours=1),
+                id='autopilot_inference_sweep',
+                replace_existing=True,
+                name='Autopilot Inference Sweep'
+            )
+            
+            self.scheduler.add_job(
+                self._run_autopilot_notification_dispatch,
+                IntervalTrigger(minutes=15),
+                id='autopilot_notification_dispatch',
+                replace_existing=True,
+                name='Autopilot Notification Dispatch'
+            )
+            
             self.scheduler.start()
-            logger.info("Research scheduler started with background jobs (including Epidemiology pipelines)")
+            logger.info("Research scheduler started with background jobs (including Epidemiology pipelines and Followup Autopilot)")
     
     def stop(self):
         """Stop the background scheduler."""
@@ -526,6 +550,133 @@ class ResearchScheduler:
             
         except Exception as e:
             logger.error(f"Error generating daily summary: {e}")
+
+
+    def _run_autopilot_daily_aggregation(self):
+        """Run daily feature aggregation for all patients with signals."""
+        logger.info("Running Autopilot daily aggregation...")
+        
+        conn = None
+        cur = None
+        try:
+            import psycopg2
+            import psycopg2.extras
+            from datetime import date
+            
+            conn = psycopg2.connect(self.db_url)
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            yesterday = date.today() - timedelta(days=1)
+            
+            cur.execute("""
+                SELECT DISTINCT patient_id 
+                FROM autopilot_patient_signals 
+                WHERE DATE(signal_time) = %s
+            """, (yesterday,))
+            
+            patients = [row['patient_id'] for row in cur.fetchall()]
+            
+            logger.info(f"Aggregating features for {len(patients)} patients")
+            
+            for patient_id in patients:
+                try:
+                    from ml_analysis.followup_autopilot.feature_builder import FeatureBuilder
+                    builder = FeatureBuilder()
+                    features = builder.build_daily_features(patient_id, yesterday)
+                    builder.save_daily_features(patient_id, yesterday, features)
+                except Exception as e:
+                    logger.error(f"Error aggregating features for {patient_id}: {e}")
+            
+            logger.info(f"Autopilot daily aggregation completed for {len(patients)} patients")
+            
+        except Exception as e:
+            logger.error(f"Error in Autopilot daily aggregation: {e}")
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+    
+    def _run_autopilot_inference_sweep(self):
+        """Run inference sweep for patients due for follow-up."""
+        logger.info("Running Autopilot inference sweep...")
+        
+        conn = None
+        cur = None
+        try:
+            import psycopg2
+            import psycopg2.extras
+            
+            conn = psycopg2.connect(self.db_url)
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            now = datetime.utcnow()
+            
+            cur.execute("""
+                SELECT patient_id 
+                FROM autopilot_patient_states 
+                WHERE next_followup_at <= %s OR next_followup_at IS NULL
+                LIMIT 100
+            """, (now,))
+            
+            patients = [row['patient_id'] for row in cur.fetchall()]
+            
+            logger.info(f"Running inference for {len(patients)} patients due for follow-up")
+            
+            for patient_id in patients:
+                try:
+                    from ml_analysis.followup_autopilot.autopilot_core import AutopilotCore
+                    from ml_analysis.followup_autopilot.trigger_engine import TriggerEngine
+                    from ml_analysis.followup_autopilot.feature_builder import FeatureBuilder
+                    from datetime import date
+                    
+                    autopilot = AutopilotCore()
+                    state = autopilot.update_patient_state(patient_id)
+                    
+                    builder = FeatureBuilder()
+                    today = date.today()
+                    features_today = builder.build_daily_features(patient_id, today)
+                    
+                    trigger_engine = TriggerEngine()
+                    trigger_engine.run_triggers(
+                        patient_id=patient_id,
+                        features_today=features_today,
+                        patient_state=state,
+                        risk_probs={
+                            "p_clinical_deterioration": state.get("risk_components", {}).get("clinical", 0) / 100,
+                            "p_mental_health_crisis": state.get("risk_components", {}).get("mental_health", 0) / 100,
+                            "p_non_adherence": state.get("risk_components", {}).get("adherence", 0) / 100,
+                        },
+                        anomaly_score=state.get("anomaly_score", 0)
+                    )
+                except Exception as e:
+                    logger.error(f"Error in inference for {patient_id}: {e}")
+            
+            logger.info(f"Autopilot inference sweep completed for {len(patients)} patients")
+            
+        except Exception as e:
+            logger.error(f"Error in Autopilot inference sweep: {e}")
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+    
+    def _run_autopilot_notification_dispatch(self):
+        """Dispatch pending autopilot notifications."""
+        logger.info("Running Autopilot notification dispatch...")
+        
+        try:
+            from ml_analysis.followup_autopilot.notification_engine import NotificationEngine
+            
+            notifier = NotificationEngine()
+            results = notifier.dispatch_pending_notifications()
+            
+            total_sent = sum(v for k, v in results.items() if k != 'failed')
+            logger.info(f"Autopilot notification dispatch: {total_sent} sent, {results.get('failed', 0)} failed")
+            
+        except Exception as e:
+            logger.error(f"Error in Autopilot notification dispatch: {e}")
 
 
 _scheduler_instance: Optional[ResearchScheduler] = None

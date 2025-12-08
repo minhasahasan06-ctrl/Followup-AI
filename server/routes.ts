@@ -20736,6 +20736,69 @@ Provide:
   // END RISK & EXPOSURES ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // FOLLOWUP AUTOPILOT PROXY ROUTES
+  // =============================================================================
+
+  // Ingest signal
+  app.post('/api/v1/followup-autopilot/patients/:patientId/signals', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/signals`, 'POST');
+  });
+
+  // Batch ingest signals
+  app.post('/api/v1/followup-autopilot/patients/:patientId/signals/batch', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/signals/batch`, 'POST');
+  });
+
+  // Get autopilot status
+  app.get('/api/v1/followup-autopilot/patients/:patientId/autopilot', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/autopilot`, 'GET');
+  });
+
+  // Get patient tasks
+  app.get('/api/v1/followup-autopilot/patients/:patientId/tasks', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/tasks`, 'GET');
+  });
+
+  // Complete task
+  app.post('/api/v1/followup-autopilot/patients/:patientId/tasks/:taskId/complete', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/tasks/${req.params.taskId}/complete`, 'POST');
+  });
+
+  // Get notifications
+  app.get('/api/v1/followup-autopilot/patients/:patientId/notifications', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/notifications`, 'GET');
+  });
+
+  // Mark notification read
+  app.post('/api/v1/followup-autopilot/patients/:patientId/notifications/:notificationId/read', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/notifications/${req.params.notificationId}/read`, 'POST');
+  });
+
+  // Set training labels
+  app.post('/api/v1/followup-autopilot/patients/:patientId/labels', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/labels`, 'POST');
+  });
+
+  // Manual trigger
+  app.post('/api/v1/followup-autopilot/patients/:patientId/trigger', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/trigger`, 'POST');
+  });
+
+  // Health check
+  app.get('/api/v1/followup-autopilot/health', async (req, res) => {
+    await automationProxy(req, res, '/api/v1/followup-autopilot/health', 'GET');
+  });
+
+  // Stats
+  app.get('/api/v1/followup-autopilot/stats', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/followup-autopilot/stats', 'GET');
+  });
+
+  // =============================================================================
+  // END FOLLOWUP AUTOPILOT PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
 
   // WebSocket proxy for agent communication

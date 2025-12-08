@@ -60,6 +60,15 @@ The backend comprises a Node.js Express server (Port 5000) for chatbot, appointm
   - Frontend uses centralized queryFn pattern with object-style query keys for proper cache invalidation
   - Production security: VITE_EPIDEMIOLOGY_AUTH_TOKEN required in production mode
 - **Unified Medication System**: Production-grade medication management with patient records, active medication dashboard, and doctor-only prescription authoring with AI assistance and conflict detection, supporting role-based routing.
+- **Followup Autopilot Engine**: ML-powered adaptive follow-up system that aggregates patient signals from 8 modules (Device Data, Symptoms, Video AI, Audio AI, PainTrack, Mental Health, Risk & Exposures, Medications) to predict deterioration risks, optimize follow-up timing, and generate adaptive tasks. Features:
+  - **Signal Ingestor**: Ingests and scores signals from all 8 patient data modules
+  - **Feature Builder**: 7-day rolling window feature aggregation for ML input
+  - **ML Models**: PyTorch LSTM for risk prediction, XGBoost for adherence/engagement, IsolationForest for anomaly detection
+  - **Trigger Engine**: Rule-based triggers for risk thresholds, sudden changes, milestone events
+  - **Task Engine**: Generates adaptive Daily Follow-up tasks based on current patient state
+  - **Notification Engine**: Multi-channel (dashboard, email, SMS) alert delivery via AlertOrchestrationEngine
+  - **Privacy-First**: Integrated with PrivacyGuard (MIN_CELL_SIZE=10), ConsentService, and HIPAA audit logging
+  - **Safety**: All outputs include "Wellness monitoring - Not medical advice" disclaimer
 
 ### Multi-Agent Communication System
 A multi-agent system facilitates communication between AI agents, users, and providers using a Message Router, dual-layer Memory Service (Redis, PostgreSQL pgvector), and a `MessageEnvelope` protocol. The Agent Hub UI offers a unified conversation interface with WebSockets, tool calls, human-in-the-loop approvals, and streaming responses, backed by a Consent-Verified Approval System and dedicated database schema. Tool Microservices extend AI agent capabilities with secure database operations.
@@ -76,6 +85,9 @@ APScheduler-based background jobs running on the Python FastAPI backend (port 80
 - **Risk & Exposures ETL**: Every 30 minutes for infectious events, immunizations, occupational exposures, genetic flags
 - **Drug Safety Signal Scan**: Every 4 hours for pharmacovigilance
 - **ML Feature Materialization**: Daily at 2 AM for feature engineering
+- **Autopilot Daily Aggregation**: Daily at 3 AM for feature aggregation from patient signals
+- **Autopilot Inference Sweep**: Hourly inference for patients due for follow-up
+- **Autopilot Notification Dispatch**: Every 15 minutes for pending notification delivery
 
 Scheduler status is visible in AdminMLTrainingHub > Advanced > Background Scheduler, with ability to trigger jobs manually.
 
