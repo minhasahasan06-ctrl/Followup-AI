@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import { DeviceDataManager } from '@/components/DeviceDataManager';
+import { AutopilotInsightsTab, NotificationsBell } from '@/components/autopilot/AutopilotInsightsTab';
+import { useAutopilotSignal } from '@/hooks/useAutopilotSignal';
 import {
   LineChart,
   Line,
@@ -530,10 +532,60 @@ function AutopilotSection({
   );
 }
 
+const TAB_MAP: Record<string, string> = {
+  device: 'device',
+  symptoms: 'symptoms',
+  video: 'video-ai',
+  video_ai: 'video-ai',
+  audio: 'audio-ai',
+  audio_ai: 'audio-ai',
+  pain: 'paintrack',
+  paintrack: 'paintrack',
+  mental_health: 'mental-health',
+  mental: 'mental-health',
+  'mental-health': 'mental-health',
+  autopilot: 'autopilot',
+  insights: 'autopilot',
+  medications: 'device',
+  risk_exposures: 'device',
+};
+
+function useQueryParam(key: string): string | null {
+  const [location] = useLocation();
+  const [value, setValue] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get(key);
+  });
+  
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setValue(new URLSearchParams(window.location.search).get(key));
+  }, [location, key]);
+  
+  return value;
+}
+
 export default function DailyFollowupHistory() {
   const { user } = useAuth();
   const [timeRange, setTimeRange] = useState('30');
-  const [activeTab, setActiveTab] = useState('device');
+  
+  const tabParam = useQueryParam('tab');
+  const [activeTab, setActiveTab] = useState(() => {
+    return tabParam ? (TAB_MAP[tabParam] || 'device') : 'device';
+  });
+  
+  useEffect(() => {
+    if (tabParam) {
+      const mappedTab = TAB_MAP[tabParam] || 'device';
+      if (mappedTab !== activeTab) {
+        setActiveTab(mappedTab);
+      }
+    }
+  }, [tabParam]);
+  
+  const { sendDeviceSignal, sendSymptomSignal, sendPainSignal, sendMentalHealthSignal, sendVideoSignal, sendAudioSignal } = useAutopilotSignal();
+  
+  const lastSentDataRef = useRef<Record<string, string>>({});
 
   const selectedRange = TIME_RANGES.find(r => r.value === timeRange) || TIME_RANGES[2];
   const daysLimit = selectedRange.days === Infinity ? 3650 : selectedRange.days;
@@ -795,6 +847,101 @@ export default function DailyFollowupHistory() {
     return { avg: avg.toFixed(1), min, max, trend: trend as 'up' | 'down' | 'stable' };
   };
 
+  useEffect(() => {
+    if (!deviceHistory?.length) return;
+    const latest = deviceHistory[0];
+    if (!latest) return;
+    const dataKey = `device_${latest.createdAt || latest.id}`;
+    if (lastSentDataRef.current.device === dataKey) return;
+    
+    sendDeviceSignal({
+      heartRate: latest.heartRate,
+      oxygenSaturation: latest.oxygenSaturation,
+      temperature: latest.temperature,
+      steps: latest.steps,
+      source: 'history_sync'
+    });
+    lastSentDataRef.current.device = dataKey;
+  }, [deviceHistory, sendDeviceSignal]);
+
+  useEffect(() => {
+    if (!filteredSymptoms?.length) return;
+    const latest = filteredSymptoms[0];
+    if (!latest) return;
+    const dataKey = `symptom_${latest.timestamp || latest.id}`;
+    if (lastSentDataRef.current.symptom === dataKey) return;
+    
+    sendSymptomSignal({
+      painLevel: latest.painLevel,
+      fatigueLevel: latest.fatigueLevel,
+      symptoms: latest.symptoms || [],
+    });
+    lastSentDataRef.current.symptom = dataKey;
+  }, [filteredSymptoms, sendSymptomSignal]);
+
+  useEffect(() => {
+    if (!filteredPaintrack?.length) return;
+    const latest = filteredPaintrack[0];
+    if (!latest) return;
+    const dataKey = `pain_${latest.createdAt || latest.id}`;
+    if (lastSentDataRef.current.pain === dataKey) return;
+    
+    sendPainSignal({
+      vasScore: latest.patientVas || 0,
+      joint: latest.joint,
+      duration: latest.duration,
+    });
+    lastSentDataRef.current.pain = dataKey;
+  }, [filteredPaintrack, sendPainSignal]);
+
+  useEffect(() => {
+    if (!filteredMentalHealth?.length) return;
+    const latest = filteredMentalHealth[0];
+    if (!latest) return;
+    const dataKey = `mental_${latest.completed_at || latest.id}`;
+    if (lastSentDataRef.current.mental === dataKey) return;
+    
+    sendMentalHealthSignal({
+      questionnaireType: latest.questionnaire_type,
+      totalScore: latest.total_score,
+      maxScore: latest.max_score || 27,
+      severityLevel: latest.severity_level,
+    });
+    lastSentDataRef.current.mental = dataKey;
+  }, [filteredMentalHealth, sendMentalHealthSignal]);
+
+  useEffect(() => {
+    if (!filteredVideoSessions?.length) return;
+    const latest = filteredVideoSessions[0];
+    if (!latest) return;
+    const dataKey = `video_${latest.started_at || latest.id}`;
+    if (lastSentDataRef.current.video === dataKey) return;
+    
+    sendVideoSignal({
+      sessionId: latest.id,
+      respiratoryRisk: latest.respiratory_risk || 0,
+      tremorIndex: latest.tremor_index,
+      gaitScore: latest.gait_score,
+    });
+    lastSentDataRef.current.video = dataKey;
+  }, [filteredVideoSessions, sendVideoSignal]);
+
+  useEffect(() => {
+    if (!filteredVoice?.length) return;
+    const latest = filteredVoice[0];
+    if (!latest) return;
+    const dataKey = `audio_${latest.createdAt || latest.id}`;
+    if (lastSentDataRef.current.audio === dataKey) return;
+    
+    sendAudioSignal({
+      sessionId: latest.id,
+      emotionScore: latest.empathyLevel,
+      stressLevel: latest.stressLevel,
+      extractedSymptoms: latest.extractedSymptoms || [],
+    });
+    lastSentDataRef.current.audio = dataKey;
+  }, [filteredVoice, sendAudioSignal]);
+
   if (!user) {
     return (
       <div className="container mx-auto p-6 max-w-7xl">
@@ -825,6 +972,9 @@ export default function DailyFollowupHistory() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {patientId && patientId !== 'demo-patient' && (
+            <NotificationsBell patientId={patientId} />
+          )}
           <Select value={timeRange} onValueChange={setTimeRange}>
             <SelectTrigger className="w-[140px]" data-testid="select-time-range">
               <Calendar className="h-4 w-4 mr-2" />
@@ -900,6 +1050,10 @@ export default function DailyFollowupHistory() {
           <TabsTrigger value="mental-health" data-testid="tab-mental-health-history" className="flex-1 min-w-[100px]">
             <Brain className="h-3 w-3 mr-1" />
             Mental Health
+          </TabsTrigger>
+          <TabsTrigger value="autopilot" data-testid="tab-autopilot-insights" className="flex-1 min-w-[100px]">
+            <Sparkles className="h-3 w-3 mr-1" />
+            Insights
           </TabsTrigger>
         </TabsList>
 
@@ -1749,6 +1903,24 @@ export default function DailyFollowupHistory() {
               actionLabel="Start Assessment"
               actionHref="/"
             />
+          )}
+        </TabsContent>
+
+        <TabsContent value="autopilot" className="space-y-4">
+          <LegalDisclaimer />
+          {patientId && patientId !== 'demo-patient' ? (
+            <AutopilotInsightsTab patientId={patientId} />
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Sparkles className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <h3 className="font-semibold text-lg mb-2">Autopilot Insights</h3>
+                <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                  Log in to view your personalized wellness insights, risk history, and trigger events.
+                  The Autopilot system monitors your wellness patterns to help you stay on track.
+                </p>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
       </Tabs>

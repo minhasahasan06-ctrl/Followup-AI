@@ -82,6 +82,15 @@ class ManualTriggerInput(BaseModel):
     force: bool = False
 
 
+class MedEventInput(BaseModel):
+    medication_id: Optional[str] = None
+    medication_name: str = Field(..., min_length=1)
+    action: str = Field(..., pattern="^(taken|missed|skipped|late)$")
+    scheduled_time: Optional[datetime] = None
+    actual_time: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
 def get_patient_id_from_request(request: Request) -> str:
     """Extract patient ID from request (auth context)"""
     if hasattr(request.state, 'user'):
@@ -155,6 +164,60 @@ async def ingest_signals_batch(
     audit_log(db, "signals_batch_ingested", patient_id, {"count": len(signal_ids)})
     
     return {"signal_ids": signal_ids, "count": len(signal_ids)}
+
+
+@router.post("/patients/{patient_id}/med-events")
+async def record_medication_event(
+    patient_id: str,
+    event: MedEventInput,
+    db: Session = Depends(get_db)
+):
+    """
+    Record a medication adherence event.
+    
+    Accepts: taken, missed, skipped, late actions.
+    Automatically creates an Autopilot signal for adherence tracking.
+    """
+    from python_backend.ml_analysis.followup_autopilot.signal_ingestor import SignalIngestor
+    
+    adherence_score = {
+        'taken': 1.0,
+        'late': 0.7,
+        'missed': 0.0,
+        'skipped': 0.0,
+    }.get(event.action, 0.0)
+    
+    payload = {
+        'medication_id': event.medication_id,
+        'medication_name': event.medication_name,
+        'action': event.action,
+        'scheduled_time': event.scheduled_time.isoformat() if event.scheduled_time else None,
+        'actual_time': event.actual_time.isoformat() if event.actual_time else datetime.now(timezone.utc).isoformat(),
+        'notes': event.notes,
+    }
+    
+    ingestor = SignalIngestor(db)
+    signal_id = ingestor.ingest_signal(
+        patient_id=patient_id,
+        category='meds',
+        source='medication_tracker',
+        raw_payload=payload,
+        ml_score=adherence_score,
+        signal_time=event.actual_time or datetime.now(timezone.utc)
+    )
+    
+    audit_log(db, "med_event_recorded", patient_id, {
+        "medication": event.medication_name,
+        "action": event.action,
+        "adherence_score": adherence_score
+    })
+    
+    return {
+        "status": "recorded",
+        "signal_id": signal_id,
+        "adherence_score": adherence_score,
+        "wellness_disclaimer": WELLNESS_DISCLAIMER
+    }
 
 
 @router.get("/patients/{patient_id}/autopilot")
