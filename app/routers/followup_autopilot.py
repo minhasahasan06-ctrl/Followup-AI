@@ -39,6 +39,21 @@ WELLNESS_DISCLAIMER = (
 )
 
 
+@router.get("/health")
+async def health_check():
+    """
+    Lightweight health check endpoint for backend readiness detection.
+    Returns READY when the Autopilot system is fully initialized.
+    Used by frontend for smart retry logic during cold starts.
+    """
+    return {
+        "status": "READY",
+        "service": "followup-autopilot",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "1.0.0"
+    }
+
+
 class SignalInput(BaseModel):
     category: str = Field(..., description="Signal category: device, symptom, video, audio, pain, mental, environment, meds, exposure")
     source: str = Field(default="api_sync", description="Signal source")

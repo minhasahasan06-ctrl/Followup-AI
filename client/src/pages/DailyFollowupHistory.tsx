@@ -225,7 +225,9 @@ function AutopilotSection({
   isError, 
   onRefresh, 
   onTaskComplete,
-  isRefreshing
+  isRefreshing,
+  isBackendStarting,
+  retryCount
 }: { 
   data: AutopilotData | undefined;
   isLoading: boolean;
@@ -233,23 +235,47 @@ function AutopilotSection({
   onRefresh: () => void;
   onTaskComplete: (taskId: string) => void;
   isRefreshing: boolean;
+  isBackendStarting?: boolean;
+  retryCount?: number;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   
-  if (isLoading) {
+  if (isLoading || isBackendStarting) {
     return (
-      <Card>
+      <Card className="border-primary/30 bg-primary/5">
         <CardContent className="p-6">
-          <div className="flex items-center justify-center gap-2">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-muted-foreground">Loading Autopilot status...</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-primary/10">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              </div>
+              <div>
+                <p className="font-medium">
+                  {isBackendStarting ? 'Starting Secure Services' : 'Loading Autopilot'}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {isBackendStarting 
+                    ? 'Initializing HIPAA-compliant AI models. This may take up to 45 seconds on first load.'
+                    : 'Loading your personalized follow-up status...'}
+                </p>
+                {retryCount && retryCount > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Connection attempt {retryCount}/5...
+                  </p>
+                )}
+              </div>
+            </div>
+            <Shield className="h-6 w-6 text-primary/50" />
           </div>
+          {isBackendStarting && (
+            <Progress value={(retryCount || 1) * 20} className="mt-4 h-1" />
+          )}
         </CardContent>
       </Card>
     );
   }
 
-  if (isError) {
+  if (isError && !isBackendStarting) {
     return (
       <Card className="border-destructive/50">
         <CardContent className="p-6">
@@ -266,7 +292,7 @@ function AutopilotSection({
               </div>
             </div>
             <Button variant="outline" size="sm" onClick={onRefresh} data-testid="button-retry-autopilot">
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
               Retry
             </Button>
           </div>
@@ -553,10 +579,17 @@ export default function DailyFollowupHistory() {
   const { toast } = useToast();
   const [isRefreshingAutopilot, setIsRefreshingAutopilot] = useState(false);
 
-  const { data: autopilotData, isLoading: autopilotLoading, isError: autopilotError, refetch: refetchAutopilot } = useQuery<AutopilotData>({
+  const { data: autopilotData, isLoading: autopilotLoading, isError: autopilotError, refetch: refetchAutopilot, isFetching, status, fetchStatus } = useQuery<AutopilotData>({
     queryKey: [`/api/v1/followup-autopilot/patients/${patientId}/autopilot`],
     enabled: !!user && !!patientId && patientId !== 'demo-patient',
+    retry: 5,
+    retryDelay: (attemptIndex) => Math.min(2000 * Math.pow(1.5, attemptIndex), 15000),
+    staleTime: 30000,
+    gcTime: 60000,
   });
+
+  const isAutopilotStarting = status === 'pending' && fetchStatus === 'fetching' && !autopilotData;
+  const autopilotRetryCount = 0;
 
   const completeTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -817,6 +850,8 @@ export default function DailyFollowupHistory() {
         onRefresh={handleRefreshAutopilot}
         onTaskComplete={handleTaskComplete}
         isRefreshing={isRefreshingAutopilot || completeTaskMutation.isPending}
+        isBackendStarting={isAutopilotStarting}
+        retryCount={autopilotRetryCount}
       />
 
       {isNewPatient && (
