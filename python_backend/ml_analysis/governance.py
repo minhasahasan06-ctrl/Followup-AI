@@ -364,14 +364,16 @@ class GovernanceManager:
             for table in tables:
                 try:
                     cur.execute(f"SELECT COUNT(*) FROM {table}")
-                    count = cur.fetchone()[0]
+                    count_row = cur.fetchone()
+                    count = count_row[0] if count_row else 0
                     row_counts[table] = count
                     
                     cur.execute(f"""
                         SELECT MD5(STRING_AGG(t::text, '')) 
                         FROM (SELECT * FROM {table} ORDER BY 1 LIMIT 1000) t
                     """)
-                    checksum = cur.fetchone()[0] or 'empty'
+                    checksum_row = cur.fetchone()
+                    checksum = (checksum_row[0] if checksum_row else None) or 'empty'
                     table_checksums[table] = checksum
                 except Exception as e:
                     logger.warning(f"Could not snapshot table {table}: {e}")
@@ -381,8 +383,8 @@ class GovernanceManager:
             cur.execute("SELECT MIN(updated_at), MAX(updated_at) FROM drug_outcome_signals")
             date_row = cur.fetchone()
             date_range = (
-                str(date_row[0]) if date_row[0] else 'unknown',
-                str(date_row[1]) if date_row[1] else 'unknown'
+                str(date_row[0]) if date_row and date_row[0] else 'unknown',
+                str(date_row[1]) if date_row and date_row[1] else 'unknown'
             )
             
             cur.close()

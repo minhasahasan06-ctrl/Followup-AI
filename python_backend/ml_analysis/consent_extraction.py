@@ -228,7 +228,7 @@ class DifferentialPrivacy:
         max_val: float
     ) -> float:
         """Privatize a mean value"""
-        true_mean = np.mean(values)
+        true_mean = float(np.mean(values))
         sensitivity = (max_val - min_val) / len(values)
         return self.add_laplace_noise(true_mean, sensitivity)
     
