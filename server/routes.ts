@@ -1744,6 +1744,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch user" });
     }
   });
+
+  // Auth0 proxy routes - forward to Python FastAPI for JWT verification
+  const pythonAuthUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+
+  // GET /api/auth/me - Get current Auth0 user profile (proxied to Python)
+  app.get('/api/auth/me', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: "Authorization header with Bearer token required" });
+      }
+
+      const response = await fetch(`${pythonAuthUrl}/api/auth/me`, {
+        method: 'GET',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } catch (error) {
+      console.error("[Auth0 Proxy] Error fetching /api/auth/me:", error);
+      res.status(500).json({ message: "Failed to fetch user profile" });
+    }
+  });
+
+  // POST /api/auth/register - Register new Auth0 user (proxied to Python)
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: "Authorization header with Bearer token required" });
+      }
+
+      const response = await fetch(`${pythonAuthUrl}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(req.body),
+      });
+
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } catch (error) {
+      console.error("[Auth0 Proxy] Error in /api/auth/register:", error);
+      res.status(500).json({ message: "Failed to register user" });
+    }
+  });
+
+  // GET /api/auth/status - Auth0 configuration status (proxied to Python)
+  app.get('/api/auth/status', async (req, res) => {
+    try {
+      const response = await fetch(`${pythonAuthUrl}/api/auth/status`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } catch (error) {
+      console.error("[Auth0 Proxy] Error fetching /api/auth/status:", error);
+      res.status(500).json({ message: "Failed to fetch auth status" });
+    }
+  });
   
   // Logout - destroy session
   app.post('/api/auth/logout', (req, res) => {
@@ -14256,6 +14326,458 @@ Provide:
     } catch (error) {
       console.error('Error fetching robustness report:', error);
       res.json({ reports_count: 0, latest_report: null });
+    }
+  });
+
+  // =====================================================
+  // EPIDEMIOLOGY API ENDPOINTS - Proxy to Python FastAPI
+  // Pharmaco, Infectious, Vaccine, Occupational, Genetic
+  // =====================================================
+
+  // --- PHARMACO-EPIDEMIOLOGY ENDPOINTS ---
+  
+  // Get drug safety signals
+  app.get('/api/v1/pharmaco/signals', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      const url = `${pythonBackendUrl}/api/v1/pharmaco/signals${queryString ? '?' + queryString : ''}`;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetch(url, {
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        return res.json({ signals: [], total_count: 0, suppressed_count: 0, privacy_note: 'Data unavailable' });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching pharmaco signals:', error);
+      res.json({ signals: [], total_count: 0, suppressed_count: 0, privacy_note: 'Service unavailable' });
+    }
+  });
+
+  // Get signal locations
+  app.get('/api/v1/pharmaco/locations', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/pharmaco/locations`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ locations: [] });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching pharmaco locations:', error);
+      res.json({ locations: [] });
+    }
+  });
+
+  // Run pharmacovigilance scan
+  app.post('/api/v1/pharmaco/run-scan', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/pharmaco/run-scan`, {
+        method: 'POST',
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body)
+      });
+      if (!response.ok) return res.status(response.status).json({ error: 'Scan failed' });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error running pharmaco scan:', error);
+      res.status(502).json({ error: 'Pharmacovigilance service unavailable' });
+    }
+  });
+
+  // --- INFECTIOUS DISEASE EPIDEMIOLOGY ENDPOINTS ---
+
+  // Get epicurve data
+  app.get('/api/v1/infectious/epicurve', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      const url = `${pythonBackendUrl}/api/v1/infectious/epicurve${queryString ? '?' + queryString : ''}`;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetch(url, {
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        return res.json({ 
+          pathogen_code: req.query.pathogen_code || 'UNKNOWN',
+          pathogen_name: 'Unknown',
+          location_id: null,
+          location_name: null,
+          data: [],
+          total_cases: 0,
+          total_deaths: 0,
+          date_range: { start: '', end: '' }
+        });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching epicurve:', error);
+      res.json({ data: [], total_cases: 0, total_deaths: 0 });
+    }
+  });
+
+  // Get R0 calculation
+  app.get('/api/v1/infectious/r0', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/infectious/r0${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ r_value: null, r_lower: null, r_upper: null, interpretation: 'Data unavailable' });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching R0:', error);
+      res.json({ r_value: null, interpretation: 'Service unavailable' });
+    }
+  });
+
+  // Get pathogens list
+  app.get('/api/v1/infectious/pathogens', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/infectious/pathogens`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ pathogens: [] });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching pathogens:', error);
+      res.json({ pathogens: [] });
+    }
+  });
+
+  // Get outbreaks
+  app.get('/api/v1/infectious/outbreaks', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/infectious/outbreaks${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ outbreaks: [] });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching outbreaks:', error);
+      res.json({ outbreaks: [] });
+    }
+  });
+
+  // Get seroprevalence
+  app.get('/api/v1/infectious/seroprevalence', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/infectious/seroprevalence${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ prevalence: null, suppressed: true });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching seroprevalence:', error);
+      res.json({ prevalence: null, suppressed: true });
+    }
+  });
+
+  // --- VACCINE EPIDEMIOLOGY ENDPOINTS ---
+
+  // Get vaccine coverage
+  app.get('/api/v1/vaccine/coverage', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/vaccine/coverage${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ coverage_rate: null, data: [] });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching vaccine coverage:', error);
+      res.json({ coverage_rate: null, data: [] });
+    }
+  });
+
+  // Get vaccine effectiveness
+  app.get('/api/v1/vaccine/effectiveness', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/vaccine/effectiveness${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ effectiveness: null, ci_lower: null, ci_upper: null });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching vaccine effectiveness:', error);
+      res.json({ effectiveness: null });
+    }
+  });
+
+  // Get vaccines list
+  app.get('/api/v1/vaccine/list', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/vaccine/list`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json([]);
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching vaccines list:', error);
+      res.json([]);
+    }
+  });
+
+  // Get vaccine adverse events
+  app.get('/api/v1/vaccine/adverse-events', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/vaccine/adverse-events${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ events: [], total_count: 0 });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching vaccine adverse events:', error);
+      res.json({ events: [], total_count: 0 });
+    }
+  });
+
+  // --- OCCUPATIONAL EPIDEMIOLOGY ENDPOINTS ---
+
+  // Get occupational signals
+  app.get('/api/v1/occupational/signals', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/occupational/signals${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ signals: [], total_count: 0, suppressed_count: 0 });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching occupational signals:', error);
+      res.json({ signals: [], total_count: 0 });
+    }
+  });
+
+  // Get industries list
+  app.get('/api/v1/occupational/industries', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/occupational/industries`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ industries: [] });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching industries:', error);
+      res.json({ industries: [] });
+    }
+  });
+
+  // Get hazards list
+  app.get('/api/v1/occupational/hazards', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/occupational/hazards`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ hazards: [] });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching hazards:', error);
+      res.json({ hazards: [] });
+    }
+  });
+
+  // Run occupational scan
+  app.post('/api/v1/occupational/run-scan', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/occupational/run-scan`, {
+        method: 'POST',
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body)
+      });
+      if (!response.ok) return res.status(response.status).json({ error: 'Scan failed' });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error running occupational scan:', error);
+      res.status(502).json({ error: 'Occupational epidemiology service unavailable' });
+    }
+  });
+
+  // --- GENETIC EPIDEMIOLOGY ENDPOINTS ---
+
+  // Get genetic associations
+  app.get('/api/v1/genetic/associations', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/genetic/associations${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ associations: [], total_count: 0 });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching genetic associations:', error);
+      res.json({ associations: [], total_count: 0 });
+    }
+  });
+
+  // Get pharmacogenomics
+  app.get('/api/v1/genetic/pharmacogenomics', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/genetic/pharmacogenomics${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ interactions: [], total_count: 0 });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching pharmacogenomics:', error);
+      res.json({ interactions: [], total_count: 0 });
+    }
+  });
+
+  // Get genes list
+  app.get('/api/v1/genetic/genes', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/genetic/genes`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ genes: [] });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching genes:', error);
+      res.json({ genes: [] });
+    }
+  });
+
+  // Get variants list
+  app.get('/api/v1/genetic/variants', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetch(`${pythonBackendUrl}/api/v1/genetic/variants${queryString ? '?' + queryString : ''}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      if (!response.ok) return res.json({ variants: [] });
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching variants:', error);
+      res.json({ variants: [] });
     }
   });
 
