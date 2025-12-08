@@ -554,8 +554,8 @@ export default function DailyFollowupHistory() {
   const [isRefreshingAutopilot, setIsRefreshingAutopilot] = useState(false);
 
   const { data: autopilotData, isLoading: autopilotLoading, isError: autopilotError, refetch: refetchAutopilot } = useQuery<AutopilotData>({
-    queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'autopilot'],
-    enabled: !!user,
+    queryKey: [`/api/v1/followup-autopilot/patients/${patientId}/autopilot`],
+    enabled: !!user && !!patientId && patientId !== 'demo-patient',
   });
 
   const completeTaskMutation = useMutation({
@@ -563,7 +563,7 @@ export default function DailyFollowupHistory() {
       return apiRequest('POST', `/api/v1/followup-autopilot/patients/${patientId}/tasks/${taskId}/complete`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'autopilot'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/v1/followup-autopilot/patients/${patientId}/autopilot`] });
       toast({
         title: "Task Completed",
         description: "Great job completing your follow-up task!",
