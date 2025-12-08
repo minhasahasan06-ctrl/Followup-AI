@@ -18,6 +18,8 @@ The frontend is built with React, TypeScript, Vite, Wouter for routing, TanStack
 ### Backend
 The backend comprises a Node.js Express server (Port 5000) for chatbot, appointments, calendar, consultations, pain tracking, symptom journaling, and risk scoring. A Python FastAPI server (Port 8000) handles AI deterioration detection, guided examinations, mental health questionnaires, database interactions, and core authentication, utilizing an async AI engine with a singleton manager for ML model loading.
 
+**Python Backend Auto-Spawn**: The Express server (`server/index.ts`) automatically spawns the Python FastAPI backend using `child_process.spawn()` in development mode. The Python process is monitored and automatically restarted if it crashes. Logs from the Python process are prefixed with `[Python]` and integrated into the Express server logs.
+
 ### Core Features & Technical Implementations
 - **AI Integration**: Utilizes OpenAI API (GPT-4o for PHI detection, symptom extraction; o1 for advanced clinical reasoning) with graceful fallbacks.
 - **PHI Detection Service**: GPT-4o-based HIPAA-compliant PHI detection and medical entity extraction.

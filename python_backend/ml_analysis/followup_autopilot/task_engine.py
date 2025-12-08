@@ -126,6 +126,12 @@ class TaskEngine:
         
         task_id = str(uuid4())
         
+        task_metadata_value = {
+            "title": task_info.get("title", task_type.replace("_", " ").title()),
+            "description": task_info.get("description", ""),
+            **(metadata or {})
+        }
+        
         task_data = {
             "id": task_id,
             "patient_id": patient_id,
@@ -137,11 +143,7 @@ class TaskEngine:
             "trigger_name": trigger_name,
             "reason": reason or task_info.get("description", ""),
             "ui_tab_target": ui_tab_target,
-            "metadata": {
-                "title": task_info.get("title", task_type.replace("_", " ").title()),
-                "description": task_info.get("description", ""),
-                **(metadata or {})
-            }
+            "task_metadata": task_metadata_value
         }
         
         try:
@@ -304,7 +306,7 @@ class TaskEngine:
                     return False
                 
                 task.status = "cancelled"
-                task.metadata = {**(task.metadata or {}), "cancel_reason": reason}
+                task.task_metadata = {**(task.task_metadata or {}), "cancel_reason": reason}
                 self.db.commit()
                 
             self._audit_log(patient_id, "task_cancelled", {"task_id": task_id, "reason": reason})
@@ -347,8 +349,8 @@ class TaskEngine:
             "id": str(row.id),
             "patient_id": row.patient_id,
             "task_type": row.task_type,
-            "title": (row.metadata or {}).get("title", task_info.get("title", row.task_type)),
-            "description": (row.metadata or {}).get("description", task_info.get("description", "")),
+            "title": (row.task_metadata or {}).get("title", task_info.get("title", row.task_type)),
+            "description": (row.task_metadata or {}).get("description", task_info.get("description", "")),
             "priority": row.priority,
             "status": row.status,
             "due_at": row.due_at.isoformat() if row.due_at else None,
@@ -374,7 +376,7 @@ class TaskEngine:
                 cur.execute("""
                     INSERT INTO autopilot_followup_tasks 
                     (id, patient_id, task_type, priority, status, due_at, 
-                     created_by, trigger_name, reason, ui_tab_target, metadata, created_at)
+                     created_by, trigger_name, reason, ui_tab_target, task_metadata, created_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 """, (
                     task_data["id"], task_data["patient_id"], task_data["task_type"],

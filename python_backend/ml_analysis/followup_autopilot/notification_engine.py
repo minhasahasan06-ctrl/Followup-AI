@@ -81,7 +81,7 @@ class NotificationEngine:
         priority = task_data.get("priority", "medium")
         channels = PRIORITY_CHANNELS.get(priority, ["in_app"])
         
-        task_title = (task_data.get("metadata") or {}).get("title", 
+        task_title = (task_data.get("task_metadata") or {}).get("title", 
                       task_data.get("task_type", "Check-in"))
         reason = task_data.get("reason", "Please complete your wellness check-in.")
         

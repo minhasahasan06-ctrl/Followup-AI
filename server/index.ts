@@ -1,7 +1,53 @@
 import express, { type Request, Response, NextFunction } from "express";
+import { spawn } from "child_process";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedDatabase } from "./seed";
+
+// Start Python FastAPI backend on port 8000
+function startPythonBackend() {
+  const pythonProcess = spawn('python', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
+    cwd: process.cwd(),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PYTHONUNBUFFERED: '1' }
+  });
+
+  pythonProcess.stdout?.on('data', (data: Buffer) => {
+    const msg = data.toString().trim();
+    if (msg) log(`[Python] ${msg}`);
+  });
+
+  pythonProcess.stderr?.on('data', (data: Buffer) => {
+    const msg = data.toString().trim();
+    // Filter out verbose TensorFlow/CUDA warnings
+    if (msg && !msg.includes('computation placer') && !msg.includes('cuDNN') && !msg.includes('cuBLAS')) {
+      log(`[Python] ${msg}`);
+    }
+  });
+
+  pythonProcess.on('error', (err) => {
+    log(`[Python] Failed to start: ${err.message}`);
+  });
+
+  pythonProcess.on('exit', (code) => {
+    log(`[Python] Process exited with code ${code}`);
+    // Attempt restart after 5 seconds if it crashes
+    if (code !== 0) {
+      setTimeout(() => {
+        log('[Python] Attempting restart...');
+        startPythonBackend();
+      }, 5000);
+    }
+  });
+
+  log('[Python] Starting FastAPI backend on port 8000...');
+  return pythonProcess;
+}
+
+// Start Python backend in development mode
+if (process.env.NODE_ENV === 'development') {
+  startPythonBackend();
+}
 
 const app = express();
 // Trust the first proxy so secure cookies are set correctly when running behind a load balancer

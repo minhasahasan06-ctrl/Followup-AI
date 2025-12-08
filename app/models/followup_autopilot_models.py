@@ -178,7 +178,7 @@ class AutopilotFollowupTask(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
     created_by = Column(String, default="autopilot")
-    metadata = Column(JSONB, default=dict)
+    task_metadata = Column(JSONB, default=dict)
     trigger_name = Column(String, nullable=True)
     reason = Column(Text, nullable=True)
     

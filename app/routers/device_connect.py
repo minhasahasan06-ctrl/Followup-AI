@@ -844,12 +844,12 @@ async def start_device_pairing(
     
     return StartPairingResponse(**response_data)
 
-@router.get("/oauth/callback/{vendor_id}")
+@router.get("/oauth/callback/{vendor_id}", response_model=None)
 async def oauth_callback(
     vendor_id: str,
+    request: Request,
     code: str = Query(...),
     state: str = Query(...),
-    request: Optional[Request] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """

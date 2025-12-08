@@ -345,7 +345,7 @@ class EnvironmentalPipelineJob(Base):
     execution_time_ms = Column(Integer)
     
     trigger_source = Column(String)
-    metadata = Column(JSONB)
+    job_metadata = Column(JSONB)
     
     created_at = Column(TIMESTAMP, server_default=func.now())
     

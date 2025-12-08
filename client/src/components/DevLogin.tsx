@@ -13,7 +13,7 @@ export function DevLogin() {
     setIsLoggingIn(true);
     try {
       const endpoint = role === 'patient' ? '/api/dev/login-as-patient' : '/api/dev/login-as-doctor';
-      const response = await apiRequest(endpoint, 'POST', {});
+      const response = await apiRequest(endpoint, { method: 'POST' });
       
       // Invalidate all queries to refresh with authenticated user
       await queryClient.invalidateQueries();
