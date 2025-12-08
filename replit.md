@@ -67,12 +67,26 @@ A multi-agent system facilitates communication between AI agents, users, and pro
 ### ML Training Infrastructure
 A production-grade ML model training system with comprehensive patient consent controls across 22+ granular data type categories, including detailed medical device readings. It features a patient-facing Consent UI, a Data Extraction Pipeline, Feature Engineering, and full HIPAA compliance with audit logging, k-anonymity, and differential privacy. The pipeline handles consent-filtered patient data extraction, anonymization, and preprocessing, integrating with public datasets and synthetic data generation. A Training Job Worker processes background jobs, and a FastAPI Training API manages datasets, models, and consent statistics.
 
+### Background Scheduler
+APScheduler-based background jobs running on the Python FastAPI backend (port 8000):
+- **Check Auto-Reanalysis**: Hourly check for studies needing reanalysis
+- **Run Risk Scoring**: Every 6 hours for patient risk assessment
+- **Check Data Quality**: Daily at 3 AM for data integrity monitoring
+- **Generate Daily Summary**: Daily at 7 AM for reports
+- **Risk & Exposures ETL**: Every 30 minutes for infectious events, immunizations, occupational exposures, genetic flags
+- **Drug Safety Signal Scan**: Every 4 hours for pharmacovigilance
+- **ML Feature Materialization**: Daily at 2 AM for feature engineering
+
+Scheduler status is visible in AdminMLTrainingHub > Advanced > Background Scheduler, with ability to trigger jobs manually.
+
 ### Security and Compliance
-The platform is HIPAA-compliant, utilizing AWS Cognito for authentication, BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, and explicit doctor-patient assignment authorization. The Admin ML Training Hub is protected with Google Authenticator TOTP for enhanced security, including lockout protection and session-based verification.
+The platform is HIPAA-compliant, utilizing Auth0 for primary authentication (frontend-integrated with JWT verification in Python backend), session-based authentication for Express routes, BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, and explicit doctor-patient assignment authorization. The Admin ML Training Hub is protected with Google Authenticator TOTP for enhanced security, including lockout protection and session-based verification.
+
+**Note**: Legacy AWS Cognito code exists in `server/cognitoAuth.ts` for backward compatibility but Auth0 is the primary authentication system. The frontend uses Auth0Provider and syncs users via `/api/auth/me` and `/api/auth/register` endpoints (proxied to Python FastAPI).
 
 ## External Dependencies
 
-- **Authentication**: AWS Cognito
+- **Authentication**: Auth0 (primary), session-based (Express routes)
 - **Database**: Neon serverless PostgreSQL
 - **AI Services**: OpenAI API, TensorFlow.js, PyTorch, HuggingFace Transformers, ONNX Runtime
 - **Caching**: Redis

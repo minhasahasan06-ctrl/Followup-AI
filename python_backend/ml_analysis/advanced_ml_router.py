@@ -812,3 +812,125 @@ async def get_latest_robustness_checks():
     except Exception as e:
         logger.error(f"Error getting robustness checks: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# SCHEDULER STATUS ENDPOINTS
+# ============================================================================
+
+@router.get("/scheduler/status")
+async def get_scheduler_status():
+    """Get current scheduler status and all scheduled jobs."""
+    try:
+        from scheduler import get_scheduler
+        
+        scheduler = get_scheduler()
+        jobs = scheduler.get_jobs() if scheduler.scheduler.running else []
+        
+        return {
+            "running": scheduler.scheduler.running,
+            "job_count": len(jobs),
+            "jobs": jobs,
+            "last_checked": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {e}")
+        return {
+            "running": False,
+            "job_count": 0,
+            "jobs": [],
+            "error": str(e)
+        }
+
+
+@router.get("/scheduler/jobs")
+async def get_scheduler_jobs():
+    """Get detailed list of all scheduled jobs with run history."""
+    try:
+        from scheduler import get_scheduler
+        
+        sched = get_scheduler()
+        jobs = sched.get_jobs() if sched.scheduler.running else []
+        
+        return {
+            "jobs": jobs,
+            "total": len(jobs)
+        }
+    except Exception as e:
+        logger.error(f"Error getting scheduler jobs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/scheduler/trigger/{job_id}")
+async def trigger_scheduler_job(job_id: str):
+    """Manually trigger a specific scheduled job."""
+    try:
+        from scheduler import get_scheduler
+        
+        scheduler = get_scheduler()
+        if not scheduler.scheduler.running:
+            raise HTTPException(status_code=400, detail="Scheduler is not running")
+        
+        job = scheduler.scheduler.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+        
+        job.modify(next_run_time=datetime.utcnow())
+        
+        return {
+            "success": True,
+            "message": f"Job {job_id} triggered for immediate execution",
+            "job_name": job.name
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/scheduler/history")
+async def get_scheduler_history(limit: int = 50):
+    """Get recent scheduler job execution history from audit logs."""
+    try:
+        from database import get_db_connection
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT 
+                id,
+                action,
+                details,
+                created_at
+            FROM audit_logs
+            WHERE action LIKE 'scheduler_%'
+            ORDER BY created_at DESC
+            LIMIT %s
+        """, (limit,))
+        
+        rows = cur.fetchall()
+        history = []
+        for row in rows:
+            history.append({
+                "id": str(row[0]) if row[0] else None,
+                "action": row[1],
+                "details": row[2] if isinstance(row[2], dict) else {},
+                "timestamp": row[3].isoformat() if row[3] else None
+            })
+        
+        cur.close()
+        conn.close()
+        
+        return {
+            "history": history,
+            "total": len(history)
+        }
+    except Exception as e:
+        logger.error(f"Error getting scheduler history: {e}")
+        return {
+            "history": [],
+            "total": 0,
+            "error": str(e)
+        }

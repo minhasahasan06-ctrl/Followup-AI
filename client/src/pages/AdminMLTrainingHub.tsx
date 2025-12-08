@@ -1565,7 +1565,43 @@ function AdvancedMLTab() {
     }
   });
 
+  const { data: schedulerData, isLoading: schedulerLoading, refetch: refetchScheduler } = useQuery<{
+    running: boolean;
+    job_count: number;
+    jobs: Array<{
+      id: string;
+      name: string;
+      next_run_time: string | null;
+      trigger: string;
+    }>;
+    last_checked: string;
+    error?: string;
+  }>({
+    queryKey: ['/api/v1/ml/advanced/scheduler/status'],
+    enabled: selectedSection === "scheduler",
+    refetchInterval: 30000,
+  });
+
+  const triggerJobMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const response = await apiRequest(`/api/v1/ml/advanced/scheduler/trigger/${jobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error('Trigger failed');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Job Triggered", description: data.message || "Job scheduled for immediate execution" });
+      refetchScheduler();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Trigger Failed", description: error.message, variant: "destructive" });
+    }
+  });
+
   const sections = [
+    { id: "scheduler", label: "Background Scheduler", icon: Clock, color: "text-cyan-500" },
     { id: "outbreak", label: "Outbreak Prediction", icon: Activity, color: "text-red-500" },
     { id: "embeddings", label: "Entity Embeddings", icon: Network, color: "text-blue-500" },
     { id: "governance", label: "Research Governance", icon: Shield, color: "text-purple-500" },
@@ -1603,6 +1639,118 @@ function AdvancedMLTab() {
           </div>
         </CardContent>
       </Card>
+
+      {selectedSection === "scheduler" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-cyan-500" />
+              Background Scheduler Status
+            </CardTitle>
+            <CardDescription>
+              APScheduler-based background jobs for auto-reanalysis, risk scoring, ETL pipelines, and ML feature materialization
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {schedulerLoading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-40 w-full" />
+              </div>
+            ) : schedulerData?.error ? (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Scheduler Error</AlertTitle>
+                <AlertDescription>{schedulerData.error}</AlertDescription>
+              </Alert>
+            ) : (
+              <>
+                <div className="flex items-center gap-4 p-4 rounded-lg border bg-card">
+                  <div className="flex items-center gap-2">
+                    {schedulerData?.running ? (
+                      <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Running
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive">
+                        <XCircle className="h-3 w-3 mr-1" />
+                        Stopped
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    <span className="font-medium">{schedulerData?.job_count || 0}</span> active jobs
+                  </div>
+                  <div className="text-sm text-muted-foreground ml-auto">
+                    Last checked: {schedulerData?.last_checked ? format(new Date(schedulerData.last_checked), 'PPpp') : 'N/A'}
+                  </div>
+                </div>
+
+                {schedulerData?.jobs && schedulerData.jobs.length > 0 && (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Job Name</TableHead>
+                        <TableHead>Trigger</TableHead>
+                        <TableHead>Next Run</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {schedulerData.jobs.map((job) => (
+                        <TableRow key={job.id} data-testid={`row-scheduler-job-${job.id}`}>
+                          <TableCell className="font-medium">{job.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="font-mono text-xs">
+                              {job.trigger}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {job.next_run_time ? format(new Date(job.next_run_time), 'PPpp') : 'Not scheduled'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => triggerJobMutation.mutate(job.id)}
+                              disabled={triggerJobMutation.isPending}
+                              data-testid={`btn-trigger-job-${job.id}`}
+                            >
+                              {triggerJobMutation.isPending ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <><Play className="h-3 w-3 mr-1" />Run Now</>
+                              )}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+
+                {(!schedulerData?.jobs || schedulerData.jobs.length === 0) && (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>No Jobs Scheduled</AlertTitle>
+                    <AlertDescription>
+                      The scheduler is {schedulerData?.running ? 'running but has no active jobs' : 'not running'}. 
+                      Check the Python backend logs for details.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </>
+            )}
+          </CardContent>
+          <CardFooter className="gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => refetchScheduler()} data-testid="btn-refresh-scheduler">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh Status
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
 
       {selectedSection === "outbreak" && (
         <Card>
