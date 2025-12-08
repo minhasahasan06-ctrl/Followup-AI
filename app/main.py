@@ -113,6 +113,18 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import device_connect: {e}")
 
+try:
+    from app.routers import rx_builder
+    _optional_routers.append(('rx_builder', rx_builder))
+except ImportError as e:
+    logger.warning(f"❌ Could not import rx_builder: {e}")
+
+try:
+    from app.routers import medication_adherence
+    _optional_routers.append(('medication_adherence', medication_adherence))
+except ImportError as e:
+    logger.warning(f"❌ Could not import medication_adherence: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
