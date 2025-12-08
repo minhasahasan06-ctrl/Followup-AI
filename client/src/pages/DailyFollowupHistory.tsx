@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { Link } from 'wouter';
+import { queryClient, apiRequest } from '@/lib/queryClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useToast } from '@/hooks/use-toast';
 import { DeviceDataManager } from '@/components/DeviceDataManager';
 import {
   LineChart,
@@ -56,6 +60,14 @@ import {
   Footprints,
   MessageSquare,
   AlertTriangle,
+  Target,
+  ChevronDown,
+  ChevronUp,
+  Shield,
+  Bell,
+  ListChecks,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { format, subDays, subMonths, subYears, isWithinInterval, startOfDay, endOfDay, parseISO } from 'date-fns';
@@ -151,6 +163,347 @@ function StatCard({ label, value, unit, icon: Icon, trend, color = "text-primary
   );
 }
 
+interface AutopilotState {
+  patient_id: string;
+  risk_score: number;
+  risk_state: string;
+  risk_components: Record<string, number>;
+  top_risk_components: Array<{ name: string; value: number }>;
+  next_followup_at: string | null;
+  last_updated: string | null;
+  last_checkin_at: string | null;
+  model_version: string;
+  confidence: number;
+}
+
+interface AutopilotTask {
+  id: string;
+  task_description: string;
+  priority: string;
+  trigger_type: string;
+  completed: boolean;
+  created_at: string;
+}
+
+interface AutopilotData {
+  patient_state: AutopilotState;
+  today_tasks: AutopilotTask[];
+  pending_task_count: number;
+  has_urgent_tasks: boolean;
+  wellness_disclaimer: string;
+}
+
+function getRiskColor(score: number): string {
+  if (score <= 3) return 'text-chart-2';
+  if (score <= 6) return 'text-yellow-500';
+  if (score <= 9) return 'text-orange-500';
+  return 'text-destructive';
+}
+
+function getRiskBgColor(score: number): string {
+  if (score <= 3) return 'bg-chart-2/10 border-chart-2/30';
+  if (score <= 6) return 'bg-yellow-500/10 border-yellow-500/30';
+  if (score <= 9) return 'bg-orange-500/10 border-orange-500/30';
+  return 'bg-destructive/10 border-destructive/30';
+}
+
+function getPriorityBadge(priority: string) {
+  switch (priority?.toLowerCase()) {
+    case 'critical':
+    case 'high':
+      return <Badge variant="destructive" className="text-xs">Urgent</Badge>;
+    case 'medium':
+      return <Badge className="bg-yellow-500/20 text-yellow-600 text-xs">Medium</Badge>;
+    default:
+      return <Badge variant="secondary" className="text-xs">Normal</Badge>;
+  }
+}
+
+function AutopilotSection({ 
+  data, 
+  isLoading,
+  isError, 
+  onRefresh, 
+  onTaskComplete,
+  isRefreshing
+}: { 
+  data: AutopilotData | undefined;
+  isLoading: boolean;
+  isError?: boolean;
+  onRefresh: () => void;
+  onTaskComplete: (taskId: string) => void;
+  isRefreshing: boolean;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center gap-2">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-muted-foreground">Loading Autopilot status...</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="border-destructive/50">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-destructive/10">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <p className="font-medium">Autopilot Unavailable</p>
+                <p className="text-sm text-muted-foreground">
+                  Unable to load your personalized follow-up data. Please try again.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={onRefresh} data-testid="button-retry-autopilot">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-full bg-muted">
+              <Target className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="font-medium">Autopilot Initializing</p>
+              <p className="text-sm text-muted-foreground">
+                Your personalized follow-up system is learning from your health data.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { patient_state, today_tasks, pending_task_count, has_urgent_tasks } = data;
+  const riskScore = patient_state?.risk_score || 0;
+  const riskState = patient_state?.risk_state || 'Stable';
+
+  return (
+    <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+      <Card className={`${getRiskBgColor(riskScore)} transition-colors`}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-full ${riskScore <= 3 ? 'bg-chart-2/20' : riskScore <= 6 ? 'bg-yellow-500/20' : 'bg-destructive/20'}`}>
+                <Sparkles className={`h-5 w-5 ${getRiskColor(riskScore)}`} />
+              </div>
+              <div>
+                <CardTitle className="flex items-center gap-2" data-testid="text-autopilot-title">
+                  Followup Autopilot
+                  {has_urgent_tasks && (
+                    <Badge variant="destructive" className="text-xs animate-pulse">
+                      <Bell className="h-3 w-3 mr-1" />
+                      Urgent
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  ML-powered adaptive follow-up system
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+                disabled={isRefreshing}
+                data-testid="button-refresh-autopilot"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </Button>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="icon" data-testid="button-expand-autopilot">
+                  {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+          </div>
+        </CardHeader>
+        
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="flex items-center gap-2 mb-1">
+                <Target className={`h-4 w-4 ${getRiskColor(riskScore)}`} />
+                <span className="text-xs text-muted-foreground">Risk Score</span>
+              </div>
+              <div className={`text-2xl font-bold ${getRiskColor(riskScore)}`} data-testid="text-risk-score">
+                {riskScore.toFixed(1)}
+                <span className="text-sm font-normal text-muted-foreground">/15</span>
+              </div>
+            </div>
+            
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="flex items-center gap-2 mb-1">
+                <Shield className="h-4 w-4 text-primary" />
+                <span className="text-xs text-muted-foreground">Status</span>
+              </div>
+              <div className="text-lg font-semibold" data-testid="text-risk-state">{riskState}</div>
+            </div>
+            
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="flex items-center gap-2 mb-1">
+                <ListChecks className="h-4 w-4 text-primary" />
+                <span className="text-xs text-muted-foreground">Pending Tasks</span>
+              </div>
+              <div className="text-lg font-semibold" data-testid="text-pending-tasks">{pending_task_count}</div>
+            </div>
+            
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="flex items-center gap-2 mb-1">
+                <Clock className="h-4 w-4 text-primary" />
+                <span className="text-xs text-muted-foreground">Next Follow-up</span>
+              </div>
+              <div className="text-sm font-medium" data-testid="text-next-followup">
+                {patient_state?.next_followup_at 
+                  ? format(new Date(patient_state.next_followup_at), 'MMM d, h:mm a')
+                  : 'Not scheduled'}
+              </div>
+            </div>
+          </div>
+
+          {patient_state?.top_risk_components?.length > 0 && (
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <p className="text-xs text-muted-foreground mb-2">Top Contributing Factors</p>
+              <div className="flex flex-wrap gap-2">
+                {patient_state.top_risk_components.map((component, idx) => (
+                  <Badge key={idx} variant="outline" className="text-xs">
+                    {component.name}: {component.value.toFixed(0)}%
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {today_tasks?.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium flex items-center gap-2">
+                <ListChecks className="h-4 w-4" />
+                Today's Adaptive Tasks
+              </p>
+              <div className="space-y-2">
+                {today_tasks.slice(0, isExpanded ? undefined : 3).map((task) => (
+                  <div 
+                    key={task.id} 
+                    className={`flex items-start gap-3 p-3 rounded-lg border bg-background/50 ${
+                      task.completed ? 'opacity-60' : ''
+                    }`}
+                    data-testid={`task-item-${task.id}`}
+                  >
+                    <Checkbox
+                      checked={task.completed}
+                      onCheckedChange={() => !task.completed && onTaskComplete(task.id)}
+                      disabled={task.completed}
+                      data-testid={`checkbox-task-${task.id}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm ${task.completed ? 'line-through text-muted-foreground' : ''}`}>
+                        {task.task_description}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {getPriorityBadge(task.priority)}
+                        <span className="text-xs text-muted-foreground">
+                          {task.trigger_type?.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    </div>
+                    {task.completed && (
+                      <CheckCircle2 className="h-4 w-4 text-chart-2 shrink-0" />
+                    )}
+                  </div>
+                ))}
+              </div>
+              {today_tasks.length > 3 && !isExpanded && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="w-full text-xs"
+                  onClick={() => setIsExpanded(true)}
+                  data-testid="button-show-more-tasks"
+                >
+                  Show {today_tasks.length - 3} more tasks
+                </Button>
+              )}
+            </div>
+          )}
+
+          <CollapsibleContent className="space-y-4 pt-2">
+            {patient_state?.risk_components && Object.keys(patient_state.risk_components).length > 0 && (
+              <div className="p-4 rounded-lg bg-background/50 border">
+                <p className="text-sm font-medium mb-3">Risk Breakdown by Category</p>
+                <div className="space-y-3">
+                  {Object.entries(patient_state.risk_components)
+                    .sort(([,a], [,b]) => b - a)
+                    .map(([category, value]) => (
+                      <div key={category} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="capitalize">{category.replace(/_/g, ' ')}</span>
+                          <span className={getRiskColor(value / 6.67)}>{value.toFixed(0)}%</span>
+                        </div>
+                        <Progress value={value} className="h-2" />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Model Version:</span>
+                  <span className="ml-2 font-mono">{patient_state?.model_version || '1.0.0'}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Confidence:</span>
+                  <span className="ml-2">{((patient_state?.confidence || 0.5) * 100).toFixed(0)}%</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Last Updated:</span>
+                  <span className="ml-2">
+                    {patient_state?.last_updated 
+                      ? format(new Date(patient_state.last_updated), 'MMM d, h:mm a')
+                      : 'N/A'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Last Check-in:</span>
+                  <span className="ml-2">
+                    {patient_state?.last_checkin_at 
+                      ? format(new Date(patient_state.last_checkin_at), 'MMM d, h:mm a')
+                      : 'N/A'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CollapsibleContent>
+        </CardContent>
+      </Card>
+    </Collapsible>
+  );
+}
+
 export default function DailyFollowupHistory() {
   const { user } = useAuth();
   const [timeRange, setTimeRange] = useState('30');
@@ -195,6 +548,48 @@ export default function DailyFollowupHistory() {
   });
 
   const videoLoading = videoMetricsLoading || videoSessionsLoading;
+
+  const patientId = user?.id || user?.sub || 'demo-patient';
+  const { toast } = useToast();
+  const [isRefreshingAutopilot, setIsRefreshingAutopilot] = useState(false);
+
+  const { data: autopilotData, isLoading: autopilotLoading, isError: autopilotError, refetch: refetchAutopilot } = useQuery<AutopilotData>({
+    queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'autopilot'],
+    enabled: !!user,
+  });
+
+  const completeTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      return apiRequest('POST', `/api/v1/followup-autopilot/patients/${patientId}/tasks/${taskId}/complete`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'autopilot'] });
+      toast({
+        title: "Task Completed",
+        description: "Great job completing your follow-up task!",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to complete task. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleRefreshAutopilot = async () => {
+    setIsRefreshingAutopilot(true);
+    try {
+      await refetchAutopilot();
+    } finally {
+      setIsRefreshingAutopilot(false);
+    }
+  };
+
+  const handleTaskComplete = (taskId: string) => {
+    completeTaskMutation.mutate(taskId);
+  };
 
   const filterByTimeRange = (data: any[], dateField: string = 'createdAt') => {
     if (!data || selectedRange.days === Infinity) return data || [];
@@ -414,6 +809,15 @@ export default function DailyFollowupHistory() {
       </div>
 
       <LegalDisclaimer />
+
+      <AutopilotSection
+        data={autopilotData}
+        isLoading={autopilotLoading}
+        isError={autopilotError}
+        onRefresh={handleRefreshAutopilot}
+        onTaskComplete={handleTaskComplete}
+        isRefreshing={isRefreshingAutopilot || completeTaskMutation.isPending}
+      />
 
       {isNewPatient && (
         <Card className="border-primary/20 bg-primary/5">
