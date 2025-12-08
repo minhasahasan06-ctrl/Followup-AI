@@ -171,6 +171,37 @@ async def get_my_consultation_requests(
     }
 
 
+@router.get("/{consultation_id}/details")
+async def get_consultation_details(
+    consultation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get consultation details for video call setup.
+    Only the patient or doctor involved can access.
+    """
+    from app.models.patient_doctor_connection import PatientConsultation
+    
+    consultation = db.query(PatientConsultation).filter(
+        PatientConsultation.id == consultation_id
+    ).first()
+    
+    if not consultation:
+        raise HTTPException(status_code=404, detail="Consultation not found")
+    
+    if current_user.id != consultation.patient_id and current_user.id != consultation.doctor_id:
+        raise HTTPException(status_code=403, detail="You are not authorized to view this consultation")
+    
+    return {
+        "id": consultation.id,
+        "patient_id": consultation.patient_id,
+        "doctor_id": consultation.doctor_id,
+        "status": consultation.status,
+        "scheduled_for": consultation.scheduled_for.isoformat() if consultation.scheduled_for else None
+    }
+
+
 @router.get("/doctor/patient-requests")
 async def get_patient_consultation_requests(
     current_user: User = Depends(get_current_user),

@@ -13228,6 +13228,121 @@ Provide:
     }
   });
 
+  // ===== VIDEO CONSULTATION ROUTES (Daily.co) =====
+  
+  // Get consultation details for video call - proxy to Python FastAPI
+  app.get('/api/v1/consultations/:consultationId/details', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { consultationId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/v1/consultations/${encodeURIComponent(consultationId)}/details`, {
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to fetch consultation details' });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching consultation details:', error);
+      res.status(500).json({ error: 'Failed to fetch consultation details' });
+    }
+  });
+
+  // Start video consultation - creates Daily.co room
+  app.post('/api/consultations/:consultationId/start-video', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { consultationId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/consultations/${consultationId}/start-video`, {
+        method: 'POST',
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body)
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ error: 'Failed to start video consultation', detail: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error starting video consultation:', error);
+      res.status(502).json({ error: 'Video service unavailable' });
+    }
+  });
+
+  // End video consultation - deletes Daily.co room
+  app.delete('/api/consultations/:consultationId/end-video', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { consultationId } = req.params;
+      const roomName = encodeURIComponent(req.query.room_name || '');
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/consultations/${consultationId}/end-video?room_name=${roomName}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to end video consultation' });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error ending video consultation:', error);
+      res.status(502).json({ error: 'Video service unavailable' });
+    }
+  });
+
+  // Get video consultation status
+  app.get('/api/consultations/:consultationId/video-status', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { consultationId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetch(`${pythonBackendUrl}/api/consultations/${consultationId}/video-status`, {
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        return res.json({ active: false });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error getting video status:', error);
+      res.json({ active: false });
+    }
+  });
+
   // Proxy endpoint to fetch latest Video AI metrics from Python backend
   app.get('/api/video-ai/latest-metrics', isAuthenticated, async (req: any, res) => {
     try {

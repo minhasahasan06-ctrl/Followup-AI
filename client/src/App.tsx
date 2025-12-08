@@ -59,6 +59,7 @@ import DoctorSearch from "@/pages/DoctorSearch";
 import DoctorProfile from "@/pages/DoctorProfile";
 import MyDoctors from "@/pages/MyDoctors";
 import ConsultationRequests from "@/pages/ConsultationRequests";
+import VideoConsultation from "@/pages/VideoConsultation";
 import PainDetection from "@/pages/PainDetection";
 import Medications from "@/pages/Medications";
 import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
@@ -104,6 +105,7 @@ function PatientRouter() {
       <Route path="/doctor/:doctorId" component={DoctorProfile} />
       <Route path="/my-doctors" component={MyDoctors} />
       <Route path="/consultation-requests" component={ConsultationRequests} />
+      <Route path="/video-consultation/:consultationId" component={VideoConsultation} />
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/consents" component={ConsentManagement} />
       <Route path="/research-consent" component={ResearchConsentSettings} />
@@ -130,7 +132,8 @@ function DoctorRouter() {
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/prescriptions" component={Prescriptions} />
       <Route path="/calendar-sync" component={CalendarSync} />
-            <Route path="/doctor/patient/:id" component={PatientReview} />
+      <Route path="/video-consultation/:consultationId" component={VideoConsultation} />
+      <Route path="/doctor/patient/:id" component={PatientReview} />
       <Route path="/doctor/patient/:patientId/ml-insights" component={MLInsightsPage} />
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
