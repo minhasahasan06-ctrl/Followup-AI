@@ -299,6 +299,120 @@ async def mark_notification_read(
     return {"status": "read" if success else "not_found"}
 
 
+@router.get("/patients/{patient_id}/history")
+async def get_risk_history(
+    patient_id: str,
+    days: int = Query(default=30, ge=1, le=90),
+    db: Session = Depends(get_db)
+):
+    """
+    Get risk score history for a patient.
+    Returns daily risk scores and states from patient_state_history or daily_features.
+    """
+    from app.models.followup_autopilot_models import AutopilotPatientState, AutopilotDailyFeatures
+    from sqlalchemy import desc
+    from datetime import timedelta
+    
+    history = []
+    
+    cutoff_date = date.today() - timedelta(days=days)
+    
+    daily_features = db.query(AutopilotDailyFeatures).filter(
+        AutopilotDailyFeatures.patient_id == patient_id,
+        AutopilotDailyFeatures.date >= cutoff_date
+    ).order_by(desc(AutopilotDailyFeatures.date)).limit(days).all()
+    
+    for feature in daily_features:
+        history.append({
+            "date": str(feature.date),
+            "risk_score": feature.risk_score if hasattr(feature, 'risk_score') and feature.risk_score else 0,
+            "avg_pain": feature.avg_pain,
+            "avg_fatigue": feature.avg_fatigue,
+            "avg_mood": feature.avg_mood,
+            "mh_score": feature.mh_score,
+            "med_adherence_7d": feature.med_adherence_7d,
+            "env_risk_score": feature.env_risk_score,
+            "engagement_rate_14d": feature.engagement_rate_14d,
+        })
+    
+    current_state = db.query(AutopilotPatientState).filter(
+        AutopilotPatientState.patient_id == patient_id
+    ).first()
+    
+    current_risk = None
+    if current_state:
+        current_risk = {
+            "risk_score": current_state.risk_score,
+            "risk_state": current_state.risk_state,
+            "risk_components": current_state.risk_components,
+            "last_updated": current_state.last_updated.isoformat() if current_state.last_updated else None,
+        }
+    
+    audit_log(db, "history_viewed", patient_id, {"days": days})
+    
+    return {
+        "patient_id": patient_id,
+        "current_state": current_risk,
+        "history": history,
+        "period_days": days,
+        "wellness_disclaimer": WELLNESS_DISCLAIMER,
+    }
+
+
+@router.get("/patients/{patient_id}/triggers")
+async def get_trigger_events(
+    patient_id: str,
+    days: int = Query(default=14, ge=1, le=90),
+    severity: Optional[str] = Query(default=None, description="Filter by severity: info, warning, alert"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get trigger events for a patient.
+    Returns logged trigger events from the trigger_events table.
+    """
+    from app.models.followup_autopilot_models import AutopilotTriggerEvent
+    from sqlalchemy import desc
+    from datetime import timedelta
+    
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    
+    query = db.query(AutopilotTriggerEvent).filter(
+        AutopilotTriggerEvent.patient_id == patient_id,
+        AutopilotTriggerEvent.created_at >= cutoff_date
+    )
+    
+    if severity:
+        query = query.filter(AutopilotTriggerEvent.severity == severity)
+    
+    trigger_events = query.order_by(desc(AutopilotTriggerEvent.created_at)).limit(100).all()
+    
+    events = []
+    for event in trigger_events:
+        events.append({
+            "id": str(event.id),
+            "name": event.name,
+            "severity": event.severity,
+            "context": event.context,
+            "created_at": event.created_at.isoformat() if event.created_at else None,
+        })
+    
+    severity_counts = {}
+    for event in trigger_events:
+        sev = event.severity or "unknown"
+        severity_counts[sev] = severity_counts.get(sev, 0) + 1
+    
+    audit_log(db, "triggers_viewed", patient_id, {"days": days, "severity_filter": severity})
+    
+    return {
+        "patient_id": patient_id,
+        "triggers": events,
+        "count": len(events),
+        "severity_counts": severity_counts,
+        "period_days": days,
+        "wellness_disclaimer": WELLNESS_DISCLAIMER,
+    }
+
+
 @router.post("/patients/{patient_id}/labels")
 async def set_training_labels(
     patient_id: str,

@@ -20775,6 +20775,33 @@ Provide:
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/notifications/${req.params.notificationId}/read`, 'POST');
   });
 
+  // Get risk history
+  app.get('/api/v1/followup-autopilot/patients/:patientId/history', isAuthenticated, async (req: any, res) => {
+    // Validate and sanitize days parameter (1-90)
+    const rawDays = parseInt(req.query.days as string, 10);
+    const days = (!isNaN(rawDays) && rawDays >= 1 && rawDays <= 90) ? rawDays : 30;
+    const url = new URL(`/api/v1/followup-autopilot/patients/${encodeURIComponent(req.params.patientId)}/history`, 'http://localhost:8000');
+    url.searchParams.set('days', String(days));
+    await automationProxy(req, res, url.pathname + url.search, 'GET');
+  });
+
+  // Get trigger events
+  app.get('/api/v1/followup-autopilot/patients/:patientId/triggers', isAuthenticated, async (req: any, res) => {
+    // Validate and sanitize days parameter (1-90)
+    const rawDays = parseInt(req.query.days as string, 10);
+    const days = (!isNaN(rawDays) && rawDays >= 1 && rawDays <= 90) ? rawDays : 14;
+    // Whitelist severity values
+    const allowedSeverities = ['info', 'warning', 'alert'];
+    const severity = allowedSeverities.includes(req.query.severity as string) ? req.query.severity as string : null;
+    
+    const url = new URL(`/api/v1/followup-autopilot/patients/${encodeURIComponent(req.params.patientId)}/triggers`, 'http://localhost:8000');
+    url.searchParams.set('days', String(days));
+    if (severity) {
+      url.searchParams.set('severity', severity);
+    }
+    await automationProxy(req, res, url.pathname + url.search, 'GET');
+  });
+
   // Set training labels
   app.post('/api/v1/followup-autopilot/patients/:patientId/labels', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/labels`, 'POST');
