@@ -59,6 +59,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
+import { AutopilotAdminDashboard } from "@/components/autopilot/AutopilotAdminDashboard";
 
 interface Dataset {
   name: string;
@@ -1423,7 +1424,7 @@ function MLTrainingHubContent() {
       <LegalDisclaimer />
 
       <Tabs defaultValue="datasets" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 max-w-3xl">
+        <TabsList className="grid w-full grid-cols-7 max-w-4xl">
           <TabsTrigger value="datasets" className="gap-2" data-testid="tab-datasets">
             <Database className="h-4 w-4" />
             Datasets
@@ -1443,6 +1444,10 @@ function MLTrainingHubContent() {
           <TabsTrigger value="consent" className="gap-2" data-testid="tab-consent">
             <ShieldCheck className="h-4 w-4" />
             Consent
+          </TabsTrigger>
+          <TabsTrigger value="autopilot" className="gap-2" data-testid="tab-autopilot">
+            <Activity className="h-4 w-4" />
+            Autopilot
           </TabsTrigger>
           <TabsTrigger value="advanced" className="gap-2" data-testid="tab-advanced">
             <Sparkles className="h-4 w-4" />
@@ -1468,6 +1473,10 @@ function MLTrainingHubContent() {
 
         <TabsContent value="consent" className="mt-6">
           <ConsentAnalyticsTab />
+        </TabsContent>
+
+        <TabsContent value="autopilot" className="mt-6">
+          <AutopilotAdminDashboard />
         </TabsContent>
 
         <TabsContent value="advanced" className="mt-6">

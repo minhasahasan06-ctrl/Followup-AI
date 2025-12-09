@@ -15,7 +15,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useToast } from '@/hooks/use-toast';
 import { DeviceDataManager } from '@/components/DeviceDataManager';
 import { AutopilotInsightsTab, NotificationsBell } from '@/components/autopilot/AutopilotInsightsTab';
-import { AutopilotAdminDashboard } from '@/components/autopilot/AutopilotAdminDashboard';
 import { useAutopilotSignal } from '@/hooks/useAutopilotSignal';
 import {
   LineChart,
@@ -1056,10 +1055,6 @@ export default function DailyFollowupHistory() {
             <Sparkles className="h-3 w-3 mr-1" />
             Insights
           </TabsTrigger>
-          <TabsTrigger value="admin" data-testid="tab-autopilot-admin" className="flex-1 min-w-[100px]">
-            <Shield className="h-3 w-3 mr-1" />
-            Admin
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="device" className="space-y-4">
@@ -1929,10 +1924,6 @@ export default function DailyFollowupHistory() {
           )}
         </TabsContent>
 
-        <TabsContent value="admin" className="space-y-4">
-          <LegalDisclaimer />
-          <AutopilotAdminDashboard />
-        </TabsContent>
       </Tabs>
     </div>
   );

@@ -14,9 +14,11 @@ from app.auth.auth0 import (
     require_permissions,
     TokenPayload,
 )
+from app.dependencies import get_current_user
 
 __all__ = [
     "get_current_token",
+    "get_current_user",
     "get_current_user_id",
     "get_optional_token",
     "verify_auth0_token",
