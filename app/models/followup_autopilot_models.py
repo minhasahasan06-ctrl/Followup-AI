@@ -154,6 +154,15 @@ class AutopilotPatientState(Base):
     next_followup_at = Column(DateTime(timezone=True), nullable=True)
     preferred_contact_hour = Column(Integer, nullable=True)
     
+    notification_preferences = Column(JSONB, default=lambda: {
+        "in_app_enabled": True,
+        "push_enabled": True,
+        "email_enabled": True,
+        "quiet_hours_start": 22,
+        "quiet_hours_end": 7,
+        "urgency_threshold": "medium"
+    })
+    
     model_version = Column(String, default="1.0.0")
     inference_confidence = Column(Float, default=0.0)
 

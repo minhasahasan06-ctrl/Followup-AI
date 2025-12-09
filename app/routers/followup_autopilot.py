@@ -566,8 +566,9 @@ async def get_notification_preferences(
 ):
     """Get notification preferences for a patient"""
     from sqlalchemy import text
+    from app.models.followup_autopilot_models import AutopilotPatientState
     
-    result = db.execute(
+    user_result = db.execute(
         text("""
             SELECT 
                 sms_notifications_enabled as sms_enabled,
@@ -579,27 +580,34 @@ async def get_notification_preferences(
         {"patient_id": patient_id}
     ).fetchone()
     
-    state_result = db.execute(
-        text("""
-            SELECT preferred_contact_hour
-            FROM autopilot_patient_states
-            WHERE patient_id = :patient_id
-        """),
-        {"patient_id": patient_id}
-    ).fetchone()
+    state = db.query(AutopilotPatientState).filter(
+        AutopilotPatientState.patient_id == patient_id
+    ).first()
     
-    preferences = {
+    default_prefs = {
         "in_app_enabled": True,
         "push_enabled": True,
         "email_enabled": True,
-        "sms_enabled": result.sms_enabled if result else False,
-        "health_alerts_enabled": result.health_alerts_enabled if result else True,
-        "med_reminders_enabled": result.med_reminders_enabled if result else True,
-        "daily_followups_enabled": result.daily_followups_enabled if result else True,
-        "preferred_contact_hour": state_result.preferred_contact_hour if state_result else None,
         "quiet_hours_start": 22,
         "quiet_hours_end": 7,
-        "urgency_threshold": "medium",
+        "urgency_threshold": "medium"
+    }
+    
+    stored_prefs = state.notification_preferences if state and state.notification_preferences else {}
+    merged_prefs = {**default_prefs, **stored_prefs}
+    
+    preferences = {
+        "in_app_enabled": merged_prefs.get("in_app_enabled", True),
+        "push_enabled": merged_prefs.get("push_enabled", True),
+        "email_enabled": merged_prefs.get("email_enabled", True),
+        "sms_enabled": user_result.sms_enabled if user_result else False,
+        "health_alerts_enabled": user_result.health_alerts_enabled if user_result else True,
+        "med_reminders_enabled": user_result.med_reminders_enabled if user_result else True,
+        "daily_followups_enabled": user_result.daily_followups_enabled if user_result else True,
+        "preferred_contact_hour": state.preferred_contact_hour if state else None,
+        "quiet_hours_start": merged_prefs.get("quiet_hours_start", 22),
+        "quiet_hours_end": merged_prefs.get("quiet_hours_end", 7),
+        "urgency_threshold": merged_prefs.get("urgency_threshold", "medium"),
     }
     
     return {"preferences": preferences, "patient_id": patient_id}
@@ -613,29 +621,54 @@ async def update_notification_preferences(
 ):
     """Update notification preferences for a patient"""
     from sqlalchemy import text
+    from app.models.followup_autopilot_models import AutopilotPatientState
     
-    updates = []
-    params = {"patient_id": patient_id}
+    user_updates = []
+    user_params = {"patient_id": patient_id}
     
     if prefs.sms_enabled is not None:
-        updates.append("sms_notifications_enabled = :sms_enabled")
-        params["sms_enabled"] = prefs.sms_enabled
+        user_updates.append("sms_notifications_enabled = :sms_enabled")
+        user_params["sms_enabled"] = prefs.sms_enabled
     
-    if updates:
+    if user_updates:
         db.execute(
-            text(f"UPDATE users SET {', '.join(updates)} WHERE id = :patient_id"),
-            params
+            text(f"UPDATE users SET {', '.join(user_updates)} WHERE id = :patient_id"),
+            user_params
         )
+    
+    state = db.query(AutopilotPatientState).filter(
+        AutopilotPatientState.patient_id == patient_id
+    ).first()
+    
+    if not state:
+        state = AutopilotPatientState(
+            patient_id=patient_id,
+            notification_preferences={}
+        )
+        db.add(state)
+        db.flush()
     
     if prefs.preferred_contact_hour is not None:
-        db.execute(
-            text("""
-                INSERT INTO autopilot_patient_states (patient_id, preferred_contact_hour)
-                VALUES (:patient_id, :preferred_hour)
-                ON CONFLICT (patient_id) DO UPDATE SET preferred_contact_hour = :preferred_hour
-            """),
-            {"patient_id": patient_id, "preferred_hour": prefs.preferred_contact_hour}
-        )
+        state.preferred_contact_hour = prefs.preferred_contact_hour
+    
+    current_prefs = state.notification_preferences or {}
+    
+    if prefs.in_app_enabled is not None:
+        current_prefs["in_app_enabled"] = prefs.in_app_enabled
+    if prefs.push_enabled is not None:
+        current_prefs["push_enabled"] = prefs.push_enabled
+    if prefs.email_enabled is not None:
+        current_prefs["email_enabled"] = prefs.email_enabled
+    if prefs.quiet_hours_start is not None:
+        current_prefs["quiet_hours_start"] = prefs.quiet_hours_start
+    if prefs.quiet_hours_end is not None:
+        current_prefs["quiet_hours_end"] = prefs.quiet_hours_end
+    if prefs.urgency_threshold is not None:
+        current_prefs["urgency_threshold"] = prefs.urgency_threshold
+    
+    state.notification_preferences = current_prefs
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(state, "notification_preferences")
     
     db.commit()
     
