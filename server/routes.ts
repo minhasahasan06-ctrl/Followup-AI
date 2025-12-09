@@ -20896,6 +20896,68 @@ Provide:
   // END HITL APPROVALS PROXY ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // PHASE 5: AUTOPILOT ADMIN DASHBOARD PROXY ROUTES
+  // System health, engagement analytics, model performance, cohorts, configuration
+  // =============================================================================
+
+  // System health metrics
+  app.get('/api/autopilot/admin/health', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/autopilot/admin/health', 'GET');
+  });
+
+  // Patient engagement analytics
+  app.get('/api/autopilot/admin/engagement', isAuthenticated, async (req: any, res) => {
+    const days = parseInt(req.query.days as string, 10) || 30;
+    const url = new URL('/api/autopilot/admin/engagement', 'http://localhost:8000');
+    url.searchParams.set('days', String(days));
+    await automationProxy(req, res, url.pathname + url.search, 'GET');
+  });
+
+  // ML model performance metrics
+  app.get('/api/autopilot/admin/models/performance', isAuthenticated, async (req: any, res) => {
+    const days = parseInt(req.query.days as string, 10) || 30;
+    const modelName = req.query.model_name as string;
+    const url = new URL('/api/autopilot/admin/models/performance', 'http://localhost:8000');
+    url.searchParams.set('days', String(days));
+    if (modelName) url.searchParams.set('model_name', modelName);
+    await automationProxy(req, res, url.pathname + url.search, 'GET');
+  });
+
+  // Patient cohort distribution
+  app.get('/api/autopilot/admin/cohorts', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/autopilot/admin/cohorts', 'GET');
+  });
+
+  // Trigger analytics
+  app.get('/api/autopilot/admin/triggers', isAuthenticated, async (req: any, res) => {
+    const days = parseInt(req.query.days as string, 10) || 30;
+    const url = new URL('/api/autopilot/admin/triggers', 'http://localhost:8000');
+    url.searchParams.set('days', String(days));
+    await automationProxy(req, res, url.pathname + url.search, 'GET');
+  });
+
+  // Configuration management
+  app.get('/api/autopilot/admin/configurations', isAuthenticated, async (req: any, res) => {
+    const category = req.query.category as string;
+    const url = new URL('/api/autopilot/admin/configurations', 'http://localhost:8000');
+    if (category) url.searchParams.set('category', category);
+    await automationProxy(req, res, url.pathname + url.search, 'GET');
+  });
+
+  app.put('/api/autopilot/admin/configurations', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/autopilot/admin/configurations', 'PUT');
+  });
+
+  // Admin summary (combined dashboard view)
+  app.get('/api/autopilot/admin/summary', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/autopilot/admin/summary', 'GET');
+  });
+
+  // =============================================================================
+  // END AUTOPILOT ADMIN DASHBOARD PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
 
   // WebSocket proxy for agent communication

@@ -316,6 +316,14 @@ app.include_router(environmental_risk_api.router)
 # Followup Autopilot (ML-Powered Adaptive Follow-up Engine) - PRODUCTION READY
 app.include_router(followup_autopilot.router)
 
+# Autopilot Admin Dashboard (Phase 5: System Health, Analytics, ML Monitoring) - PRODUCTION READY
+try:
+    from app.routers import autopilot_admin
+    app.include_router(autopilot_admin.router)
+    logger.info("✅ Autopilot Admin router registered")
+except Exception as e:
+    logger.warning(f"❌ Autopilot Admin API unavailable: {e}")
+
 # ML Training Infrastructure (Consent, Jobs, Datasets, Model Registry) - PRODUCTION READY
 try:
     from app.routers import ml_training

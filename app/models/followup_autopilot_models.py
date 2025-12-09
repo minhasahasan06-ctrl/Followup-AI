@@ -374,3 +374,232 @@ class AutopilotApprovalHistory(Base):
         Index('idx_approval_history_patient', 'patient_id'),
         Index('idx_approval_history_created', 'created_at'),
     )
+
+
+# =============================================================================
+# PHASE 5: Admin Analytics & Monitoring Models
+# =============================================================================
+
+class AutopilotSystemMetrics(Base):
+    """
+    System health and performance metrics.
+    Tracked hourly for dashboard monitoring.
+    """
+    __tablename__ = "autopilot_system_metrics"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    
+    active_patients = Column(Integer, default=0)
+    patients_at_risk = Column(Integer, default=0)
+    patients_critical = Column(Integer, default=0)
+    
+    signals_ingested_hour = Column(Integer, default=0)
+    inferences_run_hour = Column(Integer, default=0)
+    tasks_created_hour = Column(Integer, default=0)
+    notifications_sent_hour = Column(Integer, default=0)
+    
+    avg_inference_time_ms = Column(Float, default=0.0)
+    avg_signal_latency_ms = Column(Float, default=0.0)
+    
+    model_errors_hour = Column(Integer, default=0)
+    notification_failures_hour = Column(Integer, default=0)
+    
+    system_load = Column(Float, default=0.0)
+    memory_usage_mb = Column(Float, default=0.0)
+
+    __table_args__ = (
+        Index('idx_system_metrics_timestamp', 'timestamp'),
+    )
+
+
+class AutopilotModelPerformance(Base):
+    """
+    ML model performance tracking for accuracy monitoring and drift detection.
+    Updated daily after batch evaluation.
+    """
+    __tablename__ = "autopilot_model_performance"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    model_name = Column(String, nullable=False, index=True)
+    model_version = Column(String, nullable=False)
+    date = Column(Date, nullable=False, index=True)
+    
+    accuracy = Column(Float, nullable=True)
+    precision_score = Column(Float, nullable=True)
+    recall = Column(Float, nullable=True)
+    f1_score = Column(Float, nullable=True)
+    auc_roc = Column(Float, nullable=True)
+    
+    predictions_count = Column(Integer, default=0)
+    true_positives = Column(Integer, default=0)
+    false_positives = Column(Integer, default=0)
+    true_negatives = Column(Integer, default=0)
+    false_negatives = Column(Integer, default=0)
+    
+    feature_drift_score = Column(Float, default=0.0)
+    prediction_drift_score = Column(Float, default=0.0)
+    drift_alert = Column(Boolean, default=False)
+    
+    calibration_error = Column(Float, nullable=True)
+    confidence_intervals = Column(JSONB, default=dict)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_model_perf_model_date', 'model_name', 'date'),
+        Index('idx_model_perf_version', 'model_version'),
+        Index('idx_model_perf_drift_alert', 'drift_alert'),
+    )
+
+
+class AutopilotEngagementMetrics(Base):
+    """
+    Patient engagement analytics.
+    Tracks task completion, notification effectiveness, and interaction patterns.
+    """
+    __tablename__ = "autopilot_engagement_metrics"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    date = Column(Date, nullable=False, index=True)
+    
+    total_patients = Column(Integer, default=0)
+    active_patients = Column(Integer, default=0)
+    engaged_patients = Column(Integer, default=0)
+    
+    tasks_created = Column(Integer, default=0)
+    tasks_completed = Column(Integer, default=0)
+    tasks_expired = Column(Integer, default=0)
+    avg_time_to_complete_hours = Column(Float, nullable=True)
+    
+    notifications_sent = Column(Integer, default=0)
+    notifications_opened = Column(Integer, default=0)
+    notifications_actioned = Column(Integer, default=0)
+    
+    task_completion_rate = Column(Float, default=0.0)
+    notification_open_rate = Column(Float, default=0.0)
+    notification_action_rate = Column(Float, default=0.0)
+    
+    by_task_type = Column(JSONB, default=dict)
+    by_priority = Column(JSONB, default=dict)
+    by_channel = Column(JSONB, default=dict)
+    by_hour = Column(JSONB, default=dict)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_engagement_date', 'date', unique=True),
+    )
+
+
+class CohortRiskLevel(str, enum.Enum):
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class AutopilotPatientCohort(Base):
+    """
+    Patient cohort assignments for targeted interventions.
+    Patients are grouped by risk profiles, engagement patterns, and wellness characteristics.
+    """
+    __tablename__ = "autopilot_patient_cohorts"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    patient_id = Column(String, nullable=False, index=True)
+    cohort_name = Column(String, nullable=False, index=True)
+    
+    risk_level = Column(String, default="low")
+    risk_score_avg_30d = Column(Float, default=0.0)
+    
+    engagement_level = Column(String, default="moderate")
+    task_completion_rate_30d = Column(Float, default=0.0)
+    
+    primary_concerns = Column(JSONB, default=list)
+    dominant_trigger_types = Column(JSONB, default=list)
+    
+    recommended_interventions = Column(JSONB, default=list)
+    
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    confidence_score = Column(Float, default=0.0)
+    auto_assigned = Column(Boolean, default=True)
+
+    __table_args__ = (
+        Index('idx_cohort_patient', 'patient_id'),
+        Index('idx_cohort_name', 'cohort_name'),
+        Index('idx_cohort_risk_level', 'risk_level'),
+        Index('idx_cohort_patient_cohort', 'patient_id', 'cohort_name', unique=True),
+    )
+
+
+class AutopilotConfiguration(Base):
+    """
+    Dynamic configuration management for autopilot system.
+    Allows runtime tuning of triggers, thresholds, and behaviors.
+    """
+    __tablename__ = "autopilot_configurations"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    config_key = Column(String, nullable=False, unique=True, index=True)
+    config_value = Column(JSONB, nullable=False)
+    
+    category = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    requires_restart = Column(Boolean, default=False)
+    
+    min_value = Column(Float, nullable=True)
+    max_value = Column(Float, nullable=True)
+    
+    created_by = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('idx_config_key', 'config_key'),
+        Index('idx_config_category', 'category'),
+        Index('idx_config_active', 'is_active'),
+    )
+
+
+class AutopilotCohortDefinition(Base):
+    """
+    Cohort definitions for automated patient grouping.
+    Defines rules for assigning patients to cohorts.
+    """
+    __tablename__ = "autopilot_cohort_definitions"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    name = Column(String, nullable=False, unique=True, index=True)
+    display_name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    
+    criteria = Column(JSONB, nullable=False)
+    priority = Column(Integer, default=0)
+    
+    recommended_actions = Column(JSONB, default=list)
+    notification_strategy = Column(String, default="standard")
+    
+    is_active = Column(Boolean, default=True)
+    
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('idx_cohort_def_name', 'name'),
+        Index('idx_cohort_def_active', 'is_active'),
+        Index('idx_cohort_def_priority', 'priority'),
+    )
