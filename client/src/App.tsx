@@ -129,6 +129,7 @@ function DoctorRouter() {
   return (
     <Switch>
       <Route path="/" component={ReceptionistDashboard} />
+      <Route path="/daily-followup" component={DailyFollowupHistory} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/prescriptions" component={Prescriptions} />
       <Route path="/calendar-sync" component={CalendarSync} />
