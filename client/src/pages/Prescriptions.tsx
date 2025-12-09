@@ -55,6 +55,11 @@ import {
   Stethoscope,
   Shield,
   Ban,
+  ClipboardList,
+  Brain,
+  Loader2,
+  Save,
+  Trash2,
 } from "lucide-react";
 import { format, addDays } from "date-fns";
 import type { User as UserType, Prescription, Drug, DosageChangeRequest } from "@shared/schema";
@@ -77,6 +82,44 @@ interface PatientMedication {
   dosage: string;
   frequency: string;
   status: string;
+}
+
+interface SOAPNote {
+  id: string;
+  patientId: string;
+  doctorId: string;
+  encounterDate: string;
+  chiefComplaint?: string;
+  subjective?: string;
+  historyPresentIllness?: string;
+  reviewOfSystems?: Record<string, any>;
+  objective?: string;
+  vitalSigns?: Record<string, any>;
+  physicalExam?: string;
+  labResults?: Array<Record<string, any>>;
+  assessment?: string;
+  primaryDiagnosis?: string;
+  primaryIcd10?: string;
+  secondaryDiagnoses?: Array<{ diagnosis: string; icd10: string }>;
+  differentialDiagnoses?: string[];
+  plan?: string;
+  medicationsPrescribed?: Array<Record<string, any>>;
+  proceduresOrdered?: string[];
+  referrals?: string[];
+  patientEducation?: string;
+  followUpInstructions?: string;
+  followUpDate?: string;
+  linkedAppointmentId?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ICD10Suggestion {
+  code: string;
+  description: string;
+  confidence: number;
+  category?: string;
 }
 
 export default function Prescriptions() {
@@ -116,6 +159,24 @@ export default function Prescriptions() {
   const [showSupersessionDialog, setShowSupersessionDialog] = useState(false);
   const [supersessionCandidates, setSupersessionCandidates] = useState<any[]>([]);
   const [conflictResponse, setConflictResponse] = useState<{ id: string; response: string; notes: string } | null>(null);
+
+  // SOAP Notes state
+  const [soapNotePatient, setSoapNotePatient] = useState<string>("");
+  const [selectedSoapNote, setSelectedSoapNote] = useState<SOAPNote | null>(null);
+  const [icd10Suggestions, setIcd10Suggestions] = useState<ICD10Suggestion[]>([]);
+  const [icd10Loading, setIcd10Loading] = useState(false);
+  const [soapForm, setSoapForm] = useState({
+    chiefComplaint: "",
+    subjective: "",
+    historyPresentIllness: "",
+    objective: "",
+    physicalExam: "",
+    assessment: "",
+    primaryDiagnosis: "",
+    primaryIcd10: "",
+    plan: "",
+    followUpInstructions: "",
+  });
 
   const { data: patients, isLoading: patientsLoading } = useQuery<UserType[]>({
     queryKey: ["/api/doctor/patients"],
@@ -190,6 +251,110 @@ export default function Prescriptions() {
     queryKey: ["/api/doctor/medication-conflicts/pending"],
     enabled: isDoctor,
   });
+
+  // SOAP Notes queries
+  const { data: soapNotes, isLoading: soapNotesLoading } = useQuery<SOAPNote[]>({
+    queryKey: ["/api/v1/rx-builder/soap-notes", soapNotePatient],
+    queryFn: async () => {
+      if (!soapNotePatient) return [];
+      const res = await fetch(`/api/v1/rx-builder/soap-notes?patient_id=${soapNotePatient}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isDoctor && !!soapNotePatient,
+  });
+
+  const createSoapNoteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/v1/rx-builder/soap-notes", {
+        patient_id: soapNotePatient,
+        encounter_date: new Date().toISOString(),
+        chief_complaint: soapForm.chiefComplaint,
+        subjective: soapForm.subjective,
+        history_present_illness: soapForm.historyPresentIllness,
+        objective: soapForm.objective,
+        physical_exam: soapForm.physicalExam,
+        assessment: soapForm.assessment,
+        primary_diagnosis: soapForm.primaryDiagnosis,
+        primary_icd10: soapForm.primaryIcd10,
+        plan: soapForm.plan,
+        follow_up_instructions: soapForm.followUpInstructions,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/rx-builder/soap-notes", soapNotePatient] });
+      resetSoapForm();
+      toast({
+        title: "SOAP Note Created",
+        description: "Clinical documentation saved successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create SOAP note",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const getIcd10SuggestionsMutation = useMutation({
+    mutationFn: async (symptoms: string) => {
+      setIcd10Loading(true);
+      const res = await apiRequest("POST", "/api/v1/rx-builder/icd10/suggest", {
+        symptoms,
+        include_related: true,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setIcd10Suggestions(data.suggestions || []);
+      setIcd10Loading(false);
+    },
+    onError: () => {
+      setIcd10Loading(false);
+      toast({
+        title: "Error",
+        description: "Failed to get ICD-10 suggestions",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resetSoapForm = () => {
+    setSoapForm({
+      chiefComplaint: "",
+      subjective: "",
+      historyPresentIllness: "",
+      objective: "",
+      physicalExam: "",
+      assessment: "",
+      primaryDiagnosis: "",
+      primaryIcd10: "",
+      plan: "",
+      followUpInstructions: "",
+    });
+    setSelectedSoapNote(null);
+    setIcd10Suggestions([]);
+  };
+
+  const handleGetIcd10Suggestions = () => {
+    const symptoms = [soapForm.chiefComplaint, soapForm.subjective, soapForm.assessment]
+      .filter(Boolean)
+      .join(". ");
+    if (symptoms.length > 5) {
+      getIcd10SuggestionsMutation.mutate(symptoms);
+    }
+  };
+
+  const handleSelectIcd10 = (suggestion: ICD10Suggestion) => {
+    setSoapForm(prev => ({
+      ...prev,
+      primaryDiagnosis: suggestion.description,
+      primaryIcd10: suggestion.code,
+    }));
+  };
 
   const respondToConflictMutation = useMutation({
     mutationFn: async ({ conflictId, response, notes }: { conflictId: string; response: string; notes: string }) => {
@@ -603,10 +768,14 @@ export default function Prescriptions() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="write" data-testid="tab-write">
             <Plus className="h-4 w-4 mr-2" />
             Write Prescription
+          </TabsTrigger>
+          <TabsTrigger value="soap-notes" data-testid="tab-soap-notes">
+            <ClipboardList className="h-4 w-4 mr-2" />
+            SOAP Notes
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
             <FileText className="h-4 w-4 mr-2" />
@@ -1064,6 +1233,338 @@ export default function Prescriptions() {
                       <p className="text-sm text-muted-foreground">
                         No significant interactions detected with current medications
                       </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="soap-notes" className="space-y-6 mt-6">
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2 space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    Select Patient for SOAP Note
+                  </CardTitle>
+                  <CardDescription>
+                    Choose the patient to create clinical documentation for
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {patientsLoading ? (
+                    <Skeleton className="h-10 w-full" />
+                  ) : (
+                    <Select value={soapNotePatient} onValueChange={setSoapNotePatient}>
+                      <SelectTrigger data-testid="select-soap-patient">
+                        <SelectValue placeholder="Select a patient..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {patients?.map((patient) => (
+                          <SelectItem key={patient.id} value={patient.id}>
+                            {patient.firstName} {patient.lastName} ({patient.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </CardContent>
+              </Card>
+
+              {soapNotePatient && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ClipboardList className="h-5 w-5" />
+                      SOAP Note Documentation
+                    </CardTitle>
+                    <CardDescription>
+                      Subjective, Objective, Assessment, and Plan
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="chief-complaint">Chief Complaint</Label>
+                        <Input
+                          id="chief-complaint"
+                          placeholder="Patient's primary reason for visit..."
+                          value={soapForm.chiefComplaint}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, chiefComplaint: e.target.value }))}
+                          data-testid="input-chief-complaint"
+                        />
+                      </div>
+
+                      <Separator />
+                      <h4 className="font-semibold text-sm text-muted-foreground">SUBJECTIVE</h4>
+
+                      <div>
+                        <Label htmlFor="subjective">Patient History & Symptoms</Label>
+                        <Textarea
+                          id="subjective"
+                          placeholder="Patient's description of symptoms, history, pain levels..."
+                          value={soapForm.subjective}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, subjective: e.target.value }))}
+                          className="min-h-[100px]"
+                          data-testid="input-subjective"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="hpi">History of Present Illness</Label>
+                        <Textarea
+                          id="hpi"
+                          placeholder="Onset, location, duration, character, aggravating/relieving factors..."
+                          value={soapForm.historyPresentIllness}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, historyPresentIllness: e.target.value }))}
+                          className="min-h-[80px]"
+                          data-testid="input-hpi"
+                        />
+                      </div>
+
+                      <Separator />
+                      <h4 className="font-semibold text-sm text-muted-foreground">OBJECTIVE</h4>
+
+                      <div>
+                        <Label htmlFor="objective">Clinical Findings</Label>
+                        <Textarea
+                          id="objective"
+                          placeholder="Vital signs, lab results, imaging findings..."
+                          value={soapForm.objective}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, objective: e.target.value }))}
+                          className="min-h-[80px]"
+                          data-testid="input-objective"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="physical-exam">Physical Examination</Label>
+                        <Textarea
+                          id="physical-exam"
+                          placeholder="Physical exam findings, observations..."
+                          value={soapForm.physicalExam}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, physicalExam: e.target.value }))}
+                          className="min-h-[80px]"
+                          data-testid="input-physical-exam"
+                        />
+                      </div>
+
+                      <Separator />
+                      <h4 className="font-semibold text-sm text-muted-foreground">ASSESSMENT</h4>
+
+                      <div>
+                        <Label htmlFor="assessment">Clinical Assessment</Label>
+                        <Textarea
+                          id="assessment"
+                          placeholder="Clinical reasoning and impressions..."
+                          value={soapForm.assessment}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, assessment: e.target.value }))}
+                          className="min-h-[80px]"
+                          data-testid="input-assessment"
+                        />
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                          <Label htmlFor="primary-diagnosis">Primary Diagnosis</Label>
+                          <Input
+                            id="primary-diagnosis"
+                            placeholder="Main diagnosis..."
+                            value={soapForm.primaryDiagnosis}
+                            onChange={(e) => setSoapForm(prev => ({ ...prev, primaryDiagnosis: e.target.value }))}
+                            data-testid="input-primary-diagnosis"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="primary-icd10">ICD-10 Code</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="primary-icd10"
+                              placeholder="e.g., J06.9"
+                              value={soapForm.primaryIcd10}
+                              onChange={(e) => setSoapForm(prev => ({ ...prev, primaryIcd10: e.target.value }))}
+                              data-testid="input-primary-icd10"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={handleGetIcd10Suggestions}
+                              disabled={icd10Loading}
+                              data-testid="button-get-icd10"
+                            >
+                              {icd10Loading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Brain className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Separator />
+                      <h4 className="font-semibold text-sm text-muted-foreground">PLAN</h4>
+
+                      <div>
+                        <Label htmlFor="plan">Treatment Plan</Label>
+                        <Textarea
+                          id="plan"
+                          placeholder="Medications, procedures, referrals, patient education..."
+                          value={soapForm.plan}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, plan: e.target.value }))}
+                          className="min-h-[100px]"
+                          data-testid="input-plan"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="follow-up">Follow-up Instructions</Label>
+                        <Textarea
+                          id="follow-up"
+                          placeholder="When to return, warning signs, self-care..."
+                          value={soapForm.followUpInstructions}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, followUpInstructions: e.target.value }))}
+                          className="min-h-[60px]"
+                          data-testid="input-follow-up"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter className="flex justify-between gap-4">
+                    <Button
+                      variant="outline"
+                      onClick={resetSoapForm}
+                      data-testid="button-reset-soap"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Clear Form
+                    </Button>
+                    <Button
+                      onClick={() => createSoapNoteMutation.mutate()}
+                      disabled={createSoapNoteMutation.isPending || !soapForm.chiefComplaint}
+                      data-testid="button-save-soap"
+                    >
+                      {createSoapNoteMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4 mr-2" />
+                      )}
+                      Save SOAP Note
+                    </Button>
+                  </CardFooter>
+                </Card>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              {icd10Suggestions.length > 0 && (
+                <Card className="border-primary/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Brain className="h-5 w-5 text-primary" />
+                      AI ICD-10 Suggestions
+                    </CardTitle>
+                    <CardDescription>
+                      Click to apply a suggested diagnosis code
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      {icd10Suggestions.map((suggestion, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 border rounded-md cursor-pointer hover-elevate"
+                          onClick={() => handleSelectIcd10(suggestion)}
+                          data-testid={`icd10-suggestion-${idx}`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <Badge variant="outline" className="font-mono">
+                              {suggestion.code}
+                            </Badge>
+                            <Badge variant="secondary" className="text-xs">
+                              {Math.round(suggestion.confidence * 100)}% match
+                            </Badge>
+                          </div>
+                          <p className="text-sm">{suggestion.description}</p>
+                          {suggestion.category && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {suggestion.category}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {soapNotePatient && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg">Previous SOAP Notes</CardTitle>
+                    <CardDescription>
+                      Recent clinical documentation
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {soapNotesLoading ? (
+                      <div className="space-y-2">
+                        {[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}
+                      </div>
+                    ) : soapNotes && soapNotes.length > 0 ? (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {soapNotes.map((note) => (
+                          <div
+                            key={note.id}
+                            className="p-3 border rounded-md hover-elevate cursor-pointer"
+                            onClick={() => {
+                              setSelectedSoapNote(note);
+                              setSoapForm({
+                                chiefComplaint: note.chiefComplaint || "",
+                                subjective: note.subjective || "",
+                                historyPresentIllness: note.historyPresentIllness || "",
+                                objective: note.objective || "",
+                                physicalExam: note.physicalExam || "",
+                                assessment: note.assessment || "",
+                                primaryDiagnosis: note.primaryDiagnosis || "",
+                                primaryIcd10: note.primaryIcd10 || "",
+                                plan: note.plan || "",
+                                followUpInstructions: note.followUpInstructions || "",
+                              });
+                            }}
+                            data-testid={`soap-note-${note.id}`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="text-sm font-medium truncate">
+                                {note.chiefComplaint || "No chief complaint"}
+                              </span>
+                              <Badge variant="outline" className="text-xs shrink-0">
+                                {note.status}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              {format(new Date(note.encounterDate), "MMM d, yyyy")}
+                              {note.primaryIcd10 && (
+                                <Badge variant="secondary" className="font-mono text-xs">
+                                  {note.primaryIcd10}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <ClipboardList className="h-8 w-8 mx-auto text-muted-foreground opacity-50 mb-2" />
+                        <p className="text-sm text-muted-foreground">
+                          No previous SOAP notes for this patient
+                        </p>
+                      </div>
                     )}
                   </CardContent>
                 </Card>

@@ -42,7 +42,11 @@ import {
   TrendingUp,
   TrendingDown,
   Loader2,
+  Target,
+  Flame,
+  Award,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format, differenceInDays } from "date-fns";
 import {
   Dialog,
@@ -139,6 +143,23 @@ interface ChronicMedication {
   createdAt?: string;
 }
 
+interface AdherenceStats {
+  overallAdherenceRate: number;
+  weeklyAdherenceRate: number;
+  currentStreak: number;
+  bestStreak: number;
+  totalDosesTaken: number;
+  totalDosesMissed: number;
+  lastLoggedAt?: string;
+  medicationBreakdown: Array<{
+    medicationId: string;
+    medicationName: string;
+    adherenceRate: number;
+    dosesTaken: number;
+    dosesScheduled: number;
+  }>;
+}
+
 function getRemainingDays(endDate: string | undefined | null): number | null {
   if (!endDate) return null;
   const end = new Date(endDate);
@@ -206,6 +227,7 @@ export default function Medications() {
   const [selectedStartDate, setSelectedStartDate] = useState<Date | undefined>(undefined);
   const [expandedSpecialties, setExpandedSpecialties] = useState<string[]>([]);
   const [showArchivedMeds, setShowArchivedMeds] = useState(false);
+  const [activeTab, setActiveTab] = useState("medications");
 
   const { data: dashboard, isLoading: dashboardLoading, refetch } = useQuery<MedicationDashboard>({
     queryKey: ['/api/medications/dashboard'],
@@ -213,6 +235,47 @@ export default function Medications() {
 
   const { data: interactionAlerts } = useQuery<any[]>({
     queryKey: ['/api/drug-interactions/alerts'],
+  });
+
+  const { data: adherenceStats, isLoading: adherenceLoading } = useQuery<AdherenceStats>({
+    queryKey: ['/api/v1/medication-adherence/stats'],
+    queryFn: async () => {
+      const res = await fetch('/api/v1/medication-adherence/stats');
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const logAdherenceMutation = useMutation({
+    mutationFn: async ({ medicationId, status, notes }: { 
+      medicationId: string; 
+      status: 'taken' | 'missed' | 'skipped' | 'late';
+      notes?: string;
+    }) => {
+      const now = new Date().toISOString();
+      return apiRequest('POST', '/api/v1/medication-adherence/log', {
+        medication_id: medicationId,
+        scheduled_time: now,
+        taken_at: status === 'taken' || status === 'late' ? now : null,
+        status,
+        notes,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/medication-adherence/stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/medications/dashboard'] });
+      toast({
+        title: "Adherence Logged",
+        description: "Your medication intake has been recorded.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to log adherence. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const confirmStartMutation = useMutation({
@@ -480,6 +543,109 @@ export default function Medications() {
               </Card>
             </div>
 
+            {adherenceStats && (
+              <Card className="border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2 text-green-700 dark:text-green-300">
+                    <Target className="h-5 w-5" />
+                    Medication Adherence Tracking
+                  </CardTitle>
+                  <CardDescription className="text-green-600 dark:text-green-400">
+                    Your medication-taking consistency helps your wellness monitoring
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <div className="flex items-center gap-3 p-3 bg-white dark:bg-gray-900 rounded-md border">
+                      <div className="p-2 rounded-full bg-green-100 dark:bg-green-900/40">
+                        <Target className="h-5 w-5 text-green-600 dark:text-green-400" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                          {Math.round(adherenceStats.overallAdherenceRate)}%
+                        </p>
+                        <p className="text-xs text-muted-foreground">Overall Adherence</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-white dark:bg-gray-900 rounded-md border">
+                      <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/40">
+                        <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                          {Math.round(adherenceStats.weeklyAdherenceRate)}%
+                        </p>
+                        <p className="text-xs text-muted-foreground">This Week</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-white dark:bg-gray-900 rounded-md border">
+                      <div className="p-2 rounded-full bg-orange-100 dark:bg-orange-900/40">
+                        <Flame className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                          {adherenceStats.currentStreak}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Day Streak</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-white dark:bg-gray-900 rounded-md border">
+                      <div className="p-2 rounded-full bg-purple-100 dark:bg-purple-900/40">
+                        <Award className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                          {adherenceStats.bestStreak}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Best Streak</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {adherenceStats.medicationBreakdown && adherenceStats.medicationBreakdown.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      <h4 className="font-medium text-sm">Per-Medication Adherence</h4>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {adherenceStats.medicationBreakdown.map((med, idx) => (
+                          <div
+                            key={med.medicationId || idx}
+                            className="flex items-center gap-3 p-3 bg-white dark:bg-gray-900 rounded-md border"
+                            data-testid={`adherence-med-${med.medicationId}`}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">{med.medicationName}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Progress
+                                  value={med.adherenceRate}
+                                  className="h-2 flex-1"
+                                />
+                                <span className={`text-xs font-medium ${
+                                  med.adherenceRate >= 80 ? 'text-green-600' :
+                                  med.adherenceRate >= 50 ? 'text-amber-600' : 'text-red-600'
+                                }`}>
+                                  {Math.round(med.adherenceRate)}%
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {med.dosesTaken} of {med.dosesScheduled} doses taken
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-muted-foreground mt-4 text-center italic">
+                    Wellness monitoring - Not medical advice
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
             {dashboard?.reminders && dashboard.reminders.length > 0 && (
               <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
                 <CardHeader className="pb-3">
@@ -717,16 +883,32 @@ export default function Medications() {
                                           <Button
                                             size="sm"
                                             variant="default"
-                                            onClick={() => markTakenMutation.mutate({ id: med.id })}
-                                            disabled={markTakenMutation.isPending}
+                                            onClick={() => logAdherenceMutation.mutate({ 
+                                              medicationId: med.id, 
+                                              status: 'taken' 
+                                            })}
+                                            disabled={logAdherenceMutation.isPending}
                                             data-testid={`button-taken-${med.id}`}
                                           >
-                                            {markTakenMutation.isPending ? (
+                                            {logAdherenceMutation.isPending ? (
                                               <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                                             ) : (
                                               <Check className="h-4 w-4 mr-1" />
                                             )}
                                             Mark Taken
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => logAdherenceMutation.mutate({ 
+                                              medicationId: med.id, 
+                                              status: 'skipped' 
+                                            })}
+                                            disabled={logAdherenceMutation.isPending}
+                                            data-testid={`button-skipped-${med.id}`}
+                                          >
+                                            <XCircle className="h-4 w-4 mr-1" />
+                                            Skip
                                           </Button>
                                           {med.isContinuous && (
                                             <Button
