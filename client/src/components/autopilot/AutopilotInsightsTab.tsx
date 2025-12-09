@@ -125,7 +125,9 @@ export function RiskHistoryChart({ patientId }: { patientId: string }) {
   const { data, isLoading, isError, refetch } = useQuery<RiskHistoryData>({
     queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'history', { days: historyDays }],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/history?days=${historyDays}`);
+      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/history?days=${historyDays}`, {
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch history');
       return res.json();
     },
@@ -275,7 +277,9 @@ export function TriggerEventsLog({ patientId }: { patientId: string }) {
     queryFn: async () => {
       const params = new URLSearchParams({ days: triggerDays });
       if (severityFilter !== 'all') params.append('severity', severityFilter);
-      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/triggers?${params}`);
+      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/triggers?${params}`, {
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch triggers');
       return res.json();
     },
@@ -413,7 +417,9 @@ export function NotificationsBell({ patientId }: { patientId: string }) {
   const { data, isLoading, refetch } = useQuery<NotificationData>({
     queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'notifications'],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/notifications`);
+      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/notifications`, {
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch notifications');
       return res.json();
     },

@@ -392,7 +392,9 @@ function PreferencesPanel({ patientId }: { patientId: string }) {
   const { data, isLoading } = useQuery<{ preferences: NotificationPreferences }>({
     queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'preferences'],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/preferences`);
+      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/preferences`, {
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch preferences');
       return res.json();
     },
@@ -532,7 +534,9 @@ export function PatientAutopilotDashboard({ patientId }: { patientId: string }) 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<DashboardSummary>({
     queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'summary'],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/summary`);
+      const res = await fetch(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/summary`, {
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch dashboard');
       return res.json();
     },

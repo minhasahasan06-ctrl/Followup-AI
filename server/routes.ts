@@ -17018,10 +17018,16 @@ Provide:
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
       const userId = req.user?.id || req.query.user_id;
       
-      // Build query string
-      const queryParams = new URLSearchParams(req.query as Record<string, string>);
-      const queryString = queryParams.toString();
-      const url = `${pythonBackendUrl}${path}${queryString ? '?' + queryString : ''}`;
+      // Build query string - skip if path already contains query params
+      let url: string;
+      if (path.includes('?')) {
+        // Path already has query params, use as-is
+        url = `${pythonBackendUrl}${path}`;
+      } else {
+        const queryParams = new URLSearchParams(req.query as Record<string, string>);
+        const queryString = queryParams.toString();
+        url = `${pythonBackendUrl}${path}${queryString ? '?' + queryString : ''}`;
+      }
       
       let authHeader = req.headers.authorization || '';
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
