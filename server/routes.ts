@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { isAuthenticated, isDoctor, isPatient, getSession } from "./auth";
+import { isAuthenticated, isDoctor, isPatient, getSession, isAuthenticatedOrDevBypass } from "./auth";
 import { db } from "./db";
 import { eq, and, desc, gte, sql as drizzleSql, isNull } from "drizzle-orm";
 import * as schema from "@shared/schema";
@@ -20744,45 +20744,46 @@ Provide:
 
   // =============================================================================
   // FOLLOWUP AUTOPILOT PROXY ROUTES
+  // Uses isAuthenticatedOrDevBypass to support dev-patient-* pattern IDs in development
   // =============================================================================
 
   // Ingest signal
-  app.post('/api/v1/followup-autopilot/patients/:patientId/signals', isAuthenticated, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/signals', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/signals`, 'POST');
   });
 
   // Batch ingest signals
-  app.post('/api/v1/followup-autopilot/patients/:patientId/signals/batch', isAuthenticated, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/signals/batch', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/signals/batch`, 'POST');
   });
 
   // Get autopilot status
-  app.get('/api/v1/followup-autopilot/patients/:patientId/autopilot', isAuthenticated, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/autopilot', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/autopilot`, 'GET');
   });
 
   // Get patient tasks
-  app.get('/api/v1/followup-autopilot/patients/:patientId/tasks', isAuthenticated, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/tasks', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/tasks`, 'GET');
   });
 
   // Complete task
-  app.post('/api/v1/followup-autopilot/patients/:patientId/tasks/:taskId/complete', isAuthenticated, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/tasks/:taskId/complete', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/tasks/${req.params.taskId}/complete`, 'POST');
   });
 
   // Get notifications
-  app.get('/api/v1/followup-autopilot/patients/:patientId/notifications', isAuthenticated, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/notifications', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/notifications`, 'GET');
   });
 
   // Mark notification read
-  app.post('/api/v1/followup-autopilot/patients/:patientId/notifications/:notificationId/read', isAuthenticated, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/notifications/:notificationId/read', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/notifications/${req.params.notificationId}/read`, 'POST');
   });
 
   // Get risk history
-  app.get('/api/v1/followup-autopilot/patients/:patientId/history', isAuthenticated, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/history', isAuthenticatedOrDevBypass, async (req: any, res) => {
     // Validate and sanitize days parameter (1-90)
     const rawDays = parseInt(req.query.days as string, 10);
     const days = (!isNaN(rawDays) && rawDays >= 1 && rawDays <= 90) ? rawDays : 30;
@@ -20792,7 +20793,7 @@ Provide:
   });
 
   // Get trigger events
-  app.get('/api/v1/followup-autopilot/patients/:patientId/triggers', isAuthenticated, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/triggers', isAuthenticatedOrDevBypass, async (req: any, res) => {
     // Validate and sanitize days parameter (1-90)
     const rawDays = parseInt(req.query.days as string, 10);
     const days = (!isNaN(rawDays) && rawDays >= 1 && rawDays <= 90) ? rawDays : 14;
@@ -20809,12 +20810,12 @@ Provide:
   });
 
   // Set training labels
-  app.post('/api/v1/followup-autopilot/patients/:patientId/labels', isAuthenticated, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/labels', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/labels`, 'POST');
   });
 
   // Manual trigger
-  app.post('/api/v1/followup-autopilot/patients/:patientId/trigger', isAuthenticated, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/trigger', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/trigger`, 'POST');
   });
 
@@ -20829,21 +20830,21 @@ Provide:
   });
 
   // Med events tracking
-  app.post('/api/v1/followup-autopilot/patients/:patientId/med-events', isAuthenticated, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/med-events', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/med-events`, 'POST');
   });
 
   // Notification preferences
-  app.get('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticated, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/preferences`, 'GET');
   });
 
-  app.patch('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticated, async (req: any, res) => {
+  app.patch('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/preferences`, 'PATCH');
   });
 
   // Patient dashboard summary (comprehensive view)
-  app.get('/api/v1/followup-autopilot/patients/:patientId/summary', isAuthenticated, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/summary', isAuthenticatedOrDevBypass, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/summary`, 'GET');
   });
 

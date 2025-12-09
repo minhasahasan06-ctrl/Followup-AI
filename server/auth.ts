@@ -122,3 +122,41 @@ export const isPatient: RequestHandler = async (req, res, next) => {
     return res.status(403).json({ message: "Access denied" });
   }
 };
+
+// Authentication middleware with dev bypass for autopilot routes
+// In development, allows dev-patient-* pattern IDs to pass through when session auth fails
+export const isAuthenticatedOrDevBypass: RequestHandler = async (req, res, next) => {
+  // First try normal session authentication
+  if (req.session && (req.session as any).userId) {
+    const userId = (req.session as any).userId;
+    const user = await storage.getUser(userId);
+    
+    if (user) {
+      req.user = {
+        id: user.id,
+        email: user.email!,
+        role: user.role,
+      };
+      return next();
+    }
+  }
+  
+  // Dev bypass: In non-production, allow requests with dev-patient-* patientId in route params
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (!isProduction) {
+    const patientId = req.params.patientId;
+    if (patientId && patientId.startsWith('dev-patient-')) {
+      // Set up a dev user context
+      req.user = {
+        id: patientId,
+        email: 'dev-patient@followup.ai',
+        role: 'patient',
+      };
+      console.log(`[AUTH] Dev bypass for autopilot route: ${patientId}`);
+      return next();
+    }
+  }
+  
+  console.log(`[AUTH] ✗ Unauthorized - no session or dev bypass available`);
+  return res.status(401).json({ message: "Unauthorized" });
+};
