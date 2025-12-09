@@ -125,6 +125,12 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import medication_adherence: {e}")
 
+try:
+    from app.routers import hitl_approvals
+    _optional_routers.append(('hitl_approvals', hitl_approvals))
+except ImportError as e:
+    logger.warning(f"❌ Could not import hitl_approvals: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

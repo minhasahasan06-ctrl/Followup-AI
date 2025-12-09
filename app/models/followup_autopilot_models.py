@@ -271,3 +271,97 @@ class AutopilotAuditLog(Base):
         Index('idx_autopilot_audit_action', 'action'),
         Index('idx_autopilot_audit_created', 'created_at'),
     )
+
+
+class ApprovalStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    MODIFIED = "modified"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class ApprovalActionType(str, enum.Enum):
+    SCHEDULE_FOLLOWUP = "schedule_followup"
+    SEND_REMINDER = "send_reminder"
+    ESCALATE_CARE = "escalate_care"
+    ADJUST_MEDICATION = "adjust_medication"
+    REQUEST_CHECKIN = "request_checkin"
+    SCHEDULE_CONSULTATION = "schedule_consultation"
+    NOTIFY_PATIENT = "notify_patient"
+
+
+class AutopilotPendingApproval(Base):
+    """
+    Human-in-the-Loop pending approvals for doctor review.
+    Created when Autopilot detects high-risk events requiring doctor oversight.
+    """
+    __tablename__ = "autopilot_pending_approvals"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    patient_id = Column(String, nullable=False, index=True)
+    doctor_id = Column(String, nullable=False, index=True)
+    
+    trigger_event_id = Column(PGUUID(as_uuid=True), ForeignKey("autopilot_trigger_events.id"), nullable=True)
+    
+    action_type = Column(String, nullable=False)
+    status = Column(String, default="pending", index=True)
+    priority = Column(String, default="medium")
+    
+    title = Column(String, nullable=False)
+    ai_recommendation = Column(Text, nullable=False)
+    ai_reasoning = Column(Text, nullable=True)
+    confidence_score = Column(Float, default=0.0)
+    
+    patient_context = Column(JSONB, default=dict)
+    risk_score = Column(Float, nullable=True)
+    risk_state = Column(String, nullable=True)
+    
+    doctor_notes = Column(Text, nullable=True)
+    modified_action = Column(JSONB, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    trigger_event = relationship("AutopilotTriggerEvent", foreign_keys=[trigger_event_id])
+
+    __table_args__ = (
+        Index('idx_pending_approval_doctor_status', 'doctor_id', 'status'),
+        Index('idx_pending_approval_patient', 'patient_id'),
+        Index('idx_pending_approval_priority', 'priority'),
+        Index('idx_pending_approval_created', 'created_at'),
+        Index('idx_pending_approval_expires', 'expires_at'),
+    )
+
+
+class AutopilotApprovalHistory(Base):
+    """
+    Historical log of all approval decisions for audit and analytics.
+    """
+    __tablename__ = "autopilot_approval_history"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    approval_id = Column(PGUUID(as_uuid=True), ForeignKey("autopilot_pending_approvals.id"), nullable=False)
+    doctor_id = Column(String, nullable=False, index=True)
+    patient_id = Column(String, nullable=False, index=True)
+    
+    action_taken = Column(String, nullable=False)
+    original_recommendation = Column(Text, nullable=True)
+    final_action = Column(JSONB, nullable=True)
+    doctor_notes = Column(Text, nullable=True)
+    
+    time_to_decision_seconds = Column(Integer, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_approval_history_doctor', 'doctor_id'),
+        Index('idx_approval_history_patient', 'patient_id'),
+        Index('idx_approval_history_created', 'created_at'),
+    )

@@ -320,12 +320,19 @@ class TriggerEngine:
                 patient_id, trigger_name, trigger_def, features, state
             )
         
+        approval_id = None
+        if trigger_def.task_priority in ("high", "critical"):
+            approval_id = self._create_hitl_approval(
+                patient_id, trigger_name, trigger_def, features, state, event_id
+            )
+        
         return {
             "trigger_name": trigger_name,
             "severity": trigger_def.severity,
             "event_id": event_id,
             "task_id": task_id,
             "alert_id": alert_id,
+            "approval_id": approval_id,
             "reason": trigger_def.reason_template,
         }
     
@@ -411,6 +418,171 @@ class TriggerEngine:
                 self.db.rollback()
         return None
     
+    def _create_hitl_approval(
+        self,
+        patient_id: str,
+        trigger_name: str,
+        trigger_def: TriggerDefinition,
+        features: Dict[str, Any],
+        state: Dict[str, Any],
+        event_id: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Create Human-in-the-Loop pending approval for doctor review.
+        High/critical triggers require doctor oversight before actions are executed.
+        """
+        try:
+            doctor_id = self._get_assigned_doctor(patient_id)
+            if not doctor_id:
+                self.logger.warning(f"No doctor assigned to patient {patient_id}, skipping HITL approval")
+                return None
+            
+            action_type = self._map_trigger_to_action_type(trigger_name)
+            
+            ai_recommendation = self._generate_ai_recommendation(trigger_name, trigger_def, features, state)
+            ai_reasoning = self._generate_ai_reasoning(trigger_name, features, state)
+            
+            confidence = 0.7 if trigger_def.task_priority == "critical" else 0.6
+            
+            patient_context = {
+                "risk_score": state.get("risk_score", 0),
+                "risk_state": state.get("risk_state", "Stable"),
+                "med_adherence_7d": features.get("med_adherence_7d"),
+                "avg_pain": features.get("avg_pain"),
+                "mh_score": features.get("mh_score"),
+                "env_risk_score": features.get("env_risk_score"),
+            }
+            
+            if self.db:
+                from app.models.followup_autopilot_models import AutopilotPendingApproval
+                
+                expires_hours = 24 if trigger_def.task_priority == "critical" else 48
+                
+                approval = AutopilotPendingApproval(
+                    patient_id=patient_id,
+                    doctor_id=doctor_id,
+                    trigger_event_id=event_id,
+                    action_type=action_type,
+                    status="pending",
+                    priority=trigger_def.task_priority,
+                    title=f"Review: {trigger_name.replace('_', ' ').title()}",
+                    ai_recommendation=ai_recommendation,
+                    ai_reasoning=ai_reasoning,
+                    confidence_score=confidence,
+                    patient_context=patient_context,
+                    risk_score=state.get("risk_score"),
+                    risk_state=state.get("risk_state"),
+                    expires_at=datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+                )
+                self.db.add(approval)
+                self.db.commit()
+                self.logger.info(f"Created HITL approval {approval.id} for patient {patient_id}")
+                return str(approval.id)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to create HITL approval: {e}")
+            if self.db:
+                self.db.rollback()
+        return None
+    
+    def _get_assigned_doctor(self, patient_id: str) -> Optional[str]:
+        """Get the assigned doctor for a patient"""
+        if not self.db:
+            return None
+        
+        try:
+            from sqlalchemy import text
+            
+            result = self.db.execute(
+                text("""
+                    SELECT doctor_id FROM doctor_patient_assignments
+                    WHERE patient_id = :patient_id AND status = 'active'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """),
+                {"patient_id": patient_id}
+            )
+            row = result.fetchone()
+            if row:
+                return row[0]
+            
+            result = self.db.execute(
+                text("""
+                    SELECT assigned_doctor_id FROM users
+                    WHERE id = :patient_id AND assigned_doctor_id IS NOT NULL
+                """),
+                {"patient_id": patient_id}
+            )
+            row = result.fetchone()
+            if row:
+                return row[0]
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to get assigned doctor: {e}")
+        
+        return None
+    
+    def _map_trigger_to_action_type(self, trigger_name: str) -> str:
+        """Map trigger name to approval action type"""
+        mapping = {
+            "missed_meds_pattern": "send_reminder",
+            "env_risk_high_with_symptoms": "request_checkin",
+            "mh_score_spike": "schedule_followup",
+            "anomaly_day": "request_checkin",
+            "exposure_risk_elevated": "notify_patient",
+            "pain_spike": "schedule_followup",
+            "critical_wellness": "schedule_consultation",
+        }
+        return mapping.get(trigger_name, "notify_patient")
+    
+    def _generate_ai_recommendation(
+        self,
+        trigger_name: str,
+        trigger_def: TriggerDefinition,
+        features: Dict[str, Any],
+        state: Dict[str, Any]
+    ) -> str:
+        """Generate AI recommendation text for doctor review"""
+        recommendations = {
+            "missed_meds_pattern": f"Patient has medication adherence of {features.get('med_adherence_7d', 0)*100:.0f}% over the past 7 days. Recommend sending a gentle reminder about medication importance and scheduling a brief check-in to understand barriers.",
+            "env_risk_high_with_symptoms": f"Environmental risk score is {features.get('env_risk_score', 0):.0f} with reported pain level {features.get('avg_pain', 0):.1f}/10. Recommend requesting an immediate symptom check-in and advising the patient to limit outdoor exposure.",
+            "mh_score_spike": f"Mental health indicators show elevated scores (MH score: {features.get('mh_score', 0):.2f}). Recommend scheduling a mental health follow-up and providing supportive resources.",
+            "anomaly_day": "Patient's daily patterns are significantly different from their baseline. Recommend a wellness check-in to understand any changes in their routine or health status.",
+            "exposure_risk_elevated": f"Elevated exposure risk detected (infectious: {features.get('infectious_exposure_score', 0):.2f}). Recommend notifying the patient about precautionary measures and monitoring symptoms.",
+            "pain_spike": f"Pain levels have increased to {features.get('avg_pain', 0):.1f}/10. Recommend scheduling a follow-up to assess pain management and adjust treatment if needed.",
+            "critical_wellness": f"Critical wellness state detected (Risk Score: {state.get('risk_score', 0):.0f}). Recommend urgent consultation to assess the patient's current condition and care needs.",
+        }
+        return recommendations.get(trigger_name, trigger_def.reason_template)
+    
+    def _generate_ai_reasoning(
+        self,
+        trigger_name: str,
+        features: Dict[str, Any],
+        state: Dict[str, Any]
+    ) -> str:
+        """Generate AI reasoning for the recommendation"""
+        risk_state = state.get("risk_state", "Stable")
+        risk_score = state.get("risk_score", 0)
+        
+        base_reasoning = f"Based on analysis of patient data, the current risk state is '{risk_state}' with a composite score of {risk_score:.0f}/100. "
+        
+        factors = []
+        if features.get("med_adherence_7d", 1) < 0.8:
+            factors.append(f"medication adherence at {features.get('med_adherence_7d', 0)*100:.0f}%")
+        if features.get("avg_pain", 0) > 5:
+            factors.append(f"elevated pain levels ({features.get('avg_pain', 0):.1f}/10)")
+        if features.get("mh_score", 0) > 0.5:
+            factors.append("concerning mental health indicators")
+        if features.get("env_risk_score", 0) > 50:
+            factors.append("high environmental risk exposure")
+        
+        if factors:
+            base_reasoning += f"Key contributing factors: {', '.join(factors)}. "
+        
+        base_reasoning += "This recommendation is generated by the Autopilot wellness monitoring system and requires doctor approval before any action is taken."
+        
+        return base_reasoning
+
     def _log_event_raw(
         self,
         event_id: str,
