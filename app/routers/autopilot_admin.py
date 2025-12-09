@@ -11,7 +11,9 @@ HIPAA Compliance:
 - All operations are audit logged
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+import os
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -42,11 +44,40 @@ class ConfigUpdateResponse(BaseModel):
     error: Optional[str] = None
 
 
-def get_user_from_request(request: Request) -> Dict[str, Any]:
-    """Extract user info from request state or return default."""
-    if hasattr(request.state, 'user') and request.state.user:
-        return request.state.user
-    return {"sub": "admin", "role": "admin"}
+ALLOWED_ADMIN_ROLES = {'admin', 'doctor'}
+
+
+def get_admin_user(
+    authorization: Optional[str] = Header(None)
+) -> Dict[str, Any]:
+    """
+    Dependency to extract and validate admin user from request.
+    Validates JWT from Authorization header (sent by Express proxy).
+    Requires admin or doctor role for access.
+    Raises 401 if not authenticated, 403 if not authorized.
+    """
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail="Authentication required for admin access")
+    
+    token = authorization[7:]
+    try:
+        secret = os.environ.get('DEV_MODE_SECRET') or os.environ.get('SESSION_SECRET', 'dev-secret')
+        payload = jwt.decode(token, secret, algorithms=['HS256'])
+        if not payload or not payload.get('sub'):
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+        
+        user_role = payload.get('role', '')
+        if user_role not in ALLOWED_ADMIN_ROLES:
+            raise HTTPException(
+                status_code=403, 
+                detail="Admin or doctor role required for admin dashboard access"
+            )
+        
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Authentication token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
 
 
 def _get_admin_analytics_service(db_session):
@@ -57,6 +88,8 @@ def _get_admin_analytics_service(db_session):
 
 def _audit_log(db: Session, action: str, user_id: str, details: Optional[Dict[str, Any]] = None):
     """Log admin actions for HIPAA compliance."""
+    if db is None:
+        return
     try:
         from app.models.followup_autopilot_models import AutopilotAuditLog
         import uuid
@@ -70,13 +103,16 @@ def _audit_log(db: Session, action: str, user_id: str, details: Optional[Dict[st
         )
         db.add(log)
         db.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 @router.get("/health")
 async def get_system_health(
-    request: Request,
+    user: Dict[str, Any] = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -85,11 +121,10 @@ async def get_system_health(
     Returns:
         System status, patient counts, and activity metrics for the last hour.
     """
-    user = get_user_from_request(request)
     user_id = user.get("sub", "unknown")
     _audit_log(db, "view_system_health", user_id)
     
-    service = _get_admin_analytics_service(None)
+    service = _get_admin_analytics_service(db)
     result = service.get_system_health()
     
     return result
@@ -97,8 +132,8 @@ async def get_system_health(
 
 @router.get("/engagement")
 async def get_engagement_analytics(
-    request: Request,
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
+    user: Dict[str, Any] = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -110,11 +145,10 @@ async def get_engagement_analytics(
     Returns:
         Task completion stats, notification stats, and breakdowns by type/priority.
     """
-    user = get_user_from_request(request)
     user_id = user.get("sub", "unknown")
     _audit_log(db, "view_engagement_analytics", user_id, {"days": days})
     
-    service = _get_admin_analytics_service(None)
+    service = _get_admin_analytics_service(db)
     result = service.get_engagement_analytics(days)
     
     return result
@@ -122,9 +156,9 @@ async def get_engagement_analytics(
 
 @router.get("/models/performance")
 async def get_model_performance(
-    request: Request,
     model_name: Optional[str] = Query(None, description="Filter by specific model name"),
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
+    user: Dict[str, Any] = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -135,11 +169,10 @@ async def get_model_performance(
     Returns:
         Performance metrics for all models or a specific model.
     """
-    user = get_user_from_request(request)
     user_id = user.get("sub", "unknown")
     _audit_log(db, "view_model_performance", user_id, {"model_name": model_name, "days": days})
     
-    service = _get_admin_analytics_service(None)
+    service = _get_admin_analytics_service(db)
     result = service.get_model_performance(model_name, days)
     
     return result
@@ -147,7 +180,7 @@ async def get_model_performance(
 
 @router.get("/cohorts")
 async def get_patient_cohorts(
-    request: Request,
+    user: Dict[str, Any] = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -159,11 +192,10 @@ async def get_patient_cohorts(
     Returns:
         Cohort distribution, risk distribution, and privacy-protected aggregates.
     """
-    user = get_user_from_request(request)
     user_id = user.get("sub", "unknown")
     _audit_log(db, "view_patient_cohorts", user_id)
     
-    service = _get_admin_analytics_service(None)
+    service = _get_admin_analytics_service(db)
     result = service.get_patient_cohorts()
     
     return result
@@ -171,8 +203,8 @@ async def get_patient_cohorts(
 
 @router.get("/triggers")
 async def get_trigger_analytics(
-    request: Request,
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
+    user: Dict[str, Any] = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -184,11 +216,10 @@ async def get_trigger_analytics(
     Returns:
         Trigger counts by type and severity.
     """
-    user = get_user_from_request(request)
     user_id = user.get("sub", "unknown")
     _audit_log(db, "view_trigger_analytics", user_id, {"days": days})
     
-    service = _get_admin_analytics_service(None)
+    service = _get_admin_analytics_service(db)
     result = service.get_trigger_analytics(days)
     
     return result
@@ -196,8 +227,8 @@ async def get_trigger_analytics(
 
 @router.get("/configurations")
 async def get_configurations(
-    request: Request,
     category: Optional[str] = Query(None, description="Filter by category"),
+    user: Dict[str, Any] = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -208,11 +239,10 @@ async def get_configurations(
     Returns:
         List of configuration settings with their current values.
     """
-    user = get_user_from_request(request)
     user_id = user.get("sub", "unknown")
     _audit_log(db, "view_configurations", user_id, {"category": category})
     
-    service = _get_admin_analytics_service(None)
+    service = _get_admin_analytics_service(db)
     configs = service.get_configurations(category)
     
     return {
@@ -224,8 +254,8 @@ async def get_configurations(
 
 @router.put("/configurations")
 async def update_configuration(
-    request: Request,
     config_request: ConfigUpdateRequest,
+    user: Dict[str, Any] = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -237,10 +267,9 @@ async def update_configuration(
     Returns:
         Success status and updated value or error message.
     """
-    user = get_user_from_request(request)
     user_id = user.get("sub", "unknown")
     
-    service = _get_admin_analytics_service(None)
+    service = _get_admin_analytics_service(db)
     result = service.update_configuration(
         config_request.config_key,
         config_request.config_value,
@@ -261,7 +290,7 @@ async def update_configuration(
 
 @router.get("/summary")
 async def get_admin_summary(
-    request: Request,
+    user: Dict[str, Any] = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -272,11 +301,10 @@ async def get_admin_summary(
     Returns:
         Combined dashboard data for admin overview.
     """
-    user = get_user_from_request(request)
     user_id = user.get("sub", "unknown")
     _audit_log(db, "view_admin_summary", user_id)
     
-    service = _get_admin_analytics_service(None)
+    service = _get_admin_analytics_service(db)
     
     health = service.get_system_health()
     engagement = service.get_engagement_analytics(7)
