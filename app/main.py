@@ -324,13 +324,19 @@ try:
 except Exception as e:
     logger.warning(f"❌ Autopilot Admin API unavailable: {e}")
 
-# ML Training Infrastructure (Consent, Jobs, Datasets, Model Registry) - PRODUCTION READY
+# ML Training Infrastructure (Training Jobs, Queue, Worker, Model Registry) - PRODUCTION READY
 try:
-    from app.routers import ml_training
-    app.include_router(ml_training.router)
-    logger.info("✅ ML Training API router registered")
+    import sys
+    import os
+    # Add python_backend to path for imports
+    backend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'python_backend')
+    if backend_path not in sys.path:
+        sys.path.insert(0, backend_path)
+    from ml_analysis.training_infrastructure.training_api import router as training_infrastructure_router
+    app.include_router(training_infrastructure_router)
+    logger.info("✅ ML Training Infrastructure router registered")
 except Exception as e:
-    logger.warning(f"❌ ML Training API unavailable: {e}")
+    logger.warning(f"❌ ML Training Infrastructure unavailable: {e}")
 
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:

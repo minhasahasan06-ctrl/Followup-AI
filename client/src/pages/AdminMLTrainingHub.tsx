@@ -60,6 +60,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import { AutopilotAdminDashboard } from "@/components/autopilot/AutopilotAdminDashboard";
+import { TrainingJobsPanel } from "@/components/ml-training/TrainingJobsPanel";
 
 interface Dataset {
   name: string;
@@ -1460,7 +1461,7 @@ function MLTrainingHubContent() {
         </TabsContent>
 
         <TabsContent value="jobs" className="mt-6">
-          <TrainingJobsTab />
+          <TrainingJobsPanel />
         </TabsContent>
 
         <TabsContent value="models" className="mt-6">

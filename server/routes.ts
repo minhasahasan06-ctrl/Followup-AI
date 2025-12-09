@@ -20958,6 +20958,109 @@ Provide:
   // END AUTOPILOT ADMIN DASHBOARD PROXY ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // ML TRAINING INFRASTRUCTURE PROXY ROUTES
+  // Routes for training job queue, worker, model versioning, artifacts
+  // =============================================================================
+
+  // Training Jobs
+  app.get('/python-api/ml-training/jobs', isAuthenticated, async (req: any, res) => {
+    const status = req.query.status as string;
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    let path = `/api/ml-training/jobs?limit=${limit}`;
+    if (status) path += `&status=${status}`;
+    await automationProxy(req, res, path, 'GET');
+  });
+
+  app.post('/python-api/ml-training/jobs', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/ml-training/jobs', 'POST');
+  });
+
+  app.get('/python-api/ml-training/jobs/:jobId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml-training/jobs/${req.params.jobId}`, 'GET');
+  });
+
+  app.get('/python-api/ml-training/jobs/:jobId/history', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml-training/jobs/${req.params.jobId}/history`, 'GET');
+  });
+
+  app.post('/python-api/ml-training/jobs/:jobId/cancel', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml-training/jobs/${req.params.jobId}/cancel`, 'POST');
+  });
+
+  app.post('/python-api/ml-training/jobs/:jobId/retry', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml-training/jobs/${req.params.jobId}/retry`, 'POST');
+  });
+
+  // Queue Stats & Worker
+  app.get('/python-api/ml-training/queue/stats', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/ml-training/queue/stats', 'GET');
+  });
+
+  app.get('/python-api/ml-training/worker/status', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/ml-training/worker/status', 'GET');
+  });
+
+  app.post('/python-api/ml-training/worker/start', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/ml-training/worker/start', 'POST');
+  });
+
+  app.post('/python-api/ml-training/worker/stop', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/ml-training/worker/stop', 'POST');
+  });
+
+  // Model Versions
+  app.get('/python-api/ml-training/models/:modelName/versions', isAuthenticated, async (req: any, res) => {
+    const limit = parseInt(req.query.limit as string, 10) || 20;
+    await automationProxy(req, res, `/api/ml-training/models/${req.params.modelName}/versions?limit=${limit}`, 'GET');
+  });
+
+  app.get('/python-api/ml-training/models/:modelName/active', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml-training/models/${req.params.modelName}/active`, 'GET');
+  });
+
+  app.post('/python-api/ml-training/models/:modelName/promote/:version', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml-training/models/${req.params.modelName}/promote/${req.params.version}`, 'POST');
+  });
+
+  app.post('/python-api/ml-training/models/:modelName/rollback/:version', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml-training/models/${req.params.modelName}/rollback/${req.params.version}`, 'POST');
+  });
+
+  app.get('/python-api/ml-training/models/:modelName/compare', isAuthenticated, async (req: any, res) => {
+    const v1 = req.query.version1 as string;
+    const v2 = req.query.version2 as string;
+    await automationProxy(req, res, `/api/ml-training/models/${req.params.modelName}/compare?version1=${v1}&version2=${v2}`, 'GET');
+  });
+
+  // Artifacts
+  app.get('/python-api/ml-training/artifacts', isAuthenticated, async (req: any, res) => {
+    const modelName = req.query.model_name as string;
+    const modelType = req.query.model_type as string;
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    let path = `/api/ml-training/artifacts?limit=${limit}`;
+    if (modelName) path += `&model_name=${modelName}`;
+    if (modelType) path += `&model_type=${modelType}`;
+    await automationProxy(req, res, path, 'GET');
+  });
+
+  app.get('/python-api/ml-training/artifacts/:artifactId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml-training/artifacts/${req.params.artifactId}`, 'GET');
+  });
+
+  // Consent & Governance
+  app.post('/python-api/ml-training/consent/check', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/ml-training/consent/check', 'POST');
+  });
+
+  app.post('/python-api/ml-training/governance/pre-build-check', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/ml-training/governance/pre-build-check', 'POST');
+  });
+
+  // =============================================================================
+  // END ML TRAINING INFRASTRUCTURE PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
 
   // WebSocket proxy for agent communication

@@ -3,17 +3,26 @@ Dataset Builder for Research Center ML Analysis Engine
 
 Transforms cohort definitions and analysis specifications into 
 pandas DataFrames, joining clinical, followup, immune, and environmental data.
+
+Enhanced with governance hooks for HIPAA compliance:
+- Pre-build validation
+- k-anonymity enforcement  
+- PHI detection and redaction
+- Comprehensive audit logging
 """
 
 import os
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 import pandas as pd
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import psycopg2
 from psycopg2.extras import RealDictCursor
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class CohortSpec:
@@ -56,10 +65,40 @@ class DatasetBuilder:
     - Medications (patient_medications)
     - Conditions (conditions)
     - Deterioration indices
+    
+    Enhanced with governance hooks:
+    - Pre-build validation for k-anonymity
+    - PHI detection and automatic redaction
+    - Comprehensive audit trail
     """
     
-    def __init__(self, connection_string: Optional[str] = None):
+    def __init__(self, connection_string: Optional[str] = None, enable_governance: bool = True):
         self.connection_string = connection_string or os.environ.get('DATABASE_URL')
+        self.enable_governance = enable_governance
+        self._governance_hooks = None
+        self._consent_enforcer = None
+    
+    @property
+    def governance_hooks(self):
+        """Lazy load governance hooks"""
+        if self._governance_hooks is None and self.enable_governance:
+            try:
+                from .training_infrastructure.governance_hooks import GovernanceHooks
+                self._governance_hooks = GovernanceHooks(db_url=self.connection_string)
+            except ImportError:
+                logger.warning("Governance hooks not available")
+        return self._governance_hooks
+    
+    @property
+    def consent_enforcer(self):
+        """Lazy load consent enforcer"""
+        if self._consent_enforcer is None and self.enable_governance:
+            try:
+                from .training_infrastructure.consent_enforcer import ConsentEnforcer
+                self._consent_enforcer = ConsentEnforcer(db_url=self.connection_string)
+            except ImportError:
+                logger.warning("Consent enforcer not available")
+        return self._consent_enforcer
         
     def get_connection(self):
         """Create database connection"""
@@ -69,16 +108,25 @@ class DatasetBuilder:
         self,
         cohort_spec: CohortSpec,
         analysis_spec: AnalysisSpec,
-        include_data_types: Optional[List[str]] = None
+        include_data_types: Optional[List[str]] = None,
+        purpose: str = "analysis",
+        requester_id: str = "system"
     ) -> pd.DataFrame:
         """
         Build a complete dataset for analysis from cohort and analysis specs.
+        
+        Enhanced with governance hooks:
+        - Pre-build validation for k-anonymity
+        - PHI column detection and redaction
+        - Audit logging
         
         Args:
             cohort_spec: Cohort selection criteria
             analysis_spec: Variables to include
             include_data_types: Data sources to join ('demographics', 'followups', 
                               'immune', 'environmental', 'medications', 'conditions')
+            purpose: Purpose of data extraction (for audit)
+            requester_id: ID of requester (for audit)
         
         Returns:
             pd.DataFrame with analysis-ready data
@@ -86,6 +134,22 @@ class DatasetBuilder:
         if include_data_types is None:
             include_data_types = ['demographics', 'followups', 'immune', 
                                   'environmental', 'medications', 'conditions']
+        
+        # Run pre-build governance checks
+        if self.governance_hooks:
+            cohort_dict = asdict(cohort_spec) if hasattr(cohort_spec, '__dataclass_fields__') else {}
+            analysis_dict = asdict(analysis_spec) if hasattr(analysis_spec, '__dataclass_fields__') else {}
+            
+            pre_check = self.governance_hooks.run_pre_build_checks(
+                cohort_spec=cohort_dict,
+                analysis_spec=analysis_dict,
+                requester_id=requester_id,
+                purpose=purpose
+            )
+            
+            if pre_check.result.value == "denied":
+                logger.warning(f"Pre-build governance check failed: {pre_check.message}")
+                raise ValueError(f"Governance check failed: {pre_check.message}")
         
         patient_ids = self._get_cohort_patients(cohort_spec)
         
@@ -114,6 +178,26 @@ class DatasetBuilder:
         
         if analysis_spec.outcome_variable:
             df = self._compute_outcome(df, analysis_spec)
+        
+        # Run post-build governance checks
+        if self.governance_hooks:
+            post_check = self.governance_hooks.run_post_build_checks(
+                dataset_info={"purpose": purpose, "data_types": include_data_types},
+                columns=list(df.columns),
+                row_count=len(df),
+                requester_id=requester_id
+            )
+            
+            if post_check.result.value == "denied":
+                logger.warning(f"Post-build governance check failed: {post_check.message}")
+                raise ValueError(f"Governance check failed: {post_check.message}")
+            
+            # Apply any modifications (e.g., PHI redaction)
+            if post_check.modifications.get("redact_columns"):
+                for col in post_check.modifications["redact_columns"]:
+                    if col in df.columns:
+                        df[col] = "[REDACTED]"
+                        logger.info(f"Redacted PHI column: {col}")
         
         return df
     
