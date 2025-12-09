@@ -351,6 +351,15 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'device_connect':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Device Connect API)")
+        elif router_name == 'rx_builder':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Rx Builder API)")
+        elif router_name == 'medication_adherence':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Medication Adherence API)")
+        elif router_name == 'hitl_approvals':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Human-in-the-Loop Approvals API)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

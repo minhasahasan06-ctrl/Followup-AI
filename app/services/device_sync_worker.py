@@ -133,11 +133,16 @@ class DeviceSyncWorker:
         return self._session_factory()
     
     async def start(self):
-        """Start the sync worker"""
+        """Start the sync worker as a background task (non-blocking)"""
         await self.initialize()
         self._running = True
         logger.info("Device sync worker started")
         
+        # Start the worker loop as a background task so it doesn't block server startup
+        asyncio.create_task(self._run_worker_loop())
+    
+    async def _run_worker_loop(self):
+        """Background worker loop - runs independently"""
         while self._running:
             try:
                 await self._process_pending_syncs()

@@ -20826,6 +20826,50 @@ Provide:
   // END FOLLOWUP AUTOPILOT PROXY ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // HUMAN-IN-THE-LOOP (HITL) APPROVALS PROXY ROUTES
+  // Phase 3: Doctor approval system for Autopilot-triggered actions
+  // =============================================================================
+
+  // Get pending approvals count (for badge display)
+  app.get('/api/v1/hitl/pending/count', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/hitl/pending/count', 'GET');
+  });
+
+  // List pending approvals
+  app.get('/api/v1/hitl/pending', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/hitl/pending', 'GET');
+  });
+
+  // Get single approval details
+  app.get('/api/v1/hitl/approvals/:approvalId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/hitl/approvals/${encodeURIComponent(req.params.approvalId)}`, 'GET');
+  });
+
+  // Doctor decides on approval (approve/reject/modify)
+  app.post('/api/v1/hitl/approvals/:approvalId/decide', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/hitl/approvals/${encodeURIComponent(req.params.approvalId)}/decide`, 'POST');
+  });
+
+  // Get patient profile summary for approval context
+  app.get('/api/v1/hitl/patients/:patientId/profile-summary', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/hitl/patients/${encodeURIComponent(req.params.patientId)}/profile-summary`, 'GET');
+  });
+
+  // Get approval history
+  app.get('/api/v1/hitl/history', isAuthenticated, async (req: any, res) => {
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    const offset = parseInt(req.query.offset as string, 10) || 0;
+    const url = new URL('/api/v1/hitl/history', 'http://localhost:8000');
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('offset', String(offset));
+    await automationProxy(req, res, url.pathname + url.search, 'GET');
+  });
+
+  // =============================================================================
+  // END HITL APPROVALS PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
 
   // WebSocket proxy for agent communication

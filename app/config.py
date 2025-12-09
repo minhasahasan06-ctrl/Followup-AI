@@ -10,11 +10,6 @@ class Settings(BaseSettings):
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
     AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY")
-    AWS_COGNITO_USER_POOL_ID: Optional[str] = os.getenv("AWS_COGNITO_USER_POOL_ID")
-    AWS_COGNITO_CLIENT_ID: Optional[str] = os.getenv("AWS_COGNITO_CLIENT_ID")
-    AWS_COGNITO_CLIENT_SECRET: Optional[str] = os.getenv("AWS_COGNITO_CLIENT_SECRET")
-    AWS_COGNITO_REGION: Optional[str] = os.getenv("AWS_COGNITO_REGION")
-    AWS_COGNITO_DOMAIN: Optional[str] = os.getenv("AWS_COGNITO_DOMAIN")
     AWS_S3_BUCKET_NAME: Optional[str] = os.getenv("AWS_S3_BUCKET_NAME")
     
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")

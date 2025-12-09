@@ -94,9 +94,13 @@ APScheduler-based background jobs running on the Python FastAPI backend (port 80
 Scheduler status is visible in AdminMLTrainingHub > Advanced > Background Scheduler, with ability to trigger jobs manually.
 
 ### Security and Compliance
-The platform is HIPAA-compliant, utilizing Auth0 for primary authentication (frontend-integrated with JWT verification in Python backend), session-based authentication for Express routes, BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, and explicit doctor-patient assignment authorization. The Admin ML Training Hub is protected with Google Authenticator TOTP for enhanced security, including lockout protection and session-based verification.
+The platform is HIPAA-compliant, utilizing Auth0 for primary frontend authentication, session-based authentication for Express routes, and DEV_MODE_SECRET JWT authentication for Express-to-Python backend communication. Features BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, and explicit doctor-patient assignment authorization. The Admin ML Training Hub is protected with Google Authenticator TOTP for enhanced security, including lockout protection and session-based verification.
 
-**Note**: Legacy AWS Cognito code exists in `server/cognitoAuth.ts` for backward compatibility but Auth0 is the primary authentication system. The frontend uses Auth0Provider and syncs users via `/api/auth/me` and `/api/auth/register` endpoints (proxied to Python FastAPI).
+**Authentication Flow**:
+- Frontend: Auth0 for user authentication
+- Express routes: Session-based authentication (Express session store)
+- Express-to-Python: JWT tokens signed with DEV_MODE_SECRET (HS256 algorithm)
+- Python internal: DEV_MODE_SECRET or SESSION_SECRET for JWT verification in `app/utils/security.py` and `app/dependencies.py`
 
 ## External Dependencies
 

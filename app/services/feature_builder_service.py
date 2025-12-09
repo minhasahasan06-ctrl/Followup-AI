@@ -329,7 +329,7 @@ class FeatureBuilderService:
         try:
             from app.models.user import User
             
-            user = self.db.query(User).filter(User.cognito_id == patient_id).first()
+            user = self.db.query(User).filter(User.id == patient_id).first()
             
             if not user:
                 return {"race": "white", "waist_circumference": 90, "height_m": 1.70, "weight_kg": 75}
@@ -352,7 +352,7 @@ class FeatureBuilderService:
         try:
             from app.models.user import User
             
-            user = self.db.query(User).filter(User.cognito_id == patient_id).first()
+            user = self.db.query(User).filter(User.id == patient_id).first()
             
             if not user:
                 return {"age": None, "sex_male": None, "bmi": None}
@@ -571,7 +571,7 @@ class FeatureBuilderService:
         try:
             from app.models.user import User
             
-            user = self.db.query(User).filter(User.cognito_id == patient_id).first()
+            user = self.db.query(User).filter(User.id == patient_id).first()
             
             if user:
                 conditions = getattr(user, 'comorbidities', []) or []
