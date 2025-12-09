@@ -47,6 +47,7 @@ dependencies = [
     "prometheus-client>=0.23.1",
     "numpy>=1.26.4",
     "pandas>=2.3.3",
+    "asyncpg>=0.31.0",
 ]
 
 [[tool.uv.index]]
