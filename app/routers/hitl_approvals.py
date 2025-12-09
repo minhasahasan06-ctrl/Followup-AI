@@ -9,16 +9,18 @@ Integrates with Assistant Lysa dashboard.
 import logging
 import uuid
 import json
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import text, desc
 from pydantic import BaseModel, Field
 
 from app.database import get_db
-from app.auth import get_current_user
+from app.dependencies import get_current_user
 from app.models.user import User
+
 from app.models.followup_autopilot_models import (
     AutopilotPendingApproval,
     AutopilotApprovalHistory,
@@ -30,6 +32,28 @@ from app.models.followup_autopilot_models import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/hitl", tags=["hitl-approvals"])
+
+def verify_internal_service_token(x_service_token: Optional[str] = Header(None, alias="X-Service-Token")) -> str:
+    """
+    Verify internal service token for protected internal endpoints.
+    Token must be set via AUTOPILOT_SERVICE_TOKEN environment variable.
+    """
+    expected_token = os.getenv("AUTOPILOT_SERVICE_TOKEN")
+    
+    if not expected_token:
+        # In development mode without token configured, allow internal localhost calls only
+        # In production, token MUST be set
+        if os.getenv("NODE_ENV") == "production":
+            logger.error("AUTOPILOT_SERVICE_TOKEN not configured in production")
+            raise HTTPException(status_code=500, detail="Service misconfiguration")
+        logger.warning("AUTOPILOT_SERVICE_TOKEN not set, internal endpoint accessible in dev mode")
+        return "dev-mode"
+    
+    if not x_service_token or x_service_token != expected_token:
+        logger.warning("Invalid or missing service token attempt on internal endpoint")
+        raise HTTPException(status_code=401, detail="Invalid or missing service token")
+    
+    return x_service_token
 
 
 class ApprovalDecision(BaseModel):
@@ -580,11 +604,14 @@ def get_approval_history(
 @router.post("/create")
 def create_approval(
     request: CreateApprovalRequest,
+    _token: str = Depends(verify_internal_service_token),
     db: Session = Depends(get_db)
 ):
     """
     Create a new pending approval (internal API for Autopilot trigger engine).
     Should be called when high-risk events are detected.
+    
+    SECURITY: Protected by internal service token. External calls will be rejected.
     """
     trigger_event_uuid = None
     if request.trigger_event_id:

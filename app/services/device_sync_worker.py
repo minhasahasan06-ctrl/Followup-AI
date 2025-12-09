@@ -100,10 +100,21 @@ class DeviceSyncWorker:
     
     async def initialize(self):
         """Initialize database connection"""
+        # Convert PostgreSQL URL to asyncpg-compatible format
+        # asyncpg uses 'ssl' instead of 'sslmode'
+        db_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://")
+        # Remove sslmode from query params as asyncpg handles SSL differently
+        if "?sslmode=" in db_url:
+            db_url = db_url.split("?sslmode=")[0]
+        elif "&sslmode=" in db_url:
+            parts = db_url.split("&sslmode=")
+            db_url = parts[0] + ("&" + parts[1].split("&", 1)[1] if "&" in parts[1] else "")
+        
         self._engine = create_async_engine(
-            self.database_url.replace("postgresql://", "postgresql+asyncpg://"),
+            db_url,
             pool_size=10,
             max_overflow=20,
+            connect_args={"ssl": "require"},  # Use asyncpg's ssl parameter
         )
         self._session_factory = async_sessionmaker(
             self._engine, class_=AsyncSession, expire_on_commit=False
