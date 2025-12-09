@@ -20822,6 +20822,25 @@ Provide:
     await automationProxy(req, res, '/api/v1/followup-autopilot/stats', 'GET');
   });
 
+  // Med events tracking
+  app.post('/api/v1/followup-autopilot/patients/:patientId/med-events', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/med-events`, 'POST');
+  });
+
+  // Notification preferences
+  app.get('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/preferences`, 'GET');
+  });
+
+  app.patch('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/preferences`, 'PATCH');
+  });
+
+  // Patient dashboard summary (comprehensive view)
+  app.get('/api/v1/followup-autopilot/patients/:patientId/summary', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/summary`, 'GET');
+  });
+
   // =============================================================================
   // END FOLLOWUP AUTOPILOT PROXY ROUTES
   // =============================================================================

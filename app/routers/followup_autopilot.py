@@ -547,6 +547,207 @@ async def manual_trigger(
     }
 
 
+class NotificationPreferencesInput(BaseModel):
+    """Notification preferences for autopilot alerts"""
+    in_app_enabled: Optional[bool] = None
+    push_enabled: Optional[bool] = None
+    email_enabled: Optional[bool] = None
+    sms_enabled: Optional[bool] = None
+    preferred_contact_hour: Optional[int] = Field(None, ge=0, le=23)
+    quiet_hours_start: Optional[int] = Field(None, ge=0, le=23)
+    quiet_hours_end: Optional[int] = Field(None, ge=0, le=23)
+    urgency_threshold: Optional[str] = Field(None, pattern="^(low|medium|high|critical)$")
+
+
+@router.get("/patients/{patient_id}/preferences")
+async def get_notification_preferences(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get notification preferences for a patient"""
+    from sqlalchemy import text
+    
+    result = db.execute(
+        text("""
+            SELECT 
+                sms_notifications_enabled as sms_enabled,
+                sms_health_alerts as health_alerts_enabled,
+                sms_medication_reminders as med_reminders_enabled,
+                sms_daily_followups as daily_followups_enabled
+            FROM users WHERE id = :patient_id
+        """),
+        {"patient_id": patient_id}
+    ).fetchone()
+    
+    state_result = db.execute(
+        text("""
+            SELECT preferred_contact_hour
+            FROM autopilot_patient_states
+            WHERE patient_id = :patient_id
+        """),
+        {"patient_id": patient_id}
+    ).fetchone()
+    
+    preferences = {
+        "in_app_enabled": True,
+        "push_enabled": True,
+        "email_enabled": True,
+        "sms_enabled": result.sms_enabled if result else False,
+        "health_alerts_enabled": result.health_alerts_enabled if result else True,
+        "med_reminders_enabled": result.med_reminders_enabled if result else True,
+        "daily_followups_enabled": result.daily_followups_enabled if result else True,
+        "preferred_contact_hour": state_result.preferred_contact_hour if state_result else None,
+        "quiet_hours_start": 22,
+        "quiet_hours_end": 7,
+        "urgency_threshold": "medium",
+    }
+    
+    return {"preferences": preferences, "patient_id": patient_id}
+
+
+@router.patch("/patients/{patient_id}/preferences")
+async def update_notification_preferences(
+    patient_id: str,
+    prefs: NotificationPreferencesInput,
+    db: Session = Depends(get_db)
+):
+    """Update notification preferences for a patient"""
+    from sqlalchemy import text
+    
+    updates = []
+    params = {"patient_id": patient_id}
+    
+    if prefs.sms_enabled is not None:
+        updates.append("sms_notifications_enabled = :sms_enabled")
+        params["sms_enabled"] = prefs.sms_enabled
+    
+    if updates:
+        db.execute(
+            text(f"UPDATE users SET {', '.join(updates)} WHERE id = :patient_id"),
+            params
+        )
+    
+    if prefs.preferred_contact_hour is not None:
+        db.execute(
+            text("""
+                INSERT INTO autopilot_patient_states (patient_id, preferred_contact_hour)
+                VALUES (:patient_id, :preferred_hour)
+                ON CONFLICT (patient_id) DO UPDATE SET preferred_contact_hour = :preferred_hour
+            """),
+            {"patient_id": patient_id, "preferred_hour": prefs.preferred_contact_hour}
+        )
+    
+    db.commit()
+    
+    audit_log(db, "preferences_updated", patient_id, prefs.dict(exclude_none=True))
+    
+    return {"status": "updated", "patient_id": patient_id}
+
+
+@router.get("/patients/{patient_id}/summary")
+async def get_patient_summary(
+    patient_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get comprehensive patient summary for dashboard.
+    Includes: state, tasks, recent triggers, adherence, and recommendations.
+    """
+    from python_backend.ml_analysis.followup_autopilot.autopilot_core import AutopilotCore
+    from python_backend.ml_analysis.followup_autopilot.task_engine import TaskEngine
+    from app.models.followup_autopilot_models import AutopilotTriggerEvent, AutopilotPatientSignal
+    from sqlalchemy import desc
+    
+    autopilot = AutopilotCore(db)
+    state = autopilot.get_patient_state(patient_id)
+    if not state:
+        state = autopilot.update_patient_state(patient_id)
+    
+    task_engine = TaskEngine(db)
+    pending_tasks = task_engine.get_today_tasks_for_patient(patient_id, include_overdue=True)
+    
+    recent_triggers = db.query(AutopilotTriggerEvent).filter(
+        AutopilotTriggerEvent.patient_id == patient_id
+    ).order_by(desc(AutopilotTriggerEvent.created_at)).limit(5).all()
+    
+    recent_signals = db.query(AutopilotPatientSignal).filter(
+        AutopilotPatientSignal.patient_id == patient_id
+    ).order_by(desc(AutopilotPatientSignal.signal_time)).limit(10).all()
+    
+    signal_summary = {}
+    for signal in recent_signals:
+        cat = signal.category
+        if cat not in signal_summary:
+            signal_summary[cat] = {"count": 0, "avg_score": 0, "scores": []}
+        signal_summary[cat]["count"] += 1
+        if signal.ml_score is not None:
+            signal_summary[cat]["scores"].append(signal.ml_score)
+    
+    for cat in signal_summary:
+        scores = signal_summary[cat]["scores"]
+        signal_summary[cat]["avg_score"] = sum(scores) / len(scores) if scores else 0
+        del signal_summary[cat]["scores"]
+    
+    recommendations = []
+    if state:
+        risk_score = state.get("risk_score", 0)
+        if risk_score > 50:
+            recommendations.append({
+                "type": "wellness_check",
+                "priority": "high",
+                "message": "Consider completing your daily wellness check-in",
+                "action": "checkin"
+            })
+        
+        components = state.get("risk_components", {})
+        if components.get("adherence", 0) > 30:
+            recommendations.append({
+                "type": "medication",
+                "priority": "medium",
+                "message": "Review your medication schedule",
+                "action": "medications"
+            })
+        
+        if components.get("mental_health", 0) > 40:
+            recommendations.append({
+                "type": "wellness",
+                "priority": "medium",
+                "message": "Consider a mental wellness activity",
+                "action": "mental_health"
+            })
+    
+    audit_log(db, "summary_viewed", patient_id, {})
+    
+    return {
+        "patient_id": patient_id,
+        "state": {
+            "risk_score": state.get("risk_score", 0) if state else 0,
+            "risk_state": state.get("risk_state", "Stable") if state else "Stable",
+            "risk_components": state.get("risk_components", {}) if state else {},
+            "next_followup_at": state.get("next_followup_at").isoformat() if state and state.get("next_followup_at") else None,
+            "last_updated": state.get("last_updated").isoformat() if state and state.get("last_updated") else None,
+            "confidence": state.get("inference_confidence", 0.5) if state else 0.5,
+        },
+        "tasks": {
+            "pending": pending_tasks,
+            "count": len(pending_tasks),
+            "has_urgent": any(t.get("priority") in ("high", "critical") for t in pending_tasks),
+        },
+        "recent_triggers": [
+            {
+                "id": str(t.id),
+                "name": t.name,
+                "severity": t.severity,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            }
+            for t in recent_triggers
+        ],
+        "signal_summary": signal_summary,
+        "recommendations": recommendations,
+        "wellness_disclaimer": WELLNESS_DISCLAIMER,
+    }
+
+
 @router.get("/health")
 async def health_check():
     """Health check endpoint"""

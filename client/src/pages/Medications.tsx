@@ -56,6 +56,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { PatientAutopilotDashboard } from "@/components/autopilot/PatientAutopilotDashboard";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 
@@ -725,6 +726,34 @@ export default function Medications() {
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            {user?.id && (
+              <Collapsible defaultOpen={false}>
+                <Card>
+                  <CollapsibleTrigger asChild>
+                    <CardHeader className="cursor-pointer hover-elevate">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="flex items-center gap-2">
+                            <Activity className="h-5 w-5" />
+                            Wellness Autopilot
+                          </CardTitle>
+                          <CardDescription>
+                            AI-powered wellness monitoring and personalized follow-ups
+                          </CardDescription>
+                        </div>
+                        <ChevronRight className="h-5 w-5" />
+                      </div>
+                    </CardHeader>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <CardContent>
+                      <PatientAutopilotDashboard patientId={user.id} />
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
             )}
 
             <Card>
