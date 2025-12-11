@@ -14,6 +14,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { PatientProfile, DoctorProfile } from "@shared/schema";
 import PhoneVerification from "@/components/PhoneVerification";
 import TrainingConsentSettings from "@/components/TrainingConsentSettings";
+import { PersonalizationToggle } from "@/components/PersonalizationToggle";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -123,6 +124,10 @@ export default function Profile() {
           <TabsTrigger value="notifications" data-testid="tab-notifications">
             <Bell className="h-4 w-4 mr-2" />
             Notifications
+          </TabsTrigger>
+          <TabsTrigger value="personalization" data-testid="tab-personalization">
+            <Shield className="h-4 w-4 mr-2" />
+            Personalization
           </TabsTrigger>
           {isPatient && (
             <TabsTrigger value="privacy" data-testid="tab-privacy">
@@ -293,6 +298,10 @@ export default function Profile() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="personalization">
+          <PersonalizationToggle />
         </TabsContent>
 
         {isPatient && (

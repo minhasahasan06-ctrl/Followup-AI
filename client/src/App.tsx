@@ -139,12 +139,23 @@ function DoctorRouter() {
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/ml-monitoring" component={MLMonitoring} />
-      <Route path="/ml-training" component={AdminMLTrainingHub} />
       <Route path="/medical-nlp" component={MedicalNLPDashboard} />
       <Route path="/agent-hub" component={AgentHub} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/admin/verify-doctors" component={AdminVerification} />
+      <Route path="/security/2fa" component={TwoFactorAuth} />
+      <Route path="/profile" component={Profile} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function AdminRouter() {
+  return (
+    <Switch>
+      <Route path="/" component={AdminMLTrainingHub} />
+      <Route path="/ml-training" component={AdminMLTrainingHub} />
       <Route path="/security/2fa" component={TwoFactorAuth} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
@@ -218,6 +229,7 @@ function AuthenticatedApp() {
   }
 
   const isDoctor = user.role === "doctor";
+  const isAdmin = user.role === "admin";
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
@@ -229,7 +241,7 @@ function AuthenticatedApp() {
             <ThemeToggle />
           </header>
           <main className="flex-1 overflow-auto p-6">
-            {isDoctor ? <DoctorRouter /> : <PatientRouter />}
+            {isAdmin ? <AdminRouter /> : isDoctor ? <DoctorRouter /> : <PatientRouter />}
           </main>
         </div>
       </div>
