@@ -443,6 +443,35 @@ async def stop_worker(admin: AdminUser = Depends(get_admin_user)):
 # Model Versions
 # ========================
 
+@router.get("/models", response_model=List[str])
+async def list_models(admin: AdminUser = Depends(get_admin_user)):
+    """
+    Get list of all available model names.
+    Combines models from version registry and training jobs.
+    (requires admin/doctor auth)
+    """
+    try:
+        model_names = set()
+        
+        # Get models from version manager
+        vm = get_version_manager()
+        if hasattr(vm, 'get_all_model_names'):
+            model_names.update(vm.get_all_model_names())
+        
+        # Get models from completed jobs in the queue
+        queue = get_queue()
+        jobs = queue.get_all_jobs()
+        for job in jobs:
+            if job.model_name and job.status in ['completed', 'running']:
+                model_names.add(job.model_name)
+        
+        return sorted(list(model_names))
+        
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/models/{model_name}/versions", response_model=List[ModelVersionResponse])
 async def list_model_versions(
     model_name: str,

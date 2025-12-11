@@ -409,6 +409,27 @@ class ModelVersionManager:
             logger.error(f"Error getting active version: {e}")
             return None
     
+    def get_all_model_names(self) -> List[str]:
+        """Get list of all distinct model names in the registry"""
+        try:
+            conn = self._get_connection()
+            cur = conn.cursor()
+            
+            cur.execute("""
+                SELECT DISTINCT model_name FROM ml_model_versions
+                ORDER BY model_name
+            """)
+            
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            
+            return [row[0] for row in rows]
+            
+        except Exception as e:
+            logger.error(f"Error getting model names: {e}")
+            return []
+    
     def get_version_history(
         self,
         model_name: str,

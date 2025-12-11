@@ -21009,7 +21009,11 @@ Provide:
     await automationProxy(req, res, '/api/ml-training/worker/stop', 'POST');
   });
 
-  // Model Versions
+  // Model List & Versions
+  app.get('/python-api/ml-training/models', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/ml-training/models', 'GET');
+  });
+
   app.get('/python-api/ml-training/models/:modelName/versions', isAuthenticated, async (req: any, res) => {
     const limit = parseInt(req.query.limit as string, 10) || 20;
     await automationProxy(req, res, `/api/ml-training/models/${req.params.modelName}/versions?limit=${limit}`, 'GET');
