@@ -28,7 +28,7 @@ export const users = pgTable("users", {
   resetTokenExpires: timestamp("reset_token_expires"),
   
   // Application-specific fields
-  role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient' or 'doctor'
+  role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient', 'doctor', or 'admin'
   
   // Doctor-specific fields
   organization: varchar("organization"), // Hospital/clinic name for doctors
