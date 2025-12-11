@@ -192,11 +192,31 @@ const doctorItems = [
   },
 ];
 
+const adminItems = [
+  {
+    title: "ML Training",
+    url: "/ml-training",
+    icon: Brain,
+    badge: "Admin",
+  },
+  {
+    title: "Security",
+    url: "/security/2fa",
+    icon: Shield,
+  },
+  {
+    title: "Profile",
+    url: "/profile",
+    icon: User,
+  },
+];
+
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuth();
   const isDoctor = user?.role === "doctor";
-  const menuItems = isDoctor ? doctorItems : patientItems;
+  const isAdmin = user?.role === "admin";
+  const menuItems = isAdmin ? adminItems : isDoctor ? doctorItems : patientItems;
 
   const handleLogout = () => {
     logout();
@@ -213,7 +233,7 @@ export function AppSidebar() {
           <div>
             <h2 className="text-base font-semibold">Followup AI</h2>
             <p className="text-xs text-muted-foreground">
-              {isDoctor ? "Doctor Portal" : "Patient Portal"}
+              {isAdmin ? "Admin Console" : isDoctor ? "Doctor Portal" : "Patient Portal"}
             </p>
           </div>
         </div>

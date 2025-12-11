@@ -2,7 +2,22 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Stethoscope, Users, Bot, TrendingUp, Shield, CheckCircle, FileText, Info } from "lucide-react";
+import {
+  Stethoscope,
+  Users,
+  Bot,
+  TrendingUp,
+  Shield,
+  CheckCircle,
+  FileText,
+  Info,
+  ListChecks,
+  ClipboardList,
+  FileSearch,
+  NotebookPen,
+  CalendarClock,
+  ClipboardCheck,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 export default function DoctorPortal() {
@@ -86,6 +101,171 @@ export default function DoctorPortal() {
               <Button size="lg" variant="outline" onClick={handleDoctorLogin} data-testid="button-doctor-login-hero">
                 Sign In
               </Button>
+            </div>
+          </div>
+        </section>
+
+        {/* Assistant Lysa Clinical Drafting Section */}
+        <section className="py-16 px-6 bg-primary/5">
+          <div className="max-w-7xl mx-auto">
+            <h3 className="text-3xl font-semibold text-center mb-12">
+              Assistant Lysa for Doctors: OpenAI-Powered Drafting You Control
+            </h3>
+            <p className="text-lg text-muted-foreground text-center max-w-3xl mx-auto mb-12">
+              In the doctor portal, Lysa delivers clinical-grade outputs with the accuracy of OpenAI models,
+              keeping your intent and safety constraints at the center of every draft.
+            </p>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <Card>
+                <CardHeader>
+                  <ListChecks className="h-10 w-10 text-primary mb-3" />
+                  <CardTitle>Structured Differential Diagnosis</CardTitle>
+                  <CardDescription>Case discussion + next steps</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground mb-4">
+                    When you request a differential or signal uncertainty, Lysa drafts a structured note:
+                  </p>
+                  <ul className="space-y-2 text-sm">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Concise case discussion summarizing key positives/negatives</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Diagnostic next steps with targeted labs, imaging, or monitoring</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>
+                        Categorized differential: Most Likely, Expanded differential, and Can’t Miss items
+                      </span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <ClipboardList className="h-10 w-10 text-primary mb-3" />
+                  <CardTitle>Assessment &amp; Plan Builder</CardTitle>
+                  <CardDescription>Clinical-grade structure</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground mb-4">
+                    Generate an A&amp;P ready for clinician review, revision, or documentation:
+                  </p>
+                  <ul className="space-y-2 text-sm">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Clinical impression synthesizing working diagnosis and priorities</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Problem section with rationale plus Dx and Tx bullets</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Follow-up plan and inline numeric references mapped to evidence</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <FileSearch className="h-10 w-10 text-primary mb-3" />
+                  <CardTitle>Chart Summarization</CardTitle>
+                  <CardDescription>EHR timeline intelligence</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground mb-4">
+                    Summaries of notes, history, medications, labs, imaging, and more with role-aware controls.
+                  </p>
+                  <ul className="space-y-2 text-sm">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>AI-generated briefs of long records with explicit mention filtering</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Actionable highlights linked to supporting data</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <NotebookPen className="h-10 w-10 text-primary mb-3" />
+                  <CardTitle>History &amp; Physical Drafts</CardTitle>
+                  <CardDescription>Ambient + EHR aware</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground mb-4">
+                    Generates comprehensive H&amp;P without hallucinated details:
+                  </p>
+                  <ul className="space-y-2 text-sm">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Chief complaint, HPI, PMH/PSH, meds, allergies, family/social history</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Review of systems, vitals, focused exam, labs, imaging, chronic problems</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CalendarClock className="h-10 w-10 text-primary mb-3" />
+                  <CardTitle>Progress Notes</CardTitle>
+                  <CardDescription>Daily updates with guardrails</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground mb-4">
+                    Drafts interval events, objective data, and updated plans with explicit “Not provided” gaps.
+                  </p>
+                  <ul className="space-y-2 text-sm">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Subjective interval changes and focused exam</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Vitals, labs, imaging, procedures, and refreshed Assessment &amp; Plan</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <ClipboardCheck className="h-10 w-10 text-primary mb-3" />
+                  <CardTitle>Discharge Summaries</CardTitle>
+                  <CardDescription>Safe transition ready</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground mb-4">
+                    Drafts a structured summary to support handoffs and outpatient follow-up:
+                  </p>
+                  <ul className="space-y-2 text-sm">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>
+                        Admission/discharge details, final diagnoses, hospital course, consults, operations, and
+                        significant labs/imaging
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span>Discharge medications, required follow-ups, disposition, and embedded A&amp;P</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </section>
