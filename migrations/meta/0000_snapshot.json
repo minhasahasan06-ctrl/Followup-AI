@@ -9439,6 +9439,13 @@
           "notNull": false,
           "default": true
         },
+        "personalization_enabled": {
+          "name": "personalization_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
         "email_notifications": {
           "name": "email_notifications",
           "type": "boolean",

@@ -92,8 +92,8 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   return res.status(401).json({ message: "Unauthorized" });
 };
 
-// Doctor role middleware
-function requireRole(role: "doctor" | "patient"): RequestHandler {
+// Role-based middleware
+function requireRole(role: "doctor" | "patient" | "admin"): RequestHandler {
   return async (req, res, next) => {
     try {
       const userId = req.user?.id;
@@ -119,3 +119,6 @@ export const isDoctor = requireRole("doctor");
 
 // Patient role middleware
 export const isPatient = requireRole("patient");
+
+// Admin role middleware
+export const isAdmin = requireRole("admin");
