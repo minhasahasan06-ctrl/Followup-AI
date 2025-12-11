@@ -7,18 +7,64 @@ FastAPI router for ML training infrastructure with:
 - Model registry access
 - Artifact management
 
-All endpoints are HIPAA-compliant with audit logging.
+All endpoints are HIPAA-compliant with:
+- JWT-based admin authentication
+- Database-backed audit logging to autopilot_audit_logs
 """
 
 import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
+
 from pydantic import BaseModel, Field
+
+from .training_security import (
+    verify_admin_token,
+    get_audit_logger,
+    TrainingAuditAction,
+    AdminUser
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ml-training", tags=["ML Training"])
+
+
+def get_admin_user(request: Request) -> AdminUser:
+    """
+    Dependency to verify admin authentication.
+    Extracts JWT from Authorization header and verifies admin/doctor role.
+    """
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        audit_logger = get_audit_logger()
+        audit_logger.log_api_access(
+            endpoint=str(request.url.path),
+            success=False,
+            ip_address=request.client.host if request.client else None
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid authorization header"
+        )
+    
+    token = auth_header[7:]  # Remove 'Bearer ' prefix
+    user = verify_admin_token(token)
+    
+    if user is None:
+        audit_logger = get_audit_logger()
+        audit_logger.log_api_access(
+            endpoint=str(request.url.path),
+            success=False,
+            ip_address=request.client.host if request.client else None
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token. Admin or doctor role required."
+        )
+    
+    return user
 
 
 # Pydantic models for request/response
@@ -149,8 +195,12 @@ def job_to_response(job) -> JobResponse:
 # ========================
 
 @router.post("/jobs", response_model=JobResponse)
-async def create_training_job(request: CreateJobRequest):
-    """Create a new training job"""
+async def create_training_job(
+    request: CreateJobRequest,
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Create a new training job (requires admin/doctor auth)"""
+    audit_logger = get_audit_logger()
     try:
         queue = get_queue()
         job = queue.create_job(
@@ -158,7 +208,19 @@ async def create_training_job(request: CreateJobRequest):
             model_name=request.model_name,
             config=request.config,
             priority=request.priority,
-            created_by="api"
+            created_by=admin.user_id
+        )
+        
+        # Audit log job creation
+        audit_logger.log_job_event(
+            job_id=job.job_id,
+            action=TrainingAuditAction.JOB_CREATED,
+            user_id=admin.user_id,
+            details={
+                "job_type": request.job_type,
+                "model_name": request.model_name,
+                "priority": request.priority
+            }
         )
         
         return job_to_response(job)
@@ -171,9 +233,10 @@ async def create_training_job(request: CreateJobRequest):
 @router.get("/jobs", response_model=List[JobResponse])
 async def list_jobs(
     status: Optional[str] = Query(None, description="Filter by status"),
-    limit: int = Query(50, ge=1, le=100)
+    limit: int = Query(50, ge=1, le=100),
+    admin: AdminUser = Depends(get_admin_user)
 ):
-    """List training jobs"""
+    """List training jobs (requires admin/doctor auth)"""
     try:
         queue = get_queue()
         jobs = queue.get_recent_jobs(limit=limit, status=status)
@@ -185,8 +248,11 @@ async def list_jobs(
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str):
-    """Get a specific job by ID"""
+async def get_job(
+    job_id: str,
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Get a specific job by ID (requires admin/doctor auth)"""
     try:
         queue = get_queue()
         job = queue.get_job(job_id)
@@ -204,8 +270,11 @@ async def get_job(job_id: str):
 
 
 @router.get("/jobs/{job_id}/history")
-async def get_job_history(job_id: str):
-    """Get audit history for a job"""
+async def get_job_history(
+    job_id: str,
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Get audit history for a job (requires admin/doctor auth)"""
     try:
         queue = get_queue()
         history = queue.get_job_history(job_id)
@@ -223,14 +292,26 @@ async def get_job_history(job_id: str):
 
 
 @router.post("/jobs/{job_id}/cancel")
-async def cancel_job(job_id: str):
-    """Cancel a pending or running job"""
+async def cancel_job(
+    job_id: str,
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Cancel a pending or running job (requires admin/doctor auth)"""
+    audit_logger = get_audit_logger()
     try:
         queue = get_queue()
-        success = queue.cancel_job(job_id, cancelled_by="api")
+        success = queue.cancel_job(job_id, cancelled_by=admin.user_id)
         
         if not success:
             raise HTTPException(status_code=400, detail="Could not cancel job")
+        
+        # Audit log cancellation
+        audit_logger.log_job_event(
+            job_id=job_id,
+            action=TrainingAuditAction.JOB_CANCELLED,
+            user_id=admin.user_id,
+            details={"cancelled_by": admin.user_id}
+        )
         
         return {"success": True, "job_id": job_id}
         
@@ -242,14 +323,26 @@ async def cancel_job(job_id: str):
 
 
 @router.post("/jobs/{job_id}/retry")
-async def retry_job(job_id: str):
-    """Retry a failed job"""
+async def retry_job(
+    job_id: str,
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Retry a failed job (requires admin/doctor auth)"""
+    audit_logger = get_audit_logger()
     try:
         queue = get_queue()
-        success = queue.retry_job(job_id, retried_by="api")
+        success = queue.retry_job(job_id, retried_by=admin.user_id)
         
         if not success:
             raise HTTPException(status_code=400, detail="Could not retry job")
+        
+        # Audit log retry
+        audit_logger.log_job_event(
+            job_id=job_id,
+            action=TrainingAuditAction.JOB_RETRIED,
+            user_id=admin.user_id,
+            details={"retried_by": admin.user_id}
+        )
         
         return {"success": True, "job_id": job_id}
         
@@ -265,8 +358,8 @@ async def retry_job(job_id: str):
 # ========================
 
 @router.get("/queue/stats", response_model=QueueStatsResponse)
-async def get_queue_stats():
-    """Get queue statistics"""
+async def get_queue_stats(admin: AdminUser = Depends(get_admin_user)):
+    """Get queue statistics (requires admin/doctor auth)"""
     try:
         queue = get_queue()
         stats = queue.get_queue_stats()
@@ -278,8 +371,8 @@ async def get_queue_stats():
 
 
 @router.get("/worker/status")
-async def get_worker_status():
-    """Get worker status"""
+async def get_worker_status(admin: AdminUser = Depends(get_admin_user)):
+    """Get worker status (requires admin/doctor auth)"""
     try:
         worker = get_worker()
         current_job = worker.get_current_job()
@@ -296,8 +389,9 @@ async def get_worker_status():
 
 
 @router.post("/worker/start")
-async def start_worker():
-    """Start the training worker"""
+async def start_worker(admin: AdminUser = Depends(get_admin_user)):
+    """Start the training worker (requires admin/doctor auth)"""
+    audit_logger = get_audit_logger()
     try:
         worker = get_worker()
         
@@ -305,6 +399,15 @@ async def start_worker():
             return {"success": True, "message": "Worker already running"}
         
         worker.start()
+        
+        # Audit log worker start
+        audit_logger.log(
+            action=TrainingAuditAction.WORKER_STARTED,
+            entity_type="worker",
+            entity_id=worker.worker_id,
+            user_id=admin.user_id
+        )
+        
         return {"success": True, "message": "Worker started"}
         
     except Exception as e:
@@ -313,11 +416,22 @@ async def start_worker():
 
 
 @router.post("/worker/stop")
-async def stop_worker():
-    """Stop the training worker"""
+async def stop_worker(admin: AdminUser = Depends(get_admin_user)):
+    """Stop the training worker (requires admin/doctor auth)"""
+    audit_logger = get_audit_logger()
     try:
         worker = get_worker()
+        worker_id = worker.worker_id
         worker.stop()
+        
+        # Audit log worker stop
+        audit_logger.log(
+            action=TrainingAuditAction.WORKER_STOPPED,
+            entity_type="worker",
+            entity_id=worker_id,
+            user_id=admin.user_id
+        )
+        
         return {"success": True, "message": "Worker stopped"}
         
     except Exception as e:
@@ -330,8 +444,12 @@ async def stop_worker():
 # ========================
 
 @router.get("/models/{model_name}/versions", response_model=List[ModelVersionResponse])
-async def list_model_versions(model_name: str, limit: int = Query(20, ge=1, le=100)):
-    """Get version history for a model"""
+async def list_model_versions(
+    model_name: str,
+    limit: int = Query(20, ge=1, le=100),
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Get version history for a model (requires admin/doctor auth)"""
     try:
         vm = get_version_manager()
         versions = vm.get_version_history(model_name, limit=limit)
@@ -356,8 +474,11 @@ async def list_model_versions(model_name: str, limit: int = Query(20, ge=1, le=1
 
 
 @router.get("/models/{model_name}/active", response_model=Optional[ModelVersionResponse])
-async def get_active_version(model_name: str):
-    """Get the currently active version for a model"""
+async def get_active_version(
+    model_name: str,
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Get the currently active version for a model (requires admin/doctor auth)"""
     try:
         vm = get_version_manager()
         version = vm.get_active_version(model_name)
@@ -382,14 +503,28 @@ async def get_active_version(model_name: str):
 
 
 @router.post("/models/{model_name}/promote/{version}")
-async def promote_version(model_name: str, version: str):
-    """Promote a version to production"""
+async def promote_version(
+    model_name: str,
+    version: str,
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Promote a version to production (requires admin/doctor auth)"""
+    audit_logger = get_audit_logger()
     try:
         vm = get_version_manager()
-        success = vm.promote_to_production(model_name, version, promoted_by="api")
+        success = vm.promote_to_production(model_name, version, promoted_by=admin.user_id)
         
         if not success:
             raise HTTPException(status_code=400, detail="Could not promote version")
+        
+        # Audit log promotion
+        audit_logger.log(
+            action=TrainingAuditAction.MODEL_DEPLOYED,
+            entity_type="model_version",
+            entity_id=f"{model_name}:{version}",
+            user_id=admin.user_id,
+            new_values={"model_name": model_name, "version": version, "action": "promote"}
+        )
         
         return {"success": True, "model_name": model_name, "version": version}
         
@@ -401,14 +536,28 @@ async def promote_version(model_name: str, version: str):
 
 
 @router.post("/models/{model_name}/rollback/{version}")
-async def rollback_version(model_name: str, version: str):
-    """Rollback to a previous version"""
+async def rollback_version(
+    model_name: str,
+    version: str,
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Rollback to a previous version (requires admin/doctor auth)"""
+    audit_logger = get_audit_logger()
     try:
         vm = get_version_manager()
-        success = vm.rollback_to_version(model_name, version, rolled_back_by="api")
+        success = vm.rollback_to_version(model_name, version, rolled_back_by=admin.user_id)
         
         if not success:
             raise HTTPException(status_code=400, detail="Could not rollback version")
+        
+        # Audit log rollback
+        audit_logger.log(
+            action=TrainingAuditAction.MODEL_DEPLOYED,
+            entity_type="model_version",
+            entity_id=f"{model_name}:{version}",
+            user_id=admin.user_id,
+            new_values={"model_name": model_name, "version": version, "action": "rollback"}
+        )
         
         return {"success": True, "model_name": model_name, "version": version}
         
@@ -423,9 +572,10 @@ async def rollback_version(model_name: str, version: str):
 async def compare_versions(
     model_name: str,
     version1: str = Query(...),
-    version2: str = Query(...)
+    version2: str = Query(...),
+    admin: AdminUser = Depends(get_admin_user)
 ):
-    """Compare metrics between two versions"""
+    """Compare metrics between two versions (requires admin/doctor auth)"""
     try:
         vm = get_version_manager()
         comparison = vm.compare_versions_metrics(model_name, version1, version2)
@@ -444,9 +594,10 @@ async def compare_versions(
 async def list_artifacts(
     model_name: Optional[str] = Query(None),
     model_type: Optional[str] = Query(None),
-    limit: int = Query(50, ge=1, le=100)
+    limit: int = Query(50, ge=1, le=100),
+    admin: AdminUser = Depends(get_admin_user)
 ):
-    """List model artifacts"""
+    """List model artifacts (requires admin/doctor auth)"""
     try:
         storage = get_artifact_storage()
         artifacts = storage.list_artifacts(
@@ -475,8 +626,11 @@ async def list_artifacts(
 
 
 @router.get("/artifacts/{artifact_id}")
-async def get_artifact(artifact_id: str):
-    """Get artifact details"""
+async def get_artifact(
+    artifact_id: str,
+    admin: AdminUser = Depends(get_admin_user)
+):
+    """Get artifact details (requires admin/doctor auth)"""
     try:
         storage = get_artifact_storage()
         artifact = storage.load_model_artifact(artifact_id, verify_checksum=False)
@@ -506,9 +660,10 @@ async def get_artifact(artifact_id: str):
 async def check_consent(
     patient_ids: List[str],
     data_categories: List[str],
-    purpose: str = "ml_training"
+    purpose: str = "ml_training",
+    admin: AdminUser = Depends(get_admin_user)
 ):
-    """Check patient consent for data access"""
+    """Check patient consent for data access (requires admin/doctor auth)"""
     try:
         from .consent_enforcer import ConsentEnforcer, DataCategory
         
@@ -526,7 +681,7 @@ async def check_consent(
             patient_ids=patient_ids,
             data_categories=categories,
             purpose=purpose,
-            requester_id="api"
+            requester_id=admin.user_id
         )
         
         return {
@@ -548,7 +703,8 @@ async def check_consent(
 async def governance_pre_build_check(
     cohort_spec: Dict[str, Any],
     analysis_spec: Dict[str, Any],
-    purpose: str = "ml_training"
+    purpose: str = "ml_training",
+    admin: AdminUser = Depends(get_admin_user)
 ):
     """Run governance pre-build checks"""
     try:
