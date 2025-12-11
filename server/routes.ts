@@ -1804,6 +1804,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User settings routes
+  app.get('/api/user/settings', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const existingSettings = await storage.getUserSettings(userId);
+      const settings =
+        existingSettings ||
+        (await storage.upsertUserSettings({
+          userId,
+          personalizationEnabled: false,
+        }));
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching user settings:", error);
+      res.status(500).json({ message: "Failed to fetch user settings" });
+    }
+  });
+
+  app.post('/api/user/settings/personalization', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { enabled } = req.body;
+
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ message: "Enabled must be a boolean" });
+      }
+
+      const settings = await storage.upsertUserSettings({
+        userId,
+        personalizationEnabled: enabled,
+      });
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error updating personalization settings:", error);
+      res.status(500).json({ message: "Failed to update personalization settings" });
+    }
+  });
+
   // Daily followup routes
   app.get('/api/daily-followup/today', isAuthenticated, async (req: any, res) => {
     try {

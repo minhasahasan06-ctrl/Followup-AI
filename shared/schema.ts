@@ -1997,7 +1997,8 @@ export const userSettings = pgTable("user_settings", {
   shareDataWithDoctors: boolean("share_data_with_doctors").default(true),
   allowThirdPartyIntegrations: boolean("allow_third_party_integrations").default(false),
   allowAIAnalysis: boolean("allow_ai_analysis").default(true),
-  
+  personalizationEnabled: boolean("personalization_enabled").default(false),
+
   // Notification preferences
   emailNotifications: boolean("email_notifications").default(true),
   pushNotifications: boolean("push_notifications").default(true),
