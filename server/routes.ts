@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { isAuthenticated, isDoctor, isPatient, getSession } from "./auth";
+import { isAuthenticated, isDoctor, isPatient, isAdmin, getSession } from "./auth";
 import { db } from "./db";
 import { eq, and, desc, gte, sql as drizzleSql } from "drizzle-orm";
 import * as schema from "@shared/schema";
@@ -1801,6 +1801,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating doctor profile:", error);
       res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
+  // User settings routes
+  app.get('/api/user/settings', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const existingSettings = await storage.getUserSettings(userId);
+      const settings =
+        existingSettings ||
+        (await storage.upsertUserSettings({
+          userId,
+          personalizationEnabled: false,
+        }));
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching user settings:", error);
+      res.status(500).json({ message: "Failed to fetch user settings" });
+    }
+  });
+
+  app.post('/api/user/settings/personalization', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { enabled } = req.body;
+
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ message: "Enabled must be a boolean" });
+      }
+
+      const settings = await storage.upsertUserSettings({
+        userId,
+        personalizationEnabled: enabled,
+      });
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error updating personalization settings:", error);
+      res.status(500).json({ message: "Failed to update personalization settings" });
     }
   });
 
@@ -15277,7 +15317,7 @@ Provide:
   // =============================================================================
 
   // Check if TOTP is set up for admin ML training hub
-  app.get('/api/admin/totp/status', async (req: any, res) => {
+  app.get('/api/admin/totp/status', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const result = await db
         .select()
@@ -15313,7 +15353,7 @@ Provide:
   });
 
   // Generate TOTP setup (QR code and secret)
-  app.post('/api/admin/totp/setup', async (req: any, res) => {
+  app.post('/api/admin/totp/setup', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       // Check if already set up
       const existing = await db
@@ -15372,7 +15412,7 @@ Provide:
   });
 
   // Verify initial TOTP setup (enables 2FA after first successful verification)
-  app.post('/api/admin/totp/verify-setup', async (req: any, res) => {
+  app.post('/api/admin/totp/verify-setup', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const { token } = req.body;
 
@@ -15436,7 +15476,7 @@ Provide:
   });
 
   // Authenticate with TOTP (for ongoing access)
-  app.post('/api/admin/totp/authenticate', async (req: any, res) => {
+  app.post('/api/admin/totp/authenticate', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const { token } = req.body;
 
@@ -15528,7 +15568,7 @@ Provide:
   });
 
   // Check if current session is TOTP verified
-  app.get('/api/admin/totp/session', async (req: any, res) => {
+  app.get('/api/admin/totp/session', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const isVerified = req.session?.adminTotpVerified === true;
       const verifiedAt = req.session?.adminTotpVerifiedAt || null;
@@ -15544,7 +15584,7 @@ Provide:
   });
 
   // Reset TOTP (for re-setup)
-  app.post('/api/admin/totp/reset', async (req: any, res) => {
+  app.post('/api/admin/totp/reset', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const { token } = req.body;
 
@@ -15849,17 +15889,13 @@ Provide:
   // =============================================================================
 
   // =============================================================================
-  // ML TRAINING ADMIN ROUTES (Admin/Doctor only)
+  // ML TRAINING ADMIN ROUTES (Admin only)
   // Proxy to Python FastAPI ml_training.py endpoints
   // =============================================================================
 
   // List available datasets for ML training
-  app.get('/api/ml/training/datasets', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/datasets', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied. Admin or Doctor role required.' });
-      }
-
       const response = await fetch(`${pythonBackendUrl}/api/ml/training/datasets`, {
         method: 'GET',
         headers: {
@@ -15894,12 +15930,8 @@ Provide:
   });
 
   // List trained models in the registry
-  app.get('/api/ml/training/models', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/models', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied. Admin or Doctor role required.' });
-      }
-
       const { status: statusFilter, limit = '50' } = req.query;
       const params = new URLSearchParams();
       if (statusFilter) params.set('status_filter', statusFilter as string);
@@ -15929,12 +15961,8 @@ Provide:
   });
 
   // Create a new training job
-  app.post('/api/ml/training/jobs', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/jobs', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Only administrators can create training jobs' });
-      }
-
       const response = await fetch(`${pythonBackendUrl}/api/ml/training/jobs`, {
         method: 'POST',
         headers: {
@@ -15961,12 +15989,8 @@ Provide:
   });
 
   // List training jobs
-  app.get('/api/ml/training/jobs', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/jobs', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-
       const { status: statusFilter, limit = '20' } = req.query;
       const params = new URLSearchParams();
       if (statusFilter) params.set('status_filter', statusFilter as string);
@@ -15996,12 +16020,8 @@ Provide:
   });
 
   // Get training job status
-  app.get('/api/ml/training/jobs/:jobId', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/jobs/:jobId', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-
       const { jobId } = req.params;
       const response = await fetch(`${pythonBackendUrl}/api/ml/training/jobs/${jobId}`, {
         method: 'GET',
@@ -16026,12 +16046,8 @@ Provide:
   });
 
   // Start a queued training job
-  app.post('/api/ml/training/jobs/:jobId/start', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/jobs/:jobId/start', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Only administrators can start training jobs' });
-      }
-
       const { jobId } = req.params;
       const response = await fetch(`${pythonBackendUrl}/api/ml/training/jobs/${jobId}/start`, {
         method: 'POST',
@@ -16057,12 +16073,8 @@ Provide:
   });
 
   // Get consent statistics (admin)
-  app.get('/api/ml/training/consent/stats', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/consent/stats', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-
       const response = await fetch(`${pythonBackendUrl}/api/ml/training/consent/stats`, {
         method: 'GET',
         headers: {
@@ -16113,12 +16125,8 @@ Provide:
   });
 
   // Get contributions summary (admin)
-  app.get('/api/ml/training/contributions/summary', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/contributions/summary', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-
       const response = await fetch(`${pythonBackendUrl}/api/ml/training/contributions/summary`, {
         method: 'GET',
         headers: {
@@ -16152,12 +16160,8 @@ Provide:
   });
 
   // Extract device data for training (admin)
-  app.post('/api/ml/training/device-data/extract', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/device-data/extract', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Only administrators can extract training data' });
-      }
-
       const response = await fetch(`${pythonBackendUrl}/api/ml/training/device-data/extract`, {
         method: 'POST',
         headers: {
@@ -16183,12 +16187,8 @@ Provide:
   });
 
   // Deploy a trained model
-  app.post('/api/ml/training/models/:modelId/deploy', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/models/:modelId/deploy', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Only administrators can deploy models' });
-      }
-
       const { modelId } = req.params;
       const response = await fetch(`${pythonBackendUrl}/api/ml/training/models/${modelId}/deploy`, {
         method: 'POST',
@@ -16214,12 +16214,8 @@ Provide:
   });
 
   // Register a public dataset
-  app.post('/api/ml/training/register-dataset/:datasetKey', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/register-dataset/:datasetKey', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Only administrators can register datasets' });
-      }
-
       const { datasetKey } = req.params;
       const response = await fetch(`${pythonBackendUrl}/api/ml/training/register-dataset/${datasetKey}`, {
         method: 'POST',
