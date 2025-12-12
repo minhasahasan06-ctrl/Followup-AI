@@ -465,6 +465,29 @@ class TrainingJobQueue:
             logger.error(f"Error getting recent jobs: {e}")
             return []
     
+    def get_all_jobs(self, limit: int = 1000) -> List[TrainingJob]:
+        """Get all jobs (for model name extraction)"""
+        try:
+            conn = self._get_db_connection()
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            cur.execute("""
+                SELECT * FROM ml_training_jobs 
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (limit,))
+            
+            jobs = [self._row_to_job(dict(row)) for row in cur.fetchall()]
+            
+            cur.close()
+            conn.close()
+            
+            return jobs
+            
+        except Exception as e:
+            logger.error(f"Error getting all jobs: {e}")
+            return []
+    
     def get_job_history(self, job_id: str) -> List[Dict[str, Any]]:
         """Get audit history for a job"""
         try:

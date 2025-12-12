@@ -152,6 +152,23 @@ function DoctorRouter() {
   );
 }
 
+function AdminRouter() {
+  return (
+    <Switch>
+      <Route path="/" component={AdminMLTrainingHub} />
+      <Route path="/ml-training" component={AdminMLTrainingHub} />
+      <Route path="/ml-monitoring" component={MLMonitoring} />
+      <Route path="/medical-nlp" component={MedicalNLPDashboard} />
+      <Route path="/research" component={ResearchCenter} />
+      <Route path="/admin/verify-doctors" component={AdminVerification} />
+      <Route path="/agent-hub" component={AgentHub} />
+      <Route path="/security/2fa" component={TwoFactorAuth} />
+      <Route path="/profile" component={Profile} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
 function AuthenticatedApp() {
   const { user, isLoading } = useAuth();
   const [location] = useLocation();
@@ -218,6 +235,13 @@ function AuthenticatedApp() {
   }
 
   const isDoctor = user.role === "doctor";
+  const isAdmin = user.role === "admin";
+
+  const getRouter = () => {
+    if (isAdmin) return <AdminRouter />;
+    if (isDoctor) return <DoctorRouter />;
+    return <PatientRouter />;
+  };
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
@@ -229,7 +253,7 @@ function AuthenticatedApp() {
             <ThemeToggle />
           </header>
           <main className="flex-1 overflow-auto p-6">
-            {isDoctor ? <DoctorRouter /> : <PatientRouter />}
+            {getRouter()}
           </main>
         </div>
       </div>

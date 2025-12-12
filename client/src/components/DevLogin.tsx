@@ -1,19 +1,33 @@
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { UserCircle, Stethoscope, Loader2 } from "lucide-react";
+import { UserCircle, Stethoscope, Shield, Loader2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLocation } from "wouter";
 
 export function DevLogin() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const { toast } = useToast();
+  const { refreshSession } = useAuth();
+  const [, setLocation] = useLocation();
 
-  const loginAs = async (role: 'patient' | 'doctor') => {
+  const loginAs = async (role: 'patient' | 'doctor' | 'admin') => {
     setIsLoggingIn(true);
     try {
-      const endpoint = role === 'patient' ? '/api/dev/login-as-patient' : '/api/dev/login-as-doctor';
-      const response = await apiRequest(endpoint, { method: 'POST' });
+      const endpoints = {
+        patient: '/api/dev/login-as-patient',
+        doctor: '/api/dev/login-as-doctor',
+        admin: '/api/dev/login-as-admin'
+      };
+      
+      // Call dev login endpoint - this sets the session cookie on the server
+      await apiRequest(endpoints[role], { method: 'POST' });
+      
+      // Refresh session from server to get the authenticated user
+      // This validates the session with the server and updates AuthContext
+      await refreshSession();
       
       // Invalidate all queries to refresh with authenticated user
       await queryClient.invalidateQueries();
@@ -23,8 +37,15 @@ export function DevLogin() {
         description: `Successfully logged in as test ${role}`,
       });
       
-      // Reload page to trigger re-render with authenticated state
-      window.location.reload();
+      // Navigate to appropriate dashboard based on role
+      const dashboards = {
+        patient: '/dashboard',
+        doctor: '/doctor-dashboard',
+        admin: '/ml-training'
+      };
+      
+      // Use wouter's setLocation for client-side navigation
+      setLocation(dashboards[role]);
     } catch (error: any) {
       console.error(`Error logging in as ${role}:`, error);
       toast({
@@ -75,6 +96,22 @@ export function DevLogin() {
                 <Stethoscope className="h-5 w-5" />
               )}
               Login as Doctor
+            </Button>
+            
+            <Button
+              onClick={() => loginAs('admin')}
+              disabled={isLoggingIn}
+              variant="outline"
+              className="w-full gap-2"
+              size="lg"
+              data-testid="button-login-admin"
+            >
+              {isLoggingIn ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Shield className="h-5 w-5" />
+              )}
+              Login as Admin
             </Button>
           </div>
           

@@ -97,10 +97,21 @@ Scheduler status is visible in AdminMLTrainingHub > Advanced > Background Schedu
 The platform is HIPAA-compliant, utilizing Auth0 for primary frontend authentication, session-based authentication for Express routes, and DEV_MODE_SECRET JWT authentication for Express-to-Python backend communication. Features BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, and explicit doctor-patient assignment authorization. The Admin ML Training Hub is protected with Google Authenticator TOTP for enhanced security, including lockout protection and session-based verification.
 
 **Authentication Flow**:
-- Frontend: Auth0 for user authentication
-- Express routes: Session-based authentication (Express session store)
+- Frontend: Auth0 for user authentication, session-based for dev mode
+- Express routes: Session-based authentication (PostgreSQL session store)
 - Express-to-Python: JWT tokens signed with DEV_MODE_SECRET (HS256 algorithm)
 - Python internal: DEV_MODE_SECRET or SESSION_SECRET for JWT verification in `app/utils/security.py` and `app/dependencies.py`
+
+**Frontend Auth Security** (AuthContext):
+- User/role can ONLY be set via `refreshSession()` which validates with server `/api/auth/user`
+- No public method to directly set user or role - prevents client-side privilege escalation
+- Session validated on every page mount to ensure server-authoritative auth state
+- AdminRouter, DoctorRouter, PatientRouter selection based on server-verified role
+
+**Role-Based Routing**:
+- Admin users: AdminRouter (ML Training Hub, Research, Admin Verification)
+- Doctor users: DoctorRouter (Patient Review, Prescriptions, Calendar Sync)
+- Patient users: PatientRouter (Dashboard, Medications, Health Tracking)
 
 ## External Dependencies
 

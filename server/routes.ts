@@ -1061,6 +1061,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           console.log('[DEV-ONLY] ✅ Created test doctor user');
         }
+
+        // Test admin user
+        const testAdminId = 'dev-admin-00000000-0000-0000-0000-000000000003';
+        const existingAdmin = await storage.getUser(testAdminId);
+        if (!existingAdmin) {
+          await storage.createUser({
+            id: testAdminId,
+            email: 'admin@test.com',
+            firstName: 'Admin',
+            lastName: 'User',
+            role: 'admin',
+            phoneNumber: '+15551234569',
+            phoneVerified: true,
+            emailVerified: true,
+            adminVerified: true,
+            adminVerifiedAt: new Date(),
+            termsAccepted: true,
+            termsAcceptedAt: new Date(),
+          });
+          console.log('[DEV-ONLY] ✅ Created test admin user');
+        }
       } catch (error) {
         console.error('[DEV-ONLY] Error creating test users:', error);
       }
@@ -1130,6 +1151,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
+    app.post('/api/dev/login-as-admin', async (req: any, res) => {
+      try {
+        const testAdminId = 'dev-admin-00000000-0000-0000-0000-000000000003';
+        
+        // Get user from database
+        const user = await storage.getUser(testAdminId);
+        if (!user) {
+          return res.status(404).json({ message: 'Test admin user not found. Please restart the server.' });
+        }
+        
+        // Set session
+        req.session.userId = testAdminId;
+        await new Promise<void>((resolve, reject) => {
+          req.session.save((err: any) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+        
+        console.log('[DEV-ONLY] 👑 Logged in as test admin');
+        res.json({ 
+          message: 'Logged in as test admin', 
+          user: user
+        });
+      } catch (error: any) {
+        console.error('[DEV-ONLY] Error in dev admin login:', error);
+        res.status(500).json({ message: 'Failed to login as test admin', error: error.message });
+      }
+    });
+
     app.get('/api/dev/test-users', async (req, res) => {
       res.json({
         patient: {
@@ -1141,6 +1192,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           endpoint: 'POST /api/dev/login-as-doctor',
           email: 'doctor@test.com',
           userId: 'dev-doctor-00000000-0000-0000-0000-000000000002'
+        },
+        admin: {
+          endpoint: 'POST /api/dev/login-as-admin',
+          email: 'admin@test.com',
+          userId: 'dev-admin-00000000-0000-0000-0000-000000000003'
         },
         note: 'These endpoints only work in development mode'
       });

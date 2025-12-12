@@ -27,7 +27,7 @@ type LoginFormData = z.infer<typeof loginSchema>;
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { login } = useAuth();
+  const { setTokens, refreshSession } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
 
@@ -50,14 +50,21 @@ export default function Login() {
         password: data.password,
       });
 
-      const { tokens, user } = response.data;
+      const { tokens } = response.data;
+
+      // Store tokens if provided
+      if (tokens) {
+        setTokens(tokens);
+      }
+      
+      // Refresh session from server to get validated user
+      await refreshSession();
 
       toast({
         title: "Login successful",
         description: "Welcome back!",
       });
 
-      login(tokens, user);
       setLocation("/");
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || error.message;
@@ -78,22 +85,11 @@ export default function Login() {
 
   const devLoginAsPatient = async () => {
     try {
-      // Dev login sets session cookie and returns user data
-      const response = await api.post("/dev/login-as-patient");
-      const user = response.data.user;
+      // Dev login sets session cookie on server
+      await api.post("/dev/login-as-patient");
       
-      if (!user) {
-        throw new Error("User data not returned from server");
-      }
-      
-      // Set mock tokens and user in localStorage for AuthContext
-      const mockTokens = {
-        idToken: "dev-token",
-        accessToken: "dev-access-token",
-        refreshToken: "dev-refresh-token",
-      };
-      
-      login(mockTokens, user);
+      // Refresh session from server to get the validated user
+      await refreshSession();
       
       toast({
         title: "Dev Login",
@@ -113,22 +109,11 @@ export default function Login() {
 
   const devLoginAsDoctor = async () => {
     try {
-      // Dev login sets session cookie and returns user data
-      const response = await api.post("/dev/login-as-doctor");
-      const user = response.data.user;
+      // Dev login sets session cookie on server
+      await api.post("/dev/login-as-doctor");
       
-      if (!user) {
-        throw new Error("User data not returned from server");
-      }
-      
-      // Set mock tokens and user in localStorage for AuthContext
-      const mockTokens = {
-        idToken: "dev-token",
-        accessToken: "dev-access-token",
-        refreshToken: "dev-refresh-token",
-      };
-      
-      login(mockTokens, user);
+      // Refresh session from server to get the validated user
+      await refreshSession();
       
       toast({
         title: "Dev Login",
