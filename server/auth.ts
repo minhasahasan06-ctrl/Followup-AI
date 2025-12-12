@@ -123,6 +123,26 @@ export const isPatient: RequestHandler = async (req, res, next) => {
   }
 };
 
+// Admin role middleware
+export const isAdmin: RequestHandler = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await storage.getUser(userId);
+    if (!user || user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin role required." });
+    }
+
+    next();
+  } catch (error) {
+    console.error("Admin auth error:", error);
+    return res.status(403).json({ message: "Access denied" });
+  }
+};
+
 // Authentication middleware with dev bypass for autopilot routes
 // In development, allows dev-patient-* pattern IDs to pass through when session auth fails
 export const isAuthenticatedOrDevBypass: RequestHandler = async (req, res, next) => {

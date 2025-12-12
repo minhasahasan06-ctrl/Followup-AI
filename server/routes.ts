@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { isAuthenticated, isDoctor, isPatient, getSession, isAuthenticatedOrDevBypass } from "./auth";
+import { isAuthenticated, isDoctor, isPatient, isAdmin, getSession, isAuthenticatedOrDevBypass } from "./auth";
 import { db } from "./db";
 import { eq, and, desc, gte, sql as drizzleSql, isNull } from "drizzle-orm";
 import * as schema from "@shared/schema";
