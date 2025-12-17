@@ -9,3 +9,8 @@ attached_assets/followupai-medlm-prod-*.json
 attached_assets/*.png
 attached_assets/*.jpg
 attached_assets/*.heic
+
+# ignore local assets/screenshots
+Desktop/
+attached_assets/
+What is Twilio.jpeg
