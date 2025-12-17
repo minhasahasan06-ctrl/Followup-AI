@@ -1,7 +1,7 @@
 # Followup AI - HIPAA-Compliant Health Platform
 
 ## Overview
-Followup AI is a HIPAA-compliant health monitoring platform designed for immunocompromised patients. It offers personalized health tracking, medication management, and wellness activities, leveraging AI agents (Agent Clona for patient support and Assistant Lysa for doctor assistance). The platform aims to enhance patient care through advanced AI and robust health data management, acting as a comprehensive wellness monitoring and change detection system, with the ultimate goal of transforming healthcare for immunocompromised individuals.
+Followup AI is a HIPAA-compliant health monitoring platform for immunocompromised patients, offering personalized health tracking, medication management, and wellness activities. It leverages AI agents (Agent Clona for patient support, Assistant Lysa for doctor assistance) to enhance patient care through advanced AI and robust health data management, aiming to be a comprehensive wellness monitoring and change detection system. The platform's vision is to transform healthcare for immunocompromised individuals by delivering fully functional, production-ready applications.
 
 ## User Preferences
 - **Preferred communication style**: Simple, everyday language
@@ -13,116 +13,37 @@ Followup AI is a HIPAA-compliant health monitoring platform designed for immunoc
 ## System Architecture
 
 ### Frontend
-The frontend is built with React, TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, and Tailwind CSS for styling. It uses Radix UI and shadcn/ui for a clinical aesthetic, supporting role-based routing and context-based theming. It routes Python AI endpoints to the FastAPI backend on port 8000 and other endpoints to an Express server on port 5000.
+The frontend uses React, TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, and Tailwind CSS for styling. It incorporates Radix UI and shadcn/ui for a clinical aesthetic, supporting role-based routing and context-based theming. It routes Python AI endpoints to the FastAPI backend (port 8000) and other endpoints to an Express server (port 5000).
 
 ### Backend
-The backend comprises a Node.js Express server (Port 5000) for chatbot, appointments, calendar, consultations, pain tracking, symptom journaling, and risk scoring. A Python FastAPI server (Port 8000) handles AI deterioration detection, guided examinations, mental health questionnaires, database interactions, and core authentication, utilizing an async AI engine with a singleton manager for ML model loading.
-
-**Python Backend Auto-Spawn**: The Express server (`server/index.ts`) automatically spawns the Python FastAPI backend using `child_process.spawn()` in development mode. The Python process is monitored and automatically restarted if it crashes. Logs from the Python process are prefixed with `[Python]` and integrated into the Express server logs.
+The backend consists of two main components:
+- **Node.js Express server (Port 5000)**: Handles chatbot, appointments, calendar, consultations, pain tracking, symptom journaling, and risk scoring.
+- **Python FastAPI server (Port 8000)**: Manages AI deterioration detection, guided examinations, mental health questionnaires, database interactions, authentication, and an async AI engine with a singleton manager for ML models. In development, the Express server automatically spawns and monitors the FastAPI process.
 
 ### Core Features & Technical Implementations
-- **AI Integration**: Utilizes OpenAI API (GPT-4o for PHI detection, symptom extraction; o1 for advanced clinical reasoning) with graceful fallbacks.
+- **AI Integration**: Utilizes OpenAI API (GPT-4o, o1) for PHI detection, symptom extraction, and clinical reasoning, with graceful fallbacks.
 - **PHI Detection Service**: GPT-4o-based HIPAA-compliant PHI detection and medical entity extraction.
 - **Real-Time Monitoring**: AI-powered digital biomarker tracking from wearable data.
-- **Voice-Based Followups**: OpenAI Whisper for transcription and GPT-4 for analysis.
-- **Assistant Lysa**: AI for appointment management, email categorization, and reminders.
-- **Secure Data Sharing**: Consent-managed and audit-logged patient record sharing.
-- **EHR & Wearable Integration**: FHIR-based integration with production-grade Device Connect API.
-- **Device Connect API (Python FastAPI)**: Manages 8 device types and 13 vendor integrations with OAuth, BLE, and QR code pairing, robust authentication, HIPAA audit logging, and health analytics.
-- **Device Data Pipeline**: Connects device data to health alerts and ML training, including `HealthSectionAnalyticsEngine` and an anonymized data extraction process for ML.
-- **Video Consultations**: HIPAA-compliant video conferencing.
-- **Home Clinical Exam Coach (HCEC)**: AI-guided self-examinations using OpenAI Vision.
-- **Deterioration Prediction System**: Comprehensive health change detection via statistical and AI models for a composite risk score.
+- **Device Connect API (Python FastAPI)**: Manages 8 device types and 13 vendor integrations with OAuth, BLE, QR code pairing, and HIPAA audit logging.
+- **Deterioration Prediction System**: Uses statistical and AI models for comprehensive health change detection and risk scoring.
 - **ML Inference Infrastructure**: Self-hosted, HIPAA-compliant system with model registry, Redis caching, and ONNX optimization.
 - **Alert Orchestration Engine**: Multi-channel (dashboard, email, SMS) rule-based alert delivery.
-- **Behavior AI Analysis System**: Multi-modal deterioration detection using behavioral patterns, digital biomarkers, cognitive testing, and sentiment analysis via ensemble ML models.
-- **Risk Scoring Dashboard**: Composite risk score (0-15) with weighted factors and 7-day history.
-- **Baseline Calculation UI**: 7-day rolling window statistics with recalculation and history visualization.
-- **Google Calendar Sync**: Bidirectional doctor appointment sync.
-- **Drug Interaction & Normalization**: Medication adherence with RxNorm integration.
-- **Clinical Automation (Rx Builder)**: AI-assisted prescription system with SOAP notes, ICD-10 suggestions, and drug interaction checks.
-- **Clinical Assessment (Diagnosis Helper)**: AI-assisted assessment with dual authorization and AI-powered differential diagnosis.
-- **PainTrack Platform**: Chronic pain tracking with video, VAS slider, and medication tracking.
-  - **Phase 7 Integration**: VAS slider (0-10) wired to Autopilot ML pipeline via SignalIngestorService
-  - **Video Analysis Endpoint**: Real-time video analysis via VideoAIEngine for respiratory risk detection
-  - Pain signals automatically feed into FeatureBuilder for ML model input
-- **Mental Health AI Dashboard**: Integrated questionnaires (PHQ-9, GAD-7, PSS-10) with AI analysis.
-  - **Phase 7 Integration**: Mental health signals wired to Autopilot ML pipeline
-  - **Crisis Routing**: PHQ-9 Q9 (suicidal ideation) responses > 0 trigger automatic escalation to connected doctors
-  - **Clinician Alerts**: Severe/moderately severe scores generate alerts for connected doctors via AlertOrchestrationEngine
-  - Real OpenAI GPT-4o powers pattern analysis (no mocks)
-- **Agent Clona Symptom Extraction**: AI-powered symptom extraction from patient conversations.
-- **AI-Powered Habit Tracker**: Comprehensive habit management with AI coaching and gamification.
-- **Daily Follow-up Dashboard Pattern**: Enforces 24-hour gating for data display.
-- **Doctor-Patient Assignment System**: Explicit relationships with consent, access levels, and HIPAA audit logging.
-- **Per-Doctor Personal Integrations**: OAuth-based integrations for Gmail, WhatsApp Business API, and Twilio VoIP.
-- **Admin ML Training Hub**: Dashboard for managing ML training datasets, jobs, models, device data extraction, and consent.
-- **Medical NLP Dashboard**: AI-powered document analysis with entity recognition, PHI redaction, and Q&A.
-- **Enhanced Research Center**: Epidemiology research hub for cohort visualization, study management, and AI-powered report generation.
-- **Advanced Analytics Platform**: Comprehensive epidemiology research covering:
-  - Drug Safety (pharmacovigilance) with adverse event signals
-  - Infectious Disease Surveillance (outbreak tracking, R₀ calculation)
-  - Vaccine Analytics (coverage rates, effectiveness metrics)
-  - Occupational Epidemiology (workplace hazard analysis, industry risk signals)
-  - Genetic/Molecular Epidemiology (variant-outcome associations, GWAS results, pharmacogenomics)
-  - Privacy-first architecture: All epidemiology routers use normalize_row() for Decimal-to-float JSON serialization, PrivacyGuard enforcement with MIN_CELL_SIZE=10, and comprehensive audit logging
-  - Frontend uses centralized queryFn pattern with object-style query keys for proper cache invalidation
-  - Production security: VITE_EPIDEMIOLOGY_AUTH_TOKEN required in production mode
-- **Unified Medication System**: Production-grade medication management with patient records, active medication dashboard, and doctor-only prescription authoring with AI assistance and conflict detection, supporting role-based routing.
-- **Followup Autopilot Engine**: ML-powered adaptive follow-up system that aggregates patient signals from 8 modules (Device Data, Symptoms, Video AI, Audio AI, PainTrack, Mental Health, Risk & Exposures, Medications) to predict deterioration risks, optimize follow-up timing, and generate adaptive tasks. Features:
-  - **Signal Ingestor**: Ingests and scores signals from all 8 patient data modules
-  - **Feature Builder**: 7-day rolling window feature aggregation for ML input
-  - **ML Models**: PyTorch LSTM for risk prediction, XGBoost for adherence/engagement, IsolationForest for anomaly detection
-  - **Trigger Engine**: Rule-based triggers for risk thresholds, sudden changes, milestone events
-  - **Task Engine**: Generates adaptive Daily Follow-up tasks based on current patient state
-  - **Notification Engine**: Multi-channel (dashboard, email, SMS) alert delivery via AlertOrchestrationEngine
-  - **Privacy-First**: Integrated with PrivacyGuard (MIN_CELL_SIZE=10), ConsentService, and HIPAA audit logging
-  - **Safety**: All outputs include "Wellness monitoring - Not medical advice" disclaimer
-
-### Multi-Agent Communication System
-A multi-agent system facilitates communication between AI agents, users, and providers using a Message Router, dual-layer Memory Service (Redis, PostgreSQL pgvector), and a `MessageEnvelope` protocol. The Agent Hub UI offers a unified conversation interface with WebSockets, tool calls, human-in-the-loop approvals, and streaming responses, backed by a Consent-Verified Approval System and dedicated database schema. Tool Microservices extend AI agent capabilities with secure database operations.
-
-### ML Training Infrastructure
-A production-grade ML model training system with comprehensive patient consent controls across 22+ granular data type categories, including detailed medical device readings. It features a patient-facing Consent UI, a Data Extraction Pipeline, Feature Engineering, and full HIPAA compliance with audit logging, k-anonymity, and differential privacy. The pipeline handles consent-filtered patient data extraction, anonymization, and preprocessing, integrating with public datasets and synthetic data generation. A Training Job Worker processes background jobs, and a FastAPI Training API manages datasets, models, and consent statistics.
-
-### Background Scheduler
-APScheduler-based background jobs running on the Python FastAPI backend (port 8000):
-- **Check Auto-Reanalysis**: Hourly check for studies needing reanalysis
-- **Run Risk Scoring**: Every 6 hours for patient risk assessment
-- **Check Data Quality**: Daily at 3 AM for data integrity monitoring
-- **Generate Daily Summary**: Daily at 7 AM for reports
-- **Risk & Exposures ETL**: Every 30 minutes for infectious events, immunizations, occupational exposures, genetic flags
-- **Drug Safety Signal Scan**: Every 4 hours for pharmacovigilance
-- **ML Feature Materialization**: Daily at 2 AM for feature engineering
-- **Autopilot Daily Aggregation**: Daily at 3 AM for feature aggregation from patient signals
-- **Autopilot Inference Sweep**: Hourly inference for patients due for follow-up
-- **Autopilot Notification Dispatch**: Every 15 minutes for pending notification delivery
-
-Scheduler status is visible in AdminMLTrainingHub > Advanced > Background Scheduler, with ability to trigger jobs manually.
+- **Behavior AI Analysis System**: Multi-modal deterioration detection using ensemble ML models for behavioral patterns, digital biomarkers, cognitive testing, and sentiment analysis.
+- **Mental Health AI Dashboard**: Integrates questionnaires (PHQ-9, GAD-7, PSS-10) with AI analysis, including crisis routing for severe PHQ-9 Q9 responses.
+- **Followup Autopilot Engine**: An ML-powered adaptive follow-up system aggregating patient signals from 8 modules to predict deterioration, optimize follow-up timing, and generate adaptive tasks. It includes a Signal Ingestor, Feature Builder, ML Models (PyTorch LSTM, XGBoost, IsolationForest), Trigger Engine, Task Engine, and Notification Engine, all with privacy safeguards.
+- **Unified Medication System**: Production-grade medication management with AI assistance and conflict detection, supporting doctor-only prescription authoring and role-based routing.
+- **Multi-Agent Communication System**: Facilitates communication between AI agents, users, and providers via a Message Router, dual-layer Memory Service, and a `MessageEnvelope` protocol. The Agent Hub UI offers a unified conversation interface with WebSockets, tool calls, and human-in-the-loop approvals.
+- **ML Training Infrastructure**: Production-grade system with comprehensive patient consent controls across 22+ granular data types, including a patient-facing Consent UI, Data Extraction Pipeline, and full HIPAA compliance.
+- **Background Scheduler**: APScheduler-based jobs on the Python FastAPI backend for tasks like risk scoring, data quality checks, ETL processes, and ML inference sweeps.
+- **HIPAA Compliance & Access Control**: Features a Unified Access Control Service (`AccessControlService`), `HIPAAAuditLogger`, `AccessScope` and `PHICategory` enums, and `RequirePatientAccess` FastAPI dependency for robust, route-level access control and audit logging.
+- **Authentication Flow**: Auth0 for frontend, session-based for Express, JWT (DEV_MODE_SECRET) for Express-to-Python, and internal JWT verification in Python. Role-based routing ensures appropriate access for Admin, Doctor, and Patient users.
 
 ### Security and Compliance
-The platform is HIPAA-compliant, utilizing Auth0 for primary frontend authentication, session-based authentication for Express routes, and DEV_MODE_SECRET JWT authentication for Express-to-Python backend communication. Features BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, and explicit doctor-patient assignment authorization. The Admin ML Training Hub is protected with Google Authenticator TOTP for enhanced security, including lockout protection and session-based verification.
-
-**Authentication Flow**:
-- Frontend: Auth0 for user authentication, session-based for dev mode
-- Express routes: Session-based authentication (PostgreSQL session store)
-- Express-to-Python: JWT tokens signed with DEV_MODE_SECRET (HS256 algorithm)
-- Python internal: DEV_MODE_SECRET or SESSION_SECRET for JWT verification in `app/utils/security.py` and `app/dependencies.py`
-
-**Frontend Auth Security** (AuthContext):
-- User/role can ONLY be set via `refreshSession()` which validates with server `/api/auth/user`
-- No public method to directly set user or role - prevents client-side privilege escalation
-- Session validated on every page mount to ensure server-authoritative auth state
-- AdminRouter, DoctorRouter, PatientRouter selection based on server-verified role
-
-**Role-Based Routing**:
-- Admin users: AdminRouter (ML Training Hub, Research, Admin Verification)
-- Doctor users: DoctorRouter (Patient Review, Prescriptions, Calendar Sync)
-- Patient users: PatientRouter (Dashboard, Medications, Health Tracking)
+The platform is HIPAA-compliant, using Auth0 for frontend authentication, session-based for Express routes, and JWT for Express-to-Python communication. It includes BAA verification, comprehensive audit logging, end-to-end encryption, strict PHI handling, explicit doctor-patient assignment authorization, and Google Authenticator TOTP for Admin ML Training Hub.
 
 ## External Dependencies
 
-- **Authentication**: Auth0 (primary), session-based (Express routes)
+- **Authentication**: Auth0
 - **Database**: Neon serverless PostgreSQL
 - **AI Services**: OpenAI API, TensorFlow.js, PyTorch, HuggingFace Transformers, ONNX Runtime
 - **Caching**: Redis

@@ -26,6 +26,107 @@ from app.services.audit_logger import AuditLogger
 logger = logging.getLogger(__name__)
 
 
+class ConsentVerificationError(Exception):
+    """Raised when consent verification fails for ML data extraction"""
+    pass
+
+
+class MLConsentVerifier:
+    """
+    Verify patient consent for ML training data extraction.
+    Phase 8 HIPAA Compliance: All ML pipeline data access must be consent-verified.
+    """
+    
+    @staticmethod
+    def verify_ml_training_consent(
+        db: Session,
+        patient_id: str,
+        data_categories: List[str],
+        purpose: str = "ml_training"
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Verify patient has consented to ML training for specified data categories.
+        
+        Args:
+            db: Database session
+            patient_id: Patient identifier
+            data_categories: PHI categories needed for ML training
+            purpose: Purpose of data access (ml_training, research, analytics)
+        
+        Returns:
+            Tuple of (consent_verified, consent_details)
+        """
+        from sqlalchemy import text
+        
+        try:
+            result = db.execute(
+                text("""
+                    SELECT consent_type, consent_given, allow_ai_analysis, 
+                           allow_data_sharing_research, withdrawn, expires_at
+                    FROM consent_records
+                    WHERE patient_id = :patient_id
+                    AND consent_given = TRUE
+                    AND withdrawn = FALSE
+                    AND (expires_at IS NULL OR expires_at > NOW())
+                    ORDER BY created_at DESC
+                """),
+                {"patient_id": patient_id}
+            )
+            rows = result.fetchall()
+            
+            if not rows:
+                return False, {
+                    "reason": "no_active_consent",
+                    "patient_id": patient_id
+                }
+            
+            has_ai_consent = False
+            has_research_consent = False
+            
+            for row in rows:
+                consent_type = row[0]
+                allow_ai = row[2]
+                allow_research = row[3]
+                
+                if consent_type == "ai_analysis" and allow_ai:
+                    has_ai_consent = True
+                if consent_type == "research" and allow_research:
+                    has_research_consent = True
+                if allow_ai:
+                    has_ai_consent = True
+                if allow_research:
+                    has_research_consent = True
+            
+            if purpose == "ml_training" and not has_ai_consent:
+                return False, {
+                    "reason": "no_ai_analysis_consent",
+                    "patient_id": patient_id
+                }
+            
+            if purpose == "research" and not has_research_consent:
+                return False, {
+                    "reason": "no_research_consent",
+                    "patient_id": patient_id
+                }
+            
+            logger.info(f"ML consent verified for patient {patient_id}: purpose={purpose}")
+            
+            return True, {
+                "patient_id": patient_id,
+                "purpose": purpose,
+                "ai_consent": has_ai_consent,
+                "research_consent": has_research_consent,
+                "data_categories": data_categories
+            }
+            
+        except Exception as e:
+            logger.error(f"Consent verification error for patient {patient_id}: {e}")
+            return False, {
+                "reason": f"verification_error: {str(e)}",
+                "patient_id": patient_id
+            }
+
+
 class FeatureBuilderService:
     """
     Service for building ML-ready feature vectors from patient data.
@@ -103,7 +204,9 @@ class FeatureBuilderService:
         patient_id: str,
         model_type: str,
         lookback_days: int = 14,
-        doctor_id: Optional[str] = None
+        doctor_id: Optional[str] = None,
+        require_consent: bool = True,
+        purpose: str = "ml_training"
     ) -> Tuple[Dict[str, Any], List[str]]:
         """
         Build feature vector for a patient and model type.
@@ -113,11 +216,36 @@ class FeatureBuilderService:
             model_type: Type of model (disease_risk_stroke, deterioration, etc.)
             lookback_days: Days of historical data to aggregate
             doctor_id: Doctor requesting data (for audit logging)
+            require_consent: If True, verify ML training consent before extraction
+            purpose: Purpose of data access (ml_training, research, clinical_care)
         
         Returns:
             Tuple of (feature_dict, missing_features_list)
+            
+        Raises:
+            ConsentVerificationError: If consent verification fails
         """
         logger.info(f"Building features for patient {patient_id}, model: {model_type}")
+        
+        # Phase 8 HIPAA Compliance: Verify ML training consent
+        if require_consent and purpose in ["ml_training", "research"]:
+            data_categories = ["health_metrics", "demographics", "vitals", "symptoms"]
+            consent_verified, consent_details = MLConsentVerifier.verify_ml_training_consent(
+                db=self.db,
+                patient_id=patient_id,
+                data_categories=data_categories,
+                purpose=purpose
+            )
+            
+            if not consent_verified:
+                logger.warning(
+                    f"ML consent not verified for patient {patient_id}: {consent_details.get('reason')}"
+                )
+                raise ConsentVerificationError(
+                    f"ML training consent not verified: {consent_details.get('reason')}"
+                )
+            
+            logger.info(f"ML consent verified for patient {patient_id}")
         
         # Audit log the data access
         if doctor_id:
@@ -129,7 +257,7 @@ class FeatureBuilderService:
                 resource_type="patient_features",
                 resource_id=f"{model_type}_{datetime.utcnow().isoformat()}",
                 phi_categories=["health_metrics", "demographics"],
-                details={"model_type": model_type, "lookback_days": lookback_days}
+                details={"model_type": model_type, "lookback_days": lookback_days, "purpose": purpose}
             )
         
         # Get required features for model

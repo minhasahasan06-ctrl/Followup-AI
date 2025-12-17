@@ -643,3 +643,198 @@ async def get_crisis_resources() -> Dict[str, Any]:
         "crisis_resources": CRISIS_RESOURCES,
         "disclaimer": "If you are in immediate danger, please call 911 or go to your nearest emergency room."
     }
+
+
+# ==================== Doctor Access Endpoints (Phase 8) ====================
+
+from app.services.access_control import (
+    AccessControlService, RequirePatientAccess, 
+    AccessScope, PHICategory, HIPAAAuditLogger
+)
+from app.dependencies import get_current_doctor
+
+
+@router.get("/doctor/patient/{patient_id}/history")
+async def doctor_get_patient_mental_health_history(
+    patient_id: str,
+    request: Request,
+    questionnaire_type: Optional[str] = None,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_doctor)
+) -> Dict[str, Any]:
+    """
+    Doctor endpoint to view patient mental health history.
+    
+    Phase 8 HIPAA Compliance:
+    - Requires active doctor-patient assignment with consent
+    - Enforces access scope (full or limited)
+    - Logs all PHI access to HIPAA audit trail
+    """
+    access_control = AccessControlService()
+    
+    decision = access_control.check_access(
+        db=db,
+        current_user=current_user,
+        patient_id=patient_id,
+        required_scope=AccessScope.LIMITED,
+        phi_categories=[PHICategory.MENTAL_HEALTH.value],
+        request=request,
+        resource_type="mental_health_history",
+        access_reason="clinical_review"
+    )
+    
+    if not decision.allowed:
+        logger.warning(f"[MH-API] Access denied for doctor {current_user.id} to patient {patient_id}: {decision.reason}")
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: {decision.reason}"
+        )
+    
+    logger.info(f"[MH-API] [AUDIT] Doctor {current_user.id} accessing mental health history for patient {patient_id}")
+    
+    try:
+        query = db.query(MentalHealthResponse).filter(
+            MentalHealthResponse.patient_id == patient_id,
+            MentalHealthResponse.allow_clinical_sharing == True
+        )
+        
+        if questionnaire_type:
+            query = query.filter(MentalHealthResponse.questionnaire_type == questionnaire_type)
+        
+        responses = query.order_by(desc(MentalHealthResponse.completed_at)).limit(limit).all()
+        
+        history_items = [
+            {
+                "response_id": r.id,
+                "questionnaire_type": r.questionnaire_type,
+                "completed_at": r.completed_at,
+                "total_score": r.total_score,
+                "max_score": r.max_score,
+                "severity_level": r.severity_level,
+                "crisis_detected": r.crisis_detected
+            }
+            for r in responses
+        ]
+        
+        trends = None
+        if len(responses) >= 2:
+            service = MentalHealthService(db)
+            trends = service.calculate_temporal_trends(responses)
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=str(current_user.id),
+            actor_role="doctor",
+            patient_id=patient_id,
+            action="view",
+            phi_categories=[PHICategory.MENTAL_HEALTH.value],
+            resource_type="mental_health_history",
+            access_scope=decision.access_scope.value,
+            access_reason="clinical_review",
+            consent_verified=True,
+            assignment_id=decision.assignment_id,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            request_path=str(request.url.path),
+            additional_context={"records_accessed": len(history_items)}
+        )
+        
+        return {
+            "history": history_items,
+            "total_count": len(history_items),
+            "trends": trends,
+            "access_scope": decision.access_scope.value,
+            "disclaimer": "Wellness monitoring data - Not a medical diagnosis"
+        }
+        
+    except Exception as e:
+        logger.error(f"[MH-API] Doctor history retrieval error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve patient history")
+
+
+@router.get("/doctor/patient/{patient_id}/response/{response_id}")
+async def doctor_get_patient_response_details(
+    patient_id: str,
+    response_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_doctor)
+) -> Dict[str, Any]:
+    """
+    Doctor endpoint to view detailed patient questionnaire response.
+    
+    Phase 8 HIPAA Compliance:
+    - Requires active doctor-patient assignment with consent
+    - Only shows responses with clinical sharing enabled
+    - Full audit trail for PHI access
+    """
+    access_control = AccessControlService()
+    
+    decision = access_control.check_access(
+        db=db,
+        current_user=current_user,
+        patient_id=patient_id,
+        required_scope=AccessScope.LIMITED,
+        phi_categories=[PHICategory.MENTAL_HEALTH.value],
+        request=request,
+        resource_type="mental_health_response",
+        resource_id=response_id,
+        access_reason="clinical_review"
+    )
+    
+    if not decision.allowed:
+        raise HTTPException(status_code=403, detail=f"Access denied: {decision.reason}")
+    
+    response = db.query(MentalHealthResponse).filter(
+        and_(
+            MentalHealthResponse.id == response_id,
+            MentalHealthResponse.patient_id == patient_id,
+            MentalHealthResponse.allow_clinical_sharing == True
+        )
+    ).first()
+    
+    if not response:
+        raise HTTPException(status_code=404, detail="Response not found or clinical sharing not permitted")
+    
+    analysis = db.query(MentalHealthPatternAnalysis).filter(
+        MentalHealthPatternAnalysis.response_id == response_id
+    ).first()
+    
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=str(current_user.id),
+        actor_role="doctor",
+        patient_id=patient_id,
+        action="view",
+        phi_categories=[PHICategory.MENTAL_HEALTH.value],
+        resource_type="mental_health_response",
+        resource_id=response_id,
+        access_scope=decision.access_scope.value,
+        access_reason="clinical_review",
+        consent_verified=True,
+        assignment_id=decision.assignment_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        request_path=str(request.url.path)
+    )
+    
+    return {
+        "response": {
+            "id": response.id,
+            "questionnaire_type": response.questionnaire_type,
+            "completed_at": response.completed_at,
+            "total_score": response.total_score,
+            "max_score": response.max_score,
+            "severity_level": response.severity_level,
+            "cluster_scores": response.cluster_scores,
+            "crisis_detected": response.crisis_detected
+        },
+        "analysis": {
+            "id": analysis.id,
+            "patterns": analysis.patterns,
+            "symptom_clusters": analysis.symptom_clusters,
+            "neutral_summary": analysis.neutral_summary,
+            "key_observations": analysis.key_observations
+        } if analysis else None,
+        "access_scope": decision.access_scope.value,
+        "disclaimer": "Wellness monitoring data - Not a medical diagnosis"
+    }
