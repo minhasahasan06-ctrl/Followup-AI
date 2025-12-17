@@ -1,0 +1,61 @@
+# Node modules and Python packages
+node_modules/
+.pythonlibs/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+logs/
+/tmp/
+
+# Local development
+.env
+.env.local
+.local/
+
+# Large files
+*.zip
+*.tar
+*.gz
+*.mp4
+*.mov
+
+# Replit specific
+.replit
+replit.nix
+.cache/
+.upm/
+.config/
+
+# Frontend (not needed for Python backend)
+client/
+attached_assets/
+
+# Test files
+tests/
+test/
+*.test.py
+*.test.ts
+*.test.js
+
+# Documentation
+*.md
+!cloud-run/*.md
