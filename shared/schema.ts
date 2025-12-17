@@ -28,7 +28,7 @@ export const users = pgTable("users", {
   resetTokenExpires: timestamp("reset_token_expires"),
   
   // Application-specific fields
-  role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient' or 'doctor'
+  role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient', 'doctor', or 'admin'
   
   // Doctor-specific fields
   organization: varchar("organization"), // Hospital/clinic name for doctors
@@ -2006,7 +2006,8 @@ export const userSettings = pgTable("user_settings", {
   shareDataWithDoctors: boolean("share_data_with_doctors").default(true),
   allowThirdPartyIntegrations: boolean("allow_third_party_integrations").default(false),
   allowAIAnalysis: boolean("allow_ai_analysis").default(true),
-  
+  personalizationEnabled: boolean("personalization_enabled").default(false),
+
   // Notification preferences
   emailNotifications: boolean("email_notifications").default(true),
   pushNotifications: boolean("push_notifications").default(true),

@@ -139,7 +139,6 @@ function DoctorRouter() {
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/ml-monitoring" component={MLMonitoring} />
-      <Route path="/ml-training" component={AdminMLTrainingHub} />
       <Route path="/medical-nlp" component={MedicalNLPDashboard} />
       <Route path="/agent-hub" component={AgentHub} />
       <Route path="/referrals" component={Referrals} />

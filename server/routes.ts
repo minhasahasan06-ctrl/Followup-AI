@@ -1,3 +1,4 @@
+// Routes module - Merge conflict resolved
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -7,9 +8,8 @@ import { eq, and, desc, gte, sql as drizzleSql, isNull } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { z } from "zod";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
-import { s3Client, textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
-import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { Upload } from "@aws-sdk/lib-storage";
+import { textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
+import { uploadFile, getSignedUrl, GCS_BUCKET_NAME, getPublicUrl } from "./gcs";
 import { StartDocumentAnalysisCommand, GetDocumentAnalysisCommand } from "@aws-sdk/client-textract";
 import { DetectEntitiesV2Command, DetectPHICommand } from "@aws-sdk/client-comprehendmedical";
 import OpenAI from "openai";
@@ -52,6 +52,7 @@ import {
   doctorIntegrationService, 
   initDoctorIntegrationService 
 } from "./doctorIntegrationService";
+import { fetchFromCloudRun, getPythonBackendUrl } from "./cloudRunAuth";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
@@ -806,7 +807,7 @@ async function processDeviceReadingForHealthAlerts(
     
     // Send metrics to Python backend's AI Health Alert ingest endpoint
     try {
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/ingest/batch`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/ingest/batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ metrics })
@@ -1277,6 +1278,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "All fields are required" });
       }
       
+      // DEV-ONLY: Skip Cognito in development mode
+      if (process.env.NODE_ENV === 'development') {
+        const devUserId = `dev-patient-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        
+        // Check if user already exists
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(400).json({ message: "An account with this email already exists" });
+        }
+        
+        // Create user directly in database
+        await storage.createUser({
+          id: devUserId,
+          email,
+          firstName,
+          lastName,
+          role: 'patient',
+          phoneNumber,
+          phoneVerified: true,
+          emailVerified: true,
+          termsAccepted: true,
+          termsAcceptedAt: new Date(),
+        });
+        
+        console.log(`[DEV-ONLY] ✅ Created patient user: ${email} (id: ${devUserId})`);
+        return res.json({ 
+          message: "Signup successful. You can now login.", 
+          devMode: true,
+          userId: devUserId 
+        });
+      }
+      
       // Sign up in Cognito
       const signUpResponse = await signUp(email, password, firstName, lastName, 'patient', phoneNumber);
       const cognitoSub = signUpResponse.UserSub!;
@@ -1334,6 +1367,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!email || !password || !firstName || !lastName || !phoneNumber || !organization || !medicalLicenseNumber || !licenseCountry) {
         return res.status(400).json({ message: "All fields are required" });
+      }
+      
+      // DEV-ONLY: Skip Cognito in development mode
+      if (process.env.NODE_ENV === 'development') {
+        const devUserId = `dev-doctor-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        
+        // Check if user already exists
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(400).json({ message: "An account with this email already exists" });
+        }
+        
+        // Create user directly in database
+        await storage.createUser({
+          id: devUserId,
+          email,
+          firstName,
+          lastName,
+          role: 'doctor',
+          phoneNumber,
+          phoneVerified: true,
+          emailVerified: true,
+          organization,
+          medicalLicenseNumber,
+          licenseVerified: false,
+          adminVerified: false,
+          termsAccepted: true,
+          termsAcceptedAt: new Date(),
+        });
+        
+        console.log(`[DEV-ONLY] ✅ Created doctor user: ${email} (id: ${devUserId})`);
+        return res.json({ 
+          message: "Application submitted successfully. You can now login. Your application will be reviewed by our team.",
+          devMode: true,
+          userId: devUserId 
+        });
       }
       
       // Sign up in Cognito
@@ -1812,7 +1881,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Authorization header with Bearer token required" });
       }
 
-      const response = await fetch(`${pythonAuthUrl}/api/auth/me`, {
+      const response = await fetchFromCloudRun(`${pythonAuthUrl}/api/auth/me`, {
         method: 'GET',
         headers: {
           'Authorization': authHeader,
@@ -1836,7 +1905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Authorization header with Bearer token required" });
       }
 
-      const response = await fetch(`${pythonAuthUrl}/api/auth/register`, {
+      const response = await fetchFromCloudRun(`${pythonAuthUrl}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Authorization': authHeader,
@@ -1856,7 +1925,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GET /api/auth/status - Auth0 configuration status (proxied to Python)
   app.get('/api/auth/status', async (req, res) => {
     try {
-      const response = await fetch(`${pythonAuthUrl}/api/auth/status`, {
+      const response = await fetchFromCloudRun(`${pythonAuthUrl}/api/auth/status`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -2155,6 +2224,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User settings routes
+  app.get('/api/user/settings', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const existingSettings = await storage.getUserSettings(userId);
+      const settings =
+        existingSettings ||
+        (await storage.upsertUserSettings({
+          userId,
+          personalizationEnabled: false,
+        }));
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching user settings:", error);
+      res.status(500).json({ message: "Failed to fetch user settings" });
+    }
+  });
+
+  app.post('/api/user/settings/personalization', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user!.id;
+      const { enabled } = req.body;
+
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ message: "Enabled must be a boolean" });
+      }
+
+      const settings = await storage.upsertUserSettings({
+        userId,
+        personalizationEnabled: enabled,
+      });
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error updating personalization settings:", error);
+      res.status(500).json({ message: "Failed to update personalization settings" });
+    }
+  });
+
   // Daily followup routes
   app.get('/api/daily-followup/today', isAuthenticated, async (req: any, res) => {
     try {
@@ -2296,19 +2405,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid videoType. Must be 'front' or 'back'" });
       }
 
-      // Generate deterministic S3 key
+      // Generate GCS key
       const timestamp = Date.now();
       const sessionId = `${userId}-${timestamp}`;
-      const s3Key = `paintrack/${userId}/${sessionId}/${videoType}.webm`;
+      const gcsKey = `paintrack/${userId}/${sessionId}/${videoType}.webm`;
 
-      // Upload to S3 with server-side encryption
-      const uploadCommand = new PutObjectCommand({
-        Bucket: AWS_S3_BUCKET,
-        Key: s3Key,
-        Body: videoBuffer,
-        ContentType: req.file!.mimetype,
-        ServerSideEncryption: 'AES256',
-        Metadata: {
+      // Upload to Google Cloud Storage
+      await uploadFile({
+        key: gcsKey,
+        body: videoBuffer,
+        contentType: req.file!.mimetype,
+        metadata: {
           userId,
           videoType,
           module: module || '',
@@ -2317,14 +2424,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      await s3Client.send(uploadCommand);
-
-      const videoUrl = `https://${AWS_S3_BUCKET}.s3.amazonaws.com/${s3Key}`;
+      // Generate signed URL for secure access
+      const videoUrl = await getSignedUrl(gcsKey, 1440); // 24 hour expiry
 
       // HIPAA audit log
-      console.log(`[AUDIT] PainTrack video uploaded - User: ${userId}, Type: ${videoType}, S3: ${s3Key}, Size: ${videoBuffer.length} bytes`);
+      console.log(`[AUDIT] PainTrack video uploaded - User: ${userId}, Type: ${videoType}, GCS: ${gcsKey}, Size: ${videoBuffer.length} bytes`);
 
-      res.json({ videoUrl, s3Key });
+      res.json({ videoUrl, gcsKey });
     } catch (error) {
       console.error("Error uploading PainTrack video:", error);
       res.status(500).json({ message: "Failed to upload video" });
@@ -3087,7 +3193,8 @@ All questions and discussions should be focused on this patient.`;
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 5000);
           
-          const normalizationResponse = await fetch(`http://localhost:8000/api/v1/drug-normalization/normalize`, {
+          const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+          const normalizationResponse = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/drug-normalization/normalize`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ medication_name: req.body.name }),
@@ -5762,27 +5869,20 @@ All questions and discussions should be focused on this patient.`;
       
       const fileKey = `medical-documents/${userId}/${Date.now()}-${file.originalname}`;
       
-      const uploadParams = {
-        Bucket: AWS_S3_BUCKET,
-        Key: fileKey,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-        ServerSideEncryption: 'AES256' as const,
-        Metadata: {
+      // Upload to Google Cloud Storage
+      await uploadFile({
+        key: fileKey,
+        body: file.buffer,
+        contentType: file.mimetype,
+        metadata: {
           userId,
           documentType,
           uploadDate: new Date().toISOString(),
         },
-      };
-      
-      const upload = new Upload({
-        client: s3Client,
-        params: uploadParams,
       });
       
-      await upload.done();
-      
-      const fileUrl = `https://${AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+      // Generate signed URL for secure access (24 hour expiry)
+      const fileUrl = await getSignedUrl(fileKey, 1440);
       
       const document = await storage.createMedicalDocument({
         userId,
@@ -13297,7 +13397,7 @@ Provide:
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/consultations/${encodeURIComponent(consultationId)}/details`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/consultations/${encodeURIComponent(consultationId)}/details`, {
         headers: { 'Authorization': authHeader }
       });
       
@@ -13324,7 +13424,7 @@ Provide:
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/consultations/${consultationId}/start-video`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/consultations/${consultationId}/start-video`, {
         method: 'POST',
         headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify(req.body)
@@ -13355,7 +13455,7 @@ Provide:
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/consultations/${consultationId}/end-video?room_name=${roomName}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/consultations/${consultationId}/end-video?room_name=${roomName}`, {
         method: 'DELETE',
         headers: { 'Authorization': authHeader }
       });
@@ -13383,7 +13483,7 @@ Provide:
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/consultations/${consultationId}/video-status`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/consultations/${consultationId}/video-status`, {
         headers: { 'Authorization': authHeader }
       });
       
@@ -13406,7 +13506,7 @@ Provide:
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
       
       // Fetch latest video metrics from Python backend
-      const response = await fetch(`${pythonBackendUrl}/api/v1/video-ai/latest-metrics?patient_id=${userId}`);
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/video-ai/latest-metrics?patient_id=${userId}`);
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -13439,7 +13539,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/video-ai/exam-sessions?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/video-ai/exam-sessions?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13484,7 +13584,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/tremor/dashboard/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/tremor/dashboard/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13537,7 +13637,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/tremor/history/${patientId}?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/tremor/history/${patientId}?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13579,7 +13679,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/gait-analysis/sessions/${patientId}?limit=${limit}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/gait-analysis/sessions/${patientId}?limit=${limit}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13619,7 +13719,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/gait-analysis/metrics/${sessionId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/gait-analysis/metrics/${sessionId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13661,7 +13761,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/edema/metrics/${patientId}?limit=${limit}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/edema/metrics/${patientId}?limit=${limit}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13701,7 +13801,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/edema/baseline/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/edema/baseline/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13744,7 +13844,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/deviation/me?days=${days}&alert_only=${alertOnly}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/deviation/me?days=${days}&alert_only=${alertOnly}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13784,7 +13884,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/deviation/summary/me?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/deviation/summary/me?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13826,7 +13926,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/deviation/patient/${patientId}?days=${days}&alert_only=${alertOnly}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/deviation/patient/${patientId}?days=${days}&alert_only=${alertOnly}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13870,7 +13970,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/baseline/current/me`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/baseline/current/me`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -13909,7 +14009,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/baseline/calculate/me`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/baseline/calculate/me`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -13951,7 +14051,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/stats`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/stats`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -14002,7 +14102,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/models`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/models`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -14038,7 +14138,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/models/${modelName}/performance?hours=${hours}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/models/${modelName}/performance?hours=${hours}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -14083,7 +14183,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/predictions/history?limit=${limit}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/predictions/history?limit=${limit}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -14117,7 +14217,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/predict`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/predict`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -14170,7 +14270,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/predict/symptom-analysis`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/predict/symptom-analysis`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -14219,7 +14319,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/predict/deterioration`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/predict/deterioration`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -14262,7 +14362,7 @@ Provide:
   app.get('/api/v1/ml/advanced/models/types', isAuthenticated, async (req: any, res) => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/advanced/models/types`);
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/advanced/models/types`);
       if (!response.ok) {
         return res.json({ model_types: [] });
       }
@@ -14278,7 +14378,7 @@ Provide:
   app.get('/api/v1/ml/advanced/outbreak/status', isAuthenticated, async (req: any, res) => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/advanced/outbreak/status`);
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/advanced/outbreak/status`);
       if (!response.ok) {
         return res.json({
           model_info: { model_type: 'RNN Ensemble', ensemble_size: 5, hidden_units: 128 },
@@ -14300,7 +14400,7 @@ Provide:
   app.post('/api/v1/ml/advanced/outbreak/train', isAuthenticated, async (req: any, res) => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/advanced/outbreak/train`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/advanced/outbreak/train`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req.body)
@@ -14320,7 +14420,7 @@ Provide:
   app.get('/api/v1/ml/advanced/embeddings/status', isAuthenticated, async (req: any, res) => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/advanced/embeddings/status`);
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/advanced/embeddings/status`);
       if (!response.ok) {
         return res.json({
           patient_embeddings_count: 0,
@@ -14346,7 +14446,7 @@ Provide:
   app.post('/api/v1/ml/advanced/embeddings/train', isAuthenticated, async (req: any, res) => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/advanced/embeddings/train`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/advanced/embeddings/train`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req.body)
@@ -14366,7 +14466,7 @@ Provide:
   app.get('/api/v1/ml/advanced/governance/stats', isAuthenticated, async (req: any, res) => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/advanced/governance/stats`);
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/advanced/governance/stats`);
       if (!response.ok) {
         return res.json({
           total_protocols: 0,
@@ -14394,7 +14494,7 @@ Provide:
   app.get('/api/v1/ml/advanced/robustness/latest', isAuthenticated, async (req: any, res) => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/advanced/robustness/latest`);
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/advanced/robustness/latest`);
       if (!response.ok) {
         return res.json({ reports_count: 0, latest_report: null });
       }
@@ -14448,7 +14548,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/pharmaco/locations`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/pharmaco/locations`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ locations: [] });
@@ -14468,7 +14568,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/pharmaco/run-scan`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/pharmaco/run-scan`, {
         method: 'POST',
         headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify(req.body)
@@ -14529,7 +14629,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/infectious/r0${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/infectious/r0${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ r_value: null, r_lower: null, r_upper: null, interpretation: 'Data unavailable' });
@@ -14549,7 +14649,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/infectious/pathogens`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/infectious/pathogens`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ pathogens: [] });
@@ -14570,7 +14670,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/infectious/outbreaks${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/infectious/outbreaks${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ outbreaks: [] });
@@ -14591,7 +14691,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/infectious/seroprevalence${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/infectious/seroprevalence${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ prevalence: null, suppressed: true });
@@ -14614,7 +14714,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/vaccine/coverage${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/vaccine/coverage${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ coverage_rate: null, data: [] });
@@ -14635,7 +14735,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/vaccine/effectiveness${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/vaccine/effectiveness${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ effectiveness: null, ci_lower: null, ci_upper: null });
@@ -14655,7 +14755,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/vaccine/list`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/vaccine/list`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json([]);
@@ -14676,7 +14776,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/vaccine/adverse-events${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/vaccine/adverse-events${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ events: [], total_count: 0 });
@@ -14699,7 +14799,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/occupational/signals${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/occupational/signals${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ signals: [], total_count: 0, suppressed_count: 0 });
@@ -14719,7 +14819,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/occupational/industries`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/occupational/industries`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ industries: [] });
@@ -14739,7 +14839,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/occupational/hazards`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/occupational/hazards`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ hazards: [] });
@@ -14759,7 +14859,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/occupational/run-scan`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/occupational/run-scan`, {
         method: 'POST',
         headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify(req.body)
@@ -14784,7 +14884,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/genetic/associations${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/genetic/associations${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ associations: [], total_count: 0 });
@@ -14805,7 +14905,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/genetic/pharmacogenomics${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/genetic/pharmacogenomics${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ interactions: [], total_count: 0 });
@@ -14825,7 +14925,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/genetic/genes`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/genetic/genes`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ genes: [] });
@@ -14846,7 +14946,7 @@ Provide:
       if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
         authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
       }
-      const response = await fetch(`${pythonBackendUrl}/api/v1/genetic/variants${queryString ? '?' + queryString : ''}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/genetic/variants${queryString ? '?' + queryString : ''}`, {
         headers: { 'Authorization': authHeader }
       });
       if (!response.ok) return res.json({ variants: [] });
@@ -14879,7 +14979,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/disease-risk/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/predict/disease-risk/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -14922,7 +15022,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/deterioration/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/predict/deterioration/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -14967,7 +15067,7 @@ Provide:
       }
       
       // Forward to Python backend's time-series endpoint
-      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/time-series/${patientId}?sequence_length=${Math.ceil(horizonHours / 24) * 7}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/predict/time-series/${patientId}?sequence_length=${Math.ceil(horizonHours / 24) * 7}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15011,7 +15111,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/time-series/${patientId}?sequence_length=${sequenceLength}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/predict/time-series/${patientId}?sequence_length=${sequenceLength}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15054,7 +15154,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/patient-segments/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/predict/patient-segments/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15097,7 +15197,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/comprehensive/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/predict/comprehensive/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15141,7 +15241,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ml/predict/history/${patientId}/${predictionType}?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/predict/history/${patientId}/${predictionType}?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15338,7 +15438,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/dashboard/summary/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/dashboard/summary/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15376,7 +15476,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/trends/${patientId}?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/trends/${patientId}?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15414,7 +15514,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/engagement/${patientId}?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/engagement/${patientId}?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15452,7 +15552,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/qol/${patientId}?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/qol/${patientId}?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15491,7 +15591,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/alerts/${patientId}?status=${status}&limit=${limit}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/alerts/${patientId}?status=${status}&limit=${limit}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15529,7 +15629,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/alerts/${alertId}?clinician_id=${clinicianId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/alerts/${alertId}?clinician_id=${clinicianId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -15568,7 +15668,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/compute/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/compute/${patientId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -15727,7 +15827,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/ingest`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/ingest`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -15765,7 +15865,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/ingest/batch`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/ingest/batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -15809,7 +15909,7 @@ Provide:
       if (metric_name) queryParams.append('metric_name', metric_name as string);
       if (hours) queryParams.append('hours', hours as string);
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/recent/${patientId}?${queryParams}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/metrics/recent/${patientId}?${queryParams}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15845,7 +15945,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/organ-scores/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/organ-scores/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15881,7 +15981,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/organ-scores/compute/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/organ-scores/compute/${patientId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -15919,7 +16019,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/organ-scores/history/${patientId}?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/organ-scores/history/${patientId}?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15955,7 +16055,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/dpi/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/dpi/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -15991,7 +16091,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/dpi/compute/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/dpi/compute/${patientId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -16029,7 +16129,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/dpi/history/${patientId}?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/dpi/history/${patientId}?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -16065,7 +16165,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/alerts/generate/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/alerts/generate/${patientId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -16103,7 +16203,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/alerts/ranked/${patientId}?limit=${limit}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/alerts/ranked/${patientId}?limit=${limit}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -16140,7 +16240,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/alerts/${alertId}/escalate?clinician_id=${clinicianId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/alerts/${alertId}/escalate?clinician_id=${clinicianId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -16179,7 +16279,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/notifications/unread/${userId}?limit=${limit}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/notifications/unread/${userId}?limit=${limit}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -16216,7 +16316,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/notifications/${notificationId}/read?user_id=${userId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/notifications/${notificationId}/read?user_id=${userId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -16252,7 +16352,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/config`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/config`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -16287,7 +16387,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/config`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/config`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -16325,7 +16425,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/compute-all/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/compute-all/${patientId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -16362,7 +16462,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/patient-overview/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/v2/patient-overview/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -16399,7 +16499,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/device-data-pipeline/${patientId}?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/device-data-pipeline/${patientId}?days=${days}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -16438,7 +16538,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ai-health-alerts/device-analytics/${patientId}?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ai-health-alerts/device-analytics/${patientId}?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -16477,7 +16577,7 @@ Provide:
       }
       
       const queryParams = days ? `?days=${days}` : '';
-      const response = await fetch(`${pythonBackendUrl}/api/ai-health-alerts/correlation-insights/${patientId}${queryParams}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ai-health-alerts/correlation-insights/${patientId}${queryParams}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -16517,7 +16617,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ai-health-alerts/v2/predictions/compute`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ai-health-alerts/v2/predictions/compute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -16555,7 +16655,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ai-health-alerts/v2/predictions/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ai-health-alerts/v2/predictions/${patientId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -16592,7 +16692,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ai-health-alerts/v2/predictions/${patientId}/history?days=${days}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ai-health-alerts/v2/predictions/${patientId}/history?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': authHeader,
@@ -16628,7 +16728,7 @@ Provide:
         authHeader = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${pythonBackendUrl}/api/ai-health-alerts/v2/compute-all-with-ml/${patientId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ai-health-alerts/v2/compute-all-with-ml/${patientId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -17440,7 +17540,7 @@ Provide:
   // =============================================================================
 
   // Check if TOTP is set up for admin ML training hub
-  app.get('/api/admin/totp/status', async (req: any, res) => {
+  app.get('/api/admin/totp/status', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const result = await db
         .select()
@@ -17476,7 +17576,7 @@ Provide:
   });
 
   // Generate TOTP setup (QR code and secret)
-  app.post('/api/admin/totp/setup', async (req: any, res) => {
+  app.post('/api/admin/totp/setup', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       // Check if already set up
       const existing = await db
@@ -17535,7 +17635,7 @@ Provide:
   });
 
   // Verify initial TOTP setup (enables 2FA after first successful verification)
-  app.post('/api/admin/totp/verify-setup', async (req: any, res) => {
+  app.post('/api/admin/totp/verify-setup', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const { token } = req.body;
 
@@ -17599,7 +17699,7 @@ Provide:
   });
 
   // Authenticate with TOTP (for ongoing access)
-  app.post('/api/admin/totp/authenticate', async (req: any, res) => {
+  app.post('/api/admin/totp/authenticate', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const { token } = req.body;
 
@@ -17691,7 +17791,7 @@ Provide:
   });
 
   // Check if current session is TOTP verified
-  app.get('/api/admin/totp/session', async (req: any, res) => {
+  app.get('/api/admin/totp/session', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const isVerified = req.session?.adminTotpVerified === true;
       const verifiedAt = req.session?.adminTotpVerifiedAt || null;
@@ -17707,7 +17807,7 @@ Provide:
   });
 
   // Reset TOTP (for re-setup)
-  app.post('/api/admin/totp/reset', async (req: any, res) => {
+  app.post('/api/admin/totp/reset', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const { token } = req.body;
 
@@ -18012,18 +18112,15 @@ Provide:
   // =============================================================================
 
   // =============================================================================
-  // ML TRAINING ADMIN ROUTES (Admin/Doctor only)
+  // ML TRAINING ADMIN ROUTES (Admin only)
   // Proxy to Python FastAPI ml_training.py endpoints
   // =============================================================================
 
   // List available datasets for ML training
-  app.get('/api/ml/training/datasets', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/datasets', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied. Admin or Doctor role required.' });
-      }
-
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/datasets`, {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/datasets`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -18057,18 +18154,15 @@ Provide:
   });
 
   // List trained models in the registry
-  app.get('/api/ml/training/models', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/models', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied. Admin or Doctor role required.' });
-      }
-
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
       const { status: statusFilter, limit = '50' } = req.query;
       const params = new URLSearchParams();
       if (statusFilter) params.set('status_filter', statusFilter as string);
       params.set('limit', limit as string);
 
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/models?${params.toString()}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/models?${params.toString()}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -18092,13 +18186,10 @@ Provide:
   });
 
   // Create a new training job
-  app.post('/api/ml/training/jobs', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/jobs', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Only administrators can create training jobs' });
-      }
-
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/jobs`, {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/jobs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -18124,18 +18215,15 @@ Provide:
   });
 
   // List training jobs
-  app.get('/api/ml/training/jobs', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/jobs', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
       const { status: statusFilter, limit = '20' } = req.query;
       const params = new URLSearchParams();
       if (statusFilter) params.set('status_filter', statusFilter as string);
       params.set('limit', limit as string);
 
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/jobs?${params.toString()}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/jobs?${params.toString()}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -18159,14 +18247,11 @@ Provide:
   });
 
   // Get training job status
-  app.get('/api/ml/training/jobs/:jobId', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/jobs/:jobId', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
       const { jobId } = req.params;
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/jobs/${jobId}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/jobs/${jobId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -18189,14 +18274,11 @@ Provide:
   });
 
   // Start a queued training job
-  app.post('/api/ml/training/jobs/:jobId/start', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/jobs/:jobId/start', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Only administrators can start training jobs' });
-      }
-
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
       const { jobId } = req.params;
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/jobs/${jobId}/start`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/jobs/${jobId}/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -18220,13 +18302,10 @@ Provide:
   });
 
   // Get consent statistics (admin)
-  app.get('/api/ml/training/consent/stats', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/consent/stats', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/consent/stats`, {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/consent/stats`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -18276,13 +18355,10 @@ Provide:
   });
 
   // Get contributions summary (admin)
-  app.get('/api/ml/training/contributions/summary', isAuthenticated, async (req: any, res) => {
+  app.get('/api/ml/training/contributions/summary', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/contributions/summary`, {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/contributions/summary`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -18315,13 +18391,10 @@ Provide:
   });
 
   // Extract device data for training (admin)
-  app.post('/api/ml/training/device-data/extract', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/device-data/extract', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (!['admin', 'doctor'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Only administrators can extract training data' });
-      }
-
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/device-data/extract`, {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/device-data/extract`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -18346,14 +18419,11 @@ Provide:
   });
 
   // Deploy a trained model
-  app.post('/api/ml/training/models/:modelId/deploy', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/models/:modelId/deploy', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Only administrators can deploy models' });
-      }
-
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
       const { modelId } = req.params;
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/models/${modelId}/deploy`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/models/${modelId}/deploy`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -18377,14 +18447,10 @@ Provide:
   });
 
   // Register a public dataset
-  app.post('/api/ml/training/register-dataset/:datasetKey', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ml/training/register-dataset/:datasetKey', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Only administrators can register datasets' });
-      }
-
       const { datasetKey } = req.params;
-      const response = await fetch(`${pythonBackendUrl}/api/ml/training/register-dataset/${datasetKey}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/ml/training/register-dataset/${datasetKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -19167,7 +19233,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/ml/analysis/parse-nl`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/ml/analysis/parse-nl`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -19252,7 +19318,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/scheduler/status`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/scheduler/status`, {
         method: 'GET',
         headers: {
           'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
@@ -19278,7 +19344,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/scheduler/jobs`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/scheduler/jobs`, {
         method: 'GET',
         headers: {
           'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
@@ -19304,7 +19370,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/scheduler/trigger-reanalysis`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/scheduler/trigger-reanalysis`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -19332,7 +19398,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/scheduler/run-now/${req.params.jobType}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/scheduler/run-now/${req.params.jobType}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -19393,7 +19459,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/active`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/active`, {
         method: 'GET',
         headers: {
           'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
@@ -19419,7 +19485,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/versions`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/versions`, {
         method: 'GET',
         headers: {
           'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
@@ -19445,7 +19511,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/verify-consent`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/model-registry/verify-consent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -19505,7 +19571,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/predict`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/model-registry/predict`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -19533,7 +19599,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/log-usage`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/model-registry/log-usage`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -19562,7 +19628,7 @@ Provide:
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
       const { version1, version2 } = req.query;
-      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/compare?version1=${version1}&version2=${version2}`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/compare?version1=${version1}&version2=${version2}`, {
         method: 'GET',
         headers: {
           'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,
@@ -19588,7 +19654,7 @@ Provide:
       }
 
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/features`, {
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/model-registry/models/${req.params.modelName}/features`, {
         method: 'GET',
         headers: {
           'Authorization': req.headers.authorization || `Bearer ${req.user.id}`,

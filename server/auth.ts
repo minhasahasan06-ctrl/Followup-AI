@@ -3,6 +3,8 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
+const DEFAULT_SESSION_SECRET = "dev-insecure-secret";
+
 // Extend Express Request to include user
 declare global {
   namespace Express {
@@ -21,6 +23,13 @@ export function getSession(maxAge?: number) {
   const isProduction = process.env.NODE_ENV === "production";
   const sessionTtl = maxAge || (1 * 24 * 60 * 60 * 1000); // Default 1 day in milliseconds
 
+  // Enforce explicit secrets in production environments to avoid silently
+  // deploying with an insecure default secret.
+  const configuredSecret = process.env.SESSION_SECRET || DEFAULT_SESSION_SECRET;
+  if (isProduction && configuredSecret === DEFAULT_SESSION_SECRET) {
+    throw new Error("SESSION_SECRET must be configured in production environments");
+  }
+
   // Prefer Postgres-backed sessions when DATABASE_URL is configured; otherwise fall back to in-memory store.
   // The in-memory store is only suitable for development and will not persist across restarts.
   let store: session.Store | undefined;
@@ -37,7 +46,7 @@ export function getSession(maxAge?: number) {
   }
 
   const sessionConfig = session({
-    secret: process.env.SESSION_SECRET || "dev-insecure-secret",
+    secret: configuredSecret,
     store,
     resave: false,
     saveUninitialized: false, // Only save sessions that have been modified (e.g., have userId set)
@@ -83,65 +92,36 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   return res.status(401).json({ message: "Unauthorized" });
 };
 
+// Role-based middleware
+function requireRole(role: "doctor" | "patient" | "admin"): RequestHandler {
+  return async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== role) {
+        return res.status(403).json({ message: `Access denied. ${role.charAt(0).toUpperCase()}${role.slice(1)} role required.` });
+      }
+
+      next();
+    } catch (error) {
+      console.error(`${role} auth error:`, error);
+      return res.status(403).json({ message: "Access denied" });
+    }
+  };
+}
+
 // Doctor role middleware
-export const isDoctor: RequestHandler = async (req, res, next) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = await storage.getUser(userId);
-    if (!user || user.role !== "doctor") {
-      return res.status(403).json({ message: "Access denied. Doctor role required." });
-    }
-
-    next();
-  } catch (error) {
-    console.error("Doctor auth error:", error);
-    return res.status(403).json({ message: "Access denied" });
-  }
-};
+export const isDoctor = requireRole("doctor");
 
 // Patient role middleware
-export const isPatient: RequestHandler = async (req, res, next) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = await storage.getUser(userId);
-    if (!user || user.role !== "patient") {
-      return res.status(403).json({ message: "Access denied. Patient role required." });
-    }
-
-    next();
-  } catch (error) {
-    console.error("Patient auth error:", error);
-    return res.status(403).json({ message: "Access denied" });
-  }
-};
+export const isPatient = requireRole("patient");
 
 // Admin role middleware
-export const isAdmin: RequestHandler = async (req, res, next) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = await storage.getUser(userId);
-    if (!user || user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied. Admin role required." });
-    }
-
-    next();
-  } catch (error) {
-    console.error("Admin auth error:", error);
-    return res.status(403).json({ message: "Access denied" });
-  }
-};
+export const isAdmin = requireRole("admin");
 
 // Authentication middleware with dev bypass for autopilot routes
 // In development, allows dev-patient-* pattern IDs to pass through when session auth fails
