@@ -824,6 +824,69 @@ async def start_device_pairing(
             ],
         }
     
+    elif pairing_method == PairingMethod.QR_CODE.value:
+        # Generate QR code pairing token
+        qr_token = secrets.token_urlsafe(32)
+        qr_expires_at = datetime.utcnow() + timedelta(minutes=10)
+        
+        # Store QR code session in database
+        try:
+            from sqlalchemy import text
+            await db.execute(
+                text("""
+                    INSERT INTO device_pairing_sessions 
+                    (id, user_id, vendor_id, device_type, pairing_method, session_status, 
+                     qr_code_token, qr_code_expires_at, expires_at, ip_address, user_agent)
+                    VALUES (:id, :user_id, :vendor_id, :device_type, :pairing_method, :session_status,
+                            :qr_code_token, :qr_code_expires_at, :expires_at, :ip_address, :user_agent)
+                """),
+                {
+                    "id": session_id,
+                    "user_id": user_id,
+                    "vendor_id": vendor_id,
+                    "device_type": request_data.device_type,
+                    "pairing_method": pairing_method,
+                    "session_status": "pending_qr_scan",
+                    "qr_code_token": qr_token,
+                    "qr_code_expires_at": qr_expires_at,
+                    "expires_at": expires_at,
+                    "ip_address": request.client.host if request.client else None,
+                    "user_agent": request.headers.get("user-agent"),
+                }
+            )
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Failed to store QR pairing session: {e}")
+            raise HTTPException(status_code=500, detail="Failed to create QR code pairing session")
+        
+        # Generate QR code data (JSON payload for mobile app to scan)
+        app_url = os.getenv("APP_URL", "http://localhost:5000")
+        qr_payload = {
+            "type": "followup_device_pair",
+            "session_id": session_id,
+            "token": qr_token,
+            "vendor_id": vendor_id,
+            "device_type": request_data.device_type,
+            "verify_url": f"{app_url}/api/v1/devices/qr/verify",
+            "expires_at": qr_expires_at.isoformat(),
+        }
+        
+        import json
+        import base64
+        qr_code_data = base64.b64encode(json.dumps(qr_payload).encode()).decode()
+        
+        response_data["qr_code_data"] = qr_code_data
+        response_data["status"] = "pending_qr_scan"
+        response_data["ble_instructions"] = {
+            "steps": [
+                "Open the Followup AI companion app on your mobile device",
+                "Tap 'Scan QR Code' in the Device settings",
+                "Point your camera at the QR code displayed on screen",
+                "The device will be paired automatically once scanned",
+            ],
+            "qr_expires_in_seconds": 600,
+        }
+    
     # Log audit event
     await log_device_audit(
         db=db,
@@ -1445,6 +1508,48 @@ async def ingest_device_data(
         )
         
         await db.commit()
+        
+        # Wire to Followup Autopilot for ML-powered deterioration detection
+        try:
+            from python_backend.ml_analysis.followup_autopilot.signal_ingestor import SignalIngestor
+            
+            ingestor = SignalIngestor(db_session=None)  # Use raw storage for now
+            
+            # Build metrics payload for Autopilot
+            autopilot_metrics = {}
+            if "heart_rate" in readings_accepted and "heart_rate" in readings:
+                autopilot_metrics["heart_rate"] = readings["heart_rate"].get("bpm") if isinstance(readings["heart_rate"], dict) else readings["heart_rate"]
+            if "bp" in readings_accepted and "bp" in readings:
+                autopilot_metrics["blood_pressure"] = {
+                    "systolic": readings["bp"].get("systolic"),
+                    "diastolic": readings["bp"].get("diastolic"),
+                }
+            if "glucose" in readings_accepted and "glucose" in readings:
+                autopilot_metrics["blood_glucose"] = readings["glucose"]
+            if "spo2" in readings_accepted and "spo2" in readings:
+                autopilot_metrics["spo2"] = readings["spo2"]
+            if "hrv" in readings_accepted and "hrv" in readings:
+                autopilot_metrics["hrv"] = readings["hrv"]
+            if "sleep" in readings_accepted and "sleep" in readings:
+                autopilot_metrics["sleep"] = readings["sleep"]
+            if "steps" in readings_accepted and "steps" in readings:
+                autopilot_metrics["steps"] = readings["steps"]
+            if "temperature" in readings_accepted and "temperature" in readings:
+                autopilot_metrics["temperature"] = readings["temperature"]
+            
+            if autopilot_metrics:
+                signal_id = ingestor.ingest_device_data(
+                    patient_id=conn.user_id,
+                    device_type=conn.device_type,
+                    metrics=autopilot_metrics,
+                    ml_score=None  # To be calculated by Autopilot
+                )
+                if signal_id:
+                    logger.info(f"Ingested device data to Autopilot: signal_id={signal_id}")
+        except ImportError:
+            logger.debug("Autopilot SignalIngestor not available - skipping ML integration")
+        except Exception as e:
+            logger.warning(f"Failed to send data to Autopilot: {e}")
     
     # Log audit event
     await log_device_audit(
@@ -1579,6 +1684,150 @@ async def sync_healthkit_data(
         "records_processed": records_processed,
         "routed_to_sections": list(routed_sections),
     }
+
+# ============================================
+# QR CODE VERIFICATION
+# ============================================
+
+class QRVerifyRequest(BaseModel):
+    """Request model for QR code verification"""
+    session_id: str
+    token: str
+    device_info: Optional[Dict[str, Any]] = None
+
+
+class QRVerifyResponse(BaseModel):
+    """Response model for QR code verification"""
+    success: bool
+    device_connection_id: Optional[str] = None
+    message: str
+    vendor_id: Optional[str] = None
+    device_type: Optional[str] = None
+
+
+@router.post("/qr/verify", response_model=QRVerifyResponse)
+async def verify_qr_code(
+    request_data: QRVerifyRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Verify QR code pairing from mobile companion app.
+    Called by mobile app after scanning QR code to complete pairing.
+    """
+    from sqlalchemy import text
+    
+    # Find pairing session
+    result = await db.execute(
+        text("""
+            SELECT id, user_id, vendor_id, device_type, pairing_method, session_status,
+                   qr_code_token, qr_code_expires_at, expires_at
+            FROM device_pairing_sessions 
+            WHERE id = :session_id 
+            AND qr_code_token = :token 
+            AND session_status = 'pending_qr_scan'
+        """),
+        {"session_id": request_data.session_id, "token": request_data.token}
+    )
+    session = result.fetchone()
+    
+    if not session:
+        return QRVerifyResponse(
+            success=False,
+            message="Invalid or expired QR code. Please generate a new one.",
+        )
+    
+    # Check if QR code expired
+    if session.qr_code_expires_at and session.qr_code_expires_at < datetime.utcnow():
+        await db.execute(
+            text("""
+                UPDATE device_pairing_sessions 
+                SET session_status = 'failed', error_code = 'qr_expired', 
+                    error_message = 'QR code expired'
+                WHERE id = :session_id
+            """),
+            {"session_id": request_data.session_id}
+        )
+        await db.commit()
+        
+        return QRVerifyResponse(
+            success=False,
+            message="QR code has expired. Please generate a new QR code.",
+        )
+    
+    # Create device connection
+    integration_id = secrets.token_urlsafe(16)
+    device_info = request_data.device_info or {}
+    
+    await db.execute(
+        text("""
+            INSERT INTO wearable_integrations 
+            (id, user_id, device_type, device_name, vendor_id, device_model, firmware_version,
+             connection_status, pairing_method, battery_level, consent_given, consent_timestamp)
+            VALUES (:id, :user_id, :device_type, :device_name, :vendor_id, :device_model, :firmware_version,
+                    :connection_status, :pairing_method, :battery_level, :consent_given, :consent_timestamp)
+        """),
+        {
+            "id": integration_id,
+            "user_id": session.user_id,
+            "device_type": session.device_type,
+            "device_name": device_info.get("device_name", f"{session.vendor_id} Device"),
+            "vendor_id": session.vendor_id,
+            "device_model": device_info.get("device_model"),
+            "firmware_version": device_info.get("firmware_version"),
+            "connection_status": ConnectionStatus.CONNECTED.value,
+            "pairing_method": "qr_code",
+            "battery_level": device_info.get("battery_level"),
+            "consent_given": True,
+            "consent_timestamp": datetime.utcnow(),
+        }
+    )
+    
+    # Update session status
+    await db.execute(
+        text("""
+            UPDATE device_pairing_sessions 
+            SET session_status = 'completed', 
+                completed_at = :completed_at,
+                result_device_connection_id = :device_connection_id
+            WHERE id = :session_id
+        """),
+        {
+            "session_id": request_data.session_id,
+            "completed_at": datetime.utcnow(),
+            "device_connection_id": integration_id,
+        }
+    )
+    
+    await db.commit()
+    
+    # Log audit event
+    await log_device_audit(
+        db=db,
+        actor_id=session.user_id,
+        actor_type="patient",
+        action="qr_pairing_completed",
+        action_category="device_management",
+        resource_type="device_connection",
+        resource_id=integration_id,
+        patient_id=session.user_id,
+        event_details={
+            "vendor_id": session.vendor_id,
+            "device_type": session.device_type,
+            "device_info": device_info,
+        },
+        success=True,
+        request=request,
+    )
+    
+    return QRVerifyResponse(
+        success=True,
+        device_connection_id=integration_id,
+        message="Device paired successfully via QR code.",
+        vendor_id=session.vendor_id,
+        device_type=session.device_type,
+    )
+
 
 # ============================================
 # PAIRING STATUS POLLING
@@ -1873,6 +2122,217 @@ async def get_ble_services():
         },
         "ios_fallback": "For iOS devices, please use our companion app or Apple HealthKit sync.",
     }
+
+
+# ============================================
+# BLE DATA PROCESSING
+# ============================================
+
+class BLEDataRequest(BaseModel):
+    """Request model for processing BLE characteristic data"""
+    device_connection_id: str
+    characteristic_uuid: str
+    data: str  # Base64 encoded characteristic data
+    timestamp: Optional[str] = None
+
+
+class BLEDataResponse(BaseModel):
+    """Response model for BLE data processing"""
+    success: bool
+    data_type: Optional[str] = None
+    parsed_values: Optional[Dict[str, Any]] = None
+    unit: Optional[str] = None
+    message: Optional[str] = None
+    reading_id: Optional[str] = None
+
+
+@router.post("/ble/data", response_model=BLEDataResponse)
+async def process_ble_data(
+    request_data: BLEDataRequest,
+    request: Request,
+    user_id: str = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Process raw BLE characteristic data from Web Bluetooth API.
+    Parses standard Bluetooth SIG health profiles (Blood Pressure, Heart Rate, Glucose, etc.)
+    and stores the normalized readings.
+    """
+    from sqlalchemy import text
+    import base64
+    
+    # Verify device connection belongs to user
+    result = await db.execute(
+        text("""
+            SELECT id, user_id, device_type, vendor_id, connection_status
+            FROM wearable_integrations 
+            WHERE id = :device_connection_id AND user_id = :user_id
+        """),
+        {"device_connection_id": request_data.device_connection_id, "user_id": user_id}
+    )
+    conn = result.fetchone()
+    
+    if not conn:
+        return BLEDataResponse(
+            success=False,
+            message="Device connection not found or not authorized",
+        )
+    
+    if conn.connection_status != "connected":
+        return BLEDataResponse(
+            success=False,
+            message="Device is not in connected state",
+        )
+    
+    # Decode base64 data
+    try:
+        raw_data = base64.b64decode(request_data.data)
+    except Exception as e:
+        return BLEDataResponse(
+            success=False,
+            message=f"Invalid base64 data: {str(e)}",
+        )
+    
+    # Parse the BLE characteristic
+    try:
+        from app.services.ble_parsers import parse_ble_characteristic
+        
+        reading = parse_ble_characteristic(request_data.characteristic_uuid, raw_data)
+        
+        if not reading:
+            return BLEDataResponse(
+                success=False,
+                message=f"Failed to parse characteristic {request_data.characteristic_uuid}",
+            )
+        
+        # Store the reading
+        reading_id = secrets.token_urlsafe(16)
+        insert_data = {
+            "id": reading_id,
+            "patient_id": user_id,
+            "device_type": conn.device_type,
+            "device_brand": conn.vendor_id,
+            "source": "ble",
+            "wearable_integration_id": conn.id,
+            "recorded_at": request_data.timestamp or reading.timestamp.isoformat(),
+        }
+        
+        # Map parsed values to device_readings columns
+        values = reading.values
+        routed_to_sections = []
+        
+        if reading.data_type == "blood_pressure":
+            insert_data["bp_systolic"] = values.get("systolic")
+            insert_data["bp_diastolic"] = values.get("diastolic")
+            insert_data["bp_pulse"] = values.get("pulse_rate")
+            insert_data["route_to_hypertension"] = True
+            routed_to_sections.append("hypertension")
+        
+        elif reading.data_type == "heart_rate":
+            insert_data["heart_rate"] = values.get("bpm")
+            if "hrv_rmssd" in values:
+                insert_data["hrv"] = values.get("hrv_rmssd")
+            insert_data["route_to_cardiovascular"] = True
+            routed_to_sections.append("cardiovascular")
+        
+        elif reading.data_type == "glucose":
+            insert_data["glucose_value"] = values.get("glucose")
+            insert_data["route_to_diabetes"] = True
+            routed_to_sections.append("diabetes")
+        
+        elif reading.data_type == "temperature":
+            insert_data["temperature"] = values.get("temperature")
+            insert_data["temperature_unit"] = reading.unit
+        
+        elif reading.data_type == "weight":
+            insert_data["weight"] = values.get("weight")
+            if "bmi" in values:
+                insert_data["bmi"] = values.get("bmi")
+            insert_data["route_to_fitness"] = True
+            routed_to_sections.append("fitness")
+        
+        elif reading.data_type == "spo2":
+            insert_data["spo2"] = values.get("spo2")
+            insert_data["route_to_respiratory"] = True
+            routed_to_sections.append("respiratory")
+        
+        # Insert reading
+        columns = ", ".join(insert_data.keys())
+        placeholders = ", ".join(f":{k}" for k in insert_data.keys())
+        
+        await db.execute(
+            text(f"INSERT INTO device_readings ({columns}) VALUES ({placeholders})"),
+            insert_data
+        )
+        
+        # Update last sync time
+        await db.execute(
+            text("""
+                UPDATE wearable_integrations 
+                SET last_synced_at = :now, last_sync_status = 'success'
+                WHERE id = :id
+            """),
+            {"now": datetime.utcnow(), "id": conn.id}
+        )
+        
+        await db.commit()
+        
+        # Wire to Autopilot
+        try:
+            from python_backend.ml_analysis.followup_autopilot.signal_ingestor import SignalIngestor
+            
+            ingestor = SignalIngestor(db_session=None)
+            signal_id = ingestor.ingest_device_data(
+                patient_id=user_id,
+                device_type=conn.device_type,
+                metrics=values,
+                ml_score=None
+            )
+            if signal_id:
+                logger.info(f"BLE data ingested to Autopilot: signal_id={signal_id}")
+        except Exception as e:
+            logger.warning(f"Failed to send BLE data to Autopilot: {e}")
+        
+        # Log audit event
+        await log_device_audit(
+            db=db,
+            actor_id=user_id,
+            actor_type="patient",
+            action="ble_data_received",
+            action_category="data_access",
+            resource_type="device_reading",
+            resource_id=reading_id,
+            patient_id=user_id,
+            event_details={
+                "device_connection_id": conn.id,
+                "characteristic_uuid": request_data.characteristic_uuid,
+                "data_type": reading.data_type,
+                "routed_to_sections": routed_to_sections,
+            },
+            success=True,
+            request=request,
+        )
+        
+        return BLEDataResponse(
+            success=True,
+            data_type=reading.data_type,
+            parsed_values=values,
+            unit=reading.unit,
+            reading_id=reading_id,
+            message=f"Successfully processed {reading.data_type} reading",
+        )
+        
+    except ImportError:
+        return BLEDataResponse(
+            success=False,
+            message="BLE parser module not available",
+        )
+    except Exception as e:
+        logger.error(f"Failed to process BLE data: {e}")
+        return BLEDataResponse(
+            success=False,
+            message=f"Failed to process BLE data: {str(e)}",
+        )
 
 
 # ============================================
