@@ -523,6 +523,206 @@ Followup AI - HIPAA-Compliant Wellness Monitoring Platform
             self.db.rollback()
             return False
     
+    async def _deliver_alert_to_doctor(
+        self,
+        alert: Alert,
+        doctor_id: str
+    ) -> Dict[str, bool]:
+        """
+        Deliver an alert to a specific doctor via default channels.
+        
+        Used for direct alerts (crisis routing, mental health escalation) that
+        bypass the rule-based system.
+        
+        Args:
+            alert: Alert to deliver
+            doctor_id: Doctor ID to deliver to
+            
+        Returns:
+            Dict mapping channel -> success status
+        """
+        delivery_results = {"dashboard": True}
+        
+        try:
+            from app.models.user import User
+            doctor = self.db.query(User).filter(User.id == doctor_id).first()
+            
+            if SES_AVAILABLE and doctor and doctor.email:
+                try:
+                    response = ses_client.send_email(
+                        Source=os.getenv("SES_FROM_EMAIL", "alerts@followupai.health"),
+                        Destination={"ToAddresses": [doctor.email]},
+                        Message={
+                            "Subject": {"Data": f"[Followup AI] {alert.title}"},
+                            "Body": {
+                                "Text": {"Data": self._format_email_body(alert)},
+                                "Html": {"Data": self._format_email_html(alert)}
+                            }
+                        }
+                    )
+                    delivery_results["email"] = response['ResponseMetadata']['HTTPStatusCode'] == 200
+                except Exception as e:
+                    self.logger.error(f"Email delivery failed: {e}")
+                    delivery_results["email"] = False
+            
+            if TWILIO_AVAILABLE and doctor:
+                doctor_phone = getattr(doctor, 'phone', None)
+                twilio_from = os.getenv("TWILIO_PHONE_NUMBER")
+                if doctor_phone and twilio_from:
+                    try:
+                        sms_body = f"[Followup AI Alert] {alert.title}\n\nSeverity: {alert.severity.upper()}\nPlease check your dashboard for details."
+                        message = twilio_client.messages.create(
+                            body=sms_body[:1600],
+                            from_=twilio_from,
+                            to=doctor_phone
+                        )
+                        delivery_results["sms"] = message.status in ["queued", "sent", "delivered"]
+                    except Exception as e:
+                        self.logger.error(f"SMS delivery failed: {e}")
+                        delivery_results["sms"] = False
+                else:
+                    skip_reason = "missing_twilio_phone_number" if not twilio_from else "no_doctor_phone"
+                    self.logger.warning(f"SMS delivery skipped: {skip_reason}")
+                    delivery_results["sms_skipped"] = skip_reason
+                        
+        except Exception as e:
+            self.logger.error(f"Alert delivery error: {e}")
+        
+        if any(delivery_results.values()):
+            alert.status = "sent"
+            self.db.commit()
+        
+        self._audit_alert_delivery(alert, doctor_id, delivery_results)
+        
+        return delivery_results
+    
+    def _audit_alert_delivery(
+        self,
+        alert: Alert,
+        doctor_id: str,
+        delivery_results: Dict[str, bool]
+    ) -> None:
+        """Audit log for alert delivery for HIPAA compliance (system-initiated)"""
+        try:
+            channels_succeeded = [k for k, v in delivery_results.items() if v]
+            channels_failed = [k for k, v in delivery_results.items() if not v]
+            
+            audit_entry = AuditLog(
+                user_id="alert_orchestration_engine",
+                user_type="system",
+                action_type="share",
+                action_category="clinical_alert",
+                resource_type="alert_delivery",
+                resource_id=str(alert.id),
+                phi_accessed=True,
+                patient_id_accessed=alert.patient_id,
+                action_description=f"Alert {alert.id} ({alert.alert_type}) delivered to doctor {doctor_id}",
+                action_result="success" if channels_succeeded else "failure",
+                data_fields_accessed={
+                    "alert_id": alert.id,
+                    "alert_type": alert.alert_type,
+                    "severity": alert.severity,
+                    "patient_id": alert.patient_id,
+                    "doctor_id": doctor_id,
+                    "channels_attempted": list(delivery_results.keys()),
+                    "channels_succeeded": channels_succeeded,
+                    "channels_failed": channels_failed,
+                    "delivery_timestamp": datetime.now().isoformat()
+                },
+                ip_address="127.0.0.1",
+                user_agent="AlertOrchestrationEngine/1.0"
+            )
+            self.db.add(audit_entry)
+            self.db.commit()
+        except Exception as e:
+            self.logger.warning(f"Alert delivery audit failed (non-blocking): {e}")
+    
+    async def generate_mental_health_alert(
+        self,
+        patient_id: str,
+        doctor_id: str,
+        severity: str,
+        questionnaire_type: str,
+        total_score: int,
+        max_score: int,
+        severity_level: str,
+        crisis_detected: bool = False
+    ) -> Optional[int]:
+        """
+        Generate a clinician alert for mental health score changes.
+        
+        Args:
+            patient_id: Patient identifier
+            doctor_id: Doctor to alert
+            severity: Alert severity (low, medium, high)
+            questionnaire_type: Type of questionnaire
+            total_score: Questionnaire score
+            max_score: Maximum possible score
+            severity_level: Score severity classification
+            crisis_detected: Whether crisis was detected
+            
+        Returns:
+            Alert ID if created, None otherwise
+        """
+        try:
+            from app.models.user import User
+            patient = self.db.query(User).filter(User.id == patient_id).first()
+            patient_name = f"{patient.first_name} {patient.last_name}" if patient else "Patient"
+            
+            title = f"Mental Health Update: {questionnaire_type} Score Change - {patient_name}"
+            if crisis_detected:
+                title = f"ALERT: Mental Health Crisis Indicator - {patient_name}"
+            
+            percentage = (total_score / max_score * 100) if max_score > 0 else 0
+            
+            message_parts = [
+                f"Patient {patient_name} completed a {questionnaire_type} assessment.",
+                f"",
+                f"Score: {total_score}/{max_score} ({percentage:.0f}%)",
+                f"Severity Level: {severity_level.upper()}",
+            ]
+            
+            if crisis_detected:
+                message_parts.append("")
+                message_parts.append("CRISIS INDICATORS DETECTED - Review immediately.")
+            
+            message_parts.extend([
+                "",
+                "Recommendation: Review patient's mental health trends and consider scheduling a wellness check.",
+                "",
+                "Note: This system provides wellness monitoring, not medical diagnosis."
+            ])
+            
+            alert = Alert(
+                patient_id=patient_id,
+                doctor_id=doctor_id,
+                alert_type="mental_health_update",
+                severity=severity,
+                title=title,
+                message="\n".join(message_parts),
+                metadata={
+                    "questionnaire_type": questionnaire_type,
+                    "total_score": total_score,
+                    "max_score": max_score,
+                    "severity_level": severity_level,
+                    "crisis_detected": crisis_detected
+                },
+                status="pending"
+            )
+            
+            self.db.add(alert)
+            self.db.commit()
+            self.db.refresh(alert)
+            
+            await self._deliver_alert_to_doctor(alert, doctor_id)
+            
+            return alert.id
+            
+        except Exception as e:
+            self.logger.error(f"Error generating mental health alert: {e}")
+            self.db.rollback()
+            return None
+    
     async def get_pending_alerts(
         self,
         doctor_id: str,

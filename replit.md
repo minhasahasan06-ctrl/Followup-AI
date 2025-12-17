@@ -43,7 +43,14 @@ The backend comprises a Node.js Express server (Port 5000) for chatbot, appointm
 - **Clinical Automation (Rx Builder)**: AI-assisted prescription system with SOAP notes, ICD-10 suggestions, and drug interaction checks.
 - **Clinical Assessment (Diagnosis Helper)**: AI-assisted assessment with dual authorization and AI-powered differential diagnosis.
 - **PainTrack Platform**: Chronic pain tracking with video, VAS slider, and medication tracking.
+  - **Phase 7 Integration**: VAS slider (0-10) wired to Autopilot ML pipeline via SignalIngestorService
+  - **Video Analysis Endpoint**: Real-time video analysis via VideoAIEngine for respiratory risk detection
+  - Pain signals automatically feed into FeatureBuilder for ML model input
 - **Mental Health AI Dashboard**: Integrated questionnaires (PHQ-9, GAD-7, PSS-10) with AI analysis.
+  - **Phase 7 Integration**: Mental health signals wired to Autopilot ML pipeline
+  - **Crisis Routing**: PHQ-9 Q9 (suicidal ideation) responses > 0 trigger automatic escalation to connected doctors
+  - **Clinician Alerts**: Severe/moderately severe scores generate alerts for connected doctors via AlertOrchestrationEngine
+  - Real OpenAI GPT-4o powers pattern analysis (no mocks)
 - **Agent Clona Symptom Extraction**: AI-powered symptom extraction from patient conversations.
 - **AI-Powered Habit Tracker**: Comprehensive habit management with AI coaching and gamification.
 - **Daily Follow-up Dashboard Pattern**: Enforces 24-hour gating for data display.

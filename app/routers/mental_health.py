@@ -16,6 +16,12 @@ Features:
 - Export/print functionality
 - HIPAA-compliant privacy controls
 
+Phase 7 Integration:
+- Mental health signals wired to Autopilot ML pipeline via SignalIngestorService
+- Crisis detection (PHQ-9 Q9) triggers automatic escalation to connected doctors
+- Clinician alerts generated for mental health deterioration spikes
+- All operations are HIPAA audit logged
+
 CRITICAL: No diagnostic language. All summaries are neutral and non-clinical.
 """
 
@@ -31,8 +37,12 @@ import json
 from app.database import get_db
 from app.models.mental_health_models import MentalHealthResponse, MentalHealthPatternAnalysis
 from app.models.user import User
+from app.models.patient_doctor_connection import PatientDoctorConnection
 from app.dependencies import get_current_user
 from app.services.mental_health_service import MentalHealthService
+from app.services.signal_ingestor_service import SignalIngestorService
+from app.services.crisis_router_service import CrisisRouterService
+from app.services.alert_orchestration_engine import AlertOrchestrationEngine
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +205,11 @@ async def submit_questionnaire(
     - Symptom cluster analysis
     - Non-diagnostic neutral summaries
     - Optional LLM-powered pattern recognition
+    
+    Phase 7 Integration:
+    - Mental health signals wired to Autopilot ML pipeline
+    - Crisis detection triggers automatic escalation to connected doctors
+    - Clinician alerts for mental health deterioration spikes
     """
     patient_id = current_user.id
     logger.info(f"[MH-API] [AUDIT] Patient {patient_id} submitting {data.questionnaire_type}")
@@ -202,20 +217,17 @@ async def submit_questionnaire(
     try:
         service = MentalHealthService(db)
         
-        # Score the questionnaire
         score_result = service.score_questionnaire(
             questionnaire_type=data.questionnaire_type,
             responses=data.responses
         )
         
-        # Detect crisis indicators
         crisis_result = service.detect_crisis(
             questionnaire_type=data.questionnaire_type,
             responses=data.responses,
             total_score=score_result['total_score']
         )
         
-        # Store response in database (if allowed)
         response_record = None
         if data.allow_storage:
             response_record = service.save_questionnaire_response(
@@ -230,7 +242,62 @@ async def submit_questionnaire(
             
             logger.info(f"[MH-API] [AUDIT] Response saved: {response_record.id}")
         
-        # Generate LLM-based pattern analysis
+        try:
+            signal_ingestor = SignalIngestorService(db)
+            signal = signal_ingestor.ingest_mental_health_signal(
+                patient_id=patient_id,
+                questionnaire_type=data.questionnaire_type,
+                total_score=score_result['total_score'],
+                max_score=score_result['max_score'],
+                severity_level=score_result['severity_level'],
+                crisis_detected=crisis_result.get('crisis_detected', False),
+                source="mental_health_questionnaire",
+                metadata={
+                    "response_id": response_record.id if response_record else None,
+                    "cluster_scores": score_result.get('cluster_scores', {}),
+                    "duration_seconds": data.duration_seconds
+                }
+            )
+            logger.info(
+                f"[MH-API] Mental health signal ingested for patient {patient_id}: "
+                f"score={score_result['total_score']}/{score_result['max_score']}, "
+                f"signal_id={signal.id}"
+            )
+        except Exception as e:
+            logger.error(f"[MH-API] Signal ingestion failed: {e}")
+        
+        crisis_routing_result = None
+        if crisis_result.get('crisis_detected', False):
+            try:
+                crisis_router = CrisisRouterService(db)
+                crisis_routing_result = await crisis_router.evaluate_crisis(
+                    patient_id=patient_id,
+                    questionnaire_type=data.questionnaire_type,
+                    responses=[r.model_dump() for r in data.responses],
+                    total_score=score_result['total_score'],
+                    max_score=score_result['max_score'],
+                    crisis_result=crisis_result
+                )
+                
+                if crisis_routing_result.get('escalated'):
+                    logger.warning(
+                        f"[MH-API] Crisis escalated for patient {patient_id}: "
+                        f"doctors_notified={crisis_routing_result.get('doctors_notified', [])}"
+                    )
+            except Exception as e:
+                logger.error(f"[MH-API] Crisis routing failed: {e}")
+        
+        try:
+            await _send_clinician_alerts(
+                db=db,
+                patient_id=patient_id,
+                questionnaire_type=data.questionnaire_type,
+                score_result=score_result,
+                crisis_detected=crisis_result.get('crisis_detected', False)
+            )
+        except Exception as e:
+            logger.error(f"[MH-API] Clinician alert generation failed: {e}")
+        
         analysis_id = None
         if response_record:
             try:
@@ -244,9 +311,7 @@ async def submit_questionnaire(
                 analysis_id = analysis.id if analysis else None
             except Exception as e:
                 logger.error(f"[MH-API] Pattern analysis failed: {str(e)}")
-                # Continue even if analysis fails
         
-        # Prepare crisis intervention if needed
         crisis_intervention = None
         if crisis_result['crisis_detected']:
             crisis_intervention = CrisisInterventionResponse(
@@ -257,7 +322,6 @@ async def submit_questionnaire(
                 next_steps=crisis_result['next_steps']
             )
         
-        # Build response
         return QuestionnaireSubmissionResponse(
             response_id=response_record.id if response_record else "not_stored",
             questionnaire_type=data.questionnaire_type,
@@ -280,6 +344,68 @@ async def submit_questionnaire(
     except Exception as e:
         logger.error(f"[MH-API] Submission error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to process questionnaire")
+
+
+async def _send_clinician_alerts(
+    db: Session,
+    patient_id: str,
+    questionnaire_type: str,
+    score_result: Dict[str, Any],
+    crisis_detected: bool
+) -> List[int]:
+    """
+    Send clinician alerts for mental health deterioration spikes.
+    
+    Alert triggers:
+    - Any crisis detection (immediate high priority)
+    - Severe severity level (high priority)
+    - Moderately severe severity level (medium priority)
+    """
+    alert_ids = []
+    severity_level = score_result.get('severity_level', 'minimal')
+    
+    should_alert = crisis_detected or severity_level in ['severe', 'moderately_severe', 'moderately severe']
+    
+    if not should_alert:
+        return alert_ids
+    
+    alert_severity = "high" if crisis_detected or severity_level == 'severe' else "medium"
+    
+    connections = db.query(PatientDoctorConnection).filter(
+        and_(
+            PatientDoctorConnection.patient_id == patient_id,
+            PatientDoctorConnection.status == "connected"
+        )
+    ).all()
+    
+    if not connections:
+        logger.info(f"[MH-API] No connected doctors for patient {patient_id}, skipping alerts")
+        return alert_ids
+    
+    alert_engine = AlertOrchestrationEngine(db)
+    
+    for connection in connections:
+        try:
+            alert_id = await alert_engine.generate_mental_health_alert(
+                patient_id=patient_id,
+                doctor_id=connection.doctor_id,
+                severity=alert_severity,
+                questionnaire_type=questionnaire_type,
+                total_score=score_result['total_score'],
+                max_score=score_result['max_score'],
+                severity_level=severity_level,
+                crisis_detected=crisis_detected
+            )
+            
+            if alert_id:
+                alert_ids.append(alert_id)
+                logger.info(
+                    f"[MH-API] Clinician alert {alert_id} sent to doctor {connection.doctor_id}"
+                )
+        except Exception as e:
+            logger.error(f"[MH-API] Failed to alert doctor {connection.doctor_id}: {e}")
+    
+    return alert_ids
 
 # ==================== History and Trends ====================
 
