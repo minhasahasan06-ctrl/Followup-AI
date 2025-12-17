@@ -13,7 +13,7 @@ class MLModel(Base):
     """Track ML model versions and metadata"""
     __tablename__ = "ml_models"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False, index=True)  # e.g., "pain_detector", "deterioration_lstm"
     version = Column(String, nullable=False)  # e.g., "1.0.0"
     model_type = Column(String, nullable=False)  # e.g., "pytorch", "onnx", "sklearn"
@@ -49,7 +49,7 @@ class MLPrediction(Base):
     __tablename__ = "ml_predictions"
 
     id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(Integer, ForeignKey("ml_models.id"), nullable=False, index=True)
+    model_id = Column(String, ForeignKey("ml_models.id"), nullable=False, index=True)
     patient_id = Column(String, nullable=False, index=True)  # AWS Cognito user ID
     
     # Prediction data
@@ -81,7 +81,7 @@ class MLPerformanceLog(Base):
     __tablename__ = "ml_performance_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(Integer, ForeignKey("ml_models.id"), nullable=False, index=True)
+    model_id = Column(String, ForeignKey("ml_models.id"), nullable=False, index=True)
     
     # Performance metrics
     metric_name = Column(String, nullable=False)  # e.g., "accuracy", "latency", "throughput"
@@ -114,7 +114,7 @@ class MLBatchJob(Base):
     __tablename__ = "ml_batch_jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(Integer, ForeignKey("ml_models.id"), nullable=False, index=True)
+    model_id = Column(String, ForeignKey("ml_models.id"), nullable=False, index=True)
     
     # Job metadata
     job_name = Column(String, nullable=False)

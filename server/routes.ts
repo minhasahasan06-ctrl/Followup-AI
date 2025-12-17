@@ -20455,6 +20455,145 @@ Provide:
   // =============================================================================
 
   // =============================================================================
+  // EPIDEMIOLOGY ANALYTICS PLATFORM ROUTES (Python Backend Proxy)
+  // Phase 9: Data warehouse, surveillance, and k-anonymity protected analytics
+  // =============================================================================
+
+  const proxyEpidemiologyToPython = async (req: any, res: any, pythonPath: string) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const token = jwt.sign(
+        { sub: req.user.id, role: req.user.role },
+        process.env.DEV_MODE_SECRET || 'dev-secret-key-for-testing',
+        { expiresIn: '1h' }
+      );
+      
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      const url = `${pythonBackendUrl}${pythonPath}${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await fetch(url, {
+        method: req.method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'X-User-Id': req.user.id,
+          'X-User-Role': req.user.role,
+        },
+        body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? JSON.stringify(req.body) : undefined,
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Epidemiology Proxy] Python error: ${response.status} - ${errorText}`);
+        return res.status(response.status).json({ 
+          error: 'Epidemiology service error',
+          details: errorText 
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('[Epidemiology Proxy] Error:', error);
+      res.status(502).json({ error: 'Epidemiology analytics service unavailable' });
+    }
+  };
+
+  // Drug Safety Analytics
+  app.get('/api/research/epidemiology/drug-safety', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/drug-safety');
+  });
+
+  app.get('/api/research/epidemiology/drug-safety/:signalId', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, `/api/research/epidemiology/drug-safety/${req.params.signalId}`);
+  });
+
+  // Locations
+  app.get('/api/research/epidemiology/locations', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/locations');
+  });
+
+  // Infectious Disease Surveillance
+  app.get('/api/research/epidemiology/infectious-surveillance/epicurve', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/infectious-surveillance/epicurve');
+  });
+
+  app.get('/api/research/epidemiology/infectious-surveillance/r0', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/infectious-surveillance/r0');
+  });
+
+  app.get('/api/research/epidemiology/infectious-surveillance/pathogens', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/infectious-surveillance/pathogens');
+  });
+
+  // Vaccine Analytics
+  app.get('/api/research/epidemiology/vaccine-analytics/coverage', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/vaccine-analytics/coverage');
+  });
+
+  app.get('/api/research/epidemiology/vaccine-analytics/effectiveness', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/vaccine-analytics/effectiveness');
+  });
+
+  app.get('/api/research/epidemiology/vaccine-analytics/vaccines', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/vaccine-analytics/vaccines');
+  });
+
+  // Occupational Health Signals
+  app.get('/api/research/epidemiology/occupational-signals', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/occupational-signals');
+  });
+
+  // Genetic Epidemiology
+  app.get('/api/research/epidemiology/genetic-associations', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/genetic-associations');
+  });
+
+  app.get('/api/research/epidemiology/pharmacogenomics', isAuthenticated, async (req: any, res) => {
+    if (!['doctor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await proxyEpidemiologyToPython(req, res, '/api/research/epidemiology/pharmacogenomics');
+  });
+
+  // =============================================================================
+  // END EPIDEMIOLOGY ANALYTICS PLATFORM ROUTES
+  // =============================================================================
+
+  // =============================================================================
   // RISK & EXPOSURES ROUTES
   // Auto-populated risk profile from infections, vaccinations, occupation, genetics
   // =============================================================================

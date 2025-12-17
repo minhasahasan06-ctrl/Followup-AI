@@ -158,11 +158,11 @@ class DeviceSyncWorker:
             result = await db.execute(
                 text("""
                     SELECT 
-                        id, user_id, device_id, vendor_id, status,
-                        created_at, retry_count
+                        id, user_id, device_connection_id, vendor_account_id, status,
+                        created_at, attempts
                     FROM device_sync_jobs
                     WHERE status = 'pending'
-                    AND (retry_count = 0 OR next_retry_at <= NOW())
+                    AND (attempts = 0 OR next_retry_at <= NOW())
                     ORDER BY created_at ASC
                     LIMIT :limit
                 """),
@@ -181,11 +181,11 @@ class DeviceSyncWorker:
                     self._process_sync_job(SyncJob(
                         id=job.id,
                         user_id=job.user_id,
-                        device_id=job.device_id,
-                        vendor_id=job.vendor_id,
+                        device_id=job.device_connection_id,
+                        vendor_id=job.vendor_account_id,
                         status=SyncJobStatus(job.status),
                         created_at=job.created_at,
-                        retry_count=job.retry_count,
+                        retry_count=job.attempts,
                     ))
                 )
                 tasks.append(task)
@@ -561,7 +561,7 @@ async def schedule_device_syncs(db: AsyncSession):
                 )
                 AND NOT EXISTS (
                     SELECT 1 FROM device_sync_jobs
-                    WHERE device_id = device_connections.id
+                    WHERE device_connection_id = device_connections.id
                     AND status IN ('pending', 'running')
                 )
             """)
@@ -573,9 +573,9 @@ async def schedule_device_syncs(db: AsyncSession):
             await db.execute(
                 text("""
                     INSERT INTO device_sync_jobs (
-                        id, user_id, device_id, vendor_id, status, created_at
+                        id, user_id, device_connection_id, vendor_account_id, status, created_at
                     ) VALUES (
-                        gen_random_uuid(), :user_id, :device_id, :vendor_id, 'pending', NOW()
+                        gen_random_uuid()::varchar, :user_id, :device_id, :vendor_id, 'pending', NOW()
                     )
                 """),
                 {

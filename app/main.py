@@ -137,6 +137,13 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import epidemiology: {e}")
 
+# Import epidemiology models explicitly for table creation
+try:
+    from app.models import epidemiology_models
+    logger.info("✅ Epidemiology models imported for table creation")
+except ImportError as e:
+    logger.warning(f"❌ Could not import epidemiology_models: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
