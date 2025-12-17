@@ -467,9 +467,6 @@ class OccupationalCohort(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    __table_args__ = (
-        Index('idx_occ_cohort_industry', 'industry_code'),
-    )
 
 
 class SurveillanceLocation(Base):
