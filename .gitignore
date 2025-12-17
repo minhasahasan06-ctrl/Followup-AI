@@ -6,3 +6,6 @@ vite.config.ts.*
 *.tar.gz
 # secrets
 attached_assets/followupai-medlm-prod-*.json
+attached_assets/*.png
+attached_assets/*.jpg
+attached_assets/*.heic
