@@ -131,6 +131,12 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import hitl_approvals: {e}")
 
+try:
+    from app.routers import epidemiology
+    _optional_routers.append(('epidemiology', epidemiology))
+except ImportError as e:
+    logger.warning(f"❌ Could not import epidemiology: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -374,6 +380,9 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'hitl_approvals':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Human-in-the-Loop Approvals API)")
+        elif router_name == 'epidemiology':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Epidemiology Analytics Platform)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

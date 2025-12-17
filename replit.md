@@ -34,7 +34,14 @@ The backend consists of two main components:
 - **Unified Medication System**: Production-grade medication management with AI assistance and conflict detection, supporting doctor-only prescription authoring and role-based routing.
 - **Multi-Agent Communication System**: Facilitates communication between AI agents, users, and providers via a Message Router, dual-layer Memory Service, and a `MessageEnvelope` protocol. The Agent Hub UI offers a unified conversation interface with WebSockets, tool calls, and human-in-the-loop approvals.
 - **ML Training Infrastructure**: Production-grade system with comprehensive patient consent controls across 22+ granular data types, including a patient-facing Consent UI, Data Extraction Pipeline, and full HIPAA compliance.
-- **Background Scheduler**: APScheduler-based jobs on the Python FastAPI backend for tasks like risk scoring, data quality checks, ETL processes, and ML inference sweeps.
+- **Background Scheduler**: APScheduler-based jobs on the Python FastAPI backend for tasks like risk scoring, data quality checks, ETL processes, ML inference sweeps, and nightly data warehouse aggregation.
+- **Epidemiology Analytics Platform (Phase 9)**: Comprehensive data warehouse and surveillance analytics with:
+  - SQLAlchemy models for epidemiology cases, infectious events, occupational incidents, genetic markers, drug safety signals, and vaccine coverage
+  - Data warehouse fact tables (DailySurveillanceAggregate, WeeklyIncidenceSummary, OccupationalCohort) for pre-aggregated analytics
+  - EpidemiologyService with k-anonymity privacy protection (threshold=5) to suppress low-count records
+  - Nightly ETL warehouse aggregation jobs (daily surveillance, weekly incidence, R-value calculation, cohort updates)
+  - Frontend EpidemiologyTab with drilldowns for drug safety, infectious disease, vaccine analytics, occupational health, and genetic epidemiology
+  - All research data access logged via HIPAAAuditLogger for HIPAA compliance
 - **HIPAA Compliance & Access Control**: Features a Unified Access Control Service (`AccessControlService`), `HIPAAAuditLogger`, `AccessScope` and `PHICategory` enums, and `RequirePatientAccess` FastAPI dependency for robust, route-level access control and audit logging.
 - **Authentication Flow**: Auth0 for frontend, session-based for Express, JWT (DEV_MODE_SECRET) for Express-to-Python, and internal JWT verification in Python. Role-based routing ensures appropriate access for Admin, Doctor, and Patient users.
 

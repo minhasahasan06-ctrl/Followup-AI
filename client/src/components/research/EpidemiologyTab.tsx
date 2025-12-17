@@ -189,29 +189,28 @@ function DrugSafetyPanel() {
   const [scope, setScope] = useState<string>("all");
 
   const { data: signalData, isLoading: loadingSignals, refetch } = useQuery<SignalResponse>({
-    queryKey: ['/api/v1/pharmaco/signals', {
+    queryKey: ['/api/research/epidemiology/drug-safety', {
       drug_query: drugQuery || undefined,
       outcome_query: outcomeQuery || undefined,
-      patient_location_id: selectedLocation !== "all" ? selectedLocation : undefined,
-      scope: scope,
-      limit: '50'
+      location_id: selectedLocation !== "all" ? selectedLocation : undefined,
+      limit: 50
     }],
     staleTime: 30000,
   });
 
   const { data: locations } = useQuery<{ locations: Location[] }>({
-    queryKey: ['/api/v1/pharmaco/locations'],
+    queryKey: ['/api/research/epidemiology/locations'],
     staleTime: 60000,
   });
 
   const triggerScanMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('/api/v1/pharmaco/run-scan', { method: 'POST' });
+      const response = await apiRequest('/api/research/epidemiology/drug-safety/scan', { method: 'POST' });
       return response.json();
     },
     onSuccess: () => {
       toast({ title: "Scan Started", description: "Drug safety scan has been triggered" });
-      queryClient.invalidateQueries({ queryKey: ['/api/v1/pharmaco/signals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/research/epidemiology/drug-safety'] });
     }
   });
 
@@ -437,7 +436,7 @@ function InfectiousDiseasePanel() {
   const [selectedLocation, setSelectedLocation] = useState("all");
 
   const { data: epicurveData, isLoading: loadingEpicurve } = useQuery<EpicurveResponse>({
-    queryKey: ['/api/v1/infectious/epicurve', {
+    queryKey: ['/api/research/epidemiology/infectious-surveillance/epicurve', {
       pathogen_code: pathogenCode,
       location_id: selectedLocation !== "all" ? selectedLocation : undefined
     }],
@@ -446,7 +445,7 @@ function InfectiousDiseasePanel() {
   });
 
   const { data: r0Data, isLoading: loadingR0 } = useQuery<R0Response>({
-    queryKey: ['/api/v1/infectious/r0', {
+    queryKey: ['/api/research/epidemiology/infectious-surveillance/r0', {
       pathogen_code: pathogenCode,
       location_id: selectedLocation !== "all" ? selectedLocation : undefined
     }],
@@ -455,7 +454,7 @@ function InfectiousDiseasePanel() {
   });
 
   const { data: pathogens } = useQuery<{ pathogens: Array<{ pathogen_code: string; pathogen_name: string; case_count: number }> }>({
-    queryKey: ['/api/v1/infectious/pathogens'],
+    queryKey: ['/api/research/epidemiology/infectious-surveillance/pathogens'],
     staleTime: 60000,
   });
 
@@ -605,7 +604,7 @@ function VaccineAnalyticsPanel() {
   const [outcomeCode, setOutcomeCode] = useState("COVID-19");
 
   const { data: coverageData, isLoading: loadingCoverage } = useQuery<VaccineCoverage>({
-    queryKey: ['/api/v1/vaccine/coverage', {
+    queryKey: ['/api/research/epidemiology/vaccine-analytics/coverage', {
       vaccine_code: vaccineCode,
       location_id: selectedLocation !== "all" ? selectedLocation : undefined
     }],
@@ -614,7 +613,7 @@ function VaccineAnalyticsPanel() {
   });
 
   const { data: effectivenessData, isLoading: loadingEffectiveness } = useQuery<VaccineEffectiveness>({
-    queryKey: ['/api/v1/vaccine/effectiveness', {
+    queryKey: ['/api/research/epidemiology/vaccine-analytics/effectiveness', {
       vaccine_code: vaccineCode,
       outcome_code: outcomeCode,
       location_id: selectedLocation !== "all" ? selectedLocation : undefined
@@ -624,7 +623,7 @@ function VaccineAnalyticsPanel() {
   });
 
   const { data: vaccines } = useQuery<Array<{ vaccine_code: string; vaccine_name: string; total_doses: number }>>({
-    queryKey: ['/api/v1/vaccine/vaccines'],
+    queryKey: ['/api/research/epidemiology/vaccine-analytics/vaccines'],
     staleTime: 60000,
   });
 
@@ -787,11 +786,11 @@ function OccupationalEpidemiologyPanel() {
   const [flaggedOnly, setFlaggedOnly] = useState(false);
 
   const { data: signalData, isLoading, refetch } = useQuery<OccupationalResponse>({
-    queryKey: ['/api/v1/occupational/signals', { 
+    queryKey: ['/api/research/epidemiology/occupational-signals', { 
       industry_query: industryQuery || undefined, 
       hazard_query: hazardQuery || undefined, 
       flagged_only: flaggedOnly ? 'true' : undefined,
-      limit: '50' 
+      limit: 50 
     }],
     staleTime: 30000,
   });
@@ -940,19 +939,19 @@ function GeneticEpidemiologyPanel() {
   const [activeSubTab, setActiveSubTab] = useState("associations");
 
   const { data: associationData, isLoading: loadingAssoc, refetch: refetchAssoc } = useQuery<GeneticResponse>({
-    queryKey: ['/api/v1/genetic/variant-associations', {
+    queryKey: ['/api/research/epidemiology/genetic-associations', {
       gene_query: geneQuery || undefined,
       rsid_query: variantQuery || undefined,
       flagged_only: flaggedOnly ? 'true' : undefined,
-      limit: '50'
+      limit: 50
     }],
     staleTime: 30000,
   });
 
   const { data: pgxData, isLoading: loadingPgx } = useQuery<{ interactions: PharmacogenomicInteraction[]; total_count: number }>({
-    queryKey: ['/api/v1/genetic/pharmacogenomics', {
+    queryKey: ['/api/research/epidemiology/pharmacogenomics', {
       gene_query: geneQuery || undefined,
-      limit: '50'
+      limit: 50
     }],
     staleTime: 30000,
     enabled: activeSubTab === "pharmacogenomics",

@@ -153,6 +153,15 @@ class JobScheduler:
                 "run_at_minute": 30,
                 "enabled": True,
                 "description": "Clean up old logs and temporary data"
+            },
+            
+            # === DATA WAREHOUSE AGGREGATION (2 AM) ===
+            "warehouse_aggregation": {
+                "job_type": "warehouse_aggregation",
+                "run_at_hour": 2,
+                "run_at_minute": 0,
+                "enabled": True,
+                "description": "Run nightly data warehouse aggregation (epidemiology, surveillance)"
             }
         }
         
@@ -229,6 +238,19 @@ class JobScheduler:
             
             job_type = schedule["job_type"]
             input_data = schedule.get("input_data", {})
+            
+            # Handle warehouse aggregation separately (no doctor-specific jobs)
+            if job_type == "warehouse_aggregation":
+                try:
+                    from app.services.warehouse_aggregation_jobs import run_nightly_warehouse_aggregation
+                    result = await run_nightly_warehouse_aggregation()
+                    logger.info(f"✅ Warehouse aggregation completed: {result.get('job', 'unknown')}")
+                    db.close()
+                    return
+                except Exception as e:
+                    logger.error(f"❌ Warehouse aggregation failed: {e}")
+                    db.close()
+                    return
             
             if job_type.startswith("email"):
                 configs = db.query(EmailAutomationConfig).filter(
