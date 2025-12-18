@@ -137,12 +137,25 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import epidemiology: {e}")
 
+try:
+    from app.routers import research_center
+    _optional_routers.append(('research_center', research_center))
+except ImportError as e:
+    logger.warning(f"❌ Could not import research_center: {e}")
+
 # Import epidemiology models explicitly for table creation
 try:
     from app.models import epidemiology_models
     logger.info("✅ Epidemiology models imported for table creation")
 except ImportError as e:
     logger.warning(f"❌ Could not import epidemiology_models: {e}")
+
+# Import research models for Phase 10 table creation
+try:
+    from app.models import research_models
+    logger.info("✅ Research models imported for table creation")
+except ImportError as e:
+    logger.warning(f"❌ Could not import research_models: {e}")
 
 
 @asynccontextmanager
@@ -220,6 +233,17 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"⚠️  Device Sync Worker startup failed: {e}")
     
+    # Step 7: Start Study Job Worker (Phase 10 - Research Center)
+    study_jobs_enabled = os.getenv("STUDY_JOBS_ENABLED", "true").lower() == "true"
+    if study_jobs_enabled:
+        logger.info("🔬 Starting Study Job Worker...")
+        try:
+            from app.services.study_job_worker import start_study_job_worker
+            await start_study_job_worker()
+            logger.info("✅ Study Job Worker started")
+        except Exception as e:
+            logger.warning(f"⚠️  Study Job Worker startup failed: {e}")
+    
     logger.info("🎉 Followup AI Backend startup complete!")
     
     yield
@@ -234,6 +258,15 @@ async def lifespan(app: FastAPI):
             await stop_sync_worker()
         except Exception as e:
             logger.warning(f"⚠️  Device Sync Worker shutdown error: {e}")
+    
+    # Stop Study Job Worker
+    if study_jobs_enabled:
+        try:
+            from app.services.study_job_worker import stop_study_job_worker
+            await stop_study_job_worker()
+            logger.info("✅ Study Job Worker stopped")
+        except Exception as e:
+            logger.warning(f"⚠️  Study Job Worker shutdown error: {e}")
     
     # Stop Lysa Automation Engine
     if automation_enabled:

@@ -42,6 +42,14 @@ The backend consists of two main components:
   - Nightly ETL warehouse aggregation jobs (daily surveillance, weekly incidence, R-value calculation, cohort updates)
   - Frontend EpidemiologyTab with drilldowns for drug safety, infectious disease, vaccine analytics, occupational health, and genetic epidemiology
   - All research data access logged via HIPAAAuditLogger for HIPAA compliance
+- **Research Center + Medical NLP (Phase 10)**: Production-grade research data platform with:
+  - SQLAlchemy models: AnalysisArtifact, ResearchDataset, DatasetLineage, StudyJob, StudyJobEvent, ResearchCohortSnapshot, ResearchExport, NLPDocument, NLPRedactionRun, ResearchQASession, ResearchQAMessage, ResearchCohort, ResearchStudy
+  - ResearchStorageService: Artifact and dataset storage with S3/local support, checksums, signed URLs, retention policies, and HIPAA audit logging
+  - PHIRedactionService: OpenAI GPT-4o-based PHI detection with regex pre-detection, 18 PHI entity types, configurable confidence thresholds, and audit trails
+  - ResearchQAService: AI-powered Q&A for research data analysis using OpenAI with research-specific prompting and de-identified data constraints
+  - Comprehensive REST API (`/api/v1/research-center/`): Cohorts, studies, jobs, artifacts, datasets, exports, NLP documents, and Q&A sessions
+  - k-anonymity protection (threshold=5) for all cohort previews
+  - Doctor-only access with full HIPAA audit logging for all operations
 - **HIPAA Compliance & Access Control**: Features a Unified Access Control Service (`AccessControlService`), `HIPAAAuditLogger`, `AccessScope` and `PHICategory` enums, and `RequirePatientAccess` FastAPI dependency for robust, route-level access control and audit logging.
 - **Authentication Flow**: Auth0 for frontend, session-based for Express, JWT (DEV_MODE_SECRET) for Express-to-Python, and internal JWT verification in Python. Role-based routing ensures appropriate access for Admin, Doctor, and Patient users.
 

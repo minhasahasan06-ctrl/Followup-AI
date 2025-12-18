@@ -82,6 +82,24 @@ from app.models.automation_models import (
     ClinicalAutomationConfig,
     RxTemplate
 )
+from app.models.research_models import (
+    AnalysisArtifact,
+    ResearchDataset,
+    DatasetLineage,
+    StudyJob,
+    StudyJobEvent,
+    ResearchCohortSnapshot,
+    ResearchExport,
+    NLPDocument,
+    NLPRedactionRun,
+    ResearchQASession,
+    ResearchQAMessage,
+    ResearchCohort,
+    ResearchStudy,
+    JobStatus,
+    PHILevel,
+    VisibilityScope,
+)
 
 __all__ = [
     "User",
@@ -154,4 +172,20 @@ __all__ = [
     "ReminderAutomationConfig",
     "ClinicalAutomationConfig",
     "RxTemplate",
+    "AnalysisArtifact",
+    "ResearchDataset",
+    "DatasetLineage",
+    "StudyJob",
+    "StudyJobEvent",
+    "ResearchCohortSnapshot",
+    "ResearchExport",
+    "NLPDocument",
+    "NLPRedactionRun",
+    "ResearchQASession",
+    "ResearchQAMessage",
+    "ResearchCohort",
+    "ResearchStudy",
+    "JobStatus",
+    "PHILevel",
+    "VisibilityScope",
 ]
