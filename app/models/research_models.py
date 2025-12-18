@@ -252,6 +252,7 @@ class ResearchExport(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime)
     created_by = Column(String, nullable=False)
+    created_by_role = Column(String, default="doctor")
     
     __table_args__ = (
         Index('idx_export_dataset', 'dataset_id'),

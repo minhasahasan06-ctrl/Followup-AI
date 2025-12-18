@@ -296,22 +296,128 @@ class StudyJobWorker:
         }
     
     async def _handle_data_export(self, db: Session, job: StudyJob) -> Dict[str, Any]:
-        """Handle data export job"""
-        await self._update_progress(db, job, 25, "Preparing data...")
-        await asyncio.sleep(1)
+        """
+        Handle data export job with security re-validation.
         
-        await self._update_progress(db, job, 50, "Formatting output...")
-        await asyncio.sleep(1)
+        Re-validates PHI authorization and k-anonymity before processing
+        to prevent stale jobs from bypassing security controls.
+        """
+        from app.models.research_models import ResearchExport, ResearchDataset
+        from app.models.user import User
         
-        await self._update_progress(db, job, 75, "Writing file...")
-        await asyncio.sleep(1)
+        K_ANONYMITY_THRESHOLD = 5
+        PHI_AUTHORIZED_ROLES = ["admin"]
         
-        return {
-            "analysis_type": "data_export",
-            "format": job.payload_json.get("format", "csv") if job.payload_json else "csv",
-            "rows_exported": 0,
-            "completed_at": datetime.utcnow().isoformat(),
-        }
+        await self._update_progress(db, job, 10, "Validating export permissions...")
+        
+        export_id = job.payload_json.get("export_id") if job.payload_json else None
+        
+        if not export_id:
+            raise ValueError("Export job requires export_id in payload")
+        
+        export_record = db.query(ResearchExport).filter(
+            ResearchExport.id == export_id
+        ).first()
+        
+        if not export_record:
+            raise ValueError(f"Export record {export_id} not found")
+        
+        dataset = db.query(ResearchDataset).filter(
+            ResearchDataset.id == export_record.dataset_id
+        ).first()
+        
+        if not dataset:
+            raise ValueError(f"Dataset {export_record.dataset_id} not found")
+        
+        stored_role = getattr(export_record, 'created_by_role', None) or "doctor"
+        
+        if (dataset.row_count or 0) < K_ANONYMITY_THRESHOLD:
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=str(export_record.created_by),
+                actor_role=stored_role,
+                patient_id="aggregate",
+                action="k_anonymity_blocked",
+                phi_categories=["research_data"],
+                resource_type="research_export",
+                resource_id=str(export_id),
+                access_scope="research",
+                access_reason="k_anonymity_violation_at_execution",
+                consent_verified=False,
+                additional_context={"row_count": dataset.row_count, "threshold": K_ANONYMITY_THRESHOLD}
+            )
+            raise ValueError(f"Export blocked: k-anonymity threshold not met (min {K_ANONYMITY_THRESHOLD} records required)")
+        
+        if export_record.include_phi:
+            user_role = stored_role
+            
+            if user_role not in PHI_AUTHORIZED_ROLES:
+                HIPAAAuditLogger.log_phi_access(
+                    actor_id=str(export_record.created_by),
+                    actor_role=user_role,
+                    patient_id="aggregate",
+                    action="phi_export_blocked",
+                    phi_categories=["research_data"],
+                    resource_type="research_export",
+                    resource_id=str(export_id),
+                    access_scope="research",
+                    access_reason="unauthorized_phi_at_execution",
+                    consent_verified=False,
+                    additional_context={"required_role": "admin", "actual_role": user_role}
+                )
+                raise PermissionError(f"PHI export blocked: requester role '{user_role}' not authorized (admin required)")
+            
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=str(export_record.created_by),
+                actor_role=user_role,
+                patient_id="aggregate",
+                action="phi_export_executed",
+                phi_categories=["research_data"],
+                resource_type="research_export",
+                resource_id=str(export_id),
+                access_scope="research",
+                access_reason="authorized_phi_export",
+                consent_verified=True,
+                additional_context={"include_phi": True, "authorized_role": user_role}
+            )
+        
+        await self._update_progress(db, job, 25, "Processing export via export service...")
+        
+        from app.services.research_export_service import ResearchExportService
+        from app.database import SessionLocal
+        
+        try:
+            export_db = SessionLocal()
+            try:
+                export_service = ResearchExportService(export_db)
+                result = await export_service.process_export(export_id)
+            finally:
+                export_db.close()
+            
+            await self._update_progress(db, job, 95, "Export complete")
+            
+            return {
+                "analysis_type": "data_export",
+                "format": job.payload_json.get("format", "csv") if job.payload_json else "csv",
+                "rows_exported": result.get("row_count", 0),
+                "file_size_bytes": result.get("file_size_bytes", 0),
+                "download_url": result.get("download_url"),
+                "completed_at": datetime.utcnow().isoformat(),
+            }
+        except Exception as e:
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=str(export_record.created_by),
+                actor_role=stored_role,
+                patient_id="aggregate",
+                action="export_failed",
+                phi_categories=["research_data"],
+                resource_type="research_export",
+                resource_id=str(export_id),
+                access_scope="research",
+                access_reason="export_execution_error",
+                consent_verified=False,
+                additional_context={"error": str(e)[:500]}
+            )
+            raise
     
     async def _handle_data_validation(self, db: Session, job: StudyJob) -> Dict[str, Any]:
         """Handle data validation job"""

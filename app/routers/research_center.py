@@ -865,46 +865,51 @@ async def export_dataset(
     user: User = Depends(require_doctor),
     db: Session = Depends(get_db),
 ):
-    """Request dataset export in specified format"""
-    dataset = db.query(ResearchDataset).filter(ResearchDataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+    """
+    Request dataset export in specified format.
     
-    export_id = str(uuid4())
+    PHI Access Controls:
+    - include_phi=True requires admin role
+    - Exports are blocked if dataset size < k-anonymity threshold (5)
     
-    export_record = ResearchExport(
-        id=export_id,
-        dataset_id=dataset_id,
-        study_id=dataset.study_id,
-        format=request.format,
-        status=JobStatus.PENDING.value,
-        include_phi=request.include_phi,
-        columns_included=request.columns,
-        created_by=str(user.id),
-    )
+    All validation is performed by ResearchExportService to ensure
+    consistent enforcement across API and worker paths.
+    """
+    from app.services.research_export_service import ResearchExportService
     
-    db.add(export_record)
-    db.commit()
+    export_service = ResearchExportService(db)
     
-    HIPAAAuditLogger.log_phi_access(
-        actor_id=str(user.id),
-        actor_role=user.role,
-        patient_id="aggregate",
-        action="request_export",
-        phi_categories=["research_data"],
-        resource_type="research_export",
-        resource_id=export_id,
-        access_scope="research",
-        access_reason="data_export",
-        consent_verified=True,
-        additional_context={"format": request.format, "include_phi": request.include_phi}
-    )
-    
-    return {
-        "exportId": export_id,
-        "status": JobStatus.PENDING.value,
-        "message": "Export queued successfully"
-    }
+    try:
+        export_record = await export_service.create_export(
+            dataset_id=dataset_id,
+            format=request.format,
+            user_id=str(user.id),
+            user_role=user.role,
+            include_phi=request.include_phi,
+            columns=request.columns,
+        )
+        
+        return {
+            "exportId": str(export_record.id),
+            "status": export_record.status,
+            "message": "Export queued successfully"
+        }
+        
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except ValueError as e:
+        if "k-anonymity" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
 
 
 @router.get("/exports/{export_id}")

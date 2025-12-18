@@ -2,6 +2,7 @@
 Research Export Service
 Production-grade export pipeline for research datasets.
 Supports CSV, JSON, and Parquet formats with signed URL delivery.
+Includes PHI access controls and k-anonymity enforcement.
 """
 
 import logging
@@ -26,6 +27,8 @@ from app.services.access_control import HIPAAAuditLogger
 logger = logging.getLogger(__name__)
 
 SIGNED_URL_EXPIRY = 900
+K_ANONYMITY_THRESHOLD = 5
+PHI_AUTHORIZED_ROLES = ["admin"]
 
 
 class ResearchExportService:
@@ -43,30 +46,69 @@ class ResearchExportService:
         dataset_id: str,
         format: str,
         user_id: str,
+        user_role: str = "doctor",
         include_phi: bool = False,
         columns: Optional[List[str]] = None,
         filters: Optional[Dict] = None,
     ) -> ResearchExport:
         """
-        Create a new export job.
+        Create a new export job with PHI access control and k-anonymity validation.
         
         Args:
             dataset_id: Dataset to export
             format: Output format (csv, json, parquet)
             user_id: User requesting export
-            include_phi: Whether to include PHI (requires authorization)
+            user_role: Role of requesting user for PHI authorization
+            include_phi: Whether to include PHI (requires admin role)
             columns: Specific columns to include
             filters: Data filters to apply
         
         Returns:
             Created ResearchExport record
+        
+        Raises:
+            ValueError: If dataset not found
+            PermissionError: If PHI requested without authorization
+            ValueError: If k-anonymity threshold not met
         """
+        if include_phi and user_role not in PHI_AUTHORIZED_ROLES:
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=user_id,
+                actor_role=user_role,
+                patient_id="aggregate",
+                action="phi_access_denied",
+                phi_categories=["research_data"],
+                resource_type="research_export",
+                resource_id=dataset_id,
+                access_scope="research",
+                access_reason="unauthorized_phi_request",
+                consent_verified=False,
+                additional_context={"reason": "PHI access requires admin role"}
+            )
+            raise PermissionError("PHI access requires admin authorization")
+        
         dataset = self.db.query(ResearchDataset).filter(
             ResearchDataset.id == dataset_id
         ).first()
         
         if not dataset:
             raise ValueError(f"Dataset {dataset_id} not found")
+        
+        if (dataset.row_count or 0) < K_ANONYMITY_THRESHOLD:
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=user_id,
+                actor_role=user_role,
+                patient_id="aggregate",
+                action="k_anonymity_suppressed",
+                phi_categories=["research_data"],
+                resource_type="research_export",
+                resource_id=str(dataset.id),
+                access_scope="research",
+                access_reason="k_anonymity_violation",
+                consent_verified=False,
+                additional_context={"row_count": dataset.row_count, "threshold": K_ANONYMITY_THRESHOLD}
+            )
+            raise ValueError(f"Dataset does not meet k-anonymity threshold (min {K_ANONYMITY_THRESHOLD} records required)")
         
         export_id = str(uuid4())
         
@@ -80,6 +122,7 @@ class ResearchExportService:
             columns_included=columns,
             filters_applied=filters,
             created_by=user_id,
+            created_by_role=user_role,
         )
         
         self.db.add(export_record)
@@ -88,7 +131,7 @@ class ResearchExportService:
         
         HIPAAAuditLogger.log_phi_access(
             actor_id=user_id,
-            actor_role="researcher",
+            actor_role=user_role,
             patient_id="aggregate",
             action="create_export",
             phi_categories=["research_data"],
@@ -165,9 +208,11 @@ class ResearchExportService:
             
             self.db.commit()
             
+            stored_role = getattr(export_record, 'created_by_role', None) or "doctor"
+            
             HIPAAAuditLogger.log_phi_access(
                 actor_id=str(export_record.created_by),
-                actor_role="researcher",
+                actor_role=stored_role,
                 patient_id="aggregate",
                 action="complete_export",
                 phi_categories=["research_data"],
@@ -179,6 +224,7 @@ class ResearchExportService:
                 additional_context={
                     "rows_exported": len(data),
                     "file_size_bytes": file_size,
+                    "include_phi": export_record.include_phi,
                 }
             )
             
