@@ -334,14 +334,15 @@ provide crisis resources (988 Suicide & Crisis Lifeline) and strongly encourage 
             
             self.db.commit()
             
-            HIPAAAuditLogger.log_access(
-                user_id=user_id,
-                user_role="patient",
-                action="habit_coach_chat",
-                resource_type="HabitCoachChat",
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=user_id,
+                actor_role="patient",
+                patient_id=user_id,
+                action="create",
+                phi_categories=["behavioral_health", "mental_health"],
+                resource_type="habit_coaching_response",
                 resource_id=session_id,
-                access_reason="ai_coaching_session",
-                was_successful=True
+                access_reason="AI coaching session completed"
             )
             
             return {

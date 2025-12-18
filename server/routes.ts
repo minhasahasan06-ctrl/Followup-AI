@@ -16905,7 +16905,12 @@ Provide:
   const habitTrackerProxy = async (req: any, res: any, path: string, method: string = 'GET') => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-      const userId = req.user?.id || req.query.user_id || 'current';
+      // Use authenticated user ID, or query param, or fallback to dev patient ID in development
+      const devPatientId = 'dev-patient-00000000-0000-0000-0000-000000000001';
+      let userId = req.user?.id || req.query.user_id;
+      if (!userId || userId === 'current') {
+        userId = devPatientId;
+      }
       
       // Build query string
       const queryParams = new URLSearchParams(req.query as Record<string, string>);

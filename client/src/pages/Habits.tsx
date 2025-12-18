@@ -4,6 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { HabitGamificationPanel } from "@/components/habits/HabitGamificationPanel";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -229,6 +230,8 @@ export default function Habits() {
   const [isMoodDialogOpen, setIsMoodDialogOpen] = useState(false);
   const [coachMessage, setCoachMessage] = useState("");
   const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([]);
+  const [coachPersonality, setCoachPersonality] = useState<"supportive" | "motivational" | "analytical" | "tough_love" | "mindful">("supportive");
+  const [coachSessionId, setCoachSessionId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [activeCbtSession, setActiveCbtSession] = useState<any>(null);
   const [cbtResponse, setCbtResponse] = useState("");
@@ -532,18 +535,25 @@ export default function Habits() {
     },
   });
 
-  // Coach chat mutation
+  // Coach chat mutation - using enhanced endpoint with personality and session memory
   const coachChatMutation = useMutation({
     mutationFn: async (message: string) => {
-      const res = await fetch('/api/habits/coach/chat?user_id=current', {
+      const res = await fetch('/api/habits/coach/enhanced-chat?user_id=current', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ 
+          message, 
+          personality: coachPersonality,
+          session_id: coachSessionId 
+        }),
       });
       if (!res.ok) throw new Error('Failed to send message');
       return res.json();
     },
     onSuccess: (data) => {
+      if (data.session_id && !coachSessionId) {
+        setCoachSessionId(data.session_id);
+      }
       setCoachMessages(prev => [
         ...prev,
         { id: Date.now().toString(), role: 'user', content: coachMessage, createdAt: new Date().toISOString() },
@@ -1082,9 +1092,23 @@ export default function Habits() {
         <TabsContent value="coach" className="space-y-4">
           <Card className="h-[600px] flex flex-col">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Brain className="h-5 w-5 text-primary" />
-                AI Habit Coach
+              <CardTitle className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-primary" />
+                  AI Habit Coach
+                </div>
+                <Select value={coachPersonality} onValueChange={(v: any) => setCoachPersonality(v)}>
+                  <SelectTrigger className="w-[140px]" data-testid="select-coach-personality">
+                    <SelectValue placeholder="Personality" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="supportive">Supportive</SelectItem>
+                    <SelectItem value="motivational">Motivational</SelectItem>
+                    <SelectItem value="analytical">Analytical</SelectItem>
+                    <SelectItem value="tough_love">Tough Love</SelectItem>
+                    <SelectItem value="mindful">Mindful</SelectItem>
+                  </SelectContent>
+                </Select>
               </CardTitle>
               <CardDescription>
                 Get personalized advice, motivation, and CBT techniques
@@ -1489,7 +1513,10 @@ export default function Habits() {
 
         {/* Rewards Tab */}
         <TabsContent value="rewards" className="space-y-4">
-          {renderRewardsVisualization()}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <HabitGamificationPanel />
+            {renderRewardsVisualization()}
+          </div>
         </TabsContent>
       </Tabs>
 
