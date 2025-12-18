@@ -32,7 +32,8 @@ import random
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request, Header
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -52,17 +53,44 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/habits", tags=["habits"])
 
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
+
+
+async def get_optional_user(
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Get the current user if authenticated, or None if not."""
+    if not token:
+        return None
+    try:
+        from app.utils.security import verify_token
+        payload = verify_token(token)
+        if not payload:
+            return None
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        user = db.query(User).filter(User.id == user_id).first()
+        return user
+    except Exception:
+        return None
+
 
 def get_user_id_from_auth_or_query(
     user_id: Optional[str] = Query(None, description="User ID (dev mode only)"),
-    current_user: Optional[User] = Depends(get_current_user)
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    current_user: Optional[User] = Depends(get_optional_user)
 ) -> str:
     """
-    Get user ID from authenticated user or fallback to query param in dev mode.
+    Get user ID from authenticated user or fallback to query param/header in dev mode.
     In production, only authenticated user ID is used.
+    Priority: 1. Authenticated user, 2. X-User-Id header, 3. user_id query param
     """
     if current_user:
         return current_user.id
+    if x_user_id:
+        return x_user_id
     if user_id:
         return user_id
     raise HTTPException(status_code=401, detail="Authentication required")
@@ -2452,4 +2480,347 @@ async def acknowledge_alert(
     except Exception as e:
         db.rollback()
         logger.error(f"Error acknowledging alert: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# PHASE 11: Enhanced Gamification & AI Services
+# ============================================
+
+class EnhancedCoachMessage(BaseModel):
+    message: str
+    personality: Optional[str] = "supportive"
+    session_id: Optional[str] = None
+    related_habit_id: Optional[str] = None
+    related_quit_plan_id: Optional[str] = None
+
+
+@router.get("/gamification/state")
+async def get_gamification_state(
+    request: Request,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Get comprehensive gamification state with badges, XP, and level info"""
+    try:
+        from app.services.gamification_service import GamificationService
+        from app.services.access_control import HIPAAAuditLogger, AccessScope, PHICategory
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=user_id,
+            actor_role="patient",
+            patient_id=user_id,
+            action="read",
+            phi_categories=["behavioral_health"],
+            resource_type="gamification_state",
+            access_reason="View gamification progress",
+            ip_address=str(request.client.host) if request.client else None
+        )
+        
+        service = GamificationService(db)
+        state = service.get_user_gamification_state(user_id)
+        
+        return state
+    except Exception as e:
+        logger.error(f"Error getting gamification state: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BadgeCheckRequest(BaseModel):
+    event_type: str
+    habit_id: Optional[str] = None
+    streak_days: Optional[int] = None
+    completion_time: Optional[str] = None
+    mood: Optional[str] = None
+    additional_context: Optional[Dict[str, Any]] = None
+
+
+@router.post("/gamification/check-badges")
+async def check_and_award_badges(
+    request: Request,
+    body: BadgeCheckRequest,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Check and award any earned badges for an event"""
+    try:
+        from app.services.gamification_service import GamificationService
+        from app.services.access_control import HIPAAAuditLogger, AccessScope, PHICategory
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=user_id,
+            actor_role="patient",
+            patient_id=user_id,
+            action="evaluate",
+            phi_categories=["behavioral_health"],
+            resource_type="gamification_badges",
+            access_reason=f"Check badge eligibility: {body.event_type}",
+            ip_address=str(request.client.host) if request.client else None
+        )
+        
+        context = {
+            "habit_id": body.habit_id,
+            "streak_days": body.streak_days,
+            "completion_time": body.completion_time,
+            "mood": body.mood,
+            **(body.additional_context or {})
+        }
+        context = {k: v for k, v in context.items() if v is not None}
+        
+        service = GamificationService(db)
+        awarded = service.check_and_award_badges(user_id, body.event_type, context)
+        
+        return {
+            "badgesAwarded": awarded,
+            "count": len(awarded)
+        }
+    except Exception as e:
+        logger.error(f"Error checking badges: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/coach/enhanced-chat")
+async def enhanced_coach_chat(
+    request: Request,
+    message: EnhancedCoachMessage,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Enhanced AI coach chat with personality, context, and session memory"""
+    try:
+        from app.services.habit_coaching_service import HabitCoachingService, CoachingPersonality
+        from app.services.access_control import HIPAAAuditLogger, AccessScope, PHICategory
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=user_id,
+            actor_role="patient",
+            patient_id=user_id,
+            action="create",
+            phi_categories=["behavioral_health", "mental_health"],
+            resource_type="ai_coaching_session",
+            access_reason="AI coaching chat interaction",
+            ip_address=str(request.client.host) if request.client else None
+        )
+        
+        service = HabitCoachingService(db)
+        
+        personality = CoachingPersonality.SUPPORTIVE
+        if message.personality:
+            try:
+                personality = CoachingPersonality(message.personality.lower())
+            except ValueError:
+                pass
+        
+        result = service.chat(
+            user_id=user_id,
+            message=message.message,
+            personality=personality,
+            session_id=message.session_id,
+            related_habit_id=message.related_habit_id,
+            related_quit_plan_id=message.related_quit_plan_id
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error in enhanced coach chat: {e}")
+        return {
+            "response": "I'm here to support you! What specific challenge can I help with today?",
+            "session_id": "fallback",
+            "response_type": "fallback",
+            "error": True
+        }
+
+
+@router.get("/coach/proactive")
+async def get_proactive_coaching(
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Get proactive coaching intervention if patterns warrant it"""
+    try:
+        from app.services.habit_coaching_service import HabitCoachingService
+        
+        service = HabitCoachingService(db)
+        intervention = service.get_proactive_coaching(user_id)
+        
+        return {
+            "hasIntervention": intervention is not None,
+            "intervention": intervention
+        }
+    except Exception as e:
+        logger.error(f"Error getting proactive coaching: {e}")
+        return {"hasIntervention": False, "intervention": None}
+
+
+@router.get("/streaks/detailed")
+async def get_detailed_streaks(
+    habit_id: Optional[str] = None,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Get detailed streak information with freeze tokens and milestones"""
+    try:
+        from app.services.streak_calculation_service import StreakCalculationService
+        
+        service = StreakCalculationService(db)
+        freeze_tokens = service.get_freeze_tokens(user_id)
+        
+        if habit_id:
+            streak_data = service.update_habit_streaks(habit_id, user_id)
+            return {
+                "habit": streak_data,
+                "freezeTokens": freeze_tokens
+            }
+        
+        habits_query = text("""
+            SELECT id, name, current_streak, longest_streak
+            FROM habit_habits
+            WHERE user_id = :user_id AND is_active = true
+            ORDER BY current_streak DESC
+        """)
+        
+        habits = db.execute(habits_query, {"user_id": user_id}).fetchall()
+        
+        streaks = []
+        for h in habits:
+            streak_info = service.calculate_streak(user_id, h[0])
+            streaks.append({
+                "habitId": h[0],
+                "habitName": h[1],
+                "currentStreak": streak_info["current_streak"],
+                "longestStreak": streak_info["longest_streak"],
+                "streakDays": streak_info["streak_days"][:14],
+                "lastCompletion": streak_info["last_completion"]
+            })
+        
+        return {
+            "streaks": streaks,
+            "freezeTokens": freeze_tokens
+        }
+    except Exception as e:
+        logger.error(f"Error getting detailed streaks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/streaks/freeze/{habit_id}")
+async def use_streak_freeze(
+    habit_id: str,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Use a streak freeze token to protect a habit streak"""
+    try:
+        from app.services.streak_calculation_service import StreakCalculationService
+        
+        service = StreakCalculationService(db)
+        result = service.use_freeze_token(user_id, habit_id)
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error using streak freeze: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/streaks/recover/{habit_id}")
+async def recover_streak(
+    habit_id: str,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Attempt to recover a broken streak within grace period"""
+    try:
+        from app.services.streak_calculation_service import StreakCalculationService
+        
+        service = StreakCalculationService(db)
+        
+        can_recover = service.can_recover_streak(user_id, habit_id)
+        
+        if not can_recover["canRecover"]:
+            return can_recover
+        
+        result = service.recover_streak(user_id, habit_id)
+        return result
+    except Exception as e:
+        logger.error(f"Error recovering streak: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reminders/{reminder_id}/snooze")
+async def snooze_reminder(
+    reminder_id: str,
+    minutes: int = Query(default=30, ge=5, le=120),
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Snooze a reminder for specified minutes"""
+    try:
+        from app.services.habit_reminder_service import HabitReminderService
+        
+        service = HabitReminderService(db)
+        result = service.snooze_reminder(reminder_id, user_id, minutes)
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error snoozing reminder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/behavior/signals")
+async def get_behavior_signals(
+    days: int = Query(default=7, ge=1, le=30),
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Get habit behavior signals for risk assessment"""
+    try:
+        from app.services.habit_behavior_ingestor_service import HabitBehaviorIngestorService
+        
+        service = HabitBehaviorIngestorService(db)
+        
+        daily_metrics = service.aggregate_daily_habit_metrics(user_id)
+        trend_signals = service.get_habit_trend_signals(user_id, days)
+        
+        return {
+            "dailyMetrics": daily_metrics,
+            "trendSignals": trend_signals
+        }
+    except Exception as e:
+        logger.error(f"Error getting behavior signals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/behavior/risk-prediction")
+async def get_behavior_risk_prediction(
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Get ML-based behavior risk prediction"""
+    try:
+        from app.services.behavior_prediction_service import BehaviorPredictionService
+        
+        service = BehaviorPredictionService(db)
+        prediction = service.get_patient_risk_prediction(user_id)
+        
+        return prediction
+    except Exception as e:
+        logger.error(f"Error getting risk prediction: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/behavior/deterioration-trends")
+async def get_deterioration_trends(
+    days: int = Query(default=14, ge=7, le=90),
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """Get deterioration trend analysis"""
+    try:
+        from app.services.behavior_prediction_service import BehaviorPredictionService
+        
+        service = BehaviorPredictionService(db)
+        trends = service.get_deterioration_trends(user_id, days)
+        
+        return trends
+    except Exception as e:
+        logger.error(f"Error getting deterioration trends: {e}")
         raise HTTPException(status_code=500, detail=str(e))

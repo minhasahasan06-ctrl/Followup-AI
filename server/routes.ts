@@ -17160,6 +17160,43 @@ Provide:
     await habitTrackerProxy(req, res, `/api/habits/alerts/${req.params.alertId}/acknowledge`, 'POST');
   });
 
+  // Phase 11: Enhanced Gamification & AI Services
+  app.get('/api/habits/gamification/state', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/gamification/state', 'GET');
+  });
+
+  app.post('/api/habits/gamification/check-badges', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/gamification/check-badges', 'POST');
+  });
+
+  app.post('/api/habits/coach/enhanced-chat', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/coach/enhanced-chat', 'POST');
+  });
+
+  app.get('/api/habits/coach/proactive', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/coach/proactive', 'GET');
+  });
+
+  app.get('/api/habits/streaks/detailed', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/streaks/detailed', 'GET');
+  });
+
+  app.post('/api/habits/streaks/use-freeze', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/streaks/use-freeze', 'POST');
+  });
+
+  app.post('/api/habits/streaks/recover', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/streaks/recover', 'POST');
+  });
+
+  app.get('/api/habits/behavior/prediction', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/behavior/prediction', 'GET');
+  });
+
+  app.get('/api/habits/behavior/composite-risk', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/behavior/composite-risk', 'GET');
+  });
+
   // =============================================================================
   // END HABIT TRACKER PROXY ROUTES
   // =============================================================================

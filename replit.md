@@ -53,6 +53,18 @@ The backend consists of two main components:
   - HIPAA audit logging with full request context (client IP, user agent, URL expiry) for all download attempts
   - Doctor-only access with ownership verification on all export downloads
   - Frontend Research Center with 4 tabs: Exports (wizard + status tracking), Datasets (version browser + lineage), NLP Redaction (document upload + PHI review), Research Q&A (AI chat + sessions)
+- **Habit Tracker + Behavior AI (Phase 11)**: Production-grade habit tracking system with:
+  - GamificationService: XP/points system, 22 badge definitions, 10-level progression, plant growth visualization
+  - HabitCoachingService: OpenAI GPT-4o AI coaching with 5 personality types, session memory, proactive interventions
+  - StreakCalculationService: Streak management with freeze tokens, milestones (3-365 days), grace period logic
+  - HabitReminderService: Multi-channel delivery (SMS, email, push, in-app) with adaptive timing
+  - HabitBehaviorIngestorService: Feeds habit data into Behavior AI for cross-signal correlation
+  - BehaviorPredictionService: ML-based risk predictions from habit patterns
+  - APScheduler jobs: Nightly streak validation (1 AM), reminder dispatch (every 5 min), adaptive timing (3 AM)
+  - Frontend HabitGamificationPanel: Badge gallery, level progress, streak visualization
+  - Database: habit_streak_freezes table with token management
+  - Express proxy routes for all /api/habits/* endpoints to FastAPI
+  - HIPAA audit logging on all endpoints with HIPAAAuditLogger.log_phi_access()
 - **HIPAA Compliance & Access Control**: Features a Unified Access Control Service (`AccessControlService`), `HIPAAAuditLogger`, `AccessScope` and `PHICategory` enums, and `RequirePatientAccess` FastAPI dependency for robust, route-level access control and audit logging.
 - **Authentication Flow**: Auth0 for frontend, session-based for Express, JWT (DEV_MODE_SECRET) for Express-to-Python, and internal JWT verification in Python. Role-based routing ensures appropriate access for Admin, Doctor, and Patient users.
 

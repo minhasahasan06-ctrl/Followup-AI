@@ -162,6 +162,28 @@ class JobScheduler:
                 "run_at_minute": 0,
                 "enabled": True,
                 "description": "Run nightly data warehouse aggregation (epidemiology, surveillance)"
+            },
+            
+            # === HABIT TRACKER JOBS ===
+            "habit_streak_validation": {
+                "job_type": "habit_streak_validation",
+                "run_at_hour": 1,
+                "run_at_minute": 0,
+                "enabled": True,
+                "description": "Nightly streak validation and recalculation for all habit users"
+            },
+            "habit_reminder_dispatch": {
+                "job_type": "habit_reminder_dispatch",
+                "interval_minutes": 5,
+                "enabled": True,
+                "description": "Dispatch pending habit reminders to users via SMS/email/push"
+            },
+            "habit_adaptive_reminders": {
+                "job_type": "habit_adaptive_reminders",
+                "run_at_hour": 3,
+                "run_at_minute": 0,
+                "enabled": True,
+                "description": "Update adaptive reminder times based on user completion patterns"
             }
         }
         
@@ -249,6 +271,51 @@ class JobScheduler:
                     return
                 except Exception as e:
                     logger.error(f"❌ Warehouse aggregation failed: {e}")
+                    db.close()
+                    return
+            
+            # Handle habit tracker jobs (not doctor-specific)
+            if job_type == "habit_streak_validation":
+                try:
+                    from app.services.streak_calculation_service import nightly_streak_validation_job
+                    nightly_streak_validation_job()
+                    logger.info("✅ Habit streak validation completed")
+                    db.close()
+                    return
+                except Exception as e:
+                    logger.error(f"❌ Habit streak validation failed: {e}")
+                    db.close()
+                    return
+            
+            if job_type == "habit_reminder_dispatch":
+                try:
+                    from app.services.habit_reminder_service import reminder_dispatch_job
+                    reminder_dispatch_job()
+                    logger.info("✅ Habit reminder dispatch completed")
+                    db.close()
+                    return
+                except Exception as e:
+                    logger.error(f"❌ Habit reminder dispatch failed: {e}")
+                    db.close()
+                    return
+            
+            if job_type == "habit_adaptive_reminders":
+                try:
+                    from app.services.habit_reminder_service import HabitReminderService
+                    service = HabitReminderService(db)
+                    # Get all habit users
+                    from sqlalchemy import text
+                    users_query = text("SELECT DISTINCT user_id FROM habit_habits WHERE is_active = true")
+                    users = db.execute(users_query).fetchall()
+                    total_updated = 0
+                    for user_row in users:
+                        result = service.update_adaptive_reminders(user_row[0])
+                        total_updated += result.get("remindersUpdated", 0)
+                    logger.info(f"✅ Adaptive reminders updated: {total_updated} reminders")
+                    db.close()
+                    return
+                except Exception as e:
+                    logger.error(f"❌ Adaptive reminders update failed: {e}")
                     db.close()
                     return
             
