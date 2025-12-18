@@ -13499,6 +13499,194 @@ Provide:
     }
   });
 
+  // =====================================================
+  // VIDEO BILLING API - Phase 12 (Proxy to Python backend)
+  // =====================================================
+
+  // Get doctor video settings
+  app.get('/api/video/settings', isDoctor, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/settings`, {
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching video settings:', error);
+      res.status(500).json({ message: 'Failed to fetch video settings' });
+    }
+  });
+
+  // Update doctor video settings
+  app.put('/api/video/settings', isDoctor, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/settings`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(req.body)
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error updating video settings:', error);
+      res.status(500).json({ message: 'Failed to update video settings' });
+    }
+  });
+
+  // Configure video for an appointment
+  app.post('/api/video/appointments/:appointmentId/config', isDoctor, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { appointmentId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/appointments/${appointmentId}/config`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(req.body)
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error configuring video for appointment:', error);
+      res.status(500).json({ message: 'Failed to configure video' });
+    }
+  });
+
+  // Join video visit
+  app.post('/api/video/appointments/:appointmentId/join', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { appointmentId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/appointments/${appointmentId}/join`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error joining video visit:', error);
+      res.status(500).json({ message: 'Failed to join video visit' });
+    }
+  });
+
+  // Get video usage summary
+  app.get('/api/video/usage', isDoctor, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const billingMonth = req.query.billing_month || '';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const url = billingMonth 
+        ? `${pythonBackendUrl}/api/video/usage?billing_month=${billingMonth}`
+        : `${pythonBackendUrl}/api/video/usage`;
+      
+      const response = await fetchFromCloudRun(url, {
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching video usage:', error);
+      res.status(500).json({ message: 'Failed to fetch video usage' });
+    }
+  });
+
+  // Get video invoices
+  app.get('/api/video/invoices', isDoctor, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const limit = req.query.limit || 12;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/invoices?limit=${limit}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching video invoices:', error);
+      res.status(500).json({ message: 'Failed to fetch video invoices' });
+    }
+  });
+
   // Proxy endpoint to fetch latest Video AI metrics from Python backend
   app.get('/api/video-ai/latest-metrics', isAuthenticated, async (req: any, res) => {
     try {

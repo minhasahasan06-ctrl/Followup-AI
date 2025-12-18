@@ -24,9 +24,34 @@ class Settings(BaseSettings):
     DEV_MODE_SECRET: Optional[str] = os.getenv("DEV_MODE_SECRET")
     SESSION_SECRET: Optional[str] = os.getenv("SESSION_SECRET")
     
+    # Daily.co Video Configuration
+    DAILY_API_KEY: Optional[str] = os.getenv("DAILY_API_KEY")
+    DAILY_DOMAIN: str = os.getenv("DAILY_DOMAIN", "followupai.daily.co")
+    DAILY_WEBHOOK_SECRET: Optional[str] = os.getenv("DAILY_WEBHOOK_SECRET")
+    DAILY_RATE_USD: str = os.getenv("DAILY_RATE_USD", "0.004")
+    
+    # Video Billing Plan Configuration
+    OVERAGE_RATE_USD: str = os.getenv("OVERAGE_RATE_USD", "0.008")
+    PLAN_TRIAL_INCLUDED_PM: int = int(os.getenv("PLAN_TRIAL_INCLUDED_PM", "300"))
+    PLAN_PRO_INCLUDED_PM: int = int(os.getenv("PLAN_PRO_INCLUDED_PM", "3000"))
+    PLAN_CLINIC_INCLUDED_PM: int = int(os.getenv("PLAN_CLINIC_INCLUDED_PM", "20000"))
+    
+    # Application URLs
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://localhost:8000")
+    FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "http://localhost:5000")
+    
     CORS_ORIGINS: list = ["http://localhost:5000", "http://127.0.0.1:5000"]
     
     ENVIRONMENT: str = os.getenv("NODE_ENV", "development")
+    
+    def get_plan_included_minutes(self, plan: str) -> int:
+        """Get included participant minutes for a plan"""
+        plan_map = {
+            "TRIAL": self.PLAN_TRIAL_INCLUDED_PM,
+            "PRO": self.PLAN_PRO_INCLUDED_PM,
+            "CLINIC": self.PLAN_CLINIC_INCLUDED_PM,
+        }
+        return plan_map.get(plan.upper(), self.PLAN_TRIAL_INCLUDED_PM)
     
     def validate_database_url(self):
         if not self.DATABASE_URL:

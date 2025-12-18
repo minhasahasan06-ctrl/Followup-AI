@@ -9759,3 +9759,231 @@ export const insertMlExtractionAuditLogSchema = createInsertSchema(mlExtractionA
 
 export type InsertMlExtractionAuditLog = z.infer<typeof insertMlExtractionAuditLogSchema>;
 export type MlExtractionAuditLog = typeof mlExtractionAuditLog.$inferSelect;
+
+// ============================================================================
+// PHASE 12: VIDEO CONSULTATIONS & BILLING
+// Daily.co integration with per-doctor billing, external provider support
+// ============================================================================
+
+// Doctor Video Settings - Per-doctor video configuration
+export const doctorVideoSettings = pgTable("doctor_video_settings", {
+  doctorId: varchar("doctor_id").primaryKey().references(() => users.id),
+  
+  // External provider settings
+  allowExternalVideo: boolean("allow_external_video").default(false),
+  zoomJoinUrl: varchar("zoom_join_url"),
+  meetJoinUrl: varchar("meet_join_url"),
+  defaultVideoProvider: varchar("default_video_provider").default("daily"), // 'daily', 'zoom', 'meet'
+  
+  // HIPAA settings
+  enableRecording: boolean("enable_recording").default(false),
+  enableChat: boolean("enable_chat").default(true),
+  maxParticipants: integer("max_participants").default(2),
+  
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDoctorVideoSettingsSchema = createInsertSchema(doctorVideoSettings).omit({
+  updatedAt: true,
+});
+
+export type InsertDoctorVideoSettings = z.infer<typeof insertDoctorVideoSettingsSchema>;
+export type DoctorVideoSettings = typeof doctorVideoSettings.$inferSelect;
+
+// Appointment Video - Per-appointment video configuration
+export const appointmentVideo = pgTable("appointment_video", {
+  appointmentId: varchar("appointment_id").primaryKey().references(() => appointments.id),
+  
+  // Video provider for this appointment
+  videoProvider: varchar("video_provider").default("daily").notNull(), // 'daily', 'zoom', 'meet'
+  
+  // Daily.co room details
+  dailyRoomName: varchar("daily_room_name").unique(),
+  dailyRoomUrl: varchar("daily_room_url"),
+  
+  // External provider URL (Zoom/Meet)
+  externalJoinUrl: varchar("external_join_url"),
+  
+  // Room lifecycle
+  roomCreatedAt: timestamp("room_created_at"),
+  roomExpiresAt: timestamp("room_expires_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  providerIdx: index("appointment_video_provider_idx").on(table.videoProvider),
+  roomNameIdx: index("appointment_video_room_name_idx").on(table.dailyRoomName),
+}));
+
+export const insertAppointmentVideoSchema = createInsertSchema(appointmentVideo).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAppointmentVideo = z.infer<typeof insertAppointmentVideoSchema>;
+export type AppointmentVideo = typeof appointmentVideo.$inferSelect;
+
+// Video Usage Events - Raw webhook events from Daily.co
+export const videoUsageEvents = pgTable("video_usage_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  appointmentId: varchar("appointment_id").references(() => appointments.id),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Event details
+  provider: varchar("provider").notNull().default("daily"),
+  eventType: varchar("event_type").notNull(), // 'participant_joined', 'participant_left'
+  eventId: varchar("event_id").unique(), // Daily's event ID for idempotency
+  
+  // Participant info
+  participantId: varchar("participant_id").notNull(),
+  participantName: varchar("participant_name"),
+  participantRole: varchar("participant_role"), // 'doctor', 'patient'
+  
+  // Timestamps
+  eventTs: timestamp("event_ts").notNull(),
+  receivedTs: timestamp("received_ts").defaultNow(),
+  
+  // Raw payload for audit
+  payload: jsonb("payload").$type<Record<string, unknown>>(),
+}, (table) => ({
+  appointmentParticipantIdx: index("video_usage_events_appt_participant_idx").on(table.appointmentId, table.participantId, table.eventTs),
+  doctorEventIdx: index("video_usage_events_doctor_idx").on(table.doctorId, table.eventTs),
+  eventIdIdx: index("video_usage_events_event_id_idx").on(table.eventId),
+}));
+
+export const insertVideoUsageEventSchema = createInsertSchema(videoUsageEvents).omit({
+  id: true,
+  receivedTs: true,
+});
+
+export type InsertVideoUsageEvent = z.infer<typeof insertVideoUsageEventSchema>;
+export type VideoUsageEvent = typeof videoUsageEvents.$inferSelect;
+
+// Video Usage Sessions - Paired join/leave intervals per participant
+export const videoUsageSessions = pgTable("video_usage_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  appointmentId: varchar("appointment_id").notNull().references(() => appointments.id),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Participant tracking
+  participantId: varchar("participant_id").notNull(),
+  participantRole: varchar("participant_role"), // 'doctor', 'patient'
+  
+  // Session timing
+  joinedAt: timestamp("joined_at").notNull(),
+  leftAt: timestamp("left_at"),
+  durationSeconds: integer("duration_seconds"),
+  
+  // Derived from left_at for billing
+  billingMonth: varchar("billing_month"), // 'YYYY-MM'
+}, (table) => ({
+  appointmentParticipantIdx: index("video_usage_sessions_appt_participant_idx").on(table.appointmentId, table.participantId, table.joinedAt),
+  doctorJoinedIdx: index("video_usage_sessions_doctor_idx").on(table.doctorId, table.joinedAt),
+  billingMonthIdx: index("video_usage_sessions_billing_month_idx").on(table.doctorId, table.billingMonth),
+}));
+
+export const insertVideoUsageSessionSchema = createInsertSchema(videoUsageSessions).omit({
+  id: true,
+});
+
+export type InsertVideoUsageSession = z.infer<typeof insertVideoUsageSessionSchema>;
+export type VideoUsageSession = typeof videoUsageSessions.$inferSelect;
+
+// Video Usage Ledger - Per-appointment billing rollup
+export const videoUsageLedger = pgTable("video_usage_ledger", {
+  appointmentId: varchar("appointment_id").primaryKey().references(() => appointments.id),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Billing period
+  billingMonth: varchar("billing_month").notNull(), // 'YYYY-MM'
+  
+  // Usage metrics
+  participantMinutes: integer("participant_minutes").default(0),
+  
+  // Cost calculation
+  costUsd: decimal("cost_usd", { precision: 12, scale: 4 }).default("0"),
+  overageBillableMinutes: integer("overage_billable_minutes").default(0),
+  billedToDoctorUsd: decimal("billed_to_doctor_usd", { precision: 12, scale: 4 }).default("0"),
+  
+  // Finalization
+  finalized: boolean("finalized").default(false),
+  finalizedAt: timestamp("finalized_at"),
+  
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorBillingIdx: index("video_usage_ledger_doctor_billing_idx").on(table.doctorId, table.billingMonth),
+  billingFinalizedIdx: index("video_usage_ledger_billing_finalized_idx").on(table.billingMonth, table.finalized),
+}));
+
+export const insertVideoUsageLedgerSchema = createInsertSchema(videoUsageLedger).omit({
+  updatedAt: true,
+});
+
+export type InsertVideoUsageLedger = z.infer<typeof insertVideoUsageLedgerSchema>;
+export type VideoUsageLedger = typeof videoUsageLedger.$inferSelect;
+
+// Doctor Subscription - Internal plan record for billing
+export const doctorSubscription = pgTable("doctor_subscription", {
+  doctorId: varchar("doctor_id").primaryKey().references(() => users.id),
+  
+  // Plan details
+  plan: varchar("plan").notNull().default("TRIAL"), // 'TRIAL', 'PRO', 'CLINIC'
+  status: varchar("status").notNull().default("active"), // 'active', 'past_due', 'canceled'
+  
+  // Included usage
+  includedParticipantMinutes: integer("included_participant_minutes").default(300),
+  overageRateUsdPerPm: decimal("overage_rate_usd_per_pm", { precision: 12, scale: 4 }).default("0.008"),
+  
+  // Billing period
+  periodStart: timestamp("period_start").defaultNow(),
+  periodEnd: timestamp("period_end"),
+  
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusPeriodIdx: index("doctor_subscription_status_period_idx").on(table.status, table.periodEnd),
+}));
+
+export const insertDoctorSubscriptionSchema = createInsertSchema(doctorSubscription).omit({
+  updatedAt: true,
+});
+
+export type InsertDoctorSubscription = z.infer<typeof insertDoctorSubscriptionSchema>;
+export type DoctorSubscription = typeof doctorSubscription.$inferSelect;
+
+// Doctor Monthly Invoice - Aggregated monthly totals
+export const doctorMonthlyInvoice = pgTable("doctor_monthly_invoice", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  billingMonth: varchar("billing_month").notNull(), // 'YYYY-MM'
+  
+  // Usage summary
+  totalParticipantMinutes: integer("total_participant_minutes").default(0),
+  includedParticipantMinutes: integer("included_participant_minutes").default(0),
+  overageMinutes: integer("overage_minutes").default(0),
+  
+  // Invoice totals
+  amountDueUsd: decimal("amount_due_usd", { precision: 12, scale: 4 }).default("0"),
+  
+  // Status
+  status: varchar("status").default("pending"), // 'pending', 'paid', 'overdue'
+  paidAt: timestamp("paid_at"),
+  
+  generatedAt: timestamp("generated_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorBillingIdx: index("doctor_monthly_invoice_doctor_billing_idx").on(table.doctorId, table.billingMonth),
+  statusIdx: index("doctor_monthly_invoice_status_idx").on(table.status),
+  // Unique constraint on doctor + month
+  uniqueDoctorMonth: index("doctor_monthly_invoice_unique_idx").on(table.doctorId, table.billingMonth),
+}));
+
+export const insertDoctorMonthlyInvoiceSchema = createInsertSchema(doctorMonthlyInvoice).omit({
+  id: true,
+  generatedAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorMonthlyInvoice = z.infer<typeof insertDoctorMonthlyInvoiceSchema>;
+export type DoctorMonthlyInvoice = typeof doctorMonthlyInvoice.$inferSelect;

@@ -143,6 +143,12 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import research_center: {e}")
 
+try:
+    from app.routers import video
+    _optional_routers.append(('video', video))
+except ImportError as e:
+    logger.warning(f"❌ Could not import video: {e}")
+
 # Import epidemiology models explicitly for table creation
 try:
     from app.models import epidemiology_models
@@ -156,6 +162,13 @@ try:
     logger.info("✅ Research models imported for table creation")
 except ImportError as e:
     logger.warning(f"❌ Could not import research_models: {e}")
+
+# Import video billing models for Phase 12 table creation
+try:
+    from app.models import video_billing_models
+    logger.info("✅ Video billing models imported for table creation")
+except ImportError as e:
+    logger.warning(f"❌ Could not import video_billing_models: {e}")
 
 
 @asynccontextmanager

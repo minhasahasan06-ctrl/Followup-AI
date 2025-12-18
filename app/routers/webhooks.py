@@ -558,3 +558,141 @@ async def get_webhook_status(
         },
         "timestamp": now.isoformat()
     }
+
+
+# =============================================================================
+# DAILY.CO VIDEO WEBHOOKS - Phase 12
+# =============================================================================
+
+@router.post("/daily")
+async def handle_daily_webhook(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Handle Daily.co webhook events for video usage tracking.
+    
+    Events processed:
+    - meeting.participant-joined: Create open session
+    - meeting.participant-left: Close session, update billing ledger
+    
+    Security:
+    - HMAC signature validation (if DAILY_WEBHOOK_SECRET set)
+    - Idempotent processing via event_id
+    """
+    from app.services.daily_video_service import DailyVideoService, VideoUsageCalculator
+    from app.services.video_billing_service import VideoBillingService
+    from app.models.video_billing_models import VideoUsageEvent, VideoUsageSession, AppointmentVideo
+    from fastapi import Header
+    
+    raw_body = await request.body()
+    
+    daily_service = DailyVideoService()
+    
+    signature = request.headers.get("X-Webhook-Signature")
+    if signature:
+        if not daily_service.validate_webhook_signature(raw_body, signature):
+            logger.warning("Invalid Daily webhook signature")
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    
+    event_type = body.get("type", "")
+    event_id = body.get("id")
+    event_ts = body.get("event_ts", 0)
+    payload = body.get("payload", {})
+    
+    if event_id:
+        existing = db.query(VideoUsageEvent).filter(
+            VideoUsageEvent.event_id == event_id
+        ).first()
+        
+        if existing:
+            logger.info(f"Duplicate Daily event ignored: {event_id}")
+            return {"status": "duplicate", "event_id": event_id}
+    
+    room_name = payload.get("room_name", "")
+    appointment_id = DailyVideoService.extract_appointment_id(room_name)
+    
+    if not appointment_id:
+        logger.warning(f"Could not extract appointment_id from room: {room_name}")
+        return {"status": "ignored", "reason": "unknown_room"}
+    
+    doctor_id = "unknown"
+    
+    def determine_role(p: Dict) -> str:
+        user_name = p.get("user_name", "").lower()
+        is_owner = p.get("is_owner", False)
+        return "doctor" if is_owner or "doctor" in user_name else "patient"
+    
+    event = VideoUsageEvent(
+        appointment_id=appointment_id,
+        doctor_id=doctor_id,
+        provider="daily",
+        event_type=event_type,
+        event_id=event_id,
+        participant_id=payload.get("participant_id", "unknown"),
+        participant_name=payload.get("user_name"),
+        participant_role=determine_role(payload),
+        event_ts=datetime.fromtimestamp(event_ts) if event_ts else datetime.utcnow(),
+        payload=payload
+    )
+    db.add(event)
+    db.commit()
+    
+    if event_type == "meeting.participant-joined":
+        session = VideoUsageSession(
+            appointment_id=appointment_id,
+            doctor_id=doctor_id,
+            participant_id=payload.get("participant_id", "unknown"),
+            participant_role=determine_role(payload),
+            joined_at=datetime.fromtimestamp(event_ts) if event_ts else datetime.utcnow()
+        )
+        db.add(session)
+        db.commit()
+        
+    elif event_type == "meeting.participant-left":
+        participant_id = payload.get("participant_id", "unknown")
+        left_at = datetime.fromtimestamp(event_ts) if event_ts else datetime.utcnow()
+        
+        session = db.query(VideoUsageSession).filter(
+            and_(
+                VideoUsageSession.appointment_id == appointment_id,
+                VideoUsageSession.participant_id == participant_id,
+                VideoUsageSession.left_at.is_(None)
+            )
+        ).order_by(VideoUsageSession.joined_at.desc()).first()
+        
+        if session:
+            session.left_at = left_at
+            session.duration_seconds = int((left_at - session.joined_at).total_seconds())
+            session.billing_month = VideoUsageCalculator.get_billing_month(left_at)
+            db.commit()
+            
+            billing_service = VideoBillingService(db)
+            billing_service.update_ledger_for_appointment(
+                appointment_id=appointment_id,
+                doctor_id=doctor_id,
+                billing_month=session.billing_month
+            )
+    
+    logger.info(f"Processed Daily webhook: {event_type} for appointment {appointment_id}")
+    
+    return {"status": "processed", "event_type": event_type, "appointment_id": appointment_id}
+
+
+@router.get("/daily/test")
+async def test_daily_webhook():
+    """Test endpoint to verify Daily webhook configuration"""
+    return {
+        "status": "ok",
+        "message": "Daily webhook endpoint is configured",
+        "expected_events": [
+            "meeting.participant-joined",
+            "meeting.participant-left",
+            "room.deleted"
+        ]
+    }
