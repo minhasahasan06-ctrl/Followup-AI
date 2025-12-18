@@ -23,6 +23,10 @@ from app.services.video_billing_service import (
     VideoSettingsService, AppointmentVideoService, VideoBillingService
 )
 from app.services.access_control import HIPAAAuditLogger, PHICategory
+from app.services.video_session_storage_service import (
+    VideoSessionStorageService, StorageType, video_session_storage_service
+)
+from app.models.video_ai_models import VideoExamSession as VideoExamSessionModel
 
 router = APIRouter(prefix="/api/video", tags=["video"])
 
@@ -341,3 +345,368 @@ async def get_invoices(
     
     service = VideoBillingService(db)
     return service.get_doctor_invoices(current_user.id, limit)
+
+
+# ===== Video Exam Session Endpoints =====
+
+
+class CreateExamSessionRequest(BaseModel):
+    patient_id: str
+
+
+class UploadUrlRequest(BaseModel):
+    stage: str
+    content_type: str = "image/jpeg"
+    file_extension: str = "jpg"
+    file_size_bytes: Optional[int] = None
+    
+    @field_validator('stage')
+    @classmethod
+    def validate_stage(cls, v):
+        valid_stages = ["eyes", "palm", "tongue", "lips", "skin", "respiratory", "custom"]
+        if v not in valid_stages:
+            raise ValueError(f"Invalid stage - must be one of {valid_stages}")
+        return v
+
+
+class CompleteStageRequest(BaseModel):
+    stage: str
+    s3_key: str
+    quality_score: Optional[float] = None
+
+
+@router.post("/exam-sessions")
+async def create_exam_session(
+    request: Request,
+    body: CreateExamSessionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new video exam session for a patient"""
+    if current_user.role not in ["doctor", "patient"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if current_user.role == "patient" and current_user.id != body.patient_id:
+        raise HTTPException(status_code=403, detail="Patients can only create sessions for themselves")
+    
+    import uuid
+    session_id = str(uuid.uuid4())
+    
+    new_session = VideoExamSessionModel(
+        id=session_id,
+        patient_id=body.patient_id,
+        status="in_progress"
+    )
+    
+    db.add(new_session)
+    db.commit()
+    db.refresh(new_session)
+    
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=current_user.id,
+        actor_role=current_user.role,
+        patient_id=body.patient_id,
+        action="create",
+        phi_categories=["video_exam"],
+        resource_type="video_exam_session",
+        access_reason="Create video exam session",
+        ip_address=str(request.client.host) if request.client else None
+    )
+    
+    return {
+        "session_id": session_id,
+        "patient_id": body.patient_id,
+        "status": "in_progress",
+        "created_at": new_session.created_at.isoformat() if new_session.created_at else None
+    }
+
+
+@router.post("/exam-sessions/{session_id}/upload-url")
+async def get_upload_url(
+    session_id: str,
+    request: Request,
+    body: UploadUrlRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a pre-signed URL for uploading a frame to a video exam session"""
+    session = db.query(VideoExamSessionModel).filter(
+        VideoExamSessionModel.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if current_user.role == "patient" and current_user.id != session.patient_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if session.status != "in_progress":
+        raise HTTPException(status_code=400, detail="Session is not in progress")
+    
+    storage = video_session_storage_service
+    result = await storage.generate_upload_url(
+        patient_id=session.patient_id,
+        session_id=session_id,
+        storage_type=StorageType.EXAM_FRAME,
+        content_type=body.content_type,
+        file_extension=body.file_extension,
+        stage=body.stage,
+        file_size_bytes=body.file_size_bytes,
+        user_id=current_user.id,
+        client_ip=str(request.client.host) if request.client else None
+    )
+    
+    return result
+
+
+@router.post("/exam-sessions/{session_id}/complete-stage")
+async def complete_stage(
+    session_id: str,
+    request: Request,
+    body: CompleteStageRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark a stage as completed after upload"""
+    session = db.query(VideoExamSessionModel).filter(
+        VideoExamSessionModel.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if current_user.role == "patient" and current_user.id != session.patient_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    stage_to_uri_field = {
+        "eyes": "eyes_frame_s3_uri",
+        "palm": "palm_frame_s3_uri",
+        "tongue": "tongue_frame_s3_uri",
+        "lips": "lips_frame_s3_uri"
+    }
+    stage_to_completed_field = {
+        "eyes": "eyes_stage_completed",
+        "palm": "palm_stage_completed",
+        "tongue": "tongue_stage_completed",
+        "lips": "lips_stage_completed"
+    }
+    stage_to_quality_field = {
+        "eyes": "eyes_quality_score",
+        "palm": "palm_quality_score",
+        "tongue": "tongue_quality_score",
+        "lips": "lips_quality_score"
+    }
+    
+    if body.stage in stage_to_uri_field:
+        setattr(session, stage_to_uri_field[body.stage], body.s3_key)
+    if body.stage in stage_to_completed_field:
+        setattr(session, stage_to_completed_field[body.stage], True)
+    if body.stage in stage_to_quality_field and body.quality_score is not None:
+        setattr(session, stage_to_quality_field[body.stage], body.quality_score)
+    
+    db.commit()
+    
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=current_user.id,
+        actor_role=current_user.role,
+        patient_id=session.patient_id,
+        action="update",
+        phi_categories=["video_exam"],
+        resource_type="video_exam_session",
+        access_reason=f"Complete stage {body.stage}",
+        ip_address=str(request.client.host) if request.client else None
+    )
+    
+    return {
+        "session_id": session_id,
+        "stage": body.stage,
+        "completed": True
+    }
+
+
+@router.post("/exam-sessions/{session_id}/complete")
+async def complete_session(
+    session_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark the entire exam session as completed"""
+    session = db.query(VideoExamSessionModel).filter(
+        VideoExamSessionModel.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if current_user.role == "patient" and current_user.id != session.patient_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    session.status = "completed"
+    session.completed_at = datetime.utcnow()
+    
+    completed_count = sum([
+        session.eyes_stage_completed or False,
+        session.palm_stage_completed or False,
+        session.tongue_stage_completed or False,
+        session.lips_stage_completed or False
+    ])
+    total_stages = 4
+    
+    quality_scores = [
+        session.eyes_quality_score,
+        session.palm_quality_score,
+        session.tongue_quality_score,
+        session.lips_quality_score
+    ]
+    valid_scores = [s for s in quality_scores if s is not None]
+    if valid_scores:
+        session.overall_quality_score = sum(valid_scores) / len(valid_scores)
+    
+    db.commit()
+    
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=current_user.id,
+        actor_role=current_user.role,
+        patient_id=session.patient_id,
+        action="update",
+        phi_categories=["video_exam"],
+        resource_type="video_exam_session",
+        access_reason="Complete video exam session",
+        ip_address=str(request.client.host) if request.client else None
+    )
+    
+    return {
+        "session_id": session_id,
+        "status": "completed",
+        "completed_stages": completed_count,
+        "total_stages": total_stages,
+        "overall_quality_score": session.overall_quality_score
+    }
+
+
+@router.get("/exam-sessions/{session_id}")
+async def get_exam_session(
+    session_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get details of a video exam session"""
+    session = db.query(VideoExamSessionModel).filter(
+        VideoExamSessionModel.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if current_user.role == "patient" and current_user.id != session.patient_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=current_user.id,
+        actor_role=current_user.role,
+        patient_id=session.patient_id,
+        action="read",
+        phi_categories=["video_exam"],
+        resource_type="video_exam_session",
+        access_reason="View video exam session",
+        ip_address=str(request.client.host) if request.client else None
+    )
+    
+    return {
+        "session_id": session.id,
+        "patient_id": session.patient_id,
+        "status": session.status,
+        "current_stage": session.current_stage,
+        "stages": {
+            "eyes": {
+                "completed": session.eyes_stage_completed,
+                "quality_score": session.eyes_quality_score,
+                "has_frame": bool(session.eyes_frame_s3_uri)
+            },
+            "palm": {
+                "completed": session.palm_stage_completed,
+                "quality_score": session.palm_quality_score,
+                "has_frame": bool(session.palm_frame_s3_uri)
+            },
+            "tongue": {
+                "completed": session.tongue_stage_completed,
+                "quality_score": session.tongue_quality_score,
+                "has_frame": bool(session.tongue_frame_s3_uri)
+            },
+            "lips": {
+                "completed": session.lips_stage_completed,
+                "quality_score": session.lips_quality_score,
+                "has_frame": bool(session.lips_frame_s3_uri)
+            }
+        },
+        "overall_quality_score": session.overall_quality_score,
+        "created_at": session.created_at.isoformat() if session.created_at else None,
+        "completed_at": session.completed_at.isoformat() if session.completed_at else None
+    }
+
+
+@router.get("/exam-sessions/{session_id}/manifest")
+async def get_session_manifest(
+    session_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get manifest of all files in a session with fresh download URLs"""
+    session = db.query(VideoExamSessionModel).filter(
+        VideoExamSessionModel.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if current_user.role == "patient" and current_user.id != session.patient_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    storage = video_session_storage_service
+    manifest = await storage.get_session_manifest(
+        patient_id=session.patient_id,
+        session_id=session_id,
+        user_id=current_user.id,
+        client_ip=str(request.client.host) if request.client else None
+    )
+    
+    return manifest
+
+
+@router.delete("/exam-sessions/{session_id}")
+async def delete_exam_session(
+    session_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a video exam session and all its files (HIPAA deletion)"""
+    if current_user.role != "doctor":
+        raise HTTPException(status_code=403, detail="Doctor access required")
+    
+    session = db.query(VideoExamSessionModel).filter(
+        VideoExamSessionModel.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    storage = video_session_storage_service
+    deletion_result = await storage.delete_session_content(
+        patient_id=session.patient_id,
+        session_id=session_id,
+        user_id=current_user.id,
+        client_ip=str(request.client.host) if request.client else None
+    )
+    
+    db.delete(session)
+    db.commit()
+    
+    return {
+        "session_id": session_id,
+        "deleted": True,
+        "files_deleted": deletion_result.get("deleted_objects", 0)
+    }
