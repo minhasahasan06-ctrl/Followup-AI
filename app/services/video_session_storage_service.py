@@ -39,6 +39,11 @@ class VideoSessionStorageService:
     - Frame uploads from guided exams (eyes, palm, tongue, lips, skin)
     - Video segment recordings during video consultations
     - Combined session archives for long-term storage
+    
+    All operations enforce strict RBAC:
+    - Patients can only access their own session data
+    - Doctors can access any patient's session data
+    - All access is logged via HIPAAAuditLogger
     """
     
     SIGNED_URL_TTL_SECONDS = 900  # 15-minute TTL for signed URLs
@@ -47,6 +52,55 @@ class VideoSessionStorageService:
         StorageType.EXAM_RECORDING: 2555,   # 7 years
         StorageType.COMBINED_SESSION: 2555, # 7 years
     }
+    
+    @staticmethod
+    def _authorize_access(
+        user_id: str,
+        user_role: str,
+        patient_id: str,
+        action: str,
+        client_ip: Optional[str] = None
+    ) -> bool:
+        """
+        Enforce RBAC for session storage access.
+        
+        - Patients can only access their own data
+        - Doctors can access any patient's data
+        - All denied access is logged
+        
+        Returns True if authorized, raises PermissionError if denied.
+        """
+        if user_role == "doctor" or user_role == "admin":
+            return True
+        
+        if user_role == "patient":
+            if user_id == patient_id:
+                return True
+            else:
+                HIPAAAuditLogger.log_phi_access(
+                    action=f"denied_{action}",
+                    resource_type="video_session",
+                    resource_id=patient_id,
+                    user_id=user_id,
+                    patient_id=patient_id,
+                    access_context={
+                        "reason": "patient_attempting_cross_patient_access",
+                        "denied": True
+                    },
+                    client_ip=client_ip
+                )
+                raise PermissionError(f"Patient {user_id} cannot access data for patient {patient_id}")
+        
+        HIPAAAuditLogger.log_phi_access(
+            action=f"denied_{action}",
+            resource_type="video_session",
+            resource_id=patient_id,
+            user_id=user_id,
+            patient_id=patient_id,
+            access_context={"reason": "unknown_role", "role": user_role, "denied": True},
+            client_ip=client_ip
+        )
+        raise PermissionError(f"Role {user_role} cannot access video session data")
     
     def __init__(self):
         self.use_s3 = self._should_use_s3()
@@ -123,14 +177,20 @@ class VideoSessionStorageService:
         segment_order: Optional[int] = None,
         file_size_bytes: Optional[int] = None,
         user_id: Optional[str] = None,
+        user_role: Optional[str] = None,
         client_ip: Optional[str] = None
     ) -> Dict:
         """
         Generate a pre-signed URL for secure direct upload to S3.
         
+        Enforces RBAC: patients can only upload to their own sessions.
+        
         Returns:
             Dict with upload_url, s3_key, expires_at, method
         """
+        if user_id and user_role:
+            self._authorize_access(user_id, user_role, patient_id, "upload", client_ip)
+        
         s3_key = self._generate_s3_key(
             storage_type=storage_type,
             patient_id=patient_id,
@@ -230,14 +290,19 @@ class VideoSessionStorageService:
         s3_key: str,
         patient_id: str,
         user_id: Optional[str] = None,
+        user_role: Optional[str] = None,
         client_ip: Optional[str] = None,
         user_agent: Optional[str] = None
     ) -> Dict:
         """
         Generate a pre-signed URL for secure download from S3.
         
+        Enforces RBAC: patients can only download their own session data.
         Always generates fresh URLs (never stores) - 15-minute TTL.
         """
+        if user_id and user_role:
+            self._authorize_access(user_id, user_role, patient_id, "download", client_ip)
+        
         expires_at = datetime.utcnow() + timedelta(seconds=self.SIGNED_URL_TTL_SECONDS)
         
         if not self.use_s3:
@@ -302,11 +367,15 @@ class VideoSessionStorageService:
         stage: str,
         content_type: str = "image/jpeg",
         user_id: Optional[str] = None,
+        user_role: Optional[str] = None,
         client_ip: Optional[str] = None
     ) -> Dict:
         """
         Upload a frame directly (server-side upload for backend processing).
+        Enforces RBAC: patients can only upload to their own sessions.
         """
+        if user_id and user_role:
+            self._authorize_access(user_id, user_role, patient_id, "upload_frame", client_ip)
         file_extension = "jpg" if "jpeg" in content_type else content_type.split("/")[-1]
         s3_key = self._generate_s3_key(
             storage_type=StorageType.EXAM_FRAME,
@@ -392,12 +461,26 @@ class VideoSessionStorageService:
         patient_id: str,
         session_id: str,
         user_id: Optional[str] = None,
+        user_role: Optional[str] = None,
         client_ip: Optional[str] = None
     ) -> Dict:
         """
         Delete all content for a video exam session.
         Used for HIPAA-compliant data deletion upon request.
+        
+        Note: Only doctors/admins can delete session content.
         """
+        if user_role and user_role not in ("doctor", "admin"):
+            HIPAAAuditLogger.log_phi_access(
+                action="denied_delete",
+                resource_type="video_session",
+                resource_id=session_id,
+                user_id=user_id or "unknown",
+                patient_id=patient_id,
+                access_context={"reason": "only_doctors_can_delete", "denied": True},
+                client_ip=client_ip
+            )
+            raise PermissionError("Only doctors and admins can delete session content")
         prefix = f"video-exams/{patient_id}/{session_id}/"
         deleted_count = 0
         
@@ -450,11 +533,15 @@ class VideoSessionStorageService:
         patient_id: str,
         session_id: str,
         user_id: Optional[str] = None,
+        user_role: Optional[str] = None,
         client_ip: Optional[str] = None
     ) -> Dict:
         """
         Get a manifest of all files for a session with fresh signed URLs.
+        Enforces RBAC: patients can only view their own session manifests.
         """
+        if user_id and user_role:
+            self._authorize_access(user_id, user_role, patient_id, "get_manifest", client_ip)
         prefix = f"video-exams/{patient_id}/{session_id}/"
         files = []
         
@@ -491,6 +578,7 @@ class VideoSessionStorageService:
                 s3_key=f["key"],
                 patient_id=patient_id,
                 user_id=user_id,
+                user_role=user_role,
                 client_ip=client_ip
             )
             manifest_files.append({
