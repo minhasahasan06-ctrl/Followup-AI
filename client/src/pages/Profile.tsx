@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Shield, Bell, Heart, Lock } from "lucide-react";
+import { User, Shield, Bell, Heart, Lock, Video } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -15,6 +15,7 @@ import type { PatientProfile, DoctorProfile } from "@shared/schema";
 import PhoneVerification from "@/components/PhoneVerification";
 import TrainingConsentSettings from "@/components/TrainingConsentSettings";
 import { PersonalizationToggle } from "@/components/PersonalizationToggle";
+import VideoSettingsPanel from "@/components/VideoSettingsPanel";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -133,6 +134,12 @@ export default function Profile() {
             <TabsTrigger value="privacy" data-testid="tab-privacy">
               <Lock className="h-4 w-4 mr-2" />
               Privacy & ML
+            </TabsTrigger>
+          )}
+          {!isPatient && (
+            <TabsTrigger value="video" data-testid="tab-video">
+              <Video className="h-4 w-4 mr-2" />
+              Video Visits
             </TabsTrigger>
           )}
         </TabsList>
@@ -307,6 +314,12 @@ export default function Profile() {
         {isPatient && (
           <TabsContent value="privacy">
             <TrainingConsentSettings />
+          </TabsContent>
+        )}
+
+        {!isPatient && (
+          <TabsContent value="video">
+            <VideoSettingsPanel />
           </TabsContent>
         )}
       </Tabs>

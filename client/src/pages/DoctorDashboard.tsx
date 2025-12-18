@@ -17,6 +17,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
 import { AddPatientDialog } from "@/components/AddPatientDialog";
 import { LysaChatPanel } from "@/components/LysaChatPanel";
+import VideoBillingCard from "@/components/VideoBillingCard";
 
 type Recommendation = {
   id: string;
@@ -609,6 +610,11 @@ export default function DoctorDashboard() {
           </CardFooter>
         )}
       </Card>
+
+      {/* Video Usage & Billing Card */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <VideoBillingCard />
+      </div>
 
       {/* Patient List Section */}
       <div className="flex items-center gap-2">
