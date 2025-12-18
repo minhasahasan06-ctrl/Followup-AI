@@ -54,6 +54,10 @@ import { DailyFollowupsTab } from "@/components/research/DailyFollowupsTab";
 import { ReportsTab } from "@/components/research/ReportsTab";
 import { PersonalResearchTab } from "@/components/research/PersonalResearchTab";
 import { AdvancedAnalyticsTab } from "@/components/research/EpidemiologyTab";
+import { ExportsTab } from "@/components/research/ExportsTab";
+import { DatasetsTab } from "@/components/research/DatasetsTab";
+import { NLPRedactionTab } from "@/components/research/NLPRedactionTab";
+import { ResearchQATab } from "@/components/research/ResearchQATab";
 
 const COHORT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00C49F', '#FFBB28'];
 
@@ -915,6 +919,22 @@ export default function ResearchCenter() {
             <ShieldAlert className="h-4 w-4" />
             Advanced Analytics
           </TabsTrigger>
+          <TabsTrigger value="datasets" className="gap-2" data-testid="tab-datasets">
+            <Database className="h-4 w-4" />
+            Datasets
+          </TabsTrigger>
+          <TabsTrigger value="exports" className="gap-2" data-testid="tab-exports">
+            <Download className="h-4 w-4" />
+            Exports
+          </TabsTrigger>
+          <TabsTrigger value="nlp-redaction" className="gap-2" data-testid="tab-nlp-redaction">
+            <Lock className="h-4 w-4" />
+            PHI Redaction
+          </TabsTrigger>
+          <TabsTrigger value="research-qa" className="gap-2" data-testid="tab-research-qa">
+            <Bot className="h-4 w-4" />
+            Research Q&A
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="cohort">
@@ -951,6 +971,22 @@ export default function ResearchCenter() {
 
         <TabsContent value="advanced-analytics">
           <AdvancedAnalyticsTab />
+        </TabsContent>
+
+        <TabsContent value="datasets">
+          <DatasetsTab />
+        </TabsContent>
+
+        <TabsContent value="exports">
+          <ExportsTab />
+        </TabsContent>
+
+        <TabsContent value="nlp-redaction">
+          <NLPRedactionTab />
+        </TabsContent>
+
+        <TabsContent value="research-qa">
+          <ResearchQATab />
         </TabsContent>
       </Tabs>
     </div>

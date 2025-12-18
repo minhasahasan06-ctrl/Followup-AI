@@ -423,6 +423,9 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'epidemiology':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Epidemiology Analytics Platform)")
+        elif router_name == 'research_center':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Research Center Phase 10)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

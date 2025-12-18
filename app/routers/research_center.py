@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -39,6 +39,7 @@ from app.services.research_storage_service import ResearchStorageService
 from app.services.research_qa_service import ResearchQAService
 from app.services.phi_redaction_service import PHIRedactionService
 from app.services.access_control import HIPAAAuditLogger
+from app.services.s3_service import s3_service
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,7 @@ class NLPDocumentCreateRequest(BaseModel):
     source_type: str
     source_uri: str
     patient_id: Optional[str] = None
+    text: Optional[str] = None
 
 
 class QASessionCreateRequest(BaseModel):
@@ -912,22 +914,155 @@ async def export_dataset(
         )
 
 
+@router.get("/exports")
+async def list_exports(
+    user: User = Depends(require_doctor),
+    db: Session = Depends(get_db),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
+    limit: int = Query(default=50, le=100),
+):
+    """List exports for the current user with HIPAA security controls.
+    
+    Security: 
+    - Users only see their own exports (unless admin)
+    - PHI exports require explicit download authorization (not shown in list)
+    - k-anonymity enforcement via ResearchExportService on download
+    """
+    query = db.query(ResearchExport)
+    
+    # Security: Only show user's own exports unless admin
+    if user.role != "admin":
+        query = query.filter(ResearchExport.created_by == str(user.id))
+    
+    if status_filter:
+        query = query.filter(ResearchExport.status == status_filter)
+    
+    exports = query.order_by(ResearchExport.created_at.desc()).limit(limit).all()
+    
+    result = []
+    for exp in exports:
+        dataset = db.query(ResearchDataset).filter(ResearchDataset.id == exp.dataset_id).first()
+        
+        # Security: NEVER expose signed_url in list response
+        # All downloads must go through GET /exports/{id} for:
+        # 1. Fresh short-lived URL generation (15-minute TTL)
+        # 2. HIPAA audit logging with request context
+        # 3. Ownership verification on each download request
+        
+        result.append({
+            "id": str(exp.id),
+            "datasetId": str(exp.dataset_id) if exp.dataset_id else None,
+            "datasetName": dataset.name if dataset else None,
+            "format": exp.format,
+            "status": exp.status,
+            "includePhi": exp.include_phi,
+            "rowCount": exp.row_count,
+            "fileSizeBytes": exp.file_size_bytes,
+            "errorMessage": exp.error_message,
+            "createdAt": exp.created_at.isoformat() if exp.created_at else None,
+            "createdBy": str(exp.created_by) if exp.created_by else None,
+            "createdByRole": exp.created_by_role,
+        })
+    
+    return result
+
+
+SIGNED_URL_EXPIRY_SECONDS = 900  # 15 minutes - short-lived for security
+
 @router.get("/exports/{export_id}")
 async def get_export_status(
     export_id: str,
+    request: Request,
     user: User = Depends(require_doctor),
     db: Session = Depends(get_db),
 ):
-    """Get export status and download URL"""
+    """Get export status and download URL with HIPAA security controls.
+    
+    Security Model (HIPAA-compliant):
+    - K-anonymity (threshold=5) is enforced at export CREATION time via ResearchExportService
+    - Download authorization requires ownership verification (creator or admin only)
+    - All download attempts are HIPAA audit logged with full request context
+    - Signed URLs are regenerated per request (15-minute TTL), never stored/returned from DB
+    
+    This two-stage model is valid because:
+    1. K-anonymity protects against re-identification at the point of data export
+    2. Once exported, the file content is immutable - no re-identification risk increases
+    3. Ownership checks prevent unauthorized access to already-validated exports
+    4. Fresh URL generation prevents replay attacks if URLs are leaked
+    """
     export_record = db.query(ResearchExport).filter(ResearchExport.id == export_id).first()
     if not export_record:
         raise HTTPException(status_code=404, detail="Export not found")
+    
+    # Extract request context for audit logging
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
+    
+    # Security: Verify ownership (unless admin)
+    if user.role != "admin" and str(export_record.created_by) != str(user.id):
+        # HIPAA Audit: Log unauthorized access attempt with full context
+        HIPAAAuditLogger.log_access(
+            user_id=str(user.id),
+            user_role=user.role,
+            action="export_access_denied",
+            resource_type="ResearchExport",
+            resource_id=export_id,
+            access_reason="ownership_violation",
+            was_successful=False,
+            additional_context={
+                "owner_id": str(export_record.created_by),
+                "client_ip": client_ip,
+                "user_agent": user_agent[:200] if user_agent else None,
+            }
+        )
+        raise HTTPException(status_code=403, detail="Access denied: you can only view your own exports")
+    
+    # Security: Generate fresh short-lived URL for completed exports
+    download_url = None
+    url_expires_at = None
+    
+    if export_record.status == JobStatus.COMPLETED.value and export_record.storage_uri:
+        # Generate fresh presigned URL from storage_uri (never return stored URL)
+        # Extract S3 key from storage_uri (format: s3://bucket/key or just the key)
+        s3_key = export_record.storage_uri
+        if s3_key.startswith("s3://"):
+            s3_key = "/".join(s3_key.split("/")[3:])  # Remove s3://bucket/ prefix
+        
+        # Generate fresh short-lived URL (15 minutes)
+        fresh_url = s3_service.generate_presigned_url(s3_key, expiration=SIGNED_URL_EXPIRY_SECONDS)
+        url_expires_at = (datetime.utcnow() + timedelta(seconds=SIGNED_URL_EXPIRY_SECONDS)).isoformat()
+        
+        if fresh_url:
+            download_url = fresh_url
+            
+            # HIPAA Audit: Log download URL generation with full context
+            audit_action = "phi_export_download" if export_record.include_phi else "export_download"
+            HIPAAAuditLogger.log_access(
+                user_id=str(user.id),
+                user_role=user.role,
+                action=audit_action,
+                resource_type="ResearchExport",
+                resource_id=export_id,
+                access_reason="authorized_download_url_generated",
+                was_successful=True,
+                additional_context={
+                    "dataset_id": str(export_record.dataset_id) if export_record.dataset_id else None,
+                    "row_count": export_record.row_count,
+                    "format": export_record.format,
+                    "include_phi": export_record.include_phi,
+                    "url_expires_at": url_expires_at,
+                    "client_ip": client_ip,
+                    "user_agent": user_agent[:200] if user_agent else None,
+                }
+            )
     
     return {
         "id": str(export_record.id),
         "status": export_record.status,
         "format": export_record.format,
-        "downloadUrl": export_record.signed_url if export_record.status == JobStatus.COMPLETED.value else None,
+        "includePhi": export_record.include_phi,
+        "downloadUrl": download_url,
+        "urlExpiresAt": url_expires_at,
         "fileSizeBytes": export_record.file_size_bytes,
         "rowCount": export_record.row_count,
         "createdAt": export_record.created_at.isoformat() if export_record.created_at else None,
@@ -943,7 +1078,7 @@ async def list_nlp_documents(
     status_filter: Optional[str] = Query(default=None, alias="status"),
     limit: int = Query(default=50, le=100),
 ):
-    """List NLP documents"""
+    """List NLP documents with redaction runs"""
     query = db.query(NLPDocument)
     
     if study_id:
@@ -953,18 +1088,37 @@ async def list_nlp_documents(
     
     docs = query.order_by(NLPDocument.created_at.desc()).limit(limit).all()
     
-    return [
-        {
+    result = []
+    for d in docs:
+        runs = db.query(NLPRedactionRun).filter(
+            NLPRedactionRun.document_id == str(d.id)
+        ).order_by(NLPRedactionRun.created_at.desc()).all()
+        
+        result.append({
             "id": str(d.id),
             "studyId": d.study_id,
             "sourceType": d.source_type,
+            "sourceUri": d.source_uri,
+            "patientId": d.patient_id,
             "status": d.status,
             "phiCount": d.phi_count,
+            "redactedUri": d.redacted_uri,
             "processedAt": d.processed_at.isoformat() if d.processed_at else None,
             "createdAt": d.created_at.isoformat() if d.created_at else None,
-        }
-        for d in docs
-    ]
+            "createdBy": d.created_by,
+            "redactionRuns": [
+                {
+                    "id": str(r.id),
+                    "status": r.status,
+                    "entitiesDetected": r.entities_detected,
+                    "entitiesRedacted": r.entities_redacted,
+                    "createdAt": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in runs
+            ]
+        })
+    
+    return result
 
 
 @router.post("/nlp/documents")
@@ -981,6 +1135,7 @@ async def create_nlp_document(
         source_type=request.source_type,
         source_uri=request.source_uri,
         patient_id=request.patient_id,
+        original_text=request.text,
         status="pending",
         created_by=str(user.id),
     )
@@ -1008,14 +1163,9 @@ async def create_nlp_document(
     }
 
 
-class ProcessDocumentRequest(BaseModel):
-    text: str
-
-
 @router.post("/nlp/documents/{document_id}/process")
 async def process_nlp_document(
     document_id: str,
-    request: ProcessDocumentRequest,
     user: User = Depends(require_doctor),
     db: Session = Depends(get_db),
 ):
@@ -1024,12 +1174,16 @@ async def process_nlp_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     
+    text = doc.original_text
+    if not text:
+        raise HTTPException(status_code=400, detail="Document has no text to process")
+    
     redaction_service = PHIRedactionService(db)
     
     try:
         result = await redaction_service.process_document(
             document_id=document_id,
-            text=request.text,
+            text=text,
             user_id=str(user.id),
         )
         
@@ -1038,6 +1192,8 @@ async def process_nlp_document(
             "status": result["status"],
             "findings": result["findings"],
             "redactedText": result["redacted_text"],
+            "entitiesDetected": result.get("entities_detected", len(result.get("findings", []))),
+            "entitiesRedacted": result.get("entities_redacted", len(result.get("findings", []))),
             "entityCounts": result["entity_counts"],
             "processingTimeMs": result["processing_time_ms"],
         }
@@ -1065,12 +1221,17 @@ async def get_nlp_document(
         "studyId": doc.study_id,
         "patientId": doc.patient_id,
         "sourceType": doc.source_type,
+        "sourceUri": doc.source_uri,
+        "originalText": doc.original_text,
+        "redactedText": doc.redacted_text,
         "status": doc.status,
         "phiDetected": doc.phi_detected_json,
         "phiCount": doc.phi_count,
         "redactedUri": doc.redacted_uri,
         "processedAt": doc.processed_at.isoformat() if doc.processed_at else None,
         "processingTimeMs": doc.processing_time_ms,
+        "createdAt": doc.created_at.isoformat() if doc.created_at else None,
+        "createdBy": doc.created_by,
         "redactionRuns": [
             {
                 "id": r.id,

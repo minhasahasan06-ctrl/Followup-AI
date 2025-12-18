@@ -21326,6 +21326,98 @@ Provide:
   // END ML TRAINING INFRASTRUCTURE PROXY ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // RESEARCH CENTER PHASE 10 PROXY ROUTES
+  // Routes for datasets, exports, NLP redaction, Q&A sessions
+  // =============================================================================
+
+  // Datasets
+  app.get('/python-api/v1/research-center/datasets', isAuthenticated, async (req: any, res) => {
+    const studyId = req.query.study_id as string;
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    let path = `/api/v1/research-center/datasets?limit=${limit}`;
+    if (studyId) path += `&study_id=${studyId}`;
+    await automationProxy(req, res, path, 'GET');
+  });
+
+  app.get('/python-api/v1/research-center/datasets/:datasetId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/datasets/${req.params.datasetId}`, 'GET');
+  });
+
+  app.get('/python-api/v1/research-center/datasets/:datasetId/versions', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/datasets/${req.params.datasetId}/versions`, 'GET');
+  });
+
+  app.get('/python-api/v1/research-center/datasets/:datasetId/lineage', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/datasets/${req.params.datasetId}/lineage`, 'GET');
+  });
+
+  app.post('/python-api/v1/research-center/datasets/:datasetId/export', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/datasets/${req.params.datasetId}/export`, 'POST');
+  });
+
+  // Exports
+  app.get('/python-api/v1/research-center/exports', isAuthenticated, async (req: any, res) => {
+    const status = req.query.status as string;
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    let path = `/api/v1/research-center/exports?limit=${limit}`;
+    if (status) path += `&status=${status}`;
+    await automationProxy(req, res, path, 'GET');
+  });
+
+  app.get('/python-api/v1/research-center/exports/:exportId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/exports/${req.params.exportId}`, 'GET');
+  });
+
+  // NLP Documents
+  app.get('/python-api/v1/research-center/nlp/documents', isAuthenticated, async (req: any, res) => {
+    const studyId = req.query.study_id as string;
+    const status = req.query.status as string;
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    let path = `/api/v1/research-center/nlp/documents?limit=${limit}`;
+    if (studyId) path += `&study_id=${studyId}`;
+    if (status) path += `&status=${status}`;
+    await automationProxy(req, res, path, 'GET');
+  });
+
+  app.post('/python-api/v1/research-center/nlp/documents', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/research-center/nlp/documents', 'POST');
+  });
+
+  app.get('/python-api/v1/research-center/nlp/documents/:documentId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/nlp/documents/${req.params.documentId}`, 'GET');
+  });
+
+  app.post('/python-api/v1/research-center/nlp/documents/:documentId/process', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/nlp/documents/${req.params.documentId}/process`, 'POST');
+  });
+
+  // Q&A Sessions
+  app.get('/python-api/v1/research-center/ai/qa/sessions', isAuthenticated, async (req: any, res) => {
+    const limit = parseInt(req.query.limit as string, 10) || 20;
+    await automationProxy(req, res, `/api/v1/research-center/ai/qa/sessions?limit=${limit}`, 'GET');
+  });
+
+  app.post('/python-api/v1/research-center/ai/qa/sessions', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/v1/research-center/ai/qa/sessions', 'POST');
+  });
+
+  app.get('/python-api/v1/research-center/ai/qa/sessions/:sessionId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/ai/qa/sessions/${req.params.sessionId}`, 'GET');
+  });
+
+  app.post('/python-api/v1/research-center/ai/qa/sessions/:sessionId/messages', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/ai/qa/sessions/${req.params.sessionId}/messages`, 'POST');
+  });
+
+  app.delete('/python-api/v1/research-center/ai/qa/sessions/:sessionId', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/v1/research-center/ai/qa/sessions/${req.params.sessionId}`, 'DELETE');
+  });
+
+  // =============================================================================
+  // END RESEARCH CENTER PHASE 10 PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
 
   // WebSocket proxy for agent communication
