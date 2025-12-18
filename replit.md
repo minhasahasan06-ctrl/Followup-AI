@@ -48,8 +48,11 @@ The backend consists of two main components:
   - PHIRedactionService: OpenAI GPT-4o-based PHI detection with regex pre-detection, 18 PHI entity types, configurable confidence thresholds, and audit trails
   - ResearchQAService: AI-powered Q&A for research data analysis using OpenAI with research-specific prompting and de-identified data constraints
   - Comprehensive REST API (`/api/v1/research-center/`): Cohorts, studies, jobs, artifacts, datasets, exports, NLP documents, and Q&A sessions
-  - k-anonymity protection (threshold=5) for all cohort previews
-  - Doctor-only access with full HIPAA audit logging for all operations
+  - k-anonymity protection (threshold=5) enforced at export creation time via ResearchExportService
+  - PHI export security: Fresh short-lived URLs (15-minute TTL) generated per request, never stored URLs exposed
+  - HIPAA audit logging with full request context (client IP, user agent, URL expiry) for all download attempts
+  - Doctor-only access with ownership verification on all export downloads
+  - Frontend Research Center with 4 tabs: Exports (wizard + status tracking), Datasets (version browser + lineage), NLP Redaction (document upload + PHI review), Research Q&A (AI chat + sessions)
 - **HIPAA Compliance & Access Control**: Features a Unified Access Control Service (`AccessControlService`), `HIPAAAuditLogger`, `AccessScope` and `PHICategory` enums, and `RequirePatientAccess` FastAPI dependency for robust, route-level access control and audit logging.
 - **Authentication Flow**: Auth0 for frontend, session-based for Express, JWT (DEV_MODE_SECRET) for Express-to-Python, and internal JWT verification in Python. Role-based routing ensures appropriate access for Admin, Doctor, and Patient users.
 
