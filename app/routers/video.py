@@ -29,6 +29,7 @@ from app.services.video_session_storage_service import (
 from app.services.openai_vision_service import (
     OpenAIVisionService, ExamType, openai_vision_service
 )
+from app.services.exam_outcome_service import ExamOutcomeService
 from app.models.video_ai_models import VideoExamSession as VideoExamSessionModel
 
 router = APIRouter(prefix="/api/video", tags=["video"])
@@ -879,3 +880,54 @@ async def check_image_quality(
         "issues": result.issues,
         "recommendations": result.recommendations
     }
+
+
+# ===== Exam Outcome Endpoints =====
+
+
+@router.get("/exam-sessions/{session_id}/outcome")
+async def get_session_outcome(
+    session_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get the processed outcome for an exam session"""
+    outcome_service = ExamOutcomeService(db)
+    
+    result = outcome_service.get_session_outcome(
+        session_id=session_id,
+        user_id=current_user.id,
+        user_role=current_user.role,
+        client_ip=str(request.client.host) if request.client else None
+    )
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Outcome not found")
+    
+    return result
+
+
+@router.get("/patients/{patient_id}/exam-history")
+async def get_patient_exam_history(
+    patient_id: str,
+    request: Request,
+    limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get exam outcome history for a patient"""
+    if current_user.role == "patient" and current_user.id != patient_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    outcome_service = ExamOutcomeService(db)
+    
+    results = outcome_service.get_patient_exam_history(
+        patient_id=patient_id,
+        user_id=current_user.id,
+        user_role=current_user.role,
+        limit=limit,
+        client_ip=str(request.client.host) if request.client else None
+    )
+    
+    return {"patient_id": patient_id, "history": results}

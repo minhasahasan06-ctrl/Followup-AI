@@ -95,6 +95,7 @@ class VideoExamSession(Base):
     
     # ML analysis reference (links to VideoMetrics after completion)
     video_metrics_id = Column(Integer, nullable=True)
+    ai_analysis_completed = Column(Boolean, default=False)
     
     # Exam metadata
     prep_time_seconds = Column(Integer, default=30)  # 30-second prep screens
@@ -676,5 +677,53 @@ class AccelerometerTremorData(Base):
     
     __table_args__ = (
         Index('idx_accel_tremor_patient_date', 'patient_id', 'created_at'),
+    )
+
+
+class VideoExamOutcome(Base):
+    """Processed outcomes from video exam sessions with clinical findings"""
+    __tablename__ = "video_exam_outcomes"
+    
+    id = Column(String, primary_key=True, server_default=func.gen_random_uuid())
+    session_id = Column(String, ForeignKey("video_exam_sessions.id", ondelete="CASCADE"), nullable=False)
+    patient_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    
+    # Analysis summary
+    stages_analyzed = Column(Integer, default=0)
+    total_findings = Column(Integer, default=0)
+    
+    # Severity assessment
+    overall_severity_score = Column(Float)  # 0-10 scale
+    severity_level = Column(String)  # normal, mild, moderate, significant, severe, urgent
+    
+    # Follow-up recommendations
+    follow_up_urgency = Column(String)  # routine, soon, urgent, immediate
+    follow_up_days = Column(Integer)  # Recommended days until follow-up
+    
+    # Detailed findings and recommendations (JSON)
+    findings_json = Column(Text)  # JSON array of structured findings
+    recommendations_json = Column(Text)  # JSON array of recommendations
+    
+    # Review status
+    requires_physician_review = Column(Boolean, default=False)
+    physician_reviewed = Column(Boolean, default=False)
+    physician_notes = Column(Text)
+    reviewed_by = Column(String)  # Doctor user ID
+    reviewed_at = Column(DateTime(timezone=True))
+    
+    # Processing metadata
+    processed_at = Column(DateTime(timezone=True), server_default=func.now())
+    model_version = Column(String)
+    processing_time_ms = Column(Integer)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    __table_args__ = (
+        Index('idx_exam_outcome_session', 'session_id'),
+        Index('idx_exam_outcome_patient', 'patient_id'),
+        Index('idx_exam_outcome_severity', 'severity_level'),
+        Index('idx_exam_outcome_review', 'requires_physician_review', 'physician_reviewed'),
     )
 

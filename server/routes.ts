@@ -13997,6 +13997,65 @@ Provide:
     }
   });
 
+  // ===== Exam Outcome Endpoints =====
+
+  // Get session outcome
+  app.get('/api/video/exam-sessions/:sessionId/outcome', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { sessionId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/exam-sessions/${sessionId}/outcome`, {
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching session outcome:', error);
+      res.status(500).json({ message: 'Failed to fetch session outcome' });
+    }
+  });
+
+  // Get patient exam history
+  app.get('/api/video/patients/:patientId/exam-history', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { patientId } = req.params;
+      const limit = req.query.limit || 10;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/patients/${patientId}/exam-history?limit=${limit}`, {
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching patient exam history:', error);
+      res.status(500).json({ message: 'Failed to fetch patient exam history' });
+    }
+  });
+
   // Proxy endpoint to fetch latest Video AI metrics from Python backend
   app.get('/api/video-ai/latest-metrics', isAuthenticated, async (req: any, res) => {
     try {
