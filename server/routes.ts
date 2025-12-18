@@ -13901,6 +13901,102 @@ Provide:
     }
   });
 
+  // ===== Vision Analysis Endpoints =====
+
+  // Analyze single exam image
+  app.post('/api/video/exam-sessions/:sessionId/analyze-image', isDoctor, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { sessionId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/exam-sessions/${sessionId}/analyze-image`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(req.body)
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error analyzing exam image:', error);
+      res.status(500).json({ message: 'Failed to analyze exam image' });
+    }
+  });
+
+  // Batch analyze session
+  app.post('/api/video/exam-sessions/:sessionId/batch-analyze', isDoctor, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { sessionId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/exam-sessions/${sessionId}/batch-analyze`, {
+        method: 'POST',
+        headers: { 'Authorization': authHeader }
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error batch analyzing session:', error);
+      res.status(500).json({ message: 'Failed to batch analyze session' });
+    }
+  });
+
+  // Check image quality
+  app.post('/api/video/quality-check', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/video/quality-check`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(req.body)
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error checking image quality:', error);
+      res.status(500).json({ message: 'Failed to check image quality' });
+    }
+  });
+
   // Proxy endpoint to fetch latest Video AI metrics from Python backend
   app.get('/api/video-ai/latest-metrics', isAuthenticated, async (req: any, res) => {
     try {

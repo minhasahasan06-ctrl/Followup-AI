@@ -26,6 +26,9 @@ from app.services.access_control import HIPAAAuditLogger, PHICategory
 from app.services.video_session_storage_service import (
     VideoSessionStorageService, StorageType, video_session_storage_service
 )
+from app.services.openai_vision_service import (
+    OpenAIVisionService, ExamType, openai_vision_service
+)
 from app.models.video_ai_models import VideoExamSession as VideoExamSessionModel
 
 router = APIRouter(prefix="/api/video", tags=["video"])
@@ -709,4 +712,170 @@ async def delete_exam_session(
         "session_id": session_id,
         "deleted": True,
         "files_deleted": deletion_result.get("deleted_objects", 0)
+    }
+
+
+# ===== Vision Analysis Endpoints =====
+
+
+class AnalyzeImageRequest(BaseModel):
+    image_data: str
+    exam_type: str = "custom"
+    additional_context: Optional[str] = None
+    
+    @field_validator('exam_type')
+    @classmethod
+    def validate_exam_type(cls, v):
+        valid_types = ["skin", "oral", "joint", "wound", "eye", "palm", "tongue", "lips", "respiratory", "custom"]
+        if v not in valid_types:
+            raise ValueError(f"Invalid exam type - must be one of {valid_types}")
+        return v
+
+
+class QualityCheckRequest(BaseModel):
+    image_data: str
+
+
+@router.post("/exam-sessions/{session_id}/analyze-image")
+async def analyze_exam_image(
+    session_id: str,
+    request: Request,
+    body: AnalyzeImageRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze an exam image using OpenAI Vision for clinical observations"""
+    if current_user.role != "doctor":
+        raise HTTPException(status_code=403, detail="Doctor access required for AI analysis")
+    
+    session = db.query(VideoExamSessionModel).filter(
+        VideoExamSessionModel.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    vision = openai_vision_service
+    result = await vision.analyze_exam_image(
+        image_data=body.image_data,
+        exam_type=ExamType(body.exam_type),
+        session_id=session_id,
+        patient_id=session.patient_id,
+        user_id=current_user.id,
+        client_ip=str(request.client.host) if request.client else None,
+        additional_context=body.additional_context
+    )
+    
+    return {
+        "session_id": session_id,
+        "exam_type": result.exam_type.value,
+        "findings": result.findings,
+        "severity_score": result.severity_score,
+        "confidence_score": result.confidence_score,
+        "recommendations": result.recommendations,
+        "follow_up_suggested": result.follow_up_suggested,
+        "raw_analysis": result.raw_analysis,
+        "analyzed_at": result.analyzed_at.isoformat(),
+        "model_used": result.model_used,
+        "processing_time_ms": result.processing_time_ms
+    }
+
+
+@router.post("/exam-sessions/{session_id}/batch-analyze")
+async def batch_analyze_session(
+    session_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze all images in a session using OpenAI Vision"""
+    if current_user.role != "doctor":
+        raise HTTPException(status_code=403, detail="Doctor access required for AI analysis")
+    
+    session = db.query(VideoExamSessionModel).filter(
+        VideoExamSessionModel.id == session_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if session.status != "completed":
+        raise HTTPException(status_code=400, detail="Session must be completed before batch analysis")
+    
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=current_user.id,
+        actor_role="doctor",
+        patient_id=session.patient_id,
+        action="batch_analyze",
+        phi_categories=["video_exam", "clinical_findings"],
+        resource_type="exam_session",
+        access_reason="Batch AI analysis of exam session",
+        ip_address=str(request.client.host) if request.client else None
+    )
+    
+    stage_analysis = {}
+    stages_analyzed = 0
+    
+    if session.eyes_frame_s3_uri and session.eyes_stage_completed:
+        stage_analysis["eyes"] = {
+            "completed": True,
+            "analysis_pending": True,
+            "message": "Analysis requires image data - use individual analyze-image endpoint"
+        }
+        stages_analyzed += 1
+    
+    if session.palm_frame_s3_uri and session.palm_stage_completed:
+        stage_analysis["palm"] = {
+            "completed": True,
+            "analysis_pending": True,
+            "message": "Analysis requires image data - use individual analyze-image endpoint"
+        }
+        stages_analyzed += 1
+    
+    if session.tongue_frame_s3_uri and session.tongue_stage_completed:
+        stage_analysis["tongue"] = {
+            "completed": True,
+            "analysis_pending": True,
+            "message": "Analysis requires image data - use individual analyze-image endpoint"
+        }
+        stages_analyzed += 1
+    
+    if session.lips_frame_s3_uri and session.lips_stage_completed:
+        stage_analysis["lips"] = {
+            "completed": True,
+            "analysis_pending": True,
+            "message": "Analysis requires image data - use individual analyze-image endpoint"
+        }
+        stages_analyzed += 1
+    
+    return {
+        "session_id": session_id,
+        "stages_analyzed": stages_analyzed,
+        "stage_analysis": stage_analysis,
+        "message": "Use analyze-image endpoint with base64 image data for each stage"
+    }
+
+
+@router.post("/quality-check")
+async def check_image_quality(
+    request: Request,
+    body: QualityCheckRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Check the quality of an image before capture"""
+    if current_user.role not in ["doctor", "patient"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    vision = openai_vision_service
+    result = await vision.assess_image_quality(
+        image_data=body.image_data,
+        user_id=current_user.id,
+        client_ip=str(request.client.host) if request.client else None
+    )
+    
+    return {
+        "quality_score": result.quality_score,
+        "is_acceptable": result.is_acceptable,
+        "issues": result.issues,
+        "recommendations": result.recommendations
     }
