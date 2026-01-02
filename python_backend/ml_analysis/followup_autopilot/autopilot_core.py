@@ -43,12 +43,15 @@ class AutopilotCore:
     """
     Autopilot Core - Main orchestrator for patient state management.
     
+    Phase 13: Enhanced with calibrated deterioration predictions.
+    
     Responsibilities:
     1. Fetch and prepare patient feature data
-    2. Run all 4 ML models
-    3. Compute composite risk score and state
-    4. Schedule next follow-up
-    5. Update patient state in database
+    2. Run all ML models including trained LSTM deterioration model
+    3. Apply probability calibration for well-calibrated risk scores
+    4. Compute composite risk score and state
+    5. Schedule next follow-up
+    6. Update patient state in database
     """
     
     def __init__(self, db_session=None):
@@ -60,6 +63,15 @@ class AutopilotCore:
         
         from .feature_builder import FeatureBuilder
         self.feature_builder = FeatureBuilder(db_session)
+        
+        self.deterioration_service = None
+        try:
+            from app.services.deterioration_ensemble_service import DeteriorationEnsembleService
+            self.deterioration_service = DeteriorationEnsembleService(db_session=db_session)
+            if self.deterioration_service.is_db_loaded:
+                self.logger.info("Using trained LSTM model for deterioration prediction")
+        except Exception as e:
+            self.logger.warning(f"Could not load deterioration service: {e}")
     
     def update_patient_state(self, patient_id: str) -> Dict[str, Any]:
         """
@@ -89,9 +101,27 @@ class AutopilotCore:
         
         anomaly_score = self.models.get_anomaly_detector().score(today_features)
         
+        deterioration_result = None
+        deterioration_score = 0
+        is_calibrated = False
+        if self.deterioration_service:
+            try:
+                deterioration_result = self.deterioration_service.predict_deterioration(
+                    today_features, use_news2=True
+                )
+                deterioration_score = deterioration_result.get("probability", 0) * 100
+                is_calibrated = deterioration_result.get("model_info", {}).get("is_calibrated", False)
+            except Exception as e:
+                self.logger.warning(f"Deterioration prediction failed: {e}")
+        
         risk_score = risk_result["risk_score"]
         if anomaly_score > 0.6:
             risk_score = min(100, risk_score + anomaly_score * 15)
+        
+        if deterioration_score > 50:
+            deterioration_weight = 0.25 if is_calibrated else 0.15
+            base_weight = 1 - deterioration_weight
+            risk_score = min(100, base_weight * risk_score + deterioration_weight * deterioration_score)
         
         risk_state = self._compute_risk_state(risk_score)
         
@@ -109,16 +139,22 @@ class AutopilotCore:
             risk_state, patient_features_for_engagement, preferred_hour
         )
         
+        risk_components = {
+            "clinical": risk_result["risk_components"]["clinical"],
+            "mental_health": risk_result["risk_components"]["mental_health"],
+            "adherence": risk_result["risk_components"]["adherence"],
+            "anomaly": round(anomaly_score * 100, 1),
+        }
+        
+        if deterioration_result:
+            risk_components["deterioration"] = round(deterioration_score, 1)
+            risk_components["deterioration_calibrated"] = is_calibrated
+        
         state = {
             "patient_id": patient_id,
             "risk_score": round(risk_score, 2),
             "risk_state": risk_state.value,
-            "risk_components": {
-                "clinical": risk_result["risk_components"]["clinical"],
-                "mental_health": risk_result["risk_components"]["mental_health"],
-                "adherence": risk_result["risk_components"]["adherence"],
-                "anomaly": round(anomaly_score * 100, 1),
-            },
+            "risk_components": risk_components,
             "last_updated": datetime.now(timezone.utc),
             "next_followup_at": next_followup,
             "preferred_contact_hour": preferred_hour,
@@ -126,6 +162,7 @@ class AutopilotCore:
             "inference_confidence": risk_result.get("confidence", 0.5),
             "p_non_adherence_7d": round(p_non_adherence, 4),
             "anomaly_score": round(anomaly_score, 4),
+            "deterioration_prediction": deterioration_result,
         }
         
         self._save_state(patient_id, state)

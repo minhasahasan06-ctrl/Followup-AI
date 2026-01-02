@@ -172,18 +172,32 @@ async def predict_deterioration(
     """
     Predict clinical deterioration and readmission risk.
     
-    Uses XGBoost/Random Forest ensemble approach to predict:
-    - Deterioration risk score (0-10)
+    Phase 13: Enhanced with calibrated LSTM predictions from PostgreSQL.
+    
+    Uses ensemble approach with trained LSTM model (when available):
+    - Deterioration risk score (0-10) with calibrated probabilities
     - 30-day readmission probability
+    - NEWS2 early warning score integration
     
     Returns severity level, time to action, and contributing factors.
     """
+    from app.services.audit_logger import HIPAAAuditLogger
+    
     doctor_id = current_user.get("sub")
     patient_id = request.patient_id
+    user_role = str(getattr(current_user, 'role', None) or current_user.get('role') or "patient")
     
-    # Verify access for doctor role
-    if current_user.get("role") == "doctor":
+    if user_role == "doctor":
         if not verify_doctor_patient_access(db, doctor_id, patient_id):
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=doctor_id,
+                actor_role=user_role,
+                patient_id=patient_id,
+                resource_type="ml_deterioration_prediction",
+                action="predict_denied",
+                access_reason="Unauthorized access attempt",
+                additional_context={"reason": "No active doctor-patient assignment"}
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No authorized access to this patient"
@@ -199,10 +213,39 @@ async def predict_deterioration(
             use_scale2=request.use_scale2
         )
         
+        model_info = result.get("deterioration", {}).get("model_info", {})
+        is_calibrated = model_info.get("is_calibrated", False)
+        is_db_loaded = model_info.get("is_db_loaded", False)
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=doctor_id,
+            actor_role=user_role,
+            patient_id=patient_id,
+            resource_type="ml_deterioration_prediction",
+            action="predict",
+            access_reason="Clinical deterioration risk assessment",
+            additional_context={
+                "use_ensemble": request.use_ensemble,
+                "use_news2": request.use_news2,
+                "is_calibrated": is_calibrated,
+                "is_db_loaded": is_db_loaded,
+                "severity": result.get("deterioration", {}).get("severity", "unknown")
+            }
+        )
+        
         return result
         
     except Exception as e:
         logger.error(f"Deterioration prediction failed: {e}")
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=doctor_id,
+            actor_role=user_role,
+            patient_id=patient_id,
+            resource_type="ml_deterioration_prediction",
+            action="predict_error",
+            access_reason="Prediction failed",
+            additional_context={"error": str(e)}
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Prediction failed: {str(e)}"
