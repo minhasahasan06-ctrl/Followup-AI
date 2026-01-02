@@ -170,6 +170,13 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import video_billing_models: {e}")
 
+# Import Tinker models for Phase A table creation
+try:
+    from app.models import tinker_models
+    logger.info("✅ Tinker models imported for table creation")
+except ImportError as e:
+    logger.warning(f"❌ Could not import tinker_models: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

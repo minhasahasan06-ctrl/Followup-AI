@@ -44,6 +44,26 @@ class Settings(BaseSettings):
     
     ENVIRONMENT: str = os.getenv("NODE_ENV", "development")
     
+    # Tinker Thinking Machine Configuration (NON-BAA Mode)
+    # CRITICAL: Tinker does NOT have a BAA - never send PHI
+    TINKER_API_KEY: Optional[str] = os.getenv("TINKER_API_KEY")
+    TINKER_ENABLED: bool = os.getenv("TINKER_ENABLED", "false").lower() == "true"
+    TINKER_MODE: str = os.getenv("TINKER_MODE", "NON_BAA")
+    TINKER_K_ANON: int = int(os.getenv("TINKER_K_ANON", "25"))
+    TINKER_API_URL: str = os.getenv("TINKER_API_URL", "https://api.tinker.ai/v1")
+    TINKER_TIMEOUT_SECONDS: int = int(os.getenv("TINKER_TIMEOUT_SECONDS", "15"))
+    TINKER_MAX_RETRIES: int = int(os.getenv("TINKER_MAX_RETRIES", "2"))
+    
+    def is_tinker_enabled(self) -> bool:
+        """Check if Tinker integration is enabled and configured"""
+        return self.TINKER_ENABLED and self.TINKER_API_KEY is not None
+    
+    def validate_tinker_non_baa(self) -> bool:
+        """Validate Tinker is in NON-BAA mode (required - no PHI allowed)"""
+        if self.TINKER_MODE != "NON_BAA":
+            raise ValueError("TINKER_MODE must be 'NON_BAA' - Tinker does not have a BAA")
+        return True
+    
     def get_plan_included_minutes(self, plan: str) -> int:
         """Get included participant minutes for a plan"""
         plan_map = {
