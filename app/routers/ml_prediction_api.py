@@ -81,6 +81,13 @@ class PredictionResponse(BaseModel):
 
 # ==================== Helper Functions ====================
 
+def get_user_attr(user, attr: str, default=None):
+    """Safely get an attribute from user (dict or ORM object)."""
+    if hasattr(user, 'get') and callable(user.get):
+        return user.get(attr, default)
+    return getattr(user, attr, default)
+
+
 def verify_doctor_patient_access(
     db: Session,
     doctor_id: str,
@@ -103,7 +110,7 @@ def verify_doctor_patient_access(
 @router.post("/disease-risk")
 async def predict_disease_risk(
     request: DiseaseRiskRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -122,11 +129,12 @@ async def predict_disease_risk(
     
     Returns probability, risk level, confidence, contributing factors, and recommendations.
     """
-    doctor_id = current_user.get("sub")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
     patient_id = request.patient_id
     formula_type = request.formula_type or "auto"
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
-    if current_user.get("role") == "doctor":
+    if user_role == "doctor":
         if not verify_doctor_patient_access(db, doctor_id, patient_id):
             AuditLogger.log_phi_access(
                 db=db,
@@ -166,7 +174,7 @@ async def predict_disease_risk(
 @router.post("/deterioration")
 async def predict_deterioration(
     request: DeteriorationRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -183,9 +191,9 @@ async def predict_deterioration(
     """
     from app.services.audit_logger import HIPAAAuditLogger
     
-    doctor_id = current_user.get("sub")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
     patient_id = request.patient_id
-    user_role = str(getattr(current_user, 'role', None) or current_user.get('role') or "patient")
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     if user_role == "doctor":
         if not verify_doctor_patient_access(db, doctor_id, patient_id):
@@ -255,7 +263,7 @@ async def predict_deterioration(
 @router.post("/time-series")
 async def predict_vital_trends(
     request: TimeSeriesRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -268,11 +276,12 @@ async def predict_vital_trends(
     
     Returns trend predictions with confidence intervals.
     """
-    doctor_id = current_user.get("sub")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
     patient_id = request.patient_id
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     # Verify access for doctor role
-    if current_user.get("role") == "doctor":
+    if user_role == "doctor":
         if not verify_doctor_patient_access(db, doctor_id, patient_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -300,7 +309,7 @@ async def predict_vital_trends(
 @router.post("/segment")
 async def segment_patient(
     request: SegmentationRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -314,11 +323,12 @@ async def segment_patient(
     
     Returns segment assignment with confidence and recommendations.
     """
-    doctor_id = current_user.get("sub")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
     patient_id = request.patient_id
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     # Verify access for doctor role
-    if current_user.get("role") == "doctor":
+    if user_role == "doctor":
         if not verify_doctor_patient_access(db, doctor_id, patient_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -345,7 +355,7 @@ async def segment_patient(
 @router.post("/comprehensive")
 async def get_comprehensive_assessment(
     request: ComprehensiveRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -360,11 +370,12 @@ async def get_comprehensive_assessment(
     
     Ideal for patient overview dashboards.
     """
-    doctor_id = current_user.get("sub")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
     patient_id = request.patient_id
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     # Verify access for doctor role
-    if current_user.get("role") == "doctor":
+    if user_role == "doctor":
         if not verify_doctor_patient_access(db, doctor_id, patient_id):
             AuditLogger.log_phi_access(
                 db=db,
@@ -401,7 +412,7 @@ async def get_comprehensive_assessment(
 
 @router.get("/models/info")
 async def get_model_info(
-    current_user: dict = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """
     Get information about available ML models.
@@ -462,15 +473,15 @@ async def ml_prediction_health():
 @router.get("/disease-risk/{patient_id}")
 async def get_disease_risk(
     patient_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     GET endpoint for disease risk predictions (frontend-compatible).
     Returns disease risk predictions for the specified patient.
     """
-    doctor_id = current_user.get("sub")
-    user_role = current_user.get("role", "patient")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     # Access control: patients can view own data, doctors need assignment
     if user_role == "doctor":
@@ -520,7 +531,7 @@ async def get_deterioration(
     use_ensemble: bool = True,
     use_news2: bool = True,
     use_scale2: bool = False,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -533,8 +544,8 @@ async def get_deterioration(
     
     Returns clinical deterioration and readmission predictions.
     """
-    doctor_id = current_user.get("sub")
-    user_role = current_user.get("role", "patient")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     # Access control
     if user_role == "doctor":
@@ -584,15 +595,15 @@ async def get_deterioration(
 async def get_vital_trends(
     patient_id: str,
     sequence_length: int = 14,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     GET endpoint for vital trend predictions (frontend-compatible).
     Returns LSTM-style vital sign forecasts.
     """
-    doctor_id = current_user.get("sub")
-    user_role = current_user.get("role", "patient")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     # Access control
     if user_role == "doctor":
@@ -639,15 +650,15 @@ async def get_vital_trends(
 @router.get("/patient-segments/{patient_id}")
 async def get_patient_segment(
     patient_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     GET endpoint for patient segmentation (frontend-compatible).
     Returns K-Means cluster assignment and phenotype profile.
     """
-    doctor_id = current_user.get("sub")
-    user_role = current_user.get("role", "patient")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     # Access control
     if user_role == "doctor":
@@ -693,15 +704,15 @@ async def get_patient_segment(
 @router.get("/comprehensive/{patient_id}")
 async def get_comprehensive_ml_assessment(
     patient_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     GET endpoint for comprehensive ML assessment (frontend-compatible).
     Returns all prediction types in a unified response.
     """
-    doctor_id = current_user.get("sub")
-    user_role = current_user.get("role", "patient")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     # Access control
     if user_role == "doctor":
@@ -749,7 +760,7 @@ async def get_prediction_history(
     patient_id: str,
     prediction_type: str,
     days: int = 14,
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -764,8 +775,8 @@ async def get_prediction_history(
     Returns:
         History array with date, probability, risk_level for each historical prediction
     """
-    doctor_id = current_user.get("sub")
-    user_role = current_user.get("role", "patient")
+    doctor_id = str(get_user_attr(current_user, "sub") or get_user_attr(current_user, "id") or "")
+    user_role = str(get_user_attr(current_user, "role") or "patient")
     
     # Access control
     if user_role == "doctor":
