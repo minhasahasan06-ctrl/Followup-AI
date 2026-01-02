@@ -448,6 +448,7 @@ async def get_upload_url(
         raise HTTPException(status_code=400, detail="Session is not in progress")
     
     storage = video_session_storage_service
+    user_role = str(getattr(current_user, 'role', None) or "patient")
     result = await storage.generate_upload_url(
         patient_id=session.patient_id,
         session_id=session_id,
@@ -456,7 +457,8 @@ async def get_upload_url(
         file_extension=body.file_extension,
         stage=body.stage,
         file_size_bytes=body.file_size_bytes,
-        user_id=current_user.id,
+        user_id=str(current_user.id),
+        user_role=user_role,
         client_ip=str(request.client.host) if request.client else None
     )
     
@@ -670,10 +672,12 @@ async def get_session_manifest(
         raise HTTPException(status_code=403, detail="Access denied")
     
     storage = video_session_storage_service
+    user_role = str(getattr(current_user, 'role', None) or "patient")
     manifest = await storage.get_session_manifest(
         patient_id=session.patient_id,
         session_id=session_id,
-        user_id=current_user.id,
+        user_id=str(current_user.id),
+        user_role=user_role,
         client_ip=str(request.client.host) if request.client else None
     )
     
@@ -699,10 +703,12 @@ async def delete_exam_session(
         raise HTTPException(status_code=404, detail="Session not found")
     
     storage = video_session_storage_service
+    user_role = str(getattr(current_user, 'role', None) or "patient")
     deletion_result = await storage.delete_session_content(
         patient_id=session.patient_id,
         session_id=session_id,
-        user_id=current_user.id,
+        user_id=str(current_user.id),
+        user_role=user_role,
         client_ip=str(request.client.host) if request.client else None
     )
     
