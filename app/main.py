@@ -149,6 +149,12 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import video: {e}")
 
+try:
+    from app.api import tinker_api
+    _optional_routers.append(('tinker', tinker_api))
+except ImportError as e:
+    logger.warning(f"❌ Could not import tinker_api: {e}")
+
 # Import epidemiology models explicitly for table creation
 try:
     from app.models import epidemiology_models
@@ -463,6 +469,9 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'research_center':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Research Center Phase 10)")
+        elif router_name == 'tinker':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Tinker Thinking Machine API)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

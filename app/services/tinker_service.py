@@ -107,6 +107,12 @@ class TinkerService:
         """Check if Tinker integration is enabled"""
         return settings.is_tinker_enabled()
     
+    def get_circuit_breaker_state(self) -> str:
+        """Get current circuit breaker state for health checks"""
+        if self.client and hasattr(self.client, 'circuit_breaker'):
+            return self.client.circuit_breaker.state.value
+        return "UNKNOWN"
+    
     # =========================================================================
     # Audit Logging
     # =========================================================================
