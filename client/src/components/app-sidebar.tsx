@@ -158,6 +158,12 @@ const doctorItems = [
     icon: Beaker,
   },
   {
+    title: "Tinker AI",
+    url: "/tinker",
+    icon: Bot,
+    badge: "NON-BAA",
+  },
+  {
     title: "Referrals",
     url: "/referrals",
     icon: Gift,
@@ -180,6 +186,12 @@ const adminItems = [
     url: "/ml-training",
     icon: Brain,
     badge: "Admin",
+  },
+  {
+    title: "Tinker AI",
+    url: "/tinker",
+    icon: Bot,
+    badge: "NON-BAA",
   },
   {
     title: "Security",

@@ -65,6 +65,17 @@ The backend consists of two main components:
   - Database: habit_streak_freezes table with token management
   - Express proxy routes for all /api/habits/* endpoints to FastAPI
   - HIPAA audit logging on all endpoints with HIPAAAuditLogger.log_phi_access()
+- **Tinker Thinking Machine Integration (Phase 12)**: HIPAA-compliant external AI analysis platform operating in NON-BAA mode with:
+  - Privacy Firewall: Multi-layer PHI protection with 18+ regex patterns, SHA256 salted hashing, data bucketing (age, vitals)
+  - K-Anonymity Enforcement: Hard-fail pattern requiring k≥25 cohort size for all operations
+  - API Client: Circuit breaker pattern, rate limiting, automatic retry with exponential backoff
+  - Feature Builder: Aggregates patient data into privacy-safe feature vectors for AI analysis
+  - Tinker Service Orchestrator: Coordinates cohort analysis, drift detection, study/trial management
+  - Database: 15 SQLAlchemy models including TinkerCohort, TinkerStudy, TinkerTrial, DriftAlert, AIAuditLog
+  - REST API (`/api/v1/tinker/`): Health, cohort analysis, drift monitoring, study/trial management, audit logs, privacy stats
+  - Frontend Dashboard: Overview, cohort analysis UI, drift monitoring charts, privacy statistics (doctor/admin only), audit logs
+  - Security: Never sends PHI to external API - only hashed identifiers, bucketed values, k-anonymized aggregates
+  - Configuration: TINKER_ENABLED, TINKER_API_KEY env vars required to activate
 - **HIPAA Compliance & Access Control**: Features a Unified Access Control Service (`AccessControlService`), `HIPAAAuditLogger`, `AccessScope` and `PHICategory` enums, and `RequirePatientAccess` FastAPI dependency for robust, route-level access control and audit logging.
 - **Authentication Flow**: Auth0 for frontend, session-based for Express, JWT (DEV_MODE_SECRET) for Express-to-Python, and internal JWT verification in Python. Role-based routing ensures appropriate access for Admin, Doctor, and Patient users.
 

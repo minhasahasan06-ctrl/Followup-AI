@@ -78,6 +78,7 @@ import MLMonitoring from "@/pages/MLMonitoring";
 import MLInsightsPage from "@/pages/MLInsightsPage";
 import AdminMLTrainingHub from "@/pages/AdminMLTrainingHub";
 import MedicalNLPDashboard from "@/pages/MedicalNLPDashboard";
+import TinkerDashboard from "@/pages/TinkerDashboard";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
@@ -140,6 +141,7 @@ function DoctorRouter() {
       <Route path="/research" component={ResearchCenter} />
       <Route path="/ml-monitoring" component={MLMonitoring} />
       <Route path="/medical-nlp" component={MedicalNLPDashboard} />
+      <Route path="/tinker" component={TinkerDashboard} />
       <Route path="/agent-hub" component={AgentHub} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
@@ -158,6 +160,7 @@ function AdminRouter() {
       <Route path="/ml-training" component={AdminMLTrainingHub} />
       <Route path="/ml-monitoring" component={MLMonitoring} />
       <Route path="/medical-nlp" component={MedicalNLPDashboard} />
+      <Route path="/tinker" component={TinkerDashboard} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/admin/verify-doctors" component={AdminVerification} />
       <Route path="/agent-hub" component={AgentHub} />
