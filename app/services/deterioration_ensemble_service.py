@@ -2,13 +2,16 @@
 Production-Grade Deterioration Ensemble Service
 ================================================
 
+Phase 13: Enhanced with PostgreSQL model storage and calibration.
+
 Implements scikit-learn ensemble models for clinical deterioration and 
 30-day readmission risk prediction with:
 - Random Forest classifier for deterioration
 - Gradient Boosting (XGBoost-style) for readmission risk
 - Feature importance with SHAP-like explanations
-- Probability calibration
+- Probability calibration (Platt scaling, temperature scaling)
 - Model confidence intervals
+- PostgreSQL model artifact storage
 """
 
 import numpy as np
@@ -25,7 +28,22 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     logging.warning("scikit-learn not available, using fallback predictions")
 
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+
+def get_db_session():
+    """Get database session for model loading."""
+    try:
+        from app.database import get_db_session as _get_session
+        return _get_session()
+    except Exception:
+        return None
 
 
 class DeteriorationEnsembleService:
@@ -143,21 +161,29 @@ class DeteriorationEnsembleService:
         "hemoglobin_level": 0.01
     }
     
-    def __init__(self, n_estimators: int = 100, random_state: int = 42):
-        """Initialize ensemble models."""
+    def __init__(self, n_estimators: int = 100, random_state: int = 42, db_session=None):
+        """Initialize ensemble models with optional database-backed weights."""
         self.n_estimators = n_estimators
         self.random_state = random_state
+        self.db_session = db_session
         
         self.deterioration_model: Optional[RandomForestClassifier] = None
         self.readmission_model: Optional[GradientBoostingClassifier] = None
         self.scaler = StandardScaler() if SKLEARN_AVAILABLE else None
         self.is_trained = False
+        self.is_db_loaded = False
+        
+        self.lstm_model = None
+        self.lstm_scaler = None
+        self.calibration_params = None
         
         self.deterioration_importance: Dict[str, float] = {}
         self.readmission_importance: Dict[str, float] = {}
         
         if SKLEARN_AVAILABLE:
             self._initialize_models()
+        
+        self._try_load_from_database()
     
     def _initialize_models(self):
         """Initialize sklearn ensemble models."""
@@ -185,6 +211,150 @@ class DeteriorationEnsembleService:
             logger.info("Initialized deterioration ensemble models")
         except Exception as e:
             logger.error(f"Failed to initialize models: {e}")
+    
+    def _try_load_from_database(self):
+        """
+        Try to load trained model from PostgreSQL.
+        
+        Phase 13: Loads LSTM model weights and calibration params from database.
+        Falls back to hardcoded coefficients if no trained model exists.
+        """
+        try:
+            db = self.db_session or get_db_session()
+            if db is None:
+                logger.debug("No database session available for model loading")
+                return
+            
+            from app.models.ml_models import MLModel, MLModelArtifact, MLCalibrationParams
+            
+            model_record = db.query(MLModel).filter(
+                MLModel.name == "deterioration_lstm",
+                MLModel.is_active == True
+            ).order_by(MLModel.created_at.desc()).first()
+            
+            if not model_record:
+                logger.info("No trained deterioration model in database, using defaults")
+                return
+            
+            from app.services.model_artifact_service import ModelArtifactService
+            artifact_service = ModelArtifactService(db)
+            
+            if artifact_service.has_trained_model(model_record.id, "weights"):
+                if TORCH_AVAILABLE:
+                    try:
+                        state_dict = artifact_service.load_pytorch_state_dict(
+                            model_record.id, "weights", "system"
+                        )
+                        
+                        from ml_scripts.train_deterioration_model import DeteriorationLSTM
+                        self.lstm_model = DeteriorationLSTM(
+                            input_size=4, hidden_size=64, num_layers=2
+                        )
+                        self.lstm_model.load_state_dict(state_dict)
+                        self.lstm_model.eval()
+                        
+                        logger.info(f"Loaded LSTM model from PostgreSQL: {model_record.id}")
+                    except Exception as e:
+                        logger.warning(f"Could not load PyTorch model: {e}")
+                
+                try:
+                    self.lstm_scaler = artifact_service.load_sklearn_model(
+                        model_record.id, "scaler", "system"
+                    )
+                    logger.info("Loaded scaler from PostgreSQL")
+                except Exception as e:
+                    logger.warning(f"Could not load scaler: {e}")
+            
+            from app.services.deterioration_calibration_service import CalibrationService
+            calibration_service = CalibrationService(db)
+            self.calibration_params = calibration_service.get_active_calibration(model_record.id)
+            
+            if self.calibration_params:
+                logger.info(
+                    f"Loaded calibration params: {self.calibration_params.calibration_method}, "
+                    f"ECE={self.calibration_params.ece_after:.4f}"
+                )
+            
+            self.is_db_loaded = self.lstm_model is not None
+            
+        except Exception as e:
+            logger.warning(f"Could not load model from database: {e}")
+            self.is_db_loaded = False
+    
+    def apply_calibration(self, raw_probability: float) -> float:
+        """
+        Apply calibration to raw model probability.
+        
+        Phase 13: Uses stored Platt scaling or temperature scaling parameters.
+        """
+        if self.calibration_params is None:
+            return raw_probability
+        
+        try:
+            logit = np.log(np.clip(raw_probability, 1e-10, 1-1e-10) / 
+                          np.clip(1-raw_probability, 1e-10, 1-1e-10))
+            
+            if self.calibration_params.calibration_method == "platt":
+                A = self.calibration_params.platt_a
+                B = self.calibration_params.platt_b
+                calibrated = 1 / (1 + np.exp(-(A * logit + B)))
+            elif self.calibration_params.calibration_method == "temperature":
+                T = self.calibration_params.temperature or 1.0
+                scaled_logit = logit / max(T, 0.01)
+                calibrated = 1 / (1 + np.exp(-scaled_logit))
+            elif self.calibration_params.calibration_method == "isotonic":
+                x_vals = self.calibration_params.isotonic_x or [0, 1]
+                y_vals = self.calibration_params.isotonic_y or [0, 1]
+                calibrated = np.interp(raw_probability, x_vals, y_vals)
+            else:
+                calibrated = raw_probability
+            
+            return float(np.clip(calibrated, 0, 1))
+        except Exception as e:
+            logger.warning(f"Calibration failed: {e}")
+            return raw_probability
+    
+    def predict_with_lstm(self, features: Dict[str, float]) -> Optional[Dict[str, Any]]:
+        """
+        Predict deterioration using trained LSTM model if available.
+        
+        Phase 13: Uses database-loaded model for production predictions.
+        """
+        if self.lstm_model is None or not TORCH_AVAILABLE:
+            return None
+        
+        try:
+            import torch
+            
+            feature_keys = ['pain_score_facial', 'pain_score_self_reported', 
+                           'respiratory_rate', 'symptom_severity_score']
+            
+            feature_values = [features.get(k, 0.5) for k in feature_keys]
+            
+            sequence = np.array([[feature_values] * 7])
+            
+            if self.lstm_scaler is not None:
+                n_samples, seq_len, n_features = sequence.shape
+                reshaped = sequence.reshape(-1, n_features)
+                scaled = self.lstm_scaler.transform(reshaped)
+                sequence = scaled.reshape(n_samples, seq_len, n_features)
+            
+            with torch.no_grad():
+                input_tensor = torch.FloatTensor(sequence)
+                raw_prob = self.lstm_model(input_tensor).item()
+            
+            calibrated_prob = self.apply_calibration(raw_prob)
+            
+            return {
+                "raw_probability": raw_prob,
+                "calibrated_probability": calibrated_prob,
+                "model_type": "lstm_db",
+                "is_calibrated": self.calibration_params is not None
+            }
+            
+        except Exception as e:
+            logger.warning(f"LSTM prediction failed: {e}")
+            return None
     
     def calculate_news2_score(
         self,
@@ -359,6 +529,9 @@ class DeteriorationEnsembleService:
         """
         Predict clinical deterioration risk using ensemble model + NEWS2.
         
+        Phase 13: Now uses trained LSTM model from PostgreSQL when available,
+        with calibrated probabilities.
+        
         Args:
             features: Patient feature dictionary
             use_news2: Whether to incorporate NEWS2 scoring
@@ -375,21 +548,32 @@ class DeteriorationEnsembleService:
         else:
             news2_score = 0
             news2_risk = "low"
+            news2_result = None
         
-        ensemble_result = self._ensemble_deterioration_prediction(features)
+        lstm_result = self.predict_with_lstm(features)
+        model_method = "ensemble_rf"
+        is_calibrated = False
+        
+        if lstm_result is not None:
+            ml_probability = lstm_result.get("calibrated_probability", lstm_result.get("raw_probability", 0.5))
+            model_method = "lstm_trained"
+            is_calibrated = lstm_result.get("is_calibrated", False)
+        else:
+            ensemble_result = self._ensemble_deterioration_prediction(features)
+            ml_probability = ensemble_result["probability"]
         
         if use_news2:
-            news2_weight = 0.6
-            ensemble_weight = 0.4
+            news2_weight = 0.5
+            ml_weight = 0.5
             
             news2_normalized = min(1.0, news2_score / 10)
             combined_probability = (
                 news2_weight * news2_normalized +
-                ensemble_weight * ensemble_result["probability"]
+                ml_weight * ml_probability
             )
             combined_risk_score = combined_probability * 10
         else:
-            combined_probability = ensemble_result["probability"]
+            combined_probability = ml_probability
             combined_risk_score = combined_probability * 10
         
         if combined_risk_score < 2:
@@ -403,7 +587,11 @@ class DeteriorationEnsembleService:
         else:
             severity = "critical"
         
-        confidence = self._calculate_confidence(features, ensemble_result)
+        if lstm_result is not None:
+            confidence = 0.92 if is_calibrated else 0.85
+        else:
+            ensemble_result = self._ensemble_deterioration_prediction(features)
+            confidence = self._calculate_confidence(features, ensemble_result)
         
         if severity == "critical":
             time_to_action = "Immediate"
@@ -414,9 +602,11 @@ class DeteriorationEnsembleService:
         else:
             time_to_action = "Routine follow-up"
         
+        if lstm_result is None:
+            ensemble_result = self._ensemble_deterioration_prediction(features)
         contributing_factors = self._get_contributing_factors(
             features,
-            ensemble_result.get("feature_contributions", {}),
+            ensemble_result.get("feature_contributions", {}) if lstm_result is None else {},
             "deterioration"
         )
         
@@ -429,11 +619,13 @@ class DeteriorationEnsembleService:
             "time_to_action": time_to_action,
             "news2_assessment": news2_result if use_news2 else None,
             "contributing_factors": contributing_factors[:6],
-            "feature_importance": ensemble_result.get("feature_importance", []),
+            "feature_importance": ensemble_result.get("feature_importance", []) if lstm_result is None else [],
             "model_info": {
-                "method": "ensemble_rf_news2" if use_news2 else "ensemble_rf",
+                "method": f"{model_method}_news2" if use_news2 else model_method,
                 "news2_weight": news2_weight if use_news2 else 0,
-                "ensemble_weight": ensemble_weight if use_news2 else 1.0,
+                "ml_weight": ml_weight if use_news2 else 1.0,
+                "is_calibrated": is_calibrated,
+                "is_db_loaded": self.is_db_loaded,
                 "sklearn_available": SKLEARN_AVAILABLE
             },
             "recommendations": self._get_deterioration_recommendations(
