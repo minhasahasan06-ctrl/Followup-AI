@@ -264,6 +264,23 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"⚠️  Study Job Worker startup failed: {e}")
     
+    # Step 8: Initialize Tinker Thinking Machine Service (NON-BAA Mode)
+    tinker_enabled = settings.is_tinker_enabled()
+    if tinker_enabled:
+        logger.info("🧠 Initializing Tinker Thinking Machine (NON-BAA Mode)...")
+        try:
+            from app.services.tinker_service import get_tinker_service
+            tinker_service = get_tinker_service()
+            health_result = await tinker_service.health_check()
+            if health_result.success:
+                logger.info("✅ Tinker service initialized and healthy")
+            else:
+                logger.warning("⚠️  Tinker service initialized but health check failed")
+        except Exception as e:
+            logger.warning(f"⚠️  Tinker service initialization failed: {e}")
+    else:
+        logger.info("ℹ️  Tinker service disabled (set TINKER_ENABLED=true and TINKER_API_KEY to enable)")
+    
     logger.info("🎉 Followup AI Backend startup complete!")
     
     yield

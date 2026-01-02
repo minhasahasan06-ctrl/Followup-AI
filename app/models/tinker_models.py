@@ -26,10 +26,16 @@ class TinkerPurpose(str, enum.Enum):
     PATIENT_QUESTIONS = "patient_questions"
     PATIENT_TEMPLATES = "patient_templates"
     COHORT_BUILDER = "cohort_builder"
+    COHORT_ANALYSIS = "cohort_analysis"
     STUDY_PROTOCOL = "study_protocol"
+    RESEARCH_ANALYSIS = "research_analysis"
+    CLINICAL_TRIAL = "clinical_trial"
     JOB_PLANNER = "job_planner"
     MODEL_CARD = "model_card"
+    MODEL_EVALUATION = "model_evaluation"
+    THRESHOLD_OPTIMIZATION = "threshold_optimization"
     DRIFT_SUMMARY = "drift_summary"
+    DRIFT_DETECTION = "drift_detection"
 
 
 class ActorRole(str, enum.Enum):
@@ -78,10 +84,11 @@ class AIAuditLog(Base):
     payload_hash = Column(String(64), nullable=False)
     response_hash = Column(String(64))
     model_used = Column(String(100))
-    request_duration_ms = Column(Integer)
+    latency_ms = Column(Float)
     success = Column(Boolean, default=True)
     error_code = Column(String(50))
-    k_anon_enforced = Column(Boolean, default=True)
+    k_anon_verified = Column(Boolean, default=True)
+    tinker_mode = Column(String(20), default="NON_BAA")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     __table_args__ = (
