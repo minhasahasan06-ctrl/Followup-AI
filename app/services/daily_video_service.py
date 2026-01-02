@@ -10,7 +10,7 @@ Production-grade video consultation service with:
 - Webhook signature validation
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from decimal import Decimal
 import requests
@@ -202,6 +202,82 @@ class DailyVideoService:
         
         return response.json()["token"]
     
+    def create_consultation_room(
+        self,
+        patient_id: str,
+        doctor_id: str,
+        duration_minutes: int = 60,
+        enable_chat: bool = True,
+        enable_recording: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Create a complete consultation room with tokens for both participants.
+        
+        This is a convenience method that:
+        1. Creates the room using deterministic naming
+        2. Generates tokens for doctor (owner) and patient (participant)
+        3. Returns all necessary data for both parties to join
+        
+        Args:
+            patient_id: Patient's internal ID
+            doctor_id: Doctor's internal ID  
+            duration_minutes: Session duration
+            enable_chat: Enable in-call chat
+            enable_recording: Enable recording (HIPAA: disabled by default)
+            
+        Returns:
+            Dict with room_name, room_url, doctor_token, patient_token, expires_at, config
+        """
+        consultation_id = f"{doctor_id}-{patient_id}"
+        
+        room_data = self.create_room(
+            appointment_id=consultation_id,
+            duration_minutes=duration_minutes,
+            enable_chat=enable_chat,
+            enable_recording=enable_recording,
+            max_participants=2
+        )
+        
+        doctor_token = self.create_meeting_token(
+            room_name=room_data["room_name"],
+            user_id=doctor_id,
+            user_name="Doctor",
+            is_owner=True,
+            exp_seconds=duration_minutes * 60 + 1800
+        )
+        
+        patient_token = self.create_meeting_token(
+            room_name=room_data["room_name"],
+            user_id=patient_id,
+            user_name="Patient",
+            is_owner=False,
+            exp_seconds=duration_minutes * 60 + 1800
+        )
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=doctor_id,
+            actor_role="doctor",
+            patient_id=patient_id,
+            action="create_video_room",
+            phi_categories=["video_consultation"],
+            resource_type="video_consultation",
+            resource_id=room_data["room_name"],
+            access_reason=f"Start video consultation, duration: {duration_minutes}min"
+        )
+        
+        return {
+            "room_name": room_data["room_name"],
+            "room_url": room_data["room_url"],
+            "doctor_token": doctor_token,
+            "patient_token": patient_token,
+            "expires_at": room_data["expires_at"],
+            "config": {
+                "chat_enabled": enable_chat,
+                "recording_enabled": enable_recording,
+                "max_duration_minutes": duration_minutes
+            }
+        }
+    
     def get_room_info(self, room_name: str) -> Dict[str, Any]:
         """Get information about an existing room"""
         response = requests.get(
@@ -301,7 +377,7 @@ class VideoUsageCalculator:
         return math.ceil(duration_seconds / 60)
     
     @staticmethod
-    def calculate_cost(participant_minutes: int, rate_usd: Decimal = None) -> Decimal:
+    def calculate_cost(participant_minutes: int, rate_usd: Optional[Decimal] = None) -> Decimal:
         """Calculate platform cost for participant minutes"""
         if rate_usd is None:
             rate_usd = Decimal(settings.DAILY_RATE_USD)
@@ -311,7 +387,7 @@ class VideoUsageCalculator:
     def calculate_overage(
         total_minutes: int,
         included_minutes: int,
-        overage_rate: Decimal = None
+        overage_rate: Optional[Decimal] = None
     ) -> tuple[int, Decimal]:
         """
         Calculate overage minutes and cost.
@@ -328,7 +404,7 @@ class VideoUsageCalculator:
         return overage_minutes, overage_cost
     
     @staticmethod
-    def get_billing_month(dt: datetime = None) -> str:
+    def get_billing_month(dt: Optional[datetime] = None) -> str:
         """Get billing month string (YYYY-MM)"""
         if dt is None:
             dt = datetime.utcnow()
