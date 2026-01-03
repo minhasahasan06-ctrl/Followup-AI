@@ -79,6 +79,7 @@ import MLInsightsPage from "@/pages/MLInsightsPage";
 import AdminMLTrainingHub from "@/pages/AdminMLTrainingHub";
 import MedicalNLPDashboard from "@/pages/MedicalNLPDashboard";
 import TinkerDashboard from "@/pages/TinkerDashboard";
+import PatientPrivacyResearch from "@/pages/PatientPrivacyResearch";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
@@ -110,6 +111,7 @@ function PatientRouter() {
       <Route path="/wellness/:type?" component={Wellness} />
       <Route path="/consents" component={ConsentManagement} />
       <Route path="/research-consent" component={ResearchConsentSettings} />
+      <Route path="/privacy-research" component={PatientPrivacyResearch} />
       <Route path="/wearables" component={WearableDevices} />
       <Route path="/device-connect" component={DeviceConnect} />
       <Route path="/risk-exposures" component={RiskExposures} />

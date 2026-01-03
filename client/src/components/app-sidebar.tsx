@@ -113,6 +113,12 @@ const patientItems = [
     badge: "HIPAA",
   },
   {
+    title: "Privacy & Research",
+    url: "/privacy-research",
+    icon: Shield,
+    badge: "NON-BAA",
+  },
+  {
     title: "Wearable Devices",
     url: "/wearables",
     icon: Watch,
