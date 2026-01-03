@@ -1,0 +1,92 @@
+{
+  "Q001": {
+    "type": "scale",
+    "label": "How are you feeling overall today?",
+    "options": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+    "required": true
+  },
+  "Q002": {
+    "type": "boolean",
+    "label": "Have you experienced any new symptoms since your last check-in?",
+    "options": ["Yes", "No"],
+    "required": true
+  },
+  "Q003": {
+    "type": "multiple_choice",
+    "label": "Which symptoms are you currently experiencing?",
+    "options": ["Fatigue", "Pain", "Nausea", "Fever", "Shortness of breath", "Dizziness", "None"],
+    "required": false
+  },
+  "Q004": {
+    "type": "scale",
+    "label": "How would you rate your pain level?",
+    "options": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+    "required": false
+  },
+  "Q005": {
+    "type": "text",
+    "label": "Describe any concerns you would like to discuss with your care team.",
+    "options": [],
+    "required": false
+  },
+  "Q006": {
+    "type": "boolean",
+    "label": "Did you take all your medications as prescribed today?",
+    "options": ["Yes", "No"],
+    "required": true
+  },
+  "Q007": {
+    "type": "scale",
+    "label": "How well did you sleep last night?",
+    "options": ["1", "2", "3", "4", "5"],
+    "required": false
+  },
+  "Q008": {
+    "type": "multiple_choice",
+    "label": "What activities did you engage in today?",
+    "options": ["Walking", "Exercise", "Work", "Rest", "Social activities", "None"],
+    "required": false
+  },
+  "Q009": {
+    "type": "boolean",
+    "label": "Are you experiencing any side effects from your medications?",
+    "options": ["Yes", "No"],
+    "required": true
+  },
+  "Q010": {
+    "type": "scale",
+    "label": "How would you rate your appetite today?",
+    "options": ["1", "2", "3", "4", "5"],
+    "required": false
+  },
+  "Q011": {
+    "type": "boolean",
+    "label": "Have you had any falls or balance issues?",
+    "options": ["Yes", "No"],
+    "required": true
+  },
+  "Q012": {
+    "type": "scale",
+    "label": "Rate your energy level today",
+    "options": ["1", "2", "3", "4", "5"],
+    "required": false
+  },
+  "Q013": {
+    "type": "multiple_choice",
+    "label": "How is your mood today?",
+    "options": ["Excellent", "Good", "Fair", "Poor", "Very poor"],
+    "required": true
+  },
+  "Q014": {
+    "type": "boolean",
+    "label": "Do you need to speak with a healthcare provider urgently?",
+    "options": ["Yes", "No"],
+    "required": true
+  },
+  "Q015": {
+    "type": "scale",
+    "label": "How confident do you feel managing your health today?",
+    "options": ["1", "2", "3", "4", "5"],
+    "required": false
+  }
+}

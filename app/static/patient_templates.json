@@ -1,0 +1,107 @@
+{
+  "T001": {
+    "template_id": "T001",
+    "name": "daily_checkin_reminder",
+    "message": "Good morning! Time for your daily health check-in. How are you feeling today?",
+    "placeholders": [],
+    "category": "reminder"
+  },
+  "T002": {
+    "template_id": "T002",
+    "name": "medication_reminder",
+    "message": "Reminder: It's time for your {medication_time} medications. Please take them as prescribed.",
+    "placeholders": ["medication_time"],
+    "category": "medication"
+  },
+  "T003": {
+    "template_id": "T003",
+    "name": "appointment_reminder",
+    "message": "You have an upcoming appointment on {appointment_date} at {appointment_time}. Please confirm your attendance.",
+    "placeholders": ["appointment_date", "appointment_time"],
+    "category": "appointment"
+  },
+  "T004": {
+    "template_id": "T004",
+    "name": "symptom_followup",
+    "message": "You reported {symptom_type} during your last check-in. Has this improved, stayed the same, or gotten worse?",
+    "placeholders": ["symptom_type"],
+    "category": "followup"
+  },
+  "T005": {
+    "template_id": "T005",
+    "name": "goal_progress",
+    "message": "Great progress on your {goal_name} goal! You've completed {completed_count} of {total_count} activities this week.",
+    "placeholders": ["goal_name", "completed_count", "total_count"],
+    "category": "motivation"
+  },
+  "T006": {
+    "template_id": "T006",
+    "name": "streak_celebration",
+    "message": "Amazing! You've maintained your {habit_name} streak for {streak_days} days! Keep up the great work!",
+    "placeholders": ["habit_name", "streak_days"],
+    "category": "motivation"
+  },
+  "T007": {
+    "template_id": "T007",
+    "name": "vitals_reminder",
+    "message": "Time to check your {vital_type}. Please log your reading when complete.",
+    "placeholders": ["vital_type"],
+    "category": "vitals"
+  },
+  "T008": {
+    "template_id": "T008",
+    "name": "care_team_message",
+    "message": "Message from your care team: {message_content}",
+    "placeholders": ["message_content"],
+    "category": "communication"
+  },
+  "T009": {
+    "template_id": "T009",
+    "name": "lab_result_available",
+    "message": "Your recent lab results are now available. Please review them in your health portal.",
+    "placeholders": [],
+    "category": "notification"
+  },
+  "T010": {
+    "template_id": "T010",
+    "name": "refill_reminder",
+    "message": "Your {medication_name} prescription may need a refill soon. Please contact your pharmacy if needed.",
+    "placeholders": ["medication_name"],
+    "category": "medication"
+  },
+  "T011": {
+    "template_id": "T011",
+    "name": "wellness_tip",
+    "message": "Wellness tip: {tip_content}",
+    "placeholders": ["tip_content"],
+    "category": "education"
+  },
+  "T012": {
+    "template_id": "T012",
+    "name": "hydration_reminder",
+    "message": "Stay hydrated! Remember to drink water throughout the day.",
+    "placeholders": [],
+    "category": "wellness"
+  },
+  "T013": {
+    "template_id": "T013",
+    "name": "exercise_encouragement",
+    "message": "Ready for some light activity? Even a short {activity_type} can boost your energy and mood.",
+    "placeholders": ["activity_type"],
+    "category": "exercise"
+  },
+  "T014": {
+    "template_id": "T014",
+    "name": "sleep_reminder",
+    "message": "It's getting late. Consider winding down for a restful night's sleep.",
+    "placeholders": [],
+    "category": "wellness"
+  },
+  "T015": {
+    "template_id": "T015",
+    "name": "urgent_followup",
+    "message": "Based on your recent responses, your care team would like to follow up with you. Please expect a call or message soon.",
+    "placeholders": [],
+    "category": "urgent"
+  }
+}
