@@ -22017,6 +22017,65 @@ Provide:
   // END RESEARCH CENTER PHASE 10 PROXY ROUTES
   // =============================================================================
 
+  // =============================================================================
+  // PHASE C: TINKER AI ENDPOINTS - Patient AI, Research AI, ML AI Proxy Routes
+  // =============================================================================
+
+  // Patient AI Endpoints (C.2-C.5)
+  app.post('/api/patient/ai/next-questions', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/patient/ai/next-questions', 'POST');
+  });
+
+  app.post('/api/patient/ai/autopilot-plan', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/patient/ai/autopilot-plan', 'POST');
+  });
+
+  app.post('/api/patient/ai/habit-suggestions', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/patient/ai/habit-suggestions', 'POST');
+  });
+
+  app.post('/api/patient/ai/feedback', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/patient/ai/feedback', 'POST');
+  });
+
+  // Research AI Endpoints (C.9-C.13)
+  app.post('/api/research/ai/translate-cohort', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/research/ai/translate-cohort', 'POST');
+  });
+
+  app.post('/api/research/cohort/preview', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/research/cohort/preview', 'POST');
+  });
+
+  app.post('/api/research/ai/study-protocol', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/research/ai/study-protocol', 'POST');
+  });
+
+  app.post('/api/research/trials/spec', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/research/trials/spec', 'POST');
+  });
+
+  app.post('/api/research/trials/run', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/research/trials/run', 'POST');
+  });
+
+  // ML AI Endpoints (C.15-C.17)
+  app.post('/api/ml/ai/compose-job', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, '/api/ml/ai/compose-job', 'POST');
+  });
+
+  app.post('/api/ml/models/:modelId/generate-governance', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml/models/${req.params.modelId}/generate-governance`, 'POST');
+  });
+
+  app.post('/api/ml/models/:modelId/deploy-check', isAuthenticated, async (req: any, res) => {
+    await automationProxy(req, res, `/api/ml/models/${req.params.modelId}/deploy-check`, 'POST');
+  });
+
+  // =============================================================================
+  // END PHASE C TINKER AI PROXY ROUTES
+  // =============================================================================
+
   const httpServer = createServer(app);
 
   // WebSocket proxy for agent communication

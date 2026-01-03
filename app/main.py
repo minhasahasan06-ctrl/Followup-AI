@@ -155,6 +155,24 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import tinker_api: {e}")
 
+try:
+    from app.routers import patient_ai
+    _optional_routers.append(('patient_ai', patient_ai))
+except ImportError as e:
+    logger.warning(f"❌ Could not import patient_ai: {e}")
+
+try:
+    from app.routers import research_ai
+    _optional_routers.append(('research_ai', research_ai))
+except ImportError as e:
+    logger.warning(f"❌ Could not import research_ai: {e}")
+
+try:
+    from app.routers import ml_ai
+    _optional_routers.append(('ml_ai', ml_ai))
+except ImportError as e:
+    logger.warning(f"❌ Could not import ml_ai: {e}")
+
 # Import epidemiology models explicitly for table creation
 try:
     from app.models import epidemiology_models
@@ -472,6 +490,15 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'tinker':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Tinker Thinking Machine API)")
+        elif router_name == 'patient_ai':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Phase C Patient AI)")
+        elif router_name == 'research_ai':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Phase C Research AI)")
+        elif router_name == 'ml_ai':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Phase C ML AI)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 
