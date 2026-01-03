@@ -1,23 +1,31 @@
 import express, { type Request, Response, NextFunction } from "express";
-import { spawn } from "child_process";
+import { spawn, ChildProcess } from "child_process";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedDatabase } from "./seed";
 
+// Python backend configuration
+const PYTHON_PORT = 8000;
+const PYTHON_HEALTH_URL = `http://localhost:${PYTHON_PORT}/`;
+const PYTHON_STARTUP_TIMEOUT_MS = 120000; // 2 minutes max wait
+const PYTHON_HEALTH_POLL_INTERVAL_MS = 500; // Check every 500ms
+
+let pythonProcess: ChildProcess | null = null;
+
 // Start Python FastAPI backend on port 8000
-function startPythonBackend() {
-  const pythonProcess = spawn('python', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'], {
+function startPythonBackend(): ChildProcess {
+  const proc = spawn('python', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', String(PYTHON_PORT)], {
     cwd: process.cwd(),
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PYTHONUNBUFFERED: '1' }
   });
 
-  pythonProcess.stdout?.on('data', (data: Buffer) => {
+  proc.stdout?.on('data', (data: Buffer) => {
     const msg = data.toString().trim();
     if (msg) log(`[Python] ${msg}`);
   });
 
-  pythonProcess.stderr?.on('data', (data: Buffer) => {
+  proc.stderr?.on('data', (data: Buffer) => {
     const msg = data.toString().trim();
     // Filter out verbose TensorFlow/CUDA warnings
     if (msg && !msg.includes('computation placer') && !msg.includes('cuDNN') && !msg.includes('cuBLAS')) {
@@ -25,28 +33,65 @@ function startPythonBackend() {
     }
   });
 
-  pythonProcess.on('error', (err) => {
+  proc.on('error', (err) => {
     log(`[Python] Failed to start: ${err.message}`);
   });
 
-  pythonProcess.on('exit', (code) => {
+  proc.on('exit', (code) => {
     log(`[Python] Process exited with code ${code}`);
-    // Attempt restart after 5 seconds if it crashes
-    if (code !== 0) {
+    // Attempt restart after 5 seconds if it crashes (only if not intentional shutdown)
+    if (code !== 0 && pythonProcess === proc) {
       setTimeout(() => {
         log('[Python] Attempting restart...');
-        startPythonBackend();
+        pythonProcess = startPythonBackend();
       }, 5000);
     }
   });
 
   log('[Python] Starting FastAPI backend on port 8000...');
-  return pythonProcess;
+  return proc;
 }
 
-// Start Python backend in development mode
-if (process.env.NODE_ENV === 'development') {
-  startPythonBackend();
+// Wait for Python backend to be healthy before continuing
+async function waitForPythonBackend(): Promise<boolean> {
+  const startTime = Date.now();
+  log('[Python] Waiting for FastAPI backend to be ready...');
+  
+  while (Date.now() - startTime < PYTHON_STARTUP_TIMEOUT_MS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      
+      const response = await fetch(PYTHON_HEALTH_URL, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        log(`[Python] FastAPI backend ready after ${elapsed}s`);
+        return true;
+      }
+    } catch {
+      // Connection refused or timeout - Python not ready yet
+    }
+    
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, PYTHON_HEALTH_POLL_INTERVAL_MS));
+  }
+  
+  log('[Python] WARNING: FastAPI backend did not become ready within timeout');
+  return false;
+}
+
+// Initialize Python backend (start + wait for ready)
+async function initializePythonBackend(): Promise<void> {
+  if (process.env.NODE_ENV === 'development') {
+    pythonProcess = startPythonBackend();
+    await waitForPythonBackend();
+  }
 }
 
 const app = express();
@@ -86,6 +131,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize Python backend first (start + wait for ready)
+  await initializePythonBackend();
+  
   // Auto-seed database with sample data for fully functional features
   try {
     await seedDatabase();

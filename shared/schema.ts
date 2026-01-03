@@ -90,7 +90,7 @@ export type UpsertUser = typeof users.$inferInsert;
 // Patient profiles
 export const patientProfiles = pgTable("patient_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
+  userId: varchar("user_id").notNull().unique().references(() => users.id),
   
   // Unique Followup AI Patient ID (e.g., FAI-ABC123) - generated on profile creation
   followupPatientId: varchar("followup_patient_id").unique(),
@@ -123,7 +123,7 @@ export type PatientProfile = typeof patientProfiles.$inferSelect;
 // Doctor profiles
 export const doctorProfiles = pgTable("doctor_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
+  userId: varchar("user_id").notNull().unique().references(() => users.id),
   linkedinProfileUrl: varchar("linkedin_profile_url"),
   specialties: jsonb("specialties").$type<string[]>(),
   education: jsonb("education").$type<Array<{ institution: string; degree: string; year: number }>>(),
