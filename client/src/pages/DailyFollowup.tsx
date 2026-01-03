@@ -56,7 +56,13 @@ import {
   FileText,
   Stethoscope,
   Pill,
+  Brain,
+  Sparkles,
 } from 'lucide-react';
+import { useNextQuestions, useAutopilotPlan, type AutopilotTemplate } from '@/hooks/usePatientAI';
+import { AIQuestionRenderer } from '@/components/ai/AIQuestionRenderer';
+import { AutopilotPlanCard } from '@/components/ai/AutopilotPlanCard';
+import { AIFeedbackButtons } from '@/components/ai/AIFeedbackButtons';
 import { ExamPrepStep } from '@/components/ExamPrepStep';
 import { VideoRecorder } from '@/components/VideoRecorder';
 import { useGuidedExamWorkflow } from '@/hooks/useGuidedExamWorkflow';
@@ -179,6 +185,113 @@ interface DeviceHealthData {
   latest_readings: DeviceReading[];
   health_analytics: HealthSectionAnalytics[];
   last_sync: string | null;
+}
+
+function AICheckInTab({ patientId }: { patientId: string }) {
+  const { toast } = useToast();
+  const [showPlan, setShowPlan] = useState(false);
+  const [answeredQuestions, setAnsweredQuestions] = useState<Record<string, unknown>>({});
+  
+  const { 
+    data: questionsData, 
+    isLoading: questionsLoading, 
+    error: questionsError 
+  } = useNextQuestions(patientId, !!patientId);
+  
+  const autopilotMutation = useAutopilotPlan(patientId);
+  
+  const handleQuestionsSubmit = async (answers: Record<string, unknown>) => {
+    setAnsweredQuestions(answers);
+    try {
+      await autopilotMutation.mutateAsync({
+        patient_data: answers,
+      });
+      setShowPlan(true);
+      toast({
+        title: 'Analysis complete',
+        description: 'Your personalized plan has been generated.',
+      });
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'Failed to generate plan. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  const handleSelectTemplate = (template: AutopilotTemplate) => {
+    toast({
+      title: 'Template selected',
+      description: `"${template.name}" has been added to your daily plan.`,
+    });
+  };
+  
+  if (!patientId) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <Brain className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+          <h3 className="text-lg font-semibold mb-2">Sign in Required</h3>
+          <p className="text-muted-foreground">Please sign in to access AI-powered health check-ins.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  if (questionsError) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive" />
+          <h3 className="text-lg font-semibold mb-2">Unable to Load Questions</h3>
+          <p className="text-muted-foreground mb-4">AI service is temporarily unavailable.</p>
+          <Button onClick={() => window.location.reload()}>Try Again</Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  return (
+    <div className="space-y-6" data-testid="ai-checkin-tab">
+      <Alert className="border-primary/50 bg-primary/5">
+        <Sparkles className="h-4 w-4 text-primary" />
+        <AlertTitle className="font-semibold">AI-Powered Health Check-in</AlertTitle>
+        <AlertDescription className="text-sm">
+          Answer personalized questions based on your health profile. Our AI will generate 
+          a customized wellness plan tailored to your needs.
+        </AlertDescription>
+      </Alert>
+      
+      {!showPlan ? (
+        <AIQuestionRenderer
+          questions={questionsData?.questions || []}
+          isLoading={questionsLoading}
+          onSubmit={handleQuestionsSubmit}
+          isSubmitting={autopilotMutation.isPending}
+        />
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowPlan(false)}
+              data-testid="button-back-to-questions"
+            >
+              Back to Questions
+            </Button>
+          </div>
+          <AutopilotPlanCard
+            templates={autopilotMutation.data?.templates || []}
+            experienceId={autopilotMutation.data?.experience_id || ''}
+            patientId={patientId}
+            isLoading={autopilotMutation.isPending}
+            onSelectTemplate={handleSelectTemplate}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function DeviceDataTab({ patientId }: { patientId: string }) {
@@ -1763,8 +1876,12 @@ export default function DailyFollowup() {
       <LegalDisclaimer />
 
       {/* Tabs for Examination, Device Data, and Deviations */}
-      <Tabs defaultValue="examination" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
+      <Tabs defaultValue="ai-questions" className="w-full">
+        <TabsList className="grid w-full grid-cols-5 max-w-3xl">
+          <TabsTrigger value="ai-questions" className="gap-2" data-testid="tab-ai-questions">
+            <Brain className="h-4 w-4" />
+            AI Check-in
+          </TabsTrigger>
           <TabsTrigger value="examination" className="gap-2" data-testid="tab-examination">
             <Video className="h-4 w-4" />
             Examinations
@@ -1775,13 +1892,17 @@ export default function DailyFollowup() {
           </TabsTrigger>
           <TabsTrigger value="devices" className="gap-2" data-testid="tab-devices">
             <Watch className="h-4 w-4" />
-            Device Data
+            Devices
           </TabsTrigger>
           <TabsTrigger value="deviations" className="gap-2" data-testid="tab-deviations">
             <BarChart3 className="h-4 w-4" />
             Deviations
           </TabsTrigger>
         </TabsList>
+        
+        <TabsContent value="ai-questions" className="mt-6">
+          <AICheckInTab patientId={user?.id || ''} />
+        </TabsContent>
 
         <TabsContent value="examination" className="mt-6">
           {/* Today's Metrics or Start Examination */}

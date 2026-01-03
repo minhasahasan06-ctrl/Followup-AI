@@ -58,6 +58,10 @@ import { ExportsTab } from "@/components/research/ExportsTab";
 import { DatasetsTab } from "@/components/research/DatasetsTab";
 import { NLPRedactionTab } from "@/components/research/NLPRedactionTab";
 import { ResearchQATab } from "@/components/research/ResearchQATab";
+import { NLCohortBuilderTab } from "@/components/research/NLCohortBuilderTab";
+import { ProtocolGeneratorTab } from "@/components/research/ProtocolGeneratorTab";
+import { TrialEmulationTab } from "@/components/research/TrialEmulationTab";
+import { Sparkles, FlaskConical, ScrollText } from "lucide-react";
 
 const COHORT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00C49F', '#FFBB28'];
 
@@ -935,6 +939,18 @@ export default function ResearchCenter() {
             <Bot className="h-4 w-4" />
             Research Q&A
           </TabsTrigger>
+          <TabsTrigger value="nl-cohort" className="gap-2" data-testid="tab-nl-cohort">
+            <Sparkles className="h-4 w-4" />
+            NL Cohort
+          </TabsTrigger>
+          <TabsTrigger value="protocol-gen" className="gap-2" data-testid="tab-protocol-gen">
+            <ScrollText className="h-4 w-4" />
+            Protocol Gen
+          </TabsTrigger>
+          <TabsTrigger value="trial-emulation" className="gap-2" data-testid="tab-trial-emulation">
+            <FlaskConical className="h-4 w-4" />
+            Trial Emulation
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="cohort">
@@ -987,6 +1003,18 @@ export default function ResearchCenter() {
 
         <TabsContent value="research-qa">
           <ResearchQATab />
+        </TabsContent>
+
+        <TabsContent value="nl-cohort">
+          <NLCohortBuilderTab />
+        </TabsContent>
+
+        <TabsContent value="protocol-gen">
+          <ProtocolGeneratorTab />
+        </TabsContent>
+
+        <TabsContent value="trial-emulation">
+          <TrialEmulationTab />
         </TabsContent>
       </Tabs>
     </div>

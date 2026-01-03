@@ -61,6 +61,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import { AutopilotAdminDashboard } from "@/components/autopilot/AutopilotAdminDashboard";
 import { TrainingJobsPanel } from "@/components/ml-training/TrainingJobsPanel";
+import { JobComposerTab } from "@/components/ml/JobComposerTab";
+import { ValidationReportTab } from "@/components/ml/ValidationReportTab";
+import { CalibrationReportTab } from "@/components/ml/CalibrationReportTab";
+import { GovernancePackTab } from "@/components/ml/GovernancePackTab";
+import { DriftMonitorTab } from "@/components/ml/DriftMonitorTab";
+import { FeedbackDatasetTab } from "@/components/ml/FeedbackDatasetTab";
+import { Wand2, MessageSquare } from "lucide-react";
 
 interface Dataset {
   name: string;
@@ -1425,7 +1432,7 @@ function MLTrainingHubContent() {
       <LegalDisclaimer />
 
       <Tabs defaultValue="datasets" className="w-full">
-        <TabsList className="grid w-full grid-cols-7 max-w-4xl">
+        <TabsList className="flex flex-wrap gap-1 w-full max-w-5xl h-auto p-1">
           <TabsTrigger value="datasets" className="gap-2" data-testid="tab-datasets">
             <Database className="h-4 w-4" />
             Datasets
@@ -1453,6 +1460,30 @@ function MLTrainingHubContent() {
           <TabsTrigger value="advanced" className="gap-2" data-testid="tab-advanced">
             <Sparkles className="h-4 w-4" />
             Advanced
+          </TabsTrigger>
+          <TabsTrigger value="ai-compose" className="gap-2" data-testid="tab-ai-compose">
+            <Wand2 className="h-4 w-4" />
+            AI Compose
+          </TabsTrigger>
+          <TabsTrigger value="validation" className="gap-2" data-testid="tab-validation">
+            <Shield className="h-4 w-4" />
+            Validation
+          </TabsTrigger>
+          <TabsTrigger value="calibration" className="gap-2" data-testid="tab-calibration">
+            <Target className="h-4 w-4" />
+            Calibration
+          </TabsTrigger>
+          <TabsTrigger value="governance" className="gap-2" data-testid="tab-governance">
+            <ShieldCheck className="h-4 w-4" />
+            Governance
+          </TabsTrigger>
+          <TabsTrigger value="drift" className="gap-2" data-testid="tab-drift">
+            <Activity className="h-4 w-4" />
+            Drift
+          </TabsTrigger>
+          <TabsTrigger value="rlhf" className="gap-2" data-testid="tab-rlhf">
+            <MessageSquare className="h-4 w-4" />
+            RLHF
           </TabsTrigger>
         </TabsList>
 
@@ -1482,6 +1513,30 @@ function MLTrainingHubContent() {
 
         <TabsContent value="advanced" className="mt-6">
           <AdvancedMLTab />
+        </TabsContent>
+
+        <TabsContent value="ai-compose" className="mt-6">
+          <JobComposerTab />
+        </TabsContent>
+
+        <TabsContent value="validation" className="mt-6">
+          <ValidationReportTab />
+        </TabsContent>
+
+        <TabsContent value="calibration" className="mt-6">
+          <CalibrationReportTab />
+        </TabsContent>
+
+        <TabsContent value="governance" className="mt-6">
+          <GovernancePackTab />
+        </TabsContent>
+
+        <TabsContent value="drift" className="mt-6">
+          <DriftMonitorTab />
+        </TabsContent>
+
+        <TabsContent value="rlhf" className="mt-6">
+          <FeedbackDatasetTab />
         </TabsContent>
       </Tabs>
     </div>

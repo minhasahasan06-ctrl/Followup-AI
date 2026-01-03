@@ -24,8 +24,11 @@ import {
   Meh, Frown, SmilePlus, Calendar, Clock, Bell, Brain, MessageSquare,
   Users, Award, BookOpen, AlertTriangle, Zap, Flower2, TreeDeciduous,
   Send, RefreshCw, ChevronRight, ChevronDown, X, BarChart3, LineChart,
-  Shield, AlertCircle, HelpCircle, Loader2
+  Shield, AlertCircle, HelpCircle, Loader2, Wand2
 } from "lucide-react";
+import { useHabitSuggestions, type HabitSuggestion } from "@/hooks/usePatientAI";
+import { HabitSuggestionsModal } from "@/components/ai/HabitSuggestionsModal";
+import { useAuth } from "@/hooks/useAuth";
 import { Progress } from "@/components/ui/progress";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, parseISO, isToday } from "date-fns";
 
@@ -222,12 +225,14 @@ const getGrowthStageVisual = (stage: string, points: number) => {
 
 export default function Habits() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedHabitForCompletion, setSelectedHabitForCompletion] = useState<Habit | null>(null);
   const [isQuitPlanDialogOpen, setIsQuitPlanDialogOpen] = useState(false);
   const [isJournalDialogOpen, setIsJournalDialogOpen] = useState(false);
   const [isMoodDialogOpen, setIsMoodDialogOpen] = useState(false);
+  const [isAISuggestionsOpen, setIsAISuggestionsOpen] = useState(false);
   const [coachMessage, setCoachMessage] = useState("");
   const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([]);
   const [coachPersonality, setCoachPersonality] = useState<"supportive" | "motivational" | "analytical" | "tough_love" | "mindful">("supportive");
@@ -235,6 +240,55 @@ export default function Habits() {
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [activeCbtSession, setActiveCbtSession] = useState<any>(null);
   const [cbtResponse, setCbtResponse] = useState("");
+  
+  const habitSuggestionsMutation = useHabitSuggestions(user?.id || '');
+  
+  const handleOpenAISuggestions = async () => {
+    if (!user?.id) {
+      toast({
+        title: 'Sign in required',
+        description: 'Please sign in to get AI-powered habit suggestions.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsAISuggestionsOpen(true);
+    try {
+      await habitSuggestionsMutation.mutateAsync({});
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'Failed to load AI suggestions. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  const handleAddSuggestedHabit = async (habit: HabitSuggestion) => {
+    try {
+      await apiRequest('/api/v1/ml/habits', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: habit.name,
+          description: habit.description,
+          category: habit.category,
+          frequency: habit.frequency,
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/ml/habits'] });
+      toast({
+        title: 'Habit added',
+        description: `"${habit.name}" has been added to your habits.`,
+      });
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'Failed to add habit. Please try again.',
+        variant: 'destructive',
+      });
+      throw new Error('Failed to add habit');
+    }
+  };
 
   // Fetch habits from Express backend
   const { data: habits = [], isLoading: habitsLoading, error: habitsError } = useQuery<Habit[]>({
@@ -807,6 +861,20 @@ export default function Habits() {
           <p className="text-muted-foreground">Build healthy habits with AI-powered insights</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button 
+            onClick={handleOpenAISuggestions} 
+            variant="outline" 
+            size="sm"
+            disabled={habitSuggestionsMutation.isPending}
+            data-testid="button-ai-optimize"
+          >
+            {habitSuggestionsMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Wand2 className="h-4 w-4 mr-1" />
+            )}
+            AI Optimize
+          </Button>
           <Button onClick={() => setIsMoodDialogOpen(true)} variant="outline" size="sm" data-testid="button-log-mood">
             <Smile className="h-4 w-4 mr-1" />
             Log Mood
@@ -1976,6 +2044,17 @@ export default function Habits() {
           </Form>
         </DialogContent>
       </Dialog>
+      
+      {/* AI Habit Suggestions Modal */}
+      <HabitSuggestionsModal
+        open={isAISuggestionsOpen}
+        onOpenChange={setIsAISuggestionsOpen}
+        suggestions={habitSuggestionsMutation.data?.suggestions || []}
+        experienceId={habitSuggestionsMutation.data?.experience_id || ''}
+        patientId={user?.id || ''}
+        isLoading={habitSuggestionsMutation.isPending}
+        onAddHabit={handleAddSuggestedHabit}
+      />
     </div>
   );
 }
