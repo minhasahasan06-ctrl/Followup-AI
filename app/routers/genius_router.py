@@ -5,15 +5,56 @@ REST API endpoints for Research, Clinical, and Patient Genius features.
 Provides production-ready integration with Tinker and existing services.
 """
 
+import hashlib
 import logging
+import re
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.services.access_control import HIPAAAuditLogger
+
+
+PHI_PATTERNS = [
+    r'\b\d{3}-\d{2}-\d{4}\b',  # SSN
+    r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',  # Email
+    r'\b\d{10,}\b',  # Phone numbers
+    r'\b\d{1,2}/\d{1,2}/\d{2,4}\b',  # Dates
+    r'\b[A-Z][a-z]+ [A-Z][a-z]+\b',  # Names (First Last pattern)
+]
+
+
+def is_valid_hash(value: str) -> bool:
+    """Check if value is a valid SHA256 hash (64 hex characters)"""
+    return bool(re.match(r'^[a-f0-9]{64}$', value.lower()))
+
+
+def contains_phi(value: str) -> bool:
+    """Check if value contains common PHI patterns"""
+    for pattern in PHI_PATTERNS:
+        if re.search(pattern, value, re.IGNORECASE):
+            return True
+    return False
+
+
+def ensure_hashed_id(value: str, salt: str = "followup-ai-genius") -> str:
+    """
+    Ensure an ID is properly hashed. If it's already a valid SHA256 hash,
+    return it as-is. Otherwise, hash it server-side.
+    """
+    if is_valid_hash(value):
+        return value.lower()
+    
+    if contains_phi(value):
+        raise ValueError("Patient identifier contains PHI patterns - must be pre-hashed")
+    
+    salted = f"{salt}:{value}"
+    return hashlib.sha256(salted.encode()).hexdigest()
+
+
 from app.services.genius_research import (
     get_genius_research_service,
     BiasWarning,
@@ -124,6 +165,12 @@ class CheckinInput(BaseModel):
     stability_level: str = "stable"
     consecutive_stable_days: int = 0
 
+    @field_validator('patient_id_hash')
+    @classmethod
+    def validate_patient_id(cls, v: str) -> str:
+        """Ensure patient ID is hashed and contains no PHI"""
+        return ensure_hashed_id(v)
+
 
 class MicroHabitInput(BaseModel):
     """Input for micro-habit suggestions"""
@@ -131,6 +178,12 @@ class MicroHabitInput(BaseModel):
     engagement_bucket: str = "moderate"
     current_context: str = "general"
     max_suggestions: int = 3
+
+    @field_validator('patient_id_hash')
+    @classmethod
+    def validate_patient_id(cls, v: str) -> str:
+        """Ensure patient ID is hashed and contains no PHI"""
+        return ensure_hashed_id(v)
 
 
 class TrendInput(BaseModel):
