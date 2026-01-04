@@ -173,6 +173,12 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import ml_ai: {e}")
 
+try:
+    from app.routers import genius_router
+    _optional_routers.append(('genius', genius_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import genius_router: {e}")
+
 # Import epidemiology models explicitly for table creation
 try:
     from app.models import epidemiology_models
@@ -499,6 +505,9 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'ml_ai':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Phase C ML AI)")
+        elif router_name == 'genius':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Phase E Genius Features)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

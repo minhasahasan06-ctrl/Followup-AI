@@ -363,5 +363,6 @@ __all__ = [
     "call_tinker",
     "call_tinker_async",
     "STUB_RESPONSES",
+    "_get_stub_response",
     "TinkerPurpose",
 ]
