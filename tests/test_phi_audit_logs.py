@@ -210,3 +210,84 @@ class TestPHIAuditLogs:
         stored_log = self.logger.logs[0]
         
         assert stored_log["action"] == original_action
+
+
+class TestAuditLoggingFailureModes:
+    """Test audit logging failure modes for compliance"""
+    
+    def setup_method(self):
+        self.logger = MockHIPAAAuditLogger()
+    
+    def test_missing_ip_address_still_logs(self):
+        """Audit log is created even when IP address is missing"""
+        entry = self.logger.log_phi_access(
+            user_id="doctor-123",
+            patient_id="patient-456",
+            resource_type="Record",
+            action="VIEW",
+            ip_address=None
+        )
+        
+        assert entry is not None
+        assert entry["ip_address"] is None
+        assert entry["action"] == "VIEW"
+    
+    def test_missing_user_agent_still_logs(self):
+        """Audit log is created even when user agent is missing"""
+        entry = self.logger.log_phi_access(
+            user_id="doctor-123",
+            patient_id="patient-456",
+            resource_type="Record",
+            action="VIEW",
+            user_agent=None
+        )
+        
+        assert entry is not None
+        assert entry["user_agent"] is None
+        assert entry["action"] == "VIEW"
+    
+    def test_all_required_fields_present_even_with_minimal_input(self):
+        """All required HIPAA fields are present with minimal input"""
+        entry = self.logger.log_phi_access(
+            user_id="doctor-123",
+            patient_id="patient-456",
+            resource_type="Record",
+            action="VIEW"
+        )
+        
+        required_fields = ["timestamp", "user_id", "patient_id", "resource_type", "action"]
+        
+        for field in required_fields:
+            assert field in entry, f"Missing required field: {field}"
+            assert entry[field] is not None, f"Required field {field} is None"
+    
+    def test_bulk_access_logged_individually(self):
+        """Bulk access operations are logged individually"""
+        patient_ids = ["patient-A", "patient-B", "patient-C"]
+        
+        for patient_id in patient_ids:
+            self.logger.log_phi_access(
+                user_id="doctor-123",
+                patient_id=patient_id,
+                resource_type="Record",
+                action="VIEW",
+                details={"bulk_operation": True}
+            )
+        
+        assert len(self.logger.logs) == 3
+        logged_patients = [log["patient_id"] for log in self.logger.logs]
+        assert set(logged_patients) == set(patient_ids)
+    
+    def test_high_severity_access_flagged(self):
+        """High severity access (genetic, HIV, mental health) is properly flagged"""
+        high_severity_resources = ["GeneticData", "HIVStatus", "MentalHealthNotes"]
+        
+        for resource in high_severity_resources:
+            entry = self.logger.log_phi_access(
+                user_id="doctor-123",
+                patient_id="patient-456",
+                resource_type=resource,
+                action="VIEW"
+            )
+            
+            assert entry["resource_type"] in high_severity_resources

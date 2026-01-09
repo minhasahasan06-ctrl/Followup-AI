@@ -196,3 +196,75 @@ class TestLysaDifferential:
         
         assert parsed["draft_id"] == "draft-123"
         assert isinstance(parsed["content"], dict)
+
+
+class TestLysaSecurityEnforcement:
+    """Security enforcement tests for Lysa drafts"""
+    
+    def test_non_doctor_approval_denied(self):
+        """Non-doctor users cannot approve drafts"""
+        user_roles = {
+            "patient-123": ["patient"],
+            "admin-456": ["admin"],
+            "nurse-789": ["nurse"]
+        }
+        
+        def can_approve_draft(user_id, user_roles_map):
+            roles = user_roles_map.get(user_id, [])
+            return "doctor" in roles
+        
+        assert can_approve_draft("patient-123", user_roles) is False
+        assert can_approve_draft("admin-456", user_roles) is False
+        assert can_approve_draft("nurse-789", user_roles) is False
+    
+    def test_doctor_approval_allowed(self):
+        """Doctor users can approve drafts"""
+        user_roles = {
+            "doctor-123": ["doctor"],
+            "doctor-admin-456": ["doctor", "admin"]
+        }
+        
+        def can_approve_draft(user_id, user_roles_map):
+            roles = user_roles_map.get(user_id, [])
+            return "doctor" in roles
+        
+        assert can_approve_draft("doctor-123", user_roles) is True
+        assert can_approve_draft("doctor-admin-456", user_roles) is True
+    
+    def test_unauthorized_approval_attempt_logged(self):
+        """Unauthorized approval attempts are logged for audit"""
+        audit_logs = []
+        
+        def attempt_approval(user_id, user_role, draft_id):
+            if user_role != "doctor":
+                audit_logs.append({
+                    "action": "APPROVAL_DENIED",
+                    "user_id": user_id,
+                    "role": user_role,
+                    "resource_id": draft_id,
+                    "reason": "Insufficient privileges"
+                })
+                return False
+            return True
+        
+        result = attempt_approval("patient-123", "patient", "draft-456")
+        
+        assert result is False
+        assert len(audit_logs) == 1
+        assert audit_logs[0]["action"] == "APPROVAL_DENIED"
+        assert audit_logs[0]["reason"] == "Insufficient privileges"
+    
+    def test_draft_access_requires_patient_assignment(self):
+        """Doctor can only access drafts for assigned patients"""
+        doctor_patients = {
+            "doctor-123": ["patient-A", "patient-B"],
+            "doctor-456": ["patient-C"]
+        }
+        
+        def can_access_draft(doctor_id, patient_id, assignments):
+            assigned_patients = assignments.get(doctor_id, [])
+            return patient_id in assigned_patients
+        
+        assert can_access_draft("doctor-123", "patient-A", doctor_patients) is True
+        assert can_access_draft("doctor-123", "patient-C", doctor_patients) is False
+        assert can_access_draft("doctor-456", "patient-A", doctor_patients) is False

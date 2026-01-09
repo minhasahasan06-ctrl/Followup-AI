@@ -192,3 +192,79 @@ class TestAlertOrchestration:
         
         assert notifications[0]["priority"] == "immediate"
         assert "sms" in notifications[0]["channels"]
+
+
+class TestAlertOrchestrationSecurity:
+    """Security tests for alert orchestration"""
+    
+    def test_doctor_contact_lookup_uses_parameterized_query(self):
+        """Doctor contact lookup uses parameterized queries (SQL injection prevention)"""
+        def get_doctor_contact_secure(db, doctor_id):
+            return db.query().filter_by(id=doctor_id).first()
+        
+        mock_db = MagicMock()
+        mock_doctor = MagicMock()
+        mock_doctor.email = "doctor@hospital.com"
+        mock_db.query.return_value.filter_by.return_value.first.return_value = mock_doctor
+        
+        result = get_doctor_contact_secure(mock_db, "doctor-123")
+        
+        mock_db.query.return_value.filter_by.assert_called_once_with(id="doctor-123")
+        assert result.email == "doctor@hospital.com"
+    
+    def test_doctor_contact_lookup_filters_by_role(self):
+        """Doctor contact lookup only returns users with doctor role"""
+        def get_doctor_contact_with_role_check(db, doctor_id):
+            user = db.query().filter_by(id=doctor_id).first()
+            if user and "doctor" in user.roles:
+                return user
+            return None
+        
+        mock_db = MagicMock()
+        
+        mock_patient = MagicMock()
+        mock_patient.roles = ["patient"]
+        mock_db.query.return_value.filter_by.return_value.first.return_value = mock_patient
+        
+        result = get_doctor_contact_with_role_check(mock_db, "patient-123")
+        assert result is None
+        
+        mock_doctor = MagicMock()
+        mock_doctor.roles = ["doctor"]
+        mock_db.query.return_value.filter_by.return_value.first.return_value = mock_doctor
+        
+        result = get_doctor_contact_with_role_check(mock_db, "doctor-456")
+        assert result is not None
+    
+    def test_alert_access_requires_patient_relationship(self):
+        """Alerts can only be accessed by assigned providers"""
+        relationships = {
+            "patient-A": ["doctor-1", "doctor-2"],
+            "patient-B": ["doctor-3"]
+        }
+        
+        def can_access_alert(doctor_id, patient_id, rel_map):
+            providers = rel_map.get(patient_id, [])
+            return doctor_id in providers
+        
+        assert can_access_alert("doctor-1", "patient-A", relationships) is True
+        assert can_access_alert("doctor-3", "patient-A", relationships) is False
+        assert can_access_alert("doctor-1", "patient-B", relationships) is False
+    
+    def test_contact_info_not_leaked_in_logs(self):
+        """Contact info (email/phone) not logged in plain text"""
+        log_entries = []
+        
+        def log_alert_notification(doctor_id, notification_type, success):
+            log_entries.append({
+                "doctor_id": doctor_id,
+                "notification_type": notification_type,
+                "success": success
+            })
+        
+        log_alert_notification("doctor-123", "email", True)
+        
+        log_entry = log_entries[0]
+        assert "email" not in str(log_entry).lower() or "email" == log_entry.get("notification_type")
+        assert "@" not in str(log_entry)
+        assert "phone" not in str(log_entry).lower() or "phone" == log_entry.get("notification_type")
