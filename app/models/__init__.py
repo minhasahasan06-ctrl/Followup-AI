@@ -230,4 +230,15 @@ __all__ = [
     "TinkerDriftRun",
     "TinkerDriftAlert",
     "TinkerGovernancePack",
+    "TermsAcceptance",
+    "UserAuditLog",
+    "PatientProfileExtended",
+    "DoctorProfileExtended",
 ]
+
+from app.models.terms_audit import (
+    TermsAcceptance,
+    UserAuditLog,
+    PatientProfileExtended,
+    DoctorProfileExtended,
+)

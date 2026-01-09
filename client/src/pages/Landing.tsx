@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Stethoscope, Heart, Users, TrendingUp, Shield, Bot, Calendar, Camera, Activity, CheckCircle, ArrowRight, Sparkles, ClipboardList, BarChart3, FileText, Bell, Lock, Brain, Leaf, Zap, Award, Globe, Pill, AlertTriangle } from "lucide-react";
 import { SiLinkedin, SiX, SiDiscord } from "react-icons/si";
+import { MiniDemo, FeatureHighlights } from "@/components/MiniDemo";
 
 export default function Landing() {
   const handlePatientSignup = () => {
@@ -44,7 +45,7 @@ export default function Landing() {
         <section className="py-20 px-6">
           <div className="max-w-6xl mx-auto text-center">
             <h2 className="text-5xl font-bold tracking-tight mb-6">
-              Personalized AI for Immunocompromised Patients
+              Personalized AI for Chronic Care Patients
             </h2>
             <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto leading-relaxed">
               Advanced daily follow-ups with Agent Clona, comprehensive health tracking, and research-backed insights 
@@ -63,7 +64,25 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* Who We Serve - Immunocompromised Patients */}
+        {/* Interactive Demo Section */}
+        <section className="py-16 px-6 bg-muted/30">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
+                <Bot className="h-4 w-4" />
+                <span className="text-sm font-medium">Try It Now</span>
+              </div>
+              <h3 className="text-3xl font-bold mb-4">See Agent Clona in Action</h3>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                Experience how our AI companion helps you track symptoms, manage medications, and stay connected with your care team.
+              </p>
+            </div>
+            <MiniDemo />
+            <FeatureHighlights />
+          </div>
+        </section>
+
+        {/* Who We Serve - Chronic Care Patients */}
         <section className="py-20 px-6 bg-gradient-to-b from-background via-accent/5 to-background">
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-16">
@@ -71,37 +90,37 @@ export default function Landing() {
                 <Users className="h-4 w-4" />
                 <span className="text-sm font-medium">Built for You</span>
               </div>
-              <h3 className="text-4xl font-bold mb-4">Understanding Immunocompromised Health</h3>
+              <h3 className="text-4xl font-bold mb-4">Understanding Chronic Care Health</h3>
               <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-                When your immune system isn't working at full strength, everyday health management becomes more complex—and more critical. 
+                When you're managing ongoing health conditions, everyday health management becomes more complex—and more critical. 
                 That's where Followup AI comes in.
               </p>
             </div>
 
-            {/* What Does Immunocompromised Mean */}
+            {/* What is Chronic Care */}
             <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-lg p-8 border-2 border-primary/20 mb-12">
               <div className="flex items-center gap-3 mb-6">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
                   <Shield className="h-6 w-6 text-primary" />
                 </div>
-                <h4 className="text-2xl font-semibold">What Does "Immunocompromised" Mean?</h4>
+                <h4 className="text-2xl font-semibold">What is Chronic Care?</h4>
               </div>
               <p className="text-muted-foreground mb-6 text-lg">
-                Being immunocompromised means your body's natural defense system—your immune system—has been weakened or suppressed, 
-                making it harder to fight off infections, heal from injuries, or ward off illnesses that others might shake off easily. 
-                This can happen for many reasons, from medical treatments to underlying conditions.
+                Chronic care involves managing long-term health conditions that require ongoing attention, medication management, 
+                and regular monitoring. Whether it's an autoimmune condition, post-transplant care, or other complex health needs, 
+                staying on top of your health requires consistent tracking and communication with your care team.
               </p>
               <div className="bg-background/60 backdrop-blur rounded-lg p-6 border">
                 <p className="text-muted-foreground">
-                  <strong className="text-foreground">The Reality:</strong> Simple infections can become serious. Minor symptoms can signal major problems. 
-                  Medication timing matters more than ever. That's why daily monitoring isn't just helpful—it's essential for staying healthy and safe.
+                  <strong className="text-foreground">The Reality:</strong> Small changes can signal bigger issues. Medication timing matters more than ever. 
+                  That's why daily monitoring isn't just helpful—it's essential for staying healthy and catching problems early.
                 </p>
               </div>
             </div>
 
-            {/* Who Are Immunocompromised Patients */}
+            {/* Who Are Chronic Care Patients */}
             <div className="mb-12">
-              <h4 className="text-2xl font-semibold text-center mb-8">Who Are Immunocompromised Patients?</h4>
+              <h4 className="text-2xl font-semibold text-center mb-8">Who Are Chronic Care Patients?</h4>
               <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <Card className="hover-elevate transition-all duration-300 group" data-testid="card-patient-type-transplant">
                   <CardHeader>

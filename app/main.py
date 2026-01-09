@@ -192,6 +192,24 @@ except ImportError as e:
     logger.warning(f"❌ Could not import lysa_router: {e}")
 
 try:
+    from app.routers import terms_router
+    _optional_routers.append(('terms', terms_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import terms_router: {e}")
+
+try:
+    from app.routers import patient_profile_router
+    _optional_routers.append(('patient_profile', patient_profile_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import patient_profile_router: {e}")
+
+try:
+    from app.routers import doctor_profile_router
+    _optional_routers.append(('doctor_profile', doctor_profile_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import doctor_profile_router: {e}")
+
+try:
     from app.routers import personalization_router
     _optional_routers.append(('personalization', personalization_router))
 except ImportError as e:
@@ -381,7 +399,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Followup AI - HIPAA-Compliant Health Platform",
-    description="AI-powered health platform for immunocompromised patients with ML inference",
+    description="AI-powered health platform for chronic care patients with ML inference",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -551,6 +569,15 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'cbt':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (CBT Therapy Tools)")
+        elif router_name == 'terms':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Terms & Conditions)")
+        elif router_name == 'patient_profile':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Patient Profile)")
+        elif router_name == 'doctor_profile':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Doctor Profile)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

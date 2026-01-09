@@ -1,7 +1,7 @@
 # Followup AI - HIPAA-Compliant Health Platform
 
 ## Overview
-Followup AI is a HIPAA-compliant health monitoring platform for immunocompromised patients, offering personalized health tracking, medication management, and wellness activities. It leverages AI agents (Agent Clona for patient support, Assistant Lysa for doctor assistance) to enhance patient care through advanced AI and robust health data management, aiming to be a comprehensive wellness monitoring and change detection system. The platform's vision is to transform healthcare for immunocompromised individuals by delivering fully functional, production-ready applications.
+Followup AI is a HIPAA-compliant health monitoring platform for chronic care patients, offering personalized health tracking, medication management, and wellness activities. It leverages AI agents (Agent Clona for patient support, Assistant Lysa for doctor assistance) to enhance patient care through advanced AI and robust health data management, aiming to be a comprehensive wellness monitoring and change detection system. The platform's vision is to transform healthcare for individuals managing ongoing health conditions by delivering fully functional, production-ready applications.
 
 ## User Preferences
 - **Preferred communication style**: Simple, everyday language

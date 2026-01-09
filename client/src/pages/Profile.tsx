@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Shield, Bell, Heart, Lock, Video } from "lucide-react";
+import { User, Shield, Bell, Heart, Lock, Video, Clock, Stethoscope } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -16,6 +16,8 @@ import PhoneVerification from "@/components/PhoneVerification";
 import TrainingConsentSettings from "@/components/TrainingConsentSettings";
 import { PersonalizationToggle } from "@/components/PersonalizationToggle";
 import VideoSettingsPanel from "@/components/VideoSettingsPanel";
+import { AssignedDoctorCard } from "@/components/AssignedDoctorCard";
+import { AuditLogViewer } from "@/components/AuditLogViewer";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -136,6 +138,16 @@ export default function Profile() {
               Privacy & ML
             </TabsTrigger>
           )}
+          {isPatient && (
+            <TabsTrigger value="doctor" data-testid="tab-doctor">
+              <Stethoscope className="h-4 w-4 mr-2" />
+              My Doctor
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="activity" data-testid="tab-activity">
+            <Clock className="h-4 w-4 mr-2" />
+            Activity
+          </TabsTrigger>
           {!isPatient && (
             <TabsTrigger value="video" data-testid="tab-video">
               <Video className="h-4 w-4 mr-2" />
@@ -188,10 +200,10 @@ export default function Profile() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="condition">Immunocompromised Condition</Label>
+                  <Label htmlFor="condition">Health Condition</Label>
                   <Input
                     id="condition"
-                    placeholder="e.g., Primary immunodeficiency"
+                    placeholder="e.g., Chronic condition or care type"
                     defaultValue={patientProfile?.immunocompromisedCondition || ""}
                     data-testid="input-condition"
                   />
@@ -316,6 +328,16 @@ export default function Profile() {
             <TrainingConsentSettings />
           </TabsContent>
         )}
+
+        {isPatient && (
+          <TabsContent value="doctor">
+            <AssignedDoctorCard />
+          </TabsContent>
+        )}
+
+        <TabsContent value="activity">
+          <AuditLogViewer />
+        </TabsContent>
 
         {!isPatient && (
           <TabsContent value="video">
