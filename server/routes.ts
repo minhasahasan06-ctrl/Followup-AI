@@ -2224,6 +2224,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Extended profile routes (proxy to FastAPI)
+  const pythonProfileUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+  
+  app.get('/api/patient/profile/extended', isAuthenticated, async (req: any, res) => {
+    try {
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetchFromCloudRun(`${pythonProfileUrl}/api/patient/profile/extended`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return res.status(response.status).json(data);
+      }
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching extended patient profile:", error);
+      res.status(500).json({ message: "Failed to fetch extended profile" });
+    }
+  });
+
+  app.post('/api/patient/profile/extended', isAuthenticated, async (req: any, res) => {
+    try {
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetchFromCloudRun(`${pythonProfileUrl}/api/patient/profile/extended`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return res.status(response.status).json(data);
+      }
+      res.json(data);
+    } catch (error) {
+      console.error("Error updating extended patient profile:", error);
+      res.status(500).json({ message: "Failed to update extended profile" });
+    }
+  });
+
+  app.get('/api/doctor/profile/extended', isAuthenticated, async (req: any, res) => {
+    try {
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetchFromCloudRun(`${pythonProfileUrl}/api/doctor/profile/extended`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return res.status(response.status).json(data);
+      }
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching extended doctor profile:", error);
+      res.status(500).json({ message: "Failed to fetch extended profile" });
+    }
+  });
+
+  app.post('/api/doctor/profile/extended', isAuthenticated, async (req: any, res) => {
+    try {
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        authHeader = `Bearer ${jwt.sign({ sub: req.user.id, email: req.user.email, role: req.user.role }, process.env.DEV_MODE_SECRET, { expiresIn: '1h' })}`;
+      }
+      const response = await fetchFromCloudRun(`${pythonProfileUrl}/api/doctor/profile/extended`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return res.status(response.status).json(data);
+      }
+      res.json(data);
+    } catch (error) {
+      console.error("Error updating extended doctor profile:", error);
+      res.status(500).json({ message: "Failed to update extended profile" });
+    }
+  });
+
   // User settings routes
   app.get('/api/user/settings', isAuthenticated, async (req: any, res) => {
     try {

@@ -81,6 +81,13 @@ The backend consists of two main components:
   - **Research Genius (E.5-E.8)**: GeniusResearchService with auto preregistration from protocol, bias checklist (confounding/selection/immortal-time bias warnings), sensitivity suite (negative controls, placebo outcomes), exportable study bundle (ZIP with CohortDSL, Protocol, metrics, reproducibility hashes)
   - **Clinical Operations Genius (E.9-E.11)**: GeniusClinicalService with alert budget tuning per clinic, alert burden fairness checker (subgroup distribution analysis), dynamic thresholds by clinic workload
   - **Patient Genius (E.12-E.14)**: GeniusPatientService with effort-aware daily check-ins (2-8 questions based on stability), just-in-time micro-habits (template picks by engagement bucket), safe trend explanations (templated language, no raw numbers)
+- **Extended Profile System**: Production-grade medical info management with:
+  - PatientMedicalInfoForm: Emergency contacts (name/relationship/phone/preferred), current medications (name/dose/frequency/instructions), allergies list, chronic conditions list
+  - DoctorProfessionalInfoForm: NPI, hospital affiliations, board certifications, languages, accepted insurances, telemedicine toggle, telemedicine/consultation fees
+  - Profile.tsx Medical Info tab with role-based rendering (patients see PatientMedicalInfoForm, doctors see DoctorProfessionalInfoForm)
+  - FastAPI backend routes: `/api/patient/profile/extended` and `/api/doctor/profile/extended` (GET/POST)
+  - Express proxy routes with JWT token forwarding from session auth using DEV_MODE_SECRET
+  - TrainingConsentSettings component for comprehensive ML training and research consent controls
 - **HIPAA Compliance & Access Control**: Features a Unified Access Control Service (`AccessControlService`), `HIPAAAuditLogger`, `AccessScope` and `PHICategory` enums, and `RequirePatientAccess` FastAPI dependency for robust, route-level access control and audit logging.
 - **Authentication Flow**: Auth0 for frontend, session-based for Express, JWT (DEV_MODE_SECRET) for Express-to-Python, and internal JWT verification in Python. Role-based routing ensures appropriate access for Admin, Doctor, and Patient users.
 
