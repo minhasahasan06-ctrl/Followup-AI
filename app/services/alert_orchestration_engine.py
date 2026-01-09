@@ -318,13 +318,20 @@ class AlertOrchestrationEngine:
     async def _send_email_notification(self, alert: Alert, rule: AlertRule) -> bool:
         """
         Send email notification via AWS SES (HIPAA-compliant)
+        Uses real doctor contact info from users table.
         """
         try:
             if not SES_AVAILABLE:
                 return False
             
-            # TODO: Get doctor email from doctor_profiles table
-            doctor_email = f"doctor_{rule.doctor_id}@followupai.health"  # Placeholder
+            from app.models.user import User
+            doctor = self.db.query(User).filter(User.id == rule.doctor_id).first()
+            
+            if not doctor or not doctor.email:
+                self.logger.warning(f"No email found for doctor {rule.doctor_id}")
+                return False
+            
+            doctor_email = doctor.email
             
             response = ses_client.send_email(
                 Source=os.getenv("SES_FROM_EMAIL", "alerts@followupai.health"),
@@ -338,6 +345,7 @@ class AlertOrchestrationEngine:
                 }
             )
             
+            self.logger.info(f"Email sent to {doctor_email} for alert {alert.id}")
             return response['ResponseMetadata']['HTTPStatusCode'] == 200
             
         except Exception as e:
@@ -347,20 +355,33 @@ class AlertOrchestrationEngine:
     async def _send_sms_notification(self, alert: Alert, rule: AlertRule) -> bool:
         """
         Send SMS notification via Twilio (HIPAA-compliant)
+        Uses real doctor contact info from users table.
         """
         try:
             if not TWILIO_AVAILABLE:
                 return False
             
-            # TODO: Get doctor phone from doctor_profiles table
-            doctor_phone = f"+1555{rule.doctor_id[:7]}"  # Placeholder
+            from app.models.user import User
+            doctor = self.db.query(User).filter(User.id == rule.doctor_id).first()
+            
+            if not doctor or not doctor.phone_number:
+                self.logger.warning(f"No phone found for doctor {rule.doctor_id}")
+                return False
+            
+            doctor_phone = doctor.phone_number
+            twilio_from = os.getenv("TWILIO_PHONE_NUMBER")
+            
+            if not twilio_from:
+                self.logger.warning("TWILIO_PHONE_NUMBER not configured")
+                return False
             
             message = twilio_client.messages.create(
                 body=self._format_sms_body(alert),
-                from_=os.getenv("TWILIO_PHONE_NUMBER"),
+                from_=twilio_from,
                 to=doctor_phone
             )
             
+            self.logger.info(f"SMS sent to {doctor_phone} for alert {alert.id}")
             return message.status in ["queued", "sent", "delivered"]
             
         except Exception as e:
@@ -756,6 +777,94 @@ Followup AI - HIPAA-Compliant Wellness Monitoring Platform
         except Exception as e:
             self.logger.error(f"Error getting pending alerts: {e}")
             return []
+    
+    async def create_crisis_alert(
+        self,
+        patient_id: str,
+        doctor_id: str,
+        crisis_type: str,
+        severity: str,
+        details: Dict[str, Any]
+    ) -> Optional[int]:
+        """
+        Create a crisis alert for immediate clinician attention.
+        Used by CBT tools, mental health modules, and other crisis detection systems.
+        
+        Args:
+            patient_id: Patient identifier
+            doctor_id: Doctor to alert
+            crisis_type: Type of crisis (cbt_session_crisis, mental_health_crisis, etc.)
+            severity: Alert severity (medium, high, critical)
+            details: Additional context (session_id, matched_keywords, etc.)
+            
+        Returns:
+            Alert ID if created, None otherwise
+        """
+        try:
+            from app.models.user import User
+            patient = self.db.query(User).filter(User.id == patient_id).first()
+            patient_name = f"{patient.first_name} {patient.last_name}" if patient else "Patient"
+            
+            severity_emoji = {
+                "medium": "⚠️",
+                "high": "🔴",
+                "critical": "‼️"
+            }
+            
+            title = f"CRISIS ALERT: {patient_name} - Immediate Review Required"
+            
+            message_parts = [
+                f"A crisis indicator has been detected during a patient session.",
+                "",
+                f"Patient: {patient_name}",
+                f"Crisis Type: {crisis_type}",
+                f"Severity: {severity.upper()}",
+            ]
+            
+            if details.get("matched_keywords"):
+                message_parts.append("")
+                message_parts.append("Detected keywords: " + ", ".join(details["matched_keywords"]))
+            
+            if details.get("session_id"):
+                message_parts.append(f"Session ID: {details['session_id']}")
+            
+            message_parts.extend([
+                "",
+                "IMMEDIATE ACTION REQUIRED:",
+                "1. Review patient's session details in the dashboard",
+                "2. Contact patient as soon as possible",
+                "3. If patient is in immediate danger, follow crisis protocol",
+                "",
+                "Crisis Resources to Share with Patient:",
+                "• 988 Suicide and Crisis Lifeline",
+                "• Text HOME to 741741 (Crisis Text Line)",
+                "• 911 for immediate danger"
+            ])
+            
+            alert = Alert(
+                patient_id=patient_id,
+                doctor_id=doctor_id,
+                alert_type=crisis_type,
+                severity=severity,
+                title=title,
+                message="\n".join(message_parts),
+                metadata=details,
+                status="pending"
+            )
+            
+            self.db.add(alert)
+            self.db.commit()
+            self.db.refresh(alert)
+            
+            await self._deliver_alert_to_doctor(alert, doctor_id)
+            
+            self.logger.info(f"Crisis alert {alert.id} created for patient {patient_id}")
+            return alert.id
+            
+        except Exception as e:
+            self.logger.error(f"Error creating crisis alert: {e}")
+            self.db.rollback()
+            return None
 
 
 # Utility function for batch processing

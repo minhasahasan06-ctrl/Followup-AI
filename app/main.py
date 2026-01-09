@@ -179,6 +179,37 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import genius_router: {e}")
 
+try:
+    from app.routers import environment_router
+    _optional_routers.append(('environment', environment_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import environment_router: {e}")
+
+try:
+    from app.routers import lysa_router
+    _optional_routers.append(('lysa', lysa_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import lysa_router: {e}")
+
+try:
+    from app.routers import personalization_router
+    _optional_routers.append(('personalization', personalization_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import personalization_router: {e}")
+
+try:
+    from app.routers import cbt_router
+    _optional_routers.append(('cbt', cbt_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import cbt_router: {e}")
+
+# Import lysa_drafts models for table creation
+try:
+    from app.models import lysa_drafts
+    logger.info("✅ Lysa drafts models imported for table creation")
+except ImportError as e:
+    logger.warning(f"❌ Could not import lysa_drafts: {e}")
+
 # Import epidemiology models explicitly for table creation
 try:
     from app.models import epidemiology_models
