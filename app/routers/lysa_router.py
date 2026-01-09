@@ -53,7 +53,26 @@ async def generate_differential(
     
     Returns a draft for clinician review - NOT autonomous medical advice.
     """
-    doctor_id = http_request.headers.get("X-Doctor-Id", "unknown")
+    doctor_id = http_request.headers.get("X-Doctor-Id")
+    
+    if not doctor_id:
+        from app.models.patient_doctor_connection import PatientDoctorConnection
+        connection = db.query(PatientDoctorConnection).filter(
+            PatientDoctorConnection.patient_id == patient_id,
+            PatientDoctorConnection.status == "active"
+        ).first()
+        if connection:
+            doctor_id = connection.doctor_id
+        else:
+            from app.models.user import User
+            fallback_doctor = db.query(User).filter(User.role == "doctor").first()
+            if fallback_doctor:
+                doctor_id = fallback_doctor.id
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No doctor assigned to patient. Please provide X-Doctor-Id header."
+                )
     
     lysa_service = get_lysa_documentation_service(db)
     
@@ -80,7 +99,18 @@ async def get_drafts(
     db: Session = Depends(get_db)
 ):
     """Get all drafts for a patient."""
-    doctor_id = http_request.headers.get("X-Doctor-Id", "unknown")
+    doctor_id = http_request.headers.get("X-Doctor-Id")
+    
+    if not doctor_id:
+        from app.models.patient_doctor_connection import PatientDoctorConnection
+        connection = db.query(PatientDoctorConnection).filter(
+            PatientDoctorConnection.patient_id == patient_id,
+            PatientDoctorConnection.status == "active"
+        ).first()
+        if connection:
+            doctor_id = connection.doctor_id
+        else:
+            doctor_id = None
     
     lysa_service = get_lysa_documentation_service(db)
     

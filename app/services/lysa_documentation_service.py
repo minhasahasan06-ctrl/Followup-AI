@@ -130,6 +130,11 @@ class LysaDocumentationService:
             response = json.dumps(content_json)
             response_hash = hash_content(response)
         
+        try:
+            self.db.rollback()
+        except Exception:
+            pass
+        
         draft = LysaDraft(
             patient_id=patient_id,
             doctor_id=doctor_id,
@@ -142,24 +147,33 @@ class LysaDocumentationService:
             ehr_sources_used=self._extract_source_ids(ehr_summary)
         )
         
-        self.db.add(draft)
-        self.db.commit()
-        self.db.refresh(draft)
+        try:
+            self.db.add(draft)
+            self.db.commit()
+            self.db.refresh(draft)
+        except Exception as db_error:
+            self.db.rollback()
+            logger.error(f"Database error creating draft: {db_error}")
+            raise
         
-        audit_log = LysaDraftAuditLog(
-            draft_id=draft.id,
-            patient_id=patient_id,
-            doctor_id=doctor_id,
-            action="generate_differential",
-            ehr_resources_accessed=ehr_summary.get("provenance", []),
-            request_hash=request_hash,
-            response_hash=response_hash,
-            model_used="gpt-4o",
-            ip_address=ip_address,
-            user_agent=user_agent
-        )
-        self.db.add(audit_log)
-        self.db.commit()
+        try:
+            audit_log = LysaDraftAuditLog(
+                draft_id=draft.id,
+                patient_id=patient_id,
+                doctor_id=doctor_id,
+                action="generate_differential",
+                ehr_resources_accessed=ehr_summary.get("provenance", []),
+                request_hash=request_hash,
+                response_hash=response_hash,
+                model_used="gpt-4o",
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+            self.db.add(audit_log)
+            self.db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to create audit log: {e}")
+            self.db.rollback()
         
         return {
             "id": draft.id,
@@ -175,15 +189,17 @@ class LysaDocumentationService:
     async def get_drafts(
         self,
         patient_id: str,
-        doctor_id: str,
+        doctor_id: Optional[str],
         draft_type: Optional[str] = None,
         status: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get all drafts for a patient."""
         query = self.db.query(LysaDraft).filter(
-            LysaDraft.patient_id == patient_id,
-            LysaDraft.doctor_id == doctor_id
+            LysaDraft.patient_id == patient_id
         )
+        
+        if doctor_id:
+            query = query.filter(LysaDraft.doctor_id == doctor_id)
         
         if draft_type:
             query = query.filter(LysaDraft.draft_type == draft_type)

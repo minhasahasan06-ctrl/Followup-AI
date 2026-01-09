@@ -164,3 +164,59 @@ async def check_crisis(
     cbt_service = get_cbt_service(db)
     result = cbt_service.check_crisis(text)
     return result
+
+
+class AddAsHabitRequest(BaseModel):
+    """Request to create a habit from CBT session."""
+    habit_name: str = Field(..., description="Name for the habit")
+    description: Optional[str] = Field(None, description="Optional description")
+    frequency: str = Field(default="daily", description="daily, weekly, etc")
+    category: str = Field(default="mental_health")
+
+
+@router.post("/patient/{patient_id}/sessions/{session_id}/add-as-habit")
+async def add_session_as_habit(
+    patient_id: str,
+    session_id: str,
+    request: AddAsHabitRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a habit from a CBT session's action plan.
+    
+    This allows patients to turn their CBT insights into trackable habits.
+    """
+    from app.models.habit_models import HabitHabit
+    
+    cbt_service = get_cbt_service(db)
+    
+    session = await cbt_service.get_session_detail(session_id, patient_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    description = request.description or session.get("action_plan") or session.get("balanced_thought")
+    
+    habit = HabitHabit(
+        user_id=patient_id,
+        name=request.habit_name,
+        description=description,
+        category=request.category,
+        frequency=request.frequency,
+        goal_count=1,
+        streak_count=0,
+        total_completions=0,
+        is_active=True
+    )
+    
+    db.add(habit)
+    db.commit()
+    db.refresh(habit)
+    
+    logger.info(f"Created habit {habit.id} from CBT session {session_id}")
+    
+    return {
+        "success": True,
+        "habit_id": habit.id,
+        "habit_name": habit.name,
+        "source_session_id": session_id
+    }
