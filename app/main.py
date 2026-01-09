@@ -539,6 +539,18 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'genius':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Phase E Genius Features)")
+        elif router_name == 'environment':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Environmental Auto-Create)")
+        elif router_name == 'lysa':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Lysa Documentation)")
+        elif router_name == 'personalization':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (EHR Personalization)")
+        elif router_name == 'cbt':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (CBT Therapy Tools)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

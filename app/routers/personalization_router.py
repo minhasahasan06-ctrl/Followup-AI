@@ -14,7 +14,7 @@ from app.services.personalized_recommendations_service import get_personalized_r
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/patient", tags=["personalization"])
+router = APIRouter(prefix="/api/v1/personalization/patient", tags=["personalization"])
 
 
 class RecommendationResponse(BaseModel):

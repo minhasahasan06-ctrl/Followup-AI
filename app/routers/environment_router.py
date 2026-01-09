@@ -114,13 +114,13 @@ async def auto_create_environmental_profile(
     )
     
     try:
-        await env_service.compute_current_risk(patient_id)
+        await env_service.compute_risk_score(patient_id)
     except Exception as e:
         logger.warning(f"Failed to compute initial risk: {e}")
     
     return AutoCreateResponse(
         success=True,
-        profile_id=profile.id,
+        profile_id=str(profile.id),
         zip_code=zip_code,
         city=city,
         state=state,

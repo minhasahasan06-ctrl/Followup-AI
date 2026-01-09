@@ -15,7 +15,7 @@ from app.services.lysa_documentation_service import get_lysa_documentation_servi
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/doctor/lysa", tags=["lysa"])
+router = APIRouter(prefix="/api/v1/lysa/patient", tags=["lysa"])
 
 
 class DifferentialRequest(BaseModel):

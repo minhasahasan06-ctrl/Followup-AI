@@ -108,8 +108,8 @@ export function DraftDifferentialPanel({ patientId, patientName, onDraftApproved
   const reviseMutation = useMutation({
     mutationFn: async () => {
       if (!selectedDraft) throw new Error("No draft selected");
-      return await apiRequest("POST", `/api/v1/lysa/drafts/${selectedDraft.id}/revise`, {
-        revision_notes: revisionNotes
+      return await apiRequest("POST", `/api/v1/lysa/patient/${patientId}/drafts/${selectedDraft.id}/revise`, {
+        instruction: revisionNotes
       });
     },
     onSuccess: (data: LysaDraft) => {
@@ -133,7 +133,7 @@ export function DraftDifferentialPanel({ patientId, patientName, onDraftApproved
   const approveMutation = useMutation({
     mutationFn: async () => {
       if (!selectedDraft) throw new Error("No draft selected");
-      return await apiRequest("POST", `/api/v1/lysa/drafts/${selectedDraft.id}/approve`, {
+      return await apiRequest("POST", `/api/v1/lysa/patient/${patientId}/drafts/${selectedDraft.id}/approve`, {
         confirmation: true
       });
     },
