@@ -83,7 +83,7 @@ export function NLCohortBuilderTab() {
     'Patients over 65 with diabetes and at least 2 hospitalizations in the past year',
     'Female patients with hypertension who are on ACE inhibitors',
     'Patients with chronic kidney disease stage 3 or higher',
-    'Immunocompromised patients who had a COVID-19 diagnosis in 2024',
+    'Chronic care patients who had a COVID-19 diagnosis in 2024',
   ];
   
   return (

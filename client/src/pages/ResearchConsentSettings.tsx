@@ -176,7 +176,7 @@ const dataTypes: DataTypeInfo[] = [
   {
     key: "conditions",
     label: "Medical Conditions",
-    description: "Your diagnosed conditions, comorbidities, and immunocompromised status",
+    description: "Your diagnosed conditions, comorbidities, and chronic care status",
     icon: Clipboard,
     category: "personal",
   },
@@ -345,7 +345,7 @@ export default function ResearchConsentSettings() {
         <AlertDescription className="space-y-2">
           <p>
             By participating in research, your anonymized health data helps improve care for 
-            immunocompromised patients worldwide. Your identity is never shared with researchers.
+            chronic care patients worldwide. Your identity is never shared with researchers.
           </p>
           <ul className="list-disc list-inside text-sm space-y-1 mt-2">
             <li>All data is de-identified before being used in any study</li>

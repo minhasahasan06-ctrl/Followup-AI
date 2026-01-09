@@ -641,7 +641,7 @@ export default function CohortBuilderTab() {
                       id="cohort-name"
                       value={cohortName}
                       onChange={(e) => setCohortName(e.target.value)}
-                      placeholder="e.g., High-risk immunocompromised adults"
+                      placeholder="e.g., High-risk chronic care adults"
                       data-testid="input-cohort-name"
                     />
                   </div>

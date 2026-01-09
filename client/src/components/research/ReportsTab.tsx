@@ -146,7 +146,7 @@ const mockReports: AIResearchReport[] = [
     title: 'Predictive Model for Infection Risk',
     status: 'complete',
     narrative: {
-      abstract: 'We developed and validated a machine learning model to predict 90-day infection risk in immunocompromised patients. The XGBoost model achieved an AUROC of 0.82 (95% CI: 0.78-0.86) with good calibration.',
+      abstract: 'We developed and validated a machine learning model to predict 90-day infection risk in chronic care patients. The XGBoost model achieved an AUROC of 0.82 (95% CI: 0.78-0.86) with good calibration.',
       methods: 'Using data from 1,247 patients, we trained XGBoost, random forest, and logistic regression models with 5-fold cross-validation. Features included demographics, laboratory values, environmental exposures, and prior infection history.',
       results: 'XGBoost outperformed other models with AUROC 0.82, sensitivity 0.74, specificity 0.78. Top predictive features were neutrophil count, prior 30-day hospitalization, environmental AQI score, and CD4 count.',
       discussion: 'Our model demonstrates strong predictive performance for infection risk. Integration of environmental factors improved model performance by 8% compared to clinical-only models.',

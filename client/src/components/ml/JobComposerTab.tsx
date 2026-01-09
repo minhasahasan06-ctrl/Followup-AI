@@ -128,7 +128,7 @@ export function JobComposerTab() {
           <div className="space-y-2">
             <Label>Training Objective</Label>
             <Textarea
-              placeholder="Describe what you want the model to predict or classify... e.g., 'Predict 30-day hospitalization risk for immunocompromised patients based on vital signs and symptom patterns'"
+              placeholder="Describe what you want the model to predict or classify... e.g., 'Predict 30-day hospitalization risk for chronic care patients based on vital signs and symptom patterns'"
               value={objective}
               onChange={(e) => setObjective(e.target.value)}
               className="min-h-[100px]"

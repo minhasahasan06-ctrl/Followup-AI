@@ -5,7 +5,7 @@ import { ArrowLeft, Stethoscope } from "lucide-react";
 export default function Terms() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted">
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+      <header className="border-b bg-background/95 backdrop-blur sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
           <Link href="/">
             <div className="flex items-center gap-3 cursor-pointer">
@@ -29,191 +29,121 @@ export default function Terms() {
 
       <main className="max-w-4xl mx-auto px-6 py-12">
         <h1 className="text-4xl font-bold mb-2">Terms and Conditions</h1>
-        <p className="text-muted-foreground mb-8">Last Updated: January 2025</p>
+        <p className="text-muted-foreground mb-8">Last Updated: January 2025 • Version: v2025-01</p>
 
         <div className="prose prose-slate dark:prose-invert max-w-none space-y-8">
           <section>
             <h2 className="text-2xl font-semibold mb-4">1. Acceptance of Terms</h2>
             <p className="text-muted-foreground leading-relaxed">
-              By accessing and using Followup AI, you accept and agree to be bound by the terms and provision of this agreement. 
-              If you do not agree to these Terms and Conditions, please do not use our platform.
+              By creating an account or using Followup AI, you agree to be bound by these Terms, our Privacy Policy, and other posted policies. If you do not agree, please do not use the Platform.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">2. Medical Disclaimer and Platform Purpose</h2>
-            <p className="text-muted-foreground leading-relaxed mb-4 font-semibold">
-              <strong>NOT A MEDICAL DEVICE:</strong> Followup AI is a wellness monitoring and lifestyle tracking platform 
-              designed for personal health awareness. This platform is NOT a medical device and is NOT intended to diagnose, 
-              treat, cure, or prevent any disease.
-            </p>
+            <h2 className="text-2xl font-semibold mb-4">2. Platform Description & Medical Disclaimer</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
-              Our platform provides change detection and wellness monitoring tools that track personal health trends over time. 
-              All information, insights, and patterns detected are for informational purposes only and should be discussed 
-              with your healthcare provider before making any medical decisions.
-            </p>
-            <p className="text-muted-foreground leading-relaxed mb-4">
-              <strong>User Responsibility:</strong> You are solely responsible for all medical decisions regarding your health. 
-              The platform does not provide medical advice, diagnosis, or treatment. Always seek the advice of your physician 
-              or other qualified health provider with any questions regarding a medical condition.
-            </p>
-            <p className="text-muted-foreground leading-relaxed font-semibold">
-              <strong>Emergency Notice:</strong> If you are experiencing a medical emergency, call 911 or seek immediate 
-              medical attention. Do not rely on this platform for emergency medical situations.
+              <strong>Not medical advice:</strong> Followup AI is a wellness monitoring platform for chronic care patients. It is not a medical device and does not provide diagnosis, treatment, or clinical recommendations. AI outputs and trend analyses are informational only. Always consult a licensed healthcare professional for medical decisions. In emergencies, contact emergency services immediately.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">3. User Accounts and Roles</h2>
-            <p className="text-muted-foreground leading-relaxed mb-3">
-              <strong>Patient Accounts:</strong> Patients can access health tracking, Agent Clona, wellness modules, 
-              and medication management features.
-            </p>
+            <h2 className="text-2xl font-semibold mb-4">3. User Roles & Account Responsibilities</h2>
             <p className="text-muted-foreground leading-relaxed">
-              <strong>Doctor Accounts:</strong> Doctors must provide valid medical license information for verification. 
-              Doctor accounts include access to Assistant Lysa, patient review dashboards, and research tools.
+              Patient accounts can use daily follow-ups, medication tracking, Agent Clona, and research settings. Doctor accounts must provide valid license details and are responsible for professional conduct. Keep account credentials secure and report unauthorized access promptly.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">4. Data Privacy and HIPAA Compliance</h2>
+            <h2 className="text-2xl font-semibold mb-4">4. Data, Chat Sessions & Retention</h2>
             <p className="text-muted-foreground leading-relaxed">
-              We are committed to protecting your health information in accordance with HIPAA regulations. Your data is 
-              encrypted, securely stored, and never shared without your explicit consent. Please review our Privacy Policy 
-              for detailed information.
+              All chat conversations, transcripts, and AI summaries are stored as medical history to enable continuity of care. You may request export or deletion of your data, subject to legal obligations and the limits described in our Privacy Policy. Deletion cannot guarantee removal from backups or from aggregated, de-identified research datasets that have already been used.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">5. Acceptable Use</h2>
-            <p className="text-muted-foreground leading-relaxed mb-3">You agree not to:</p>
-            <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li>Use the platform for any unlawful purpose</li>
-              <li>Attempt to gain unauthorized access to any part of the platform</li>
-              <li>Share your account credentials with others</li>
-              <li>Upload false or misleading health information</li>
-              <li>Interfere with the proper functioning of the platform</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="text-2xl font-semibold mb-4">6. AI-Generated Wellness Insights and Healthcare Provider Discussion</h2>
-            <p className="text-muted-foreground leading-relaxed mb-3">
-              Agent Clona (Your Health Companion) and Assistant Lysa use artificial intelligence to provide wellness insights, 
-              health pattern tracking, and informational support. AI-generated content represents change detection and trend 
-              analysis for personal awareness only—NOT medical diagnosis or treatment recommendations.
-            </p>
-            <p className="text-muted-foreground leading-relaxed mb-3 font-semibold">
-              <strong>Critical Requirement:</strong> All AI-generated insights, patterns, and information must be discussed 
-              with your healthcare provider before making any medical decisions. The platform detects changes in your personal 
-              health patterns but cannot diagnose medical conditions or recommend treatments.
-            </p>
+            <h2 className="text-2xl font-semibold mb-4">5. Research & Secondary Use</h2>
             <p className="text-muted-foreground leading-relaxed">
-              When the platform identifies health pattern changes or wellness trends, we strongly encourage you to share 
-              this information with a licensed healthcare provider for proper medical evaluation. You can request a 
-              consultation through our platform to discuss these patterns with a qualified doctor.
+              Research participation is opt-in and managed in Settings. Data used for research is de-identified and processed with privacy safeguards (e.g., hashing, bucketing, and k-anonymity with k ≥ 25). We use Business Associate Agreements (BAA) when required. Withdrawals of consent stop future research use but cannot retroactively remove data from completed research or models trained before withdrawal.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">7. Chat Session Storage</h2>
-            <p className="text-muted-foreground leading-relaxed mb-3">
-              All conversations with Agent Clona are automatically saved as medical history sessions to provide continuity 
-              of care and enable doctors to better understand your health journey. By using the chat feature, you consent to:
-            </p>
-            <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li>Automatic storage of all chat messages and AI responses</li>
-              <li>AI-generated summaries of your conversations for quick review</li>
-              <li>Extraction of medical entities (symptoms, medications) for health tracking</li>
-              <li>Access by doctors you authorize or consult with through the platform</li>
-            </ul>
-            <p className="text-muted-foreground leading-relaxed mt-3">
-              You may request deletion of chat sessions from your profile settings at any time.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-2xl font-semibold mb-4">8. Subscription, Payments, and Credits</h2>
-            <h3 className="text-lg font-semibold mt-4 mb-3">Premium Agent Clona Subscription</h3>
-            <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li><strong>Price:</strong> $20/month billed monthly</li>
-              <li><strong>Free Trial:</strong> 7-day free trial for new users; cancel anytime during trial with no charge</li>
-              <li><strong>Inclusions:</strong> Unlimited AI conversations, wellness programs, 20 consultation credits per month</li>
-              <li><strong>Renewal:</strong> Automatically renews monthly unless cancelled before renewal date</li>
-              <li><strong>Refunds:</strong> No refunds for partial months; unused credits expire upon cancellation</li>
-            </ul>
-
-            <h3 className="text-lg font-semibold mt-6 mb-3">Consultation Credits</h3>
-            <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li>Premium subscribers receive 20 consultation credits per month</li>
-              <li>Each 10-minute doctor consultation costs 20 credits</li>
-              <li>Credits are non-transferable and expire when subscription is cancelled</li>
-              <li>Unused credits do not roll over to the next billing period</li>
-            </ul>
-
-            <h3 className="text-lg font-semibold mt-6 mb-3">Doctor Earnings and Withdrawals</h3>
-            <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li>Doctors earn credits from completed consultations at a rate of $18 per 10-minute session</li>
-              <li>Credits are securely stored in the doctor's account and can be viewed in their profile</li>
-              <li>Withdrawals are processed through Stripe payment gateway with standard processing fees</li>
-              <li>Minimum withdrawal amount is $50; processing time is 3-5 business days</li>
-              <li>Followup AI retains a 10% platform fee to cover operational costs</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="text-2xl font-semibold mb-4">9. Consultation Services</h2>
-            <h3 className="text-lg font-semibold mt-4 mb-3">Patient-to-Doctor Consultations</h3>
-            <p className="text-muted-foreground leading-relaxed mb-3">
-              When you request a consultation through the platform:
-            </p>
-            <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li>You consent to sharing relevant chat history and health data with the consulting doctor</li>
-              <li>Consultations are scheduled based on doctor availability; not all requests can be immediately fulfilled</li>
-              <li>Each consultation lasts 10 minutes; credits are deducted upon doctor acceptance</li>
-              <li>Consultations are conducted via secure chat or video call (if enabled)</li>
-              <li>Doctor responses do not constitute an official doctor-patient relationship unless explicitly established</li>
-            </ul>
-
-            <h3 className="text-lg font-semibold mt-6 mb-3">Doctor-to-Doctor Consultations</h3>
-            <p className="text-muted-foreground leading-relaxed mb-3">
-              If your doctor requests a consultation with another specialist about your case:
-            </p>
-            <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li>You will receive a consent request before any health information is shared</li>
-              <li>You have the right to approve or deny the consultation request</li>
-              <li>If approved, only medically necessary information will be shared with the consulting physician</li>
-              <li>All doctors involved are subject to HIPAA confidentiality requirements</li>
-              <li>You can revoke consent at any time before the consultation occurs</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="text-2xl font-semibold mb-4">10. Limitation of Liability</h2>
+            <h2 className="text-2xl font-semibold mb-4">6. Privacy, HIPAA & Security</h2>
             <p className="text-muted-foreground leading-relaxed">
-              Followup AI and its affiliates shall not be liable for any direct, indirect, incidental, special, 
-              or consequential damages arising from your use of the platform. This includes but is not limited to 
-              medical decisions made based on platform information, consultation outcomes, or technical issues 
-              affecting service availability.
+              We are committed to HIPAA-compliant data handling, AES-256 encryption at rest and in transit, regular audits, and access logging. We do not sell personal health information. For full details, see our Privacy Policy.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">11. Changes to Terms</h2>
+            <h2 className="text-2xl font-semibold mb-4">7. Third-Party Integrations</h2>
             <p className="text-muted-foreground leading-relaxed">
-              We reserve the right to modify these terms at any time. Users will be notified of significant changes 
-              via email or platform notification. Continued use of the platform after changes constitutes acceptance 
-              of modified terms.
+              If you connect third-party apps (Fitbit, Apple Health), you control what is shared. External processors operate under BAAs when processing PHI; if operating in non-BAA mode, only heavily de-identified data is used.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">12. Contact Information</h2>
+            <h2 className="text-2xl font-semibold mb-4">8. Subscriptions & Payments</h2>
             <p className="text-muted-foreground leading-relaxed">
-              For questions about these Terms and Conditions, please contact us at{" "}
+              Premium Agent Clona subscribers are billed $20/month after a 7-day trial. Premium benefits and consultation credits are described in the platform; credits expire on subscription cancellation. Doctor earnings and withdrawals use Stripe, with a platform fee and payout policies described in the dashboard.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">9. Consultations</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              Consultations share relevant health information only with your consent. Consultations do not automatically establish a formal doctor–patient relationship unless explicitly agreed by the parties.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">10. AI Insights</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              AI-generated insights are informational and must be reviewed by a licensed clinician. We use reasonable efforts to indicate uncertainty in AI outputs but do not guarantee clinical accuracy.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">11. Acceptable Use</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              Users must not use the Platform unlawfully, impersonate others, access other accounts, upload false information, or interfere with Platform operation.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">12. Liability & Indemnity</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              To the fullest extent allowed by law, Followup AI is not liable for indirect or consequential damages arising from use of the Platform. Users agree to indemnify Followup AI for third-party claims arising from misuse.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">13. Termination</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              We may suspend or terminate accounts for breaches. Data handling after termination follows the Privacy Policy and legal requirements.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">14. Changes to Terms</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              We may modify Terms and will notify of significant changes. Continued use after notice constitutes acceptance.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">15. Governing Law & Contact</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              These Terms are governed by the laws specified in our legal jurisdiction. Contact:{" "}
               <a href="mailto:t@followupai.io" className="text-primary hover:underline">
                 t@followupai.io
               </a>
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">16. Recordkeeping</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              We keep a record of Terms acceptance: user_id, terms_version, accepted_at, ip_address, and user_agent.
             </p>
           </section>
         </div>

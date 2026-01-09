@@ -46,7 +46,7 @@ export default function AgentClona() {
                 Agent Clona
               </h1>
               <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
-                Your caring AI companion designed specifically for immunocompromised patients. 
+                Your caring AI companion designed specifically for chronic care patients. 
                 Clona provides daily check-ins, medication reminders, wellness support, and connects 
                 you with your healthcare team—all while keeping you safe and informed.
               </p>
@@ -83,7 +83,7 @@ export default function AgentClona() {
                   <div>
                     <h3 className="font-semibold mb-1">Peace of Mind</h3>
                     <p className="text-sm text-muted-foreground">
-                      Know you're being watched over by AI trained on immunocompromised care
+                      Know you're being watched over by AI trained on chronic care conditions
                     </p>
                   </div>
                 </div>
@@ -430,7 +430,7 @@ export default function AgentClona() {
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl font-bold mb-4">Start Your Journey with Agent Clona Today</h2>
           <p className="text-lg text-muted-foreground mb-8">
-            Join thousands of immunocompromised patients who've found peace of mind and 
+            Join thousands of chronic care patients who've found peace of mind and 
             better health outcomes with their AI companion.
           </p>
           <div className="flex gap-4 justify-center flex-wrap">

@@ -52,7 +52,7 @@ export default function Pricing() {
               <span className="font-semibold">Patient Care Plans</span>
             </div>
             <h2 className="text-3xl font-bold mb-3">Agent Clona Premium</h2>
-            <p className="text-muted-foreground">AI-powered health companion for immunocompromised patients</p>
+            <p className="text-muted-foreground">AI-powered health companion for chronic care patients</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8 mb-16">

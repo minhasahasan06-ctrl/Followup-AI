@@ -212,7 +212,7 @@ export default function PatientPrivacyResearch() {
               <p className="font-medium mb-1">How your data helps research</p>
               <p className="text-muted-foreground">
                 Your anonymized health patterns help train AI models that can detect early signs of 
-                deterioration in immunocompromised patients, potentially saving lives. All data is 
+                deterioration in chronic care patients, potentially saving lives. All data is 
                 stripped of identifying information before use.
               </p>
             </div>

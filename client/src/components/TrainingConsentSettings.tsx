@@ -368,7 +368,7 @@ export default function TrainingConsentSettings() {
                 ML Training Data Contribution
               </CardTitle>
               <CardDescription className="mt-2">
-                Help improve health predictions for immunocompromised patients by contributing your anonymized health data to train AI models
+                Help improve health predictions for chronic care patients by contributing your anonymized health data to train AI models
               </CardDescription>
             </div>
             <Badge 
@@ -652,7 +652,7 @@ export default function TrainingConsentSettings() {
             <div className="text-sm text-muted-foreground">
               <p className="font-medium text-foreground">About ML Training</p>
               <p className="mt-1">
-                Our AI models help predict health deterioration patterns for immunocompromised patients. 
+                Our AI models help predict health deterioration patterns for chronic care patients. 
                 By contributing your anonymized data, you help improve predictions for yourself and others 
                 with similar conditions. All data handling complies with HIPAA regulations.
               </p>

@@ -59,7 +59,7 @@ export default function FAQ() {
                 <CardContent className="pt-6">
                   <h3 className="font-semibold mb-3">What is Followup AI?</h3>
                   <p className="text-sm text-muted-foreground">
-                    Followup AI is a HIPAA-compliant health platform designed specifically for immunocompromised patients. 
+                    Followup AI is a HIPAA-compliant health platform designed specifically for chronic care patients. 
                     We feature two AI agents: Agent Clona (patient support) and Assistant Lysa (doctor assistance) that 
                     work together to provide comprehensive, continuous care monitoring and support.
                   </p>
@@ -73,7 +73,7 @@ export default function FAQ() {
                     Followup AI is ideal for:
                   </p>
                   <ul className="text-sm text-muted-foreground space-y-2 ml-4">
-                    <li>• Immunocompromised patients requiring daily health monitoring</li>
+                    <li>• Chronic care patients requiring daily health monitoring</li>
                     <li>• Physicians managing high-risk patient populations</li>
                     <li>• Healthcare institutions seeking better patient outcomes</li>
                     <li>• Researchers studying chronic disease patterns and epidemiology</li>
@@ -85,7 +85,7 @@ export default function FAQ() {
                 <CardContent className="pt-6">
                   <h3 className="font-semibold mb-3">What makes Followup AI different from other health apps?</h3>
                   <p className="text-sm text-muted-foreground">
-                    Unlike generic health apps, Followup AI is purpose-built for immunocompromised patients with dual AI agents, 
+                    Unlike generic health apps, Followup AI is purpose-built for chronic care patients with dual AI agents, 
                     real-time infection pattern detection, camera-based health assessments, wearable integration, and direct 
                     doctor-patient coordination—all while maintaining strict HIPAA compliance and enterprise-grade security.
                   </p>

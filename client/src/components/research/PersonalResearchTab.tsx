@@ -169,7 +169,7 @@ export function PersonalResearchTab() {
     "What is the average age and gender distribution of patients with lupus who have CD4 counts below 200?",
     "Can you predict which transplant patients are at risk of infection in the next 30 days based on their immune markers?",
     "Compare survival outcomes between patients on tacrolimus vs cyclosporine, adjusting for age and comorbidities",
-    "What is the causal effect of environmental air quality on infection rates in immunocompromised patients?",
+    "What is the causal effect of environmental air quality on infection rates in chronic care patients?",
   ];
 
   if (selectedProject) {

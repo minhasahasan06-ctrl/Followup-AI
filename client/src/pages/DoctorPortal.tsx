@@ -91,7 +91,7 @@ export default function DoctorPortal() {
               Advanced Clinical Tools for Healthcare Providers
             </h2>
             <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto leading-relaxed">
-              Access Assistant Lysa, manage your immunocompromised patients with AI-powered insights, 
+              Access Assistant Lysa, manage your chronic care patients with AI-powered insights, 
               and contribute to groundbreaking epidemiological research.
             </p>
             <div className="flex gap-4 justify-center flex-wrap">
@@ -416,7 +416,7 @@ export default function DoctorPortal() {
                 <CardContent className="pl-20">
                   <p className="text-muted-foreground">
                     Review patient timelines, chat with Assistant Lysa for clinical insights, access the 
-                    Research Center, and coordinate care for your immunocompromised patients.
+                    Research Center, and coordinate care for your chronic care patients.
                   </p>
                 </CardContent>
               </Card>

@@ -10,7 +10,7 @@ export default function ChatMessageExample() {
       />
       <ChatMessage
         role="assistant"
-        content="I understand your concern. Fatigue and joint achiness can be common for immunocompromised patients. Let me help you assess this. Have you noticed any other symptoms like fever, swelling, or changes in your medication routine?"
+        content="I understand your concern. Fatigue and joint achiness can be common for chronic care patients. Let me help you assess this. Have you noticed any other symptoms like fever, swelling, or changes in your medication routine?"
         timestamp="2 mins ago"
         isGP={true}
         entities={[

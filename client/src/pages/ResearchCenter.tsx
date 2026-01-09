@@ -651,7 +651,7 @@ export default function ResearchCenter() {
             Epidemiology Research Center
           </h1>
           <p className="text-muted-foreground">
-            AI-powered research analysis and data visualization for immunocompromised patient populations
+            AI-powered research analysis and data visualization for chronic care patient populations
           </p>
         </div>
         <div className="flex items-center gap-3">

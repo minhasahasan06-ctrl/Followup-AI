@@ -216,9 +216,9 @@ export default function Landing() {
               </div>
               <div className="text-center pt-6 border-t">
                 <p className="text-lg font-medium mb-4">
-                  That's exactly what Followup AI provides—personalized, intelligent, daily health monitoring designed specifically for immunocompromised patients.
+                  That's exactly what Followup AI provides—personalized, intelligent, daily health monitoring designed specifically for chronic care patients.
                 </p>
-                <Button size="lg" onClick={handlePatientSignup} className="gap-2" data-testid="button-get-started-immunocompromised">
+                <Button size="lg" onClick={handlePatientSignup} className="gap-2" data-testid="button-get-started-chronic-care">
                   Start Your Free Trial
                   <ArrowRight className="h-4 w-4" />
                 </Button>
@@ -342,7 +342,7 @@ export default function Landing() {
                 <h4 className="text-2xl font-semibold">Personalized to Your Condition</h4>
               </div>
               <p className="text-muted-foreground mb-6">
-                Agent Clona adapts daily follow-ups based on your specific immunocompromised condition, ensuring every question and recommendation 
+                Agent Clona adapts daily follow-ups based on your specific health condition, ensuring every question and recommendation 
                 is relevant to your unique health journey.
               </p>
               <div className="grid md:grid-cols-3 gap-4">
@@ -367,7 +367,7 @@ export default function Landing() {
               </div>
             </div>
 
-            {/* Why It Matters for Immunocompromised Patients */}
+            {/* Why It Matters for Chronic Care Patients */}
             <div className="bg-card rounded-lg p-8 border">
               <div className="flex items-center gap-3 mb-6">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -454,7 +454,7 @@ export default function Landing() {
               <h3 className="text-4xl font-bold mb-4">The Followup AI Advantage</h3>
               <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
                 Cutting-edge technology meets compassionate care—designed specifically for the unique challenges 
-                faced by immunocompromised patients and their healthcare teams.
+                faced by chronic care patients and their healthcare teams.
               </p>
             </div>
 
@@ -611,7 +611,7 @@ export default function Landing() {
               </div>
               <h3 className="text-4xl font-bold mb-4">Empower Your Practice with Assistant Lysa</h3>
               <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-                Manage your immunocompromised patients more effectively with AI-powered insights, automated monitoring, 
+                Manage your chronic care patients more effectively with AI-powered insights, automated monitoring, 
                 and comprehensive patient timelines—all while reducing your administrative burden.
               </p>
             </div>
@@ -627,7 +627,7 @@ export default function Landing() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">
-                    See all your immunocompromised patients in one view with AI-flagged concerns and priority alerts.
+                    See all your chronic care patients in one view with AI-flagged concerns and priority alerts.
                   </p>
                 </CardContent>
               </Card>
@@ -684,7 +684,7 @@ export default function Landing() {
                 <h4 className="text-2xl font-semibold">Condition-Specific Patient Monitoring</h4>
               </div>
               <p className="text-muted-foreground mb-8">
-                Assistant Lysa tailors monitoring protocols based on each patient's immunocompromised condition, 
+                Assistant Lysa tailors monitoring protocols based on each patient's chronic care needs, 
                 helping you catch complications early and intervene proactively.
               </p>
               <div className="grid md:grid-cols-3 gap-6">
@@ -749,7 +749,7 @@ export default function Landing() {
                   <Users className="h-4 w-4" />
                   <span className="text-sm font-medium">Enterprise Solutions</span>
                 </div>
-                <h3 className="text-4xl font-bold mb-6">Transform Your Hospital's Immunocompromised Patient Care</h3>
+                <h3 className="text-4xl font-bold mb-6">Transform Your Hospital's Chronic Care Patient Management</h3>
                 <p className="text-lg text-muted-foreground mb-6">
                   Deploy Followup AI across your entire healthcare system. Reduce readmissions, improve patient outcomes, 
                   and empower your clinical teams with AI-powered monitoring and insights.
