@@ -18,6 +18,8 @@ import { PersonalizationToggle } from "@/components/PersonalizationToggle";
 import VideoSettingsPanel from "@/components/VideoSettingsPanel";
 import { AssignedDoctorCard } from "@/components/AssignedDoctorCard";
 import { AuditLogViewer } from "@/components/AuditLogViewer";
+import PatientMedicalInfoForm from "@/components/PatientMedicalInfoForm";
+import DoctorProfessionalInfoForm from "@/components/DoctorProfessionalInfoForm";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -193,87 +195,9 @@ export default function Profile() {
 
         <TabsContent value="medical">
           {isPatient ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Medical Information</CardTitle>
-                <CardDescription>Manage your health profile and medical history</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="condition">Health Condition</Label>
-                  <Input
-                    id="condition"
-                    placeholder="e.g., Chronic condition or care type"
-                    defaultValue={patientProfile?.immunocompromisedCondition || ""}
-                    data-testid="input-condition"
-                  />
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="city">City</Label>
-                    <Input
-                      id="city"
-                      placeholder="Your city"
-                      defaultValue={patientProfile?.city || ""}
-                      data-testid="input-city"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="state">State</Label>
-                    <Input
-                      id="state"
-                      placeholder="State"
-                      defaultValue={patientProfile?.state || ""}
-                      data-testid="input-state"
-                    />
-                  </div>
-                </div>
-                <Button data-testid="button-save-medical">Save Medical Information</Button>
-              </CardContent>
-            </Card>
+            <PatientMedicalInfoForm />
           ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Professional Information</CardTitle>
-                <CardDescription>Manage your medical credentials and specialties</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="license">Medical License Number</Label>
-                  <Input
-                    id="license"
-                    defaultValue={user?.medicalLicenseNumber || ""}
-                    disabled
-                    data-testid="input-license"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    License number cannot be changed. Contact support for updates.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bio">Bio</Label>
-                  <Input
-                    id="bio"
-                    placeholder="Brief professional bio"
-                    defaultValue={doctorProfile?.bio || ""}
-                    data-testid="input-bio"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="linkedin">LinkedIn Profile</Label>
-                  <Input
-                    id="linkedin"
-                    placeholder="https://www.linkedin.com/in/yourprofile"
-                    defaultValue={doctorProfile?.linkedinUrl || ""}
-                    data-testid="input-linkedin"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Add your LinkedIn profile URL to help patients learn more about you
-                  </p>
-                </div>
-                <Button data-testid="button-save-professional">Save Professional Information</Button>
-              </CardContent>
-            </Card>
+            <DoctorProfessionalInfoForm />
           )}
         </TabsContent>
 
