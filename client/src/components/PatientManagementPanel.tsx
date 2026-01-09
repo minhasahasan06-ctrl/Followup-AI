@@ -59,6 +59,9 @@ import { HealthMetricCard } from "@/components/HealthMetricCard";
 import { PrescriptionHelper } from "@/components/PrescriptionHelper";
 import { ClinicalDecisionSupport } from "@/components/ClinicalDecisionSupport";
 import { PredictiveAnalyticsDashboard } from "@/components/PredictiveAnalyticsDashboard";
+import { DraftDifferentialPanel } from "@/components/DraftDifferentialPanel";
+import { CBTSessionPanel } from "@/components/CBTSessionPanel";
+import { PersonalizedHabitSuggestions } from "@/components/PersonalizedHabitSuggestions";
 import { format, parseISO, differenceInYears, formatDistanceToNow, isValid } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -1339,7 +1342,20 @@ export function PatientManagementPanel({ onOpenLysa, className }: PatientManagem
             <PrescriptionHelper />
           </TabsContent>
 
-          <TabsContent value="clinical" className="mt-4">
+          <TabsContent value="clinical" className="mt-4 space-y-6">
+            <div className="flex flex-wrap gap-3">
+              <DraftDifferentialPanel
+                patientId={selectedPatient.id}
+                patientName={`${selectedPatient.firstName} ${selectedPatient.lastName}`}
+                onDraftApproved={(draftId) => {
+                  console.log("Draft approved:", draftId);
+                }}
+              />
+              <CBTSessionPanel
+                patientId={selectedPatient.id}
+              />
+            </div>
+            
             <ClinicalDecisionSupport 
               patientContext={{
                 id: selectedPatient.id,
@@ -1349,6 +1365,8 @@ export function PatientManagementPanel({ onOpenLysa, className }: PatientManagem
                 comorbidities: patientProfile?.medicalConditions,
               }}
             />
+            
+            <PersonalizedHabitSuggestions patientId={selectedPatient.id} />
           </TabsContent>
         </Tabs>
 
