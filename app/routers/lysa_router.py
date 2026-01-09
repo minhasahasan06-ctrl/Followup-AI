@@ -64,15 +64,10 @@ async def generate_differential(
         if connection:
             doctor_id = connection.doctor_id
         else:
-            from app.models.user import User
-            fallback_doctor = db.query(User).filter(User.role == "doctor").first()
-            if fallback_doctor:
-                doctor_id = fallback_doctor.id
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="No doctor assigned to patient. Please provide X-Doctor-Id header."
-                )
+            raise HTTPException(
+                status_code=403,
+                detail="Doctor authentication required. Provide X-Doctor-Id header or ensure patient-doctor connection exists."
+            )
     
     lysa_service = get_lysa_documentation_service(db)
     
