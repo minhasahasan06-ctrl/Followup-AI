@@ -98,7 +98,7 @@ async def get_drafts(
     status: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Get all drafts for a patient."""
+    """Get all drafts for a patient. Doctor authentication required."""
     doctor_id = http_request.headers.get("X-Doctor-Id")
     
     if not doctor_id:
@@ -110,7 +110,10 @@ async def get_drafts(
         if connection:
             doctor_id = connection.doctor_id
         else:
-            doctor_id = None
+            raise HTTPException(
+                status_code=403,
+                detail="Doctor authentication required. Provide X-Doctor-Id header or ensure patient-doctor connection exists."
+            )
     
     lysa_service = get_lysa_documentation_service(db)
     
@@ -139,8 +142,23 @@ async def revise_draft(
     Revise a draft based on clinician instruction.
     
     The original draft is preserved in revision history.
+    Doctor authentication required.
     """
-    doctor_id = http_request.headers.get("X-Doctor-Id", "unknown")
+    doctor_id = http_request.headers.get("X-Doctor-Id")
+    
+    if not doctor_id:
+        from app.models.patient_doctor_connection import PatientDoctorConnection
+        connection = db.query(PatientDoctorConnection).filter(
+            PatientDoctorConnection.patient_id == patient_id,
+            PatientDoctorConnection.status == "active"
+        ).first()
+        if connection:
+            doctor_id = connection.doctor_id
+        else:
+            raise HTTPException(
+                status_code=403,
+                detail="Doctor authentication required for revising drafts."
+            )
     
     lysa_service = get_lysa_documentation_service(db)
     
@@ -180,7 +198,21 @@ async def approve_draft(
             detail="Explicit confirmation required. Set confirmation=true to approve."
         )
     
-    doctor_id = http_request.headers.get("X-Doctor-Id", "unknown")
+    doctor_id = http_request.headers.get("X-Doctor-Id")
+    
+    if not doctor_id:
+        from app.models.patient_doctor_connection import PatientDoctorConnection
+        connection = db.query(PatientDoctorConnection).filter(
+            PatientDoctorConnection.patient_id == patient_id,
+            PatientDoctorConnection.status == "active"
+        ).first()
+        if connection:
+            doctor_id = connection.doctor_id
+        else:
+            raise HTTPException(
+                status_code=403,
+                detail="Doctor authentication required for approving drafts."
+            )
     
     lysa_service = get_lysa_documentation_service(db)
     

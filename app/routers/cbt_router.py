@@ -190,33 +190,43 @@ async def add_session_as_habit(
     
     cbt_service = get_cbt_service(db)
     
-    session = await cbt_service.get_session_detail(session_id, patient_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    description = request.description or session.get("action_plan") or session.get("balanced_thought")
-    
-    habit = HabitHabit(
-        user_id=patient_id,
-        name=request.habit_name,
-        description=description,
-        category=request.category,
-        frequency=request.frequency,
-        goal_count=1,
-        streak_count=0,
-        total_completions=0,
-        is_active=True
-    )
-    
-    db.add(habit)
-    db.commit()
-    db.refresh(habit)
-    
-    logger.info(f"Created habit {habit.id} from CBT session {session_id}")
-    
-    return {
-        "success": True,
-        "habit_id": habit.id,
-        "habit_name": habit.name,
-        "source_session_id": session_id
-    }
+    try:
+        session = await cbt_service.get_session_detail(session_id, patient_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        description = request.description or session.get("action_plan") or session.get("balanced_thought")
+        
+        habit = HabitHabit(
+            user_id=patient_id,
+            name=request.habit_name,
+            description=description,
+            category=request.category,
+            frequency=request.frequency,
+            goal_count=1,
+            streak_count=0,
+            total_completions=0,
+            is_active=True
+        )
+        
+        db.add(habit)
+        db.commit()
+        db.refresh(habit)
+        
+        logger.info(f"Created habit from CBT session [session_id={session_id}]")
+        
+        return {
+            "success": True,
+            "habit_id": habit.id,
+            "habit_name": habit.name,
+            "source_session_id": session_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create habit from CBT session [session_id={session_id}]: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to create habit from session. Please try again."
+        )
