@@ -131,8 +131,17 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Initialize Python backend first (start + wait for ready)
-  await initializePythonBackend();
+  // Start Python backend in background (don't wait for it to be ready)
+  // Express will start immediately; Python routes will work once FastAPI is ready
+  if (process.env.NODE_ENV === 'development') {
+    pythonProcess = startPythonBackend();
+    // Check for Python readiness in background without blocking
+    waitForPythonBackend().then(ready => {
+      if (!ready) {
+        log('[Python] Backend started but may still be loading ML models...');
+      }
+    });
+  }
   
   // Auto-seed database with sample data for fully functional features
   try {
