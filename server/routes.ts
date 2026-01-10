@@ -14222,6 +14222,362 @@ Provide:
   });
 
   // =====================================================
+  // VIDEO-AI EXAM SESSIONS - Additional Proxy Routes
+  // =====================================================
+  
+  // Start video exam session
+  app.post('/api/v1/video-ai/exam-sessions/start', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/video-ai/exam-sessions/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Error starting video exam session:', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error starting video exam session:', error);
+      res.status(500).json({ message: 'Failed to start video exam session' });
+    }
+  });
+
+  // Upload segment to video exam session
+  app.post('/api/v1/video-ai/exam-sessions/upload-segment', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/video-ai/exam-sessions/upload-segment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Error uploading video segment:', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error uploading video segment:', error);
+      res.status(500).json({ message: 'Failed to upload video segment' });
+    }
+  });
+
+  // Complete video exam session
+  app.post('/api/v1/video-ai/exam-sessions/:sessionId/complete', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { sessionId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/video-ai/exam-sessions/${sessionId}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Error completing video exam session:', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error completing video exam session:', error);
+      res.status(500).json({ message: 'Failed to complete video exam session' });
+    }
+  });
+
+  // Audit camera access
+  app.post('/api/v1/video-ai/exam-sessions/audit/camera-access', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/video-ai/exam-sessions/audit/camera-access`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error auditing camera access:', error);
+      res.status(200).json({ success: true }); // Don't fail for audit logging
+    }
+  });
+
+  // =====================================================
+  // GUIDED VIDEO EXAM - Proxy Routes to Python backend
+  // =====================================================
+  
+  // Create guided exam session
+  app.post('/api/v1/guided-exam/sessions', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/guided-exam/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Error creating guided exam session:', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error creating guided exam session:', error);
+      res.status(500).json({ message: 'Failed to create guided exam session' });
+    }
+  });
+
+  // Capture frame for guided exam stage
+  app.post('/api/v1/guided-exam/sessions/:sessionId/capture', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { sessionId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/guided-exam/sessions/${sessionId}/capture`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Error capturing guided exam frame:', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error capturing guided exam frame:', error);
+      res.status(500).json({ message: 'Failed to capture guided exam frame' });
+    }
+  });
+
+  // Complete guided exam session
+  app.post('/api/v1/guided-exam/sessions/:sessionId/complete', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { sessionId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/guided-exam/sessions/${sessionId}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Error completing guided exam session:', response.status, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error completing guided exam session:', error);
+      res.status(500).json({ message: 'Failed to complete guided exam session' });
+    }
+  });
+
+  // Get guided exam session results
+  app.get('/api/v1/guided-exam/sessions/:sessionId/results', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const { sessionId } = req.params;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/guided-exam/sessions/${sessionId}/results`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching guided exam results:', error);
+      res.status(500).json({ message: 'Failed to fetch guided exam results' });
+    }
+  });
+
+  // Get personalized exam config for patient
+  app.get('/api/v1/guided-exam/personalized-config', isAuthenticated, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const patientId = req.query.patient_id || req.user?.id;
+      
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, id: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetchFromCloudRun(`${pythonBackendUrl}/api/v1/guided-exam/personalized-config?patient_id=${patientId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+      });
+      
+      if (!response.ok) {
+        // Return default config if personalization fails
+        return res.json({
+          stages: ['eyes', 'palm', 'tongue', 'lips'],
+          priority_checks: [],
+          personalized: false
+        });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching personalized exam config:', error);
+      res.json({
+        stages: ['eyes', 'palm', 'tongue', 'lips'],
+        priority_checks: [],
+        personalized: false
+      });
+    }
+  });
+
+  // =====================================================
   // TREMOR ANALYSIS ENDPOINTS - Proxy to Python backend
   // =====================================================
   
