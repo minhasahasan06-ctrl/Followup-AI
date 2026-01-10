@@ -164,12 +164,6 @@ const doctorItems = [
     icon: Beaker,
   },
   {
-    title: "Tinker AI",
-    url: "/tinker",
-    icon: Bot,
-    badge: "NON-BAA",
-  },
-  {
     title: "Referrals",
     url: "/referrals",
     icon: Gift,

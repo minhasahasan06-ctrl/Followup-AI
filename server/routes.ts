@@ -16076,6 +16076,53 @@ Provide:
   });
 
   // ============================================================================
+  // Tinker Thinking Machine API - Proxy routes to Python backend
+  // Provides k-anonymized cohort analysis, drift detection, and privacy-safe AI insights
+  // Admin-only access for NON-BAA external AI service
+  // ============================================================================
+
+  app.all('/api/v1/tinker/*', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const path = req.path;
+      const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+      const url = `${pythonBackendUrl}${path}${queryString}`;
+      
+      // Generate JWT auth header for Python backend
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && req.user?.id && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: req.user.id, email: req.user.email, role: req.user.role },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(url, {
+        method: req.method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`Python backend error (tinker): ${response.status}`, error);
+        return res.status(response.status).json({ message: error });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Error connecting to Python backend (tinker):', error);
+      res.status(502).json({ error: 'Failed to connect to Tinker AI service' });
+    }
+  });
+
+  // ============================================================================
   // AI Health Alert Engine - Proxy routes to Python backend
   // Provides trend analysis, engagement metrics, QoL tracking, and alert management
   // ============================================================================

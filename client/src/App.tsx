@@ -100,6 +100,7 @@ function PatientRouter() {
       <Route path="/ai-video" component={AIVideoDashboard} />
       <Route path="/ai-audio" component={AIAudioDashboard} />
       <Route path="/guided-exam" component={GuidedVideoExam} />
+      <Route path="/guided-video-exam" component={GuidedVideoExam} />
       <Route path="/guided-audio-exam" component={GuidedAudioExam} />
       <Route path="/behavioral-ai-insights" component={BehavioralAIInsights} />
       <Route path="/mental-health" component={MentalHealth} />
@@ -145,7 +146,6 @@ function DoctorRouter() {
       <Route path="/research" component={ResearchCenter} />
       <Route path="/ml-monitoring" component={MLMonitoring} />
       <Route path="/medical-nlp" component={MedicalNLPDashboard} />
-      <Route path="/tinker" component={TinkerDashboard} />
       <Route path="/agent-hub" component={AgentHub} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
