@@ -36,13 +36,11 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface TinkerHealth {
   enabled: boolean;
-  api_connected: boolean;
-  privacy_firewall_active: boolean;
-  k_anonymity_threshold: number;
-  circuit_breaker_state: string;
-  uptime_hours: number;
-  last_request_timestamp: string | null;
-  version: string;
+  healthy: boolean;
+  mode: string;
+  k_threshold: number;
+  api_latency_ms?: number;
+  circuit_breaker_state?: string;
 }
 
 interface CohortAnalysisResult {
@@ -292,8 +290,8 @@ export default function TinkerDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={health.api_connected ? "default" : "destructive"} data-testid="status-api">
-            {health.api_connected ? "Connected" : "Disconnected"}
+          <Badge variant={health.healthy ? "default" : "destructive"} data-testid="status-api">
+            {health.healthy ? "Connected" : "Disconnected"}
           </Badge>
           <Badge variant="outline" className="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300" data-testid="status-privacy">
             <Lock className="h-3 w-3 mr-1" />
@@ -323,7 +321,7 @@ export default function TinkerDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">k ≥ {health.k_anonymity_threshold ?? 25}</div>
+            <div className="text-2xl font-bold">k ≥ {health.k_threshold ?? 25}</div>
             <p className="text-xs text-muted-foreground">Minimum cohort size</p>
           </CardContent>
         </Card>
@@ -334,7 +332,7 @@ export default function TinkerDashboard() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{(health.uptime_hours ?? 0).toFixed(1)}h</div>
+            <div className="text-2xl font-bold">0.0h</div>
             <p className="text-xs text-muted-foreground">Current session</p>
           </CardContent>
         </Card>
@@ -345,8 +343,8 @@ export default function TinkerDashboard() {
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{health.version ?? '1.0.0'}</div>
-            <p className="text-xs text-muted-foreground">NON-BAA Mode</p>
+            <div className="text-2xl font-bold">1.0.0</div>
+            <p className="text-xs text-muted-foreground">{health.mode ?? 'NON-BAA'} Mode</p>
           </CardContent>
         </Card>
       </div>
