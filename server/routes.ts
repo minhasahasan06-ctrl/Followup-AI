@@ -22185,39 +22185,46 @@ Provide:
     const pathname = request.url || '';
     
     if (pathname.startsWith('/ws/agent')) {
-      // Proxy WebSocket to Python backend
-      const pythonWsUrl = (PYTHON_AGENT_URL || 'http://localhost:8000').replace('http://', 'ws://').replace('https://', 'wss://');
-      const targetUrl = new URL(pathname, pythonWsUrl);
+      // Proxy WebSocket to Python backend using HTTP upgrade forwarding
+      const backendUrl = new URL(PYTHON_AGENT_URL);
+      const pythonHost = backendUrl.hostname;
+      const pythonPort = parseInt(backendUrl.port) || 8000;
       
-      import('ws').then(({ default: WebSocket }) => {
-        const targetWs = new WebSocket(targetUrl.toString());
-        
-        targetWs.on('open', () => {
-          // Forward handshake
-          const clientWs = new WebSocket(null as any);
-          (clientWs as any)._socket = socket;
+      // Use dynamic import for net module (ES module compatible)
+      import('net').then((net) => {
+        const proxySocket = net.connect(pythonPort, pythonHost, () => {
+          // Reconstruct the HTTP upgrade request with all original headers
+          const headers = Object.entries(request.headers)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join('\r\n');
+          const upgradeRequest = `GET ${pathname} HTTP/1.1\r\n${headers}\r\n\r\n`;
           
-          // Pipe data between client and target
-          socket.on('data', (data) => {
-            if (targetWs.readyState === WebSocket.OPEN) {
-              targetWs.send(data);
-            }
-          });
+          proxySocket.write(upgradeRequest);
           
-          targetWs.on('message', (data) => {
-            socket.write(data);
-          });
+          // Write head bytes if any
+          if (head && head.length > 0) {
+            proxySocket.write(head);
+          }
           
-          targetWs.on('close', () => socket.destroy());
-          socket.on('close', () => targetWs.close());
+          // Pipe data bidirectionally
+          socket.pipe(proxySocket);
+          proxySocket.pipe(socket);
         });
         
-        targetWs.on('error', (err) => {
-          console.error('Agent WebSocket proxy error:', err);
+        proxySocket.on('error', (err: Error) => {
+          console.error('Agent WebSocket proxy error:', err.message);
           socket.destroy();
         });
+        
+        socket.on('error', (err: Error) => {
+          console.error('Client socket error:', err.message);
+          proxySocket.destroy();
+        });
+        
+        socket.on('close', () => proxySocket.destroy());
+        proxySocket.on('close', () => socket.destroy());
       }).catch((err) => {
-        console.error('Failed to load ws module for proxy:', err);
+        console.error('Failed to load net module for proxy:', err);
         socket.destroy();
       });
     }
