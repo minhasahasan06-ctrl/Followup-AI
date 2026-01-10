@@ -217,6 +217,62 @@ async def check_model_drift(
     )
 
 
+@router.get("/drift/status")
+async def get_drift_status(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    Get latest drift monitoring status.
+    
+    Returns summary of recent drift checks for dashboard display.
+    """
+    tinker = get_tinker_service()
+    
+    if not tinker or not tinker.is_enabled():
+        return {
+            "enabled": False,
+            "drift_detected": False,
+            "last_check": None,
+            "recent_runs": []
+        }
+    
+    recent_runs = (
+        db.query(TinkerDriftRun)
+        .order_by(TinkerDriftRun.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    
+    drift_detected = any(run.drift_detected for run in recent_runs) if recent_runs else False
+    last_check = recent_runs[0].created_at.isoformat() if recent_runs else None
+    
+    recent_alerts = (
+        db.query(TinkerDriftAlert)
+        .filter(TinkerDriftAlert.acknowledged == False)
+        .order_by(TinkerDriftAlert.created_at.desc())
+        .limit(5)
+        .all()
+    )
+    
+    return {
+        "enabled": True,
+        "drift_detected": drift_detected,
+        "last_check": last_check,
+        "active_alerts": len(recent_alerts),
+        "recent_runs": [
+            {
+                "id": run.id,
+                "model_id": run.model_id,
+                "drift_detected": run.drift_detected,
+                "psi_score": run.psi_score,
+                "created_at": run.created_at.isoformat() if run.created_at else None
+            }
+            for run in recent_runs[:5]
+        ]
+    }
+
+
 @router.get("/cohorts", response_model=List[Dict[str, Any]])
 async def list_cohorts(
     status_filter: Optional[str] = Query(None, alias="status"),

@@ -71,6 +71,20 @@ interface DriftCheckResult {
   timestamp: string;
 }
 
+interface DriftStatus {
+  enabled: boolean;
+  drift_detected: boolean;
+  last_check: string | null;
+  active_alerts?: number;
+  recent_runs: Array<{
+    id: number;
+    model_id: string;
+    drift_detected: boolean;
+    psi_score: number | null;
+    created_at: string | null;
+  }>;
+}
+
 interface PrivacyStats {
   total_requests: number;
   phi_detections_blocked: number;
@@ -125,8 +139,8 @@ export default function TinkerDashboard() {
     retry: 1
   });
 
-  const { data: driftResult, isLoading: driftLoading, isError: driftError, refetch: refetchDrift } = useQuery<DriftCheckResult>({
-    queryKey: ["/api/v1/tinker/drift/check"],
+  const { data: driftStatus, isLoading: driftLoading, isError: driftError, refetch: refetchDrift } = useQuery<DriftStatus>({
+    queryKey: ["/api/v1/tinker/drift/status"],
     enabled: health?.enabled ?? false,
     retry: 1
   });
@@ -580,38 +594,46 @@ export default function TinkerDashboard() {
                     Failed to check for data drift. Ensure Tinker is enabled and try again.
                   </AlertDescription>
                 </Alert>
-              ) : driftResult ? (
+              ) : driftStatus ? (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-4 rounded-lg" style={{
-                    backgroundColor: driftResult.drift_detected 
+                    backgroundColor: driftStatus.drift_detected 
                       ? "rgba(239, 68, 68, 0.1)" 
                       : "rgba(34, 197, 94, 0.1)"
                   }}>
                     <div className="flex items-center gap-2">
-                      {driftResult.drift_detected ? (
+                      {driftStatus.drift_detected ? (
                         <AlertTriangle className="h-5 w-5 text-red-600" />
                       ) : (
                         <CheckCircle2 className="h-5 w-5 text-green-600" />
                       )}
                       <span className="font-medium">
-                        {driftResult.drift_detected ? "Drift Detected" : "No Drift Detected"}
+                        {driftStatus.drift_detected ? "Drift Detected" : "No Drift Detected"}
                       </span>
                     </div>
-                    <Badge variant={getDriftSeverity(driftResult.drift_score) === "low" ? "outline" : "destructive"}>
-                      Score: {(driftResult.drift_score * 100).toFixed(1)}%
-                    </Badge>
+                    {driftStatus.active_alerts !== undefined && driftStatus.active_alerts > 0 && (
+                      <Badge variant="destructive">
+                        {driftStatus.active_alerts} Active Alert{driftStatus.active_alerts > 1 ? 's' : ''}
+                      </Badge>
+                    )}
                   </div>
 
-                  {Object.keys(driftResult.psi_values).length > 0 && (
+                  {driftStatus.last_check && (
+                    <div className="text-sm text-muted-foreground">
+                      Last checked: {new Date(driftStatus.last_check).toLocaleString()}
+                    </div>
+                  )}
+
+                  {driftStatus.recent_runs.length > 0 && (
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={Object.entries(driftResult.psi_values).map(([feature, psi]) => ({
-                          feature,
-                          psi: typeof psi === 'number' ? psi : 0,
+                        <BarChart data={driftStatus.recent_runs.map((run) => ({
+                          model: run.model_id || 'Unknown',
+                          psi: run.psi_score ?? 0,
                           threshold: 0.1
                         }))}>
                           <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="feature" />
+                          <XAxis dataKey="model" />
                           <YAxis />
                           <Tooltip />
                           <Legend />
@@ -622,25 +644,33 @@ export default function TinkerDashboard() {
                     </div>
                   )}
 
-                  {driftResult.affected_features.length > 0 && (
+                  {driftStatus.recent_runs.length > 0 && (
                     <div className="space-y-2">
-                      <h4 className="font-medium text-sm">Affected Features</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {driftResult.affected_features.map((feature) => (
-                          <Badge key={feature} variant="destructive">{feature}</Badge>
+                      <h4 className="font-medium text-sm">Recent Drift Runs</h4>
+                      <div className="space-y-2">
+                        {driftStatus.recent_runs.map((run) => (
+                          <div key={run.id} className="flex items-center justify-between p-2 rounded border">
+                            <div className="flex items-center gap-2">
+                              {run.drift_detected ? (
+                                <AlertTriangle className="h-4 w-4 text-red-500" />
+                              ) : (
+                                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              )}
+                              <span className="text-sm">{run.model_id}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {run.psi_score !== null && (
+                                <Badge variant="outline">PSI: {run.psi_score.toFixed(3)}</Badge>
+                              )}
+                              {run.created_at && (
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(run.created_at).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         ))}
                       </div>
-                    </div>
-                  )}
-
-                  {driftResult.recommendations.length > 0 && (
-                    <div className="space-y-2">
-                      <h4 className="font-medium text-sm">Recommendations</h4>
-                      <ul className="list-disc list-inside text-sm text-muted-foreground">
-                        {driftResult.recommendations.map((rec, i) => (
-                          <li key={i}>{rec}</li>
-                        ))}
-                      </ul>
                     </div>
                   )}
                 </div>
