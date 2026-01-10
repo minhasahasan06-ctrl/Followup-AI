@@ -298,7 +298,7 @@ export default function TinkerDashboard() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold capitalize">{health.circuit_breaker_state}</div>
+            <div className="text-2xl font-bold capitalize">{health.circuit_breaker_state ?? 'Unknown'}</div>
             <p className="text-xs text-muted-foreground">System protection status</p>
           </CardContent>
         </Card>
@@ -309,7 +309,7 @@ export default function TinkerDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">k ≥ {health.k_anonymity_threshold}</div>
+            <div className="text-2xl font-bold">k ≥ {health.k_anonymity_threshold ?? 25}</div>
             <p className="text-xs text-muted-foreground">Minimum cohort size</p>
           </CardContent>
         </Card>
@@ -320,7 +320,7 @@ export default function TinkerDashboard() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{health.uptime_hours.toFixed(1)}h</div>
+            <div className="text-2xl font-bold">{(health.uptime_hours ?? 0).toFixed(1)}h</div>
             <p className="text-xs text-muted-foreground">Current session</p>
           </CardContent>
         </Card>
@@ -331,7 +331,7 @@ export default function TinkerDashboard() {
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{health.version}</div>
+            <div className="text-2xl font-bold">{health.version ?? '1.0.0'}</div>
             <p className="text-xs text-muted-foreground">NON-BAA Mode</p>
           </CardContent>
         </Card>
