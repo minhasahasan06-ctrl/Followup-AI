@@ -148,8 +148,8 @@ async def analyze_cohort(
     
     result = await tinker.analyze_patient_cohort(
         db=db,
-        actor_id=current_user.get("id", "unknown"),
-        actor_role=current_user.get("role", "unknown"),
+        actor_id=getattr(current_user, "id", "unknown"),
+        actor_role=getattr(current_user, "role", "unknown"),
         cohort_name=request.cohort_name,
         patient_ids=request.patient_ids,
         patient_data_list=request.patient_data,
@@ -193,7 +193,7 @@ async def check_model_drift(
         db=db,
         model_id=request.model_id,
         feature_packet=request.feature_packet,
-        actor_id=current_user.get("id", "unknown")
+        actor_id=getattr(current_user, "id", "unknown")
     )
     
     drift_detected = False
@@ -415,7 +415,7 @@ async def acknowledge_drift_alert(
     
     alert.acknowledged = True
     alert.acknowledged_at = datetime.utcnow()
-    alert.acknowledged_by = current_user.get("id", "unknown")
+    alert.acknowledged_by = getattr(current_user, "id", "unknown")
     db.commit()
     
     return {"success": True, "alert_id": alert_id}
@@ -427,14 +427,14 @@ async def list_audit_logs(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """
     List Tinker audit logs.
     
     HIPAA Compliance: Returns only metadata, not payload contents.
     """
-    user_role = str(current_user.get("role", "")).lower()
+    user_role = str(getattr(current_user, "role", "")).lower()
     if user_role not in ["admin", "doctor"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -470,14 +470,14 @@ async def list_audit_logs(
 
 @router.get("/privacy/stats")
 async def get_privacy_stats(
-    current_user: dict = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """
     Get privacy firewall statistics.
     
     Returns counts of operations, PHI detections, k-anonymity checks.
     """
-    user_role = str(current_user.get("role", "")).lower()
+    user_role = str(getattr(current_user, "role", "")).lower()
     if user_role not in ["admin", "doctor"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
