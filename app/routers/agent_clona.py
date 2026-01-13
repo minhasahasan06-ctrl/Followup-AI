@@ -194,6 +194,23 @@ async def suggest_treatment(
         )
 
 
+def verify_doctor_patient_access(
+    db: Session,
+    doctor_id: str,
+    patient_id: str
+) -> bool:
+    """Verify doctor has access to patient data via active assignment."""
+    from app.models.patient_doctor_connection import DoctorPatientAssignment
+    
+    assignment = db.query(DoctorPatientAssignment).filter(
+        DoctorPatientAssignment.doctor_id == doctor_id,
+        DoctorPatientAssignment.patient_id == patient_id,
+        DoctorPatientAssignment.status == "active"
+    ).first()
+    
+    return assignment is not None
+
+
 @router.get("/recommendations")
 async def get_habit_recommendations(
     patientId: str = "me",
@@ -206,6 +223,11 @@ async def get_habit_recommendations(
     Uses the patient's health profile, conditions, and medications to generate
     evidence-based habit suggestions categorized by health domain.
     
+    HIPAA Compliance:
+    - Patients can only access their own recommendations
+    - Doctors can only access recommendations for assigned patients
+    - Full audit trail for all PHI access
+    
     Returns:
         recommendations: List of habit suggestions by category
         generated_at: Timestamp of generation
@@ -213,14 +235,52 @@ async def get_habit_recommendations(
     """
     from datetime import datetime
     from app.services.personalized_recommendations_service import get_personalized_recommendations_service
+    from app.services.hipaa_audit_logger import HIPAAAuditLogger, PHICategory
     
     try:
         # Determine patient ID
         pid = current_user.id if patientId == "me" else patientId
+        user_role = current_user.role if hasattr(current_user, 'role') else "patient"
         
-        # If accessing another patient's data, verify authorization
+        # Role-based access control
         if patientId != "me" and str(pid) != str(current_user.id):
-            if current_user.role != "doctor":
+            if user_role == "patient":
+                # Patients can only access their own data
+                HIPAAAuditLogger.log_phi_access(
+                    actor_id=str(current_user.id),
+                    actor_role="patient",
+                    patient_id=str(pid),
+                    action="view_denied",
+                    phi_categories=[PHICategory.HEALTH_METRICS.value],
+                    resource_type="habit_recommendations",
+                    access_scope="blocked",
+                    access_reason="unauthorized_patient_access",
+                    consent_verified=False
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail="Not authorized to access this patient's recommendations"
+                )
+            elif user_role == "doctor":
+                # Doctors must have active assignment to patient
+                if not verify_doctor_patient_access(db, str(current_user.id), str(pid)):
+                    HIPAAAuditLogger.log_phi_access(
+                        actor_id=str(current_user.id),
+                        actor_role="doctor",
+                        patient_id=str(pid),
+                        action="view_denied",
+                        phi_categories=[PHICategory.HEALTH_METRICS.value],
+                        resource_type="habit_recommendations",
+                        access_scope="blocked",
+                        access_reason="no_active_assignment",
+                        consent_verified=False
+                    )
+                    raise HTTPException(
+                        status_code=403,
+                        detail="No authorized access to this patient - not assigned"
+                    )
+            else:
+                # Unknown role - deny access
                 raise HTTPException(
                     status_code=403,
                     detail="Not authorized to access this patient's recommendations"
@@ -252,6 +312,20 @@ async def get_habit_recommendations(
                 "evidence_based": True,
                 "condition_link": rec.get("safety_notes")
             })
+        
+        # HIPAA Audit log successful access
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=str(current_user.id),
+            actor_role=user_role,
+            patient_id=str(pid),
+            action="view",
+            phi_categories=[PHICategory.HEALTH_METRICS.value],
+            resource_type="habit_recommendations",
+            access_scope="full" if user_role == "doctor" else "self",
+            access_reason="clinical_review" if user_role == "doctor" else "patient_self_access",
+            consent_verified=True,
+            additional_context={"recommendations_count": len(category_map)}
+        )
         
         return {
             "recommendations": list(category_map.values()),
