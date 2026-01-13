@@ -645,7 +645,9 @@ export default function DailyFollowupHistory() {
 
   const completeTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
-      return apiRequest('POST', `/api/v1/followup-autopilot/patients/${patientId}/tasks/${taskId}/complete`, {});
+      const url = `/api/v1/followup-autopilot/patients/${patientId}/tasks/${taskId}/complete`;
+      const res = await apiRequest(url, { method: 'POST', json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/v1/followup-autopilot/patients/${patientId}/autopilot`] });

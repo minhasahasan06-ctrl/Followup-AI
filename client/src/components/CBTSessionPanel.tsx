@@ -57,10 +57,12 @@ export function CBTSessionPanel({ patientId }: CBTSessionPanelProps) {
 
   const createSessionMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/v1/cbt/patient/${patientId || "me"}/sessions`, {
-        session_type: "thought_record"
+      const url = `/api/v1/cbt/patient/${patientId || "me"}/sessions`;
+      const res = await apiRequest(url, {
+        method: "POST",
+        json: { session_type: "thought_record" }
       });
-      return response;
+      return await res.json() as CBTSessionData;
     },
     onSuccess: (data: CBTSessionData) => {
       setSessionId(data.id);
@@ -82,8 +84,9 @@ export function CBTSessionPanel({ patientId }: CBTSessionPanelProps) {
   const updateSessionMutation = useMutation({
     mutationFn: async (updates: Record<string, any>) => {
       if (!sessionId) throw new Error("No session active");
-      const response = await apiRequest("PATCH", `/api/v1/cbt/patient/${patientId || "me"}/sessions/${sessionId}`, updates);
-      return response;
+      const url = `/api/v1/cbt/patient/${patientId || "me"}/sessions/${sessionId}`;
+      const res = await apiRequest(url, { method: "PATCH", json: updates });
+      return await res.json() as { crisis_detected?: boolean; crisis_resources?: CrisisResources };
     },
     onSuccess: (data: { crisis_detected?: boolean; crisis_resources?: CrisisResources }) => {
       if (data.crisis_detected) {
@@ -103,7 +106,9 @@ export function CBTSessionPanel({ patientId }: CBTSessionPanelProps) {
   const completeSessionMutation = useMutation({
     mutationFn: async () => {
       if (!sessionId) throw new Error("No session active");
-      return await apiRequest("POST", `/api/v1/cbt/patient/${patientId || "me"}/sessions/${sessionId}/complete`, {});
+      const url = `/api/v1/cbt/patient/${patientId || "me"}/sessions/${sessionId}/complete`;
+      const res = await apiRequest(url, { method: "POST", json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/cbt/patient", patientId || "me", "sessions"] });

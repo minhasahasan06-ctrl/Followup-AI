@@ -241,8 +241,10 @@ export default function ResearchConsentSettings() {
   }, [consent, initialLoaded]);
 
   const updateMutation = useMutation({
-    mutationFn: (data: { consentEnabled: boolean; dataTypePermissions: DataTypePermissions }) =>
-      apiRequest("POST", "/api/v1/research-center/consent", data),
+    mutationFn: async (data: { consentEnabled: boolean; dataTypePermissions: DataTypePermissions }) => {
+      const res = await apiRequest("/api/v1/research-center/consent", { method: "POST", json: data });
+      return await res.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/research-center/consent"] });
       toast({

@@ -425,7 +425,8 @@ export default function Habits() {
   // Create habit mutation
   const createHabitMutation = useMutation({
     mutationFn: async (data: z.infer<typeof createHabitSchema>) => {
-      return await apiRequest('POST', '/api/v1/ml/habits', data);
+      const res = await apiRequest('/api/v1/ml/habits', { method: 'POST', json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/v1/ml/habits'] });
@@ -458,7 +459,8 @@ export default function Habits() {
   // Complete habit mutation
   const completeHabitMutation = useMutation({
     mutationFn: async ({ habitId, data }: { habitId: string; data: any }) => {
-      return await apiRequest('POST', `/api/v1/ml/habits/${habitId}/complete`, data);
+      const res = await apiRequest(`/api/v1/ml/habits/${habitId}/complete`, { method: 'POST', json: data });
+      return await res.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/v1/ml/habits'] });

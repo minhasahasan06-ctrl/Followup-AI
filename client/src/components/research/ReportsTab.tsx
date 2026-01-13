@@ -237,7 +237,7 @@ export function ReportsTab() {
 
   const duplicateMutation = useMutation({
     mutationFn: async ({ reportId, newTitle }: { reportId: string; newTitle: string }) => {
-      const response = await apiRequest('POST', `/api/v1/research-center/reports/${reportId}/duplicate`, { title: newTitle });
+      const response = await apiRequest(`/api/v1/research-center/reports/${reportId}/duplicate`, { method: 'POST', json: { title: newTitle } });
       return response.json();
     },
     onSuccess: () => {
@@ -253,7 +253,7 @@ export function ReportsTab() {
 
   const exportMutation = useMutation({
     mutationFn: async ({ reportId, format }: { reportId: string; format: 'pdf' | 'docx' }) => {
-      const response = await apiRequest('POST', `/api/v1/research-center/reports/${reportId}/export`, { format });
+      const response = await apiRequest(`/api/v1/research-center/reports/${reportId}/export`, { method: 'POST', json: { format } });
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -272,7 +272,7 @@ export function ReportsTab() {
 
   const regenerateMutation = useMutation({
     mutationFn: async (reportId: string) => {
-      const response = await apiRequest('POST', `/api/v1/research-center/reports/${reportId}/regenerate`, {});
+      const response = await apiRequest(`/api/v1/research-center/reports/${reportId}/regenerate`, { method: 'POST', json: {} });
       return response.json();
     },
     onSuccess: () => {
@@ -286,7 +286,7 @@ export function ReportsTab() {
 
   const deleteMutation = useMutation({
     mutationFn: async (reportId: string) => {
-      await apiRequest('DELETE', `/api/v1/research-center/reports/${reportId}`, {});
+      await apiRequest(`/api/v1/research-center/reports/${reportId}`, { method: 'DELETE' });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/v1/research-center/reports'] });
@@ -301,7 +301,7 @@ export function ReportsTab() {
 
   const restoreVersionMutation = useMutation({
     mutationFn: async ({ reportId, versionId }: { reportId: string; versionId: string }) => {
-      const response = await apiRequest('POST', `/api/v1/research-center/reports/${reportId}/restore`, { versionId });
+      const response = await apiRequest(`/api/v1/research-center/reports/${reportId}/restore`, { method: 'POST', json: { versionId } });
       return response.json();
     },
     onSuccess: () => {

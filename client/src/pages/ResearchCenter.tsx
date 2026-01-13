@@ -128,8 +128,8 @@ function CSVImportTab() {
 
   const previewMutation = useMutation({
     mutationFn: async (data: string) => {
-      const response = await apiRequest('POST', '/api/v1/research-center/import/preview', { csvData: data });
-      return response.json();
+      const response = await apiRequest('/api/v1/research-center/import/preview', { method: 'POST', json: { csvData: data } });
+      return await response.json();
     },
     onSuccess: (data: CSVPreview) => {
       setPreview(data);
@@ -144,12 +144,11 @@ function CSVImportTab() {
 
   const validateMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/v1/research-center/import/validate-mapping', {
-        dataType: selectedDataType,
-        mapping,
-        headers: preview?.headers || [],
+      const response = await apiRequest('/api/v1/research-center/import/validate-mapping', {
+        method: 'POST',
+        json: { dataType: selectedDataType, mapping, headers: preview?.headers || [] }
       });
-      return response.json();
+      return await response.json();
     },
     onSuccess: (data) => {
       setValidationResult(data);
@@ -164,13 +163,11 @@ function CSVImportTab() {
 
   const importMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/v1/research-center/import/execute', {
-        dataType: selectedDataType,
-        csvData,
-        mapping,
-        studyId: selectedStudyId || null,
+      const response = await apiRequest('/api/v1/research-center/import/execute', {
+        method: 'POST',
+        json: { dataType: selectedDataType, csvData, mapping, studyId: selectedStudyId || null }
       });
-      return response.json();
+      return await response.json();
     },
     onSuccess: (data: ImportResult) => {
       setImportResult(data);
@@ -563,7 +560,8 @@ export default function ResearchCenter() {
 
   const generateReportMutation = useMutation({
     mutationFn: async (data: { title: string; analysisType: string }) => {
-      return await apiRequest("POST", "/api/doctor/research-reports", data);
+      const res = await apiRequest("/api/doctor/research-reports", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/doctor/research-reports"] });
@@ -585,7 +583,8 @@ export default function ResearchCenter() {
 
   const createStudyMutation = useMutation({
     mutationFn: async (data: typeof newStudy) => {
-      return await apiRequest("POST", "/api/research/studies", data);
+      const res = await apiRequest("/api/research/studies", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/research/studies'] });

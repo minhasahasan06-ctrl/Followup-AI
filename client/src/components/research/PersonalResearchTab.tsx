@@ -82,7 +82,7 @@ export function PersonalResearchTab() {
 
   const createProjectMutation = useMutation({
     mutationFn: async (data: typeof newProject) => {
-      const response = await apiRequest('POST', '/api/v1/research-center/projects', data);
+      const response = await apiRequest('/api/v1/research-center/projects', { method: 'POST', json: data });
       return response.json();
     },
     onSuccess: () => {
@@ -98,7 +98,7 @@ export function PersonalResearchTab() {
 
   const updateProjectMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<ResearchProject> }) => {
-      const response = await apiRequest('PATCH', `/api/v1/research-center/projects/${id}`, data);
+      const response = await apiRequest(`/api/v1/research-center/projects/${id}`, { method: 'PATCH', json: data });
       return response.json();
     },
     onSuccess: () => {
@@ -112,7 +112,7 @@ export function PersonalResearchTab() {
 
   const parseNLQueryMutation = useMutation({
     mutationFn: async (query: string) => {
-      const response = await apiRequest('POST', '/api/v1/research-center/analysis/parse-nl', { query });
+      const response = await apiRequest('/api/v1/research-center/analysis/parse-nl', { method: 'POST', json: { query } });
       return response.json() as Promise<NLParseResult>;
     },
     onSuccess: (data) => {
@@ -128,9 +128,9 @@ export function PersonalResearchTab() {
 
   const runAnalysisMutation = useMutation({
     mutationFn: async (spec: AnalysisSpec) => {
-      const response = await apiRequest('POST', '/api/v1/research-center/analysis-jobs', {
-        projectId: selectedProject?.id,
-        ...spec,
+      const response = await apiRequest('/api/v1/research-center/analysis-jobs', {
+        method: 'POST',
+        json: { projectId: selectedProject?.id, ...spec }
       });
       return response.json();
     },

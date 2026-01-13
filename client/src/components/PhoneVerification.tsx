@@ -85,7 +85,8 @@ export default function PhoneVerification() {
 
   const sendVerificationMutation = useMutation({
     mutationFn: async (data: { phoneNumber: string; channel: 'sms' | 'call' }) => {
-      return apiRequest('POST', '/api/auth/send-phone-verification', data);
+      const res = await apiRequest('/api/auth/send-phone-verification', { method: 'POST', json: data });
+      return await res.json();
     },
     onSuccess: () => {
       setVerificationSent(true);
@@ -105,7 +106,8 @@ export default function PhoneVerification() {
 
   const verifyPhoneMutation = useMutation({
     mutationFn: async (data: VerificationFormData) => {
-      return apiRequest('POST', '/api/auth/verify-phone', data);
+      const res = await apiRequest('/api/auth/verify-phone', { method: 'POST', json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
@@ -127,7 +129,8 @@ export default function PhoneVerification() {
 
   const updatePreferencesMutation = useMutation({
     mutationFn: async (data: SmsPreferencesData) => {
-      return apiRequest('POST', '/api/auth/sms-preferences', data);
+      const res = await apiRequest('/api/auth/sms-preferences', { method: 'POST', json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });

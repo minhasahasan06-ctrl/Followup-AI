@@ -165,7 +165,7 @@ export function DoctorConsentCard({
 
   const updateConsentMutation = useMutation({
     mutationFn: async (updates: Partial<DoctorPatientConsentPermissions>) => {
-      const res = await apiRequest("PATCH", `/api/patient/doctors/${doctor.id}/consent`, updates);
+      const res = await apiRequest(`/api/patient/doctors/${doctor.id}/consent`, { method: "PATCH", json: updates });
       return res.json();
     },
     onSuccess: () => {
@@ -190,7 +190,7 @@ export function DoctorConsentCard({
 
   const withdrawAllConsentMutation = useMutation({
     mutationFn: async (reason: string) => {
-      const res = await apiRequest("POST", `/api/patient/doctors/${doctor.id}/withdraw-consent`, { reason });
+      const res = await apiRequest(`/api/patient/doctors/${doctor.id}/withdraw-consent`, { method: "POST", json: { reason } });
       return res.json();
     },
     onSuccess: () => {

@@ -84,9 +84,12 @@ export function DraftDifferentialPanel({ patientId, patientName, onDraftApproved
 
   const generateMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", `/api/v1/lysa/patient/${patientId}/differential`, {
-        question: clinicalQuestion || undefined
+      const url = `/api/v1/lysa/patient/${patientId}/differential`;
+      const res = await apiRequest(url, {
+        method: "POST",
+        json: { question: clinicalQuestion || undefined }
       });
+      return await res.json() as LysaDraft;
     },
     onSuccess: (data: LysaDraft) => {
       setSelectedDraft(data);
@@ -108,9 +111,12 @@ export function DraftDifferentialPanel({ patientId, patientName, onDraftApproved
   const reviseMutation = useMutation({
     mutationFn: async () => {
       if (!selectedDraft) throw new Error("No draft selected");
-      return await apiRequest("POST", `/api/v1/lysa/patient/${patientId}/drafts/${selectedDraft.id}/revise`, {
-        instruction: revisionNotes
+      const url = `/api/v1/lysa/patient/${patientId}/drafts/${selectedDraft.id}/revise`;
+      const res = await apiRequest(url, {
+        method: "POST",
+        json: { instruction: revisionNotes }
       });
+      return await res.json() as LysaDraft;
     },
     onSuccess: (data: LysaDraft) => {
       setSelectedDraft(data);
@@ -133,9 +139,12 @@ export function DraftDifferentialPanel({ patientId, patientName, onDraftApproved
   const approveMutation = useMutation({
     mutationFn: async () => {
       if (!selectedDraft) throw new Error("No draft selected");
-      return await apiRequest("POST", `/api/v1/lysa/patient/${patientId}/drafts/${selectedDraft.id}/approve`, {
-        confirmation: true
+      const url = `/api/v1/lysa/patient/${patientId}/drafts/${selectedDraft.id}/approve`;
+      const res = await apiRequest(url, {
+        method: "POST",
+        json: { confirmation: true, insert_to_chart: false }
       });
+      return await res.json();
     },
     onSuccess: () => {
       refetch();

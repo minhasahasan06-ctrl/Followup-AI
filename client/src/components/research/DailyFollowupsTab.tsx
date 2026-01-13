@@ -156,7 +156,7 @@ export function DailyFollowupsTab() {
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest('POST', '/api/v1/research-center/followup-templates', data);
+      const response = await apiRequest('/api/v1/research-center/followup-templates', { method: 'POST', json: data });
       return response.json();
     },
     onSuccess: () => {

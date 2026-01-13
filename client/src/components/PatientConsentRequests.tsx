@@ -77,8 +77,9 @@ export function PatientConsentRequests() {
   // Dedicated mutation for denial flow with new /deny endpoint (HIPAA audited)
   const denyConsentRequest = useMutation({
     mutationFn: async (data: { id: string; reason?: string }) => {
-      const res = await apiRequest("POST", `/api/patient/consent-requests/${data.id}/deny`, {
-        reason: data.reason,
+      const res = await apiRequest(`/api/patient/consent-requests/${data.id}/deny`, {
+        method: "POST",
+        json: { reason: data.reason }
       });
       return res.json();
     },

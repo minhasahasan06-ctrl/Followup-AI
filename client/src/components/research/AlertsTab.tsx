@@ -173,7 +173,7 @@ export function AlertsTab() {
 
   const acknowledgeMutation = useMutation({
     mutationFn: async (alertId: string) => {
-      const response = await apiRequest('POST', `/api/v1/research-center/alerts/${alertId}/acknowledge`, {});
+      const response = await apiRequest(`/api/v1/research-center/alerts/${alertId}/acknowledge`, { method: 'POST', json: {} });
       return response.json();
     },
     onSuccess: () => {
@@ -187,7 +187,7 @@ export function AlertsTab() {
 
   const resolveMutation = useMutation({
     mutationFn: async (alertId: string) => {
-      const response = await apiRequest('POST', `/api/v1/research-center/alerts/${alertId}/resolve`, {});
+      const response = await apiRequest(`/api/v1/research-center/alerts/${alertId}/resolve`, { method: 'POST', json: {} });
       return response.json();
     },
     onSuccess: () => {

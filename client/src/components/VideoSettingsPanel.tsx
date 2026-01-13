@@ -42,7 +42,8 @@ export default function VideoSettingsPanel() {
 
   const updateSettingsMutation = useMutation({
     mutationFn: async (data: Partial<VideoSettings>) => {
-      return await apiRequest("PUT", "/api/video/settings", data);
+      const res = await apiRequest("/api/video/settings", { method: "PUT", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/video/settings"] });

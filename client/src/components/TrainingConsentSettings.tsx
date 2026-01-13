@@ -271,7 +271,8 @@ export default function TrainingConsentSettings() {
 
   const updateConsentMutation = useMutation({
     mutationFn: async (data: Partial<TrainingConsentData>) => {
-      return await apiRequest("POST", "/api/ml/training/consent", data);
+      const res = await apiRequest("/api/ml/training/consent", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ml/training/consent"] });
@@ -293,7 +294,8 @@ export default function TrainingConsentSettings() {
 
   const withdrawConsentMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/ml/training/consent/withdraw", {});
+      const res = await apiRequest("/api/ml/training/consent/withdraw", { method: "POST", json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ml/training/consent"] });

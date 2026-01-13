@@ -74,9 +74,9 @@ export function ExportsTab() {
 
   const createExportMutation = useMutation({
     mutationFn: async (data: { datasetId: string; format: string; includePhi: boolean }) => {
-      const response = await apiRequest('POST', `/python-api/v1/research-center/datasets/${data.datasetId}/export`, {
-        format: data.format,
-        include_phi: data.includePhi,
+      const response = await apiRequest(`/python-api/v1/research-center/datasets/${data.datasetId}/export`, {
+        method: 'POST',
+        json: { format: data.format, include_phi: data.includePhi }
       });
       return response.json();
     },

@@ -147,17 +147,20 @@ export function AIAnalysisTab() {
 
   const runAnalysisMutation = useMutation({
     mutationFn: async (analysisConfig: AnalysisConfig) => {
-      const response = await apiRequest('POST', '/api/v1/research-center/analysis-jobs', {
-        analysisType: analysisConfig.type,
-        cohortId: analysisConfig.cohortId,
-        analysisSpec: {
-          outcome: analysisConfig.outcomeVariable,
-          exposure: analysisConfig.exposureVariable,
-          covariates: analysisConfig.covariates,
-          modelConfig: analysisConfig.modelConfig,
-        },
-        title: analysisConfig.title,
-        description: analysisConfig.description,
+      const response = await apiRequest('/api/v1/research-center/analysis-jobs', {
+        method: 'POST',
+        json: {
+          analysisType: analysisConfig.type,
+          cohortId: analysisConfig.cohortId,
+          analysisSpec: {
+            outcome: analysisConfig.outcomeVariable,
+            exposure: analysisConfig.exposureVariable,
+            covariates: analysisConfig.covariates,
+            modelConfig: analysisConfig.modelConfig,
+          },
+          title: analysisConfig.title,
+          description: analysisConfig.description,
+        }
       });
       return response.json();
     },

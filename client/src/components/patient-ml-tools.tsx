@@ -171,10 +171,9 @@ export function PatientMLTools({ patientId, patientName }: PatientMLToolsProps) 
   // Symptom Analysis Mutation
   const symptomAnalysisMutation = useMutation({
     mutationFn: async (data: { text: string; include_context: boolean }) => {
-      const res = await apiRequest('POST', '/api/v1/ml/predict/symptom-analysis', {
-        text: data.text,
-        include_context: data.include_context,
-        patient_id: patientId
+      const res = await apiRequest('/api/v1/ml/predict/symptom-analysis', {
+        method: 'POST',
+        json: { text: data.text, include_context: data.include_context, patient_id: patientId }
       });
       return res.json();
     },
@@ -197,10 +196,9 @@ export function PatientMLTools({ patientId, patientName }: PatientMLToolsProps) 
   // Deterioration Prediction Mutation
   const deteriorationMutation = useMutation({
     mutationFn: async (data: { patient_id: string; metrics: typeof metrics }) => {
-      const res = await apiRequest('POST', '/api/v1/ml/predict/deterioration', {
-        patient_id: data.patient_id,
-        metrics: data.metrics,
-        time_window_days: 7
+      const res = await apiRequest('/api/v1/ml/predict/deterioration', {
+        method: 'POST',
+        json: { patient_id: data.patient_id, metrics: data.metrics, time_window_days: 7 }
       });
       return res.json();
     },

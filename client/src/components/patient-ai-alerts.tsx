@@ -208,8 +208,9 @@ export function PatientAIAlerts({ patientId, patientName }: PatientAIAlertsProps
   // Compute fresh metrics mutation
   const computeMetrics = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest('POST', `/api/ai-health-alerts/v2/compute-all/${patientId}`);
-      return res.json();
+      const url = `/api/ai-health-alerts/v2/compute-all/${patientId}`;
+      const res = await apiRequest(url, { method: "POST", json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-health-alerts/v2/patient-overview', patientId] });

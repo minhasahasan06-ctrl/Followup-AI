@@ -83,7 +83,7 @@ export function StudiesTab() {
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest('POST', '/api/v1/research-center/studies', data);
+      const response = await apiRequest('/api/v1/research-center/studies', { method: 'POST', json: data });
       return response.json();
     },
     onSuccess: () => {
@@ -107,7 +107,7 @@ export function StudiesTab() {
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const response = await apiRequest('PATCH', `/api/v1/research-center/studies/${id}`, { status });
+      const response = await apiRequest(`/api/v1/research-center/studies/${id}`, { method: 'PATCH', json: { status } });
       return response.json();
     },
     onSuccess: () => {

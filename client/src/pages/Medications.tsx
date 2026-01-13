@@ -253,13 +253,17 @@ export default function Medications() {
       notes?: string;
     }) => {
       const now = new Date().toISOString();
-      return apiRequest('POST', '/api/v1/medication-adherence/log', {
-        medication_id: medicationId,
-        scheduled_time: now,
-        taken_at: status === 'taken' || status === 'late' ? now : null,
-        status,
-        notes,
+      const res = await apiRequest('/api/v1/medication-adherence/log', {
+        method: 'POST',
+        json: {
+          medication_id: medicationId,
+          scheduled_time: now,
+          taken_at: status === 'taken' || status === 'late' ? now : null,
+          status,
+          notes,
+        }
       });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/v1/medication-adherence/stats'] });
@@ -280,7 +284,8 @@ export default function Medications() {
 
   const confirmStartMutation = useMutation({
     mutationFn: async ({ id, actualStartDate }: { id: string; actualStartDate: string }) => {
-      return apiRequest('POST', `/api/medications/${id}/confirm-start`, { actualStartDate });
+      const res = await apiRequest(`/api/medications/${id}/confirm-start`, { method: 'POST', json: { actualStartDate } });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/medications/dashboard'] });
@@ -303,7 +308,8 @@ export default function Medications() {
 
   const autoArchiveMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest('POST', '/api/medications/auto-archive', {});
+      const res = await apiRequest('/api/medications/auto-archive', { method: 'POST', json: {} });
+      return await res.json();
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/medications/dashboard'] });
@@ -316,9 +322,11 @@ export default function Medications() {
 
   const markTakenMutation = useMutation({
     mutationFn: async ({ id }: { id: string }) => {
-      return apiRequest('POST', `/api/medications/${id}/mark-taken`, {
-        takenAt: new Date().toISOString(),
+      const res = await apiRequest(`/api/medications/${id}/mark-taken`, {
+        method: 'POST',
+        json: { takenAt: new Date().toISOString() }
       });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/medications/dashboard'] });
@@ -338,7 +346,8 @@ export default function Medications() {
 
   const requestRefillMutation = useMutation({
     mutationFn: async ({ id }: { id: string }) => {
-      return apiRequest('POST', `/api/medications/${id}/request-refill`, {});
+      const res = await apiRequest(`/api/medications/${id}/request-refill`, { method: 'POST', json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/medications/dashboard'] });

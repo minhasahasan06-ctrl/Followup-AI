@@ -127,11 +127,14 @@ export function DoctorPatientConsentDialog({
       digitalSignature: string;
       termsVersion: string;
     }) => {
-      const res = await apiRequest("POST", `/api/patient/consent-requests/${data.requestId}/approve`, {
-        permissions: data.permissions,
-        digitalSignature: data.digitalSignature,
-        signatureMethod: "typed",
-        termsVersion: data.termsVersion,
+      const res = await apiRequest(`/api/patient/consent-requests/${data.requestId}/approve`, {
+        method: "POST",
+        json: {
+          permissions: data.permissions,
+          digitalSignature: data.digitalSignature,
+          signatureMethod: "typed",
+          termsVersion: data.termsVersion,
+        }
       });
       return res.json();
     },
@@ -156,8 +159,9 @@ export function DoctorPatientConsentDialog({
 
   const denyConsentMutation = useMutation({
     mutationFn: async (requestId: string) => {
-      const res = await apiRequest("POST", `/api/patient/consent-requests/${requestId}/deny`, {
-        reason: "Patient declined consent",
+      const res = await apiRequest(`/api/patient/consent-requests/${requestId}/deny`, {
+        method: "POST",
+        json: { reason: "Patient declined consent" }
       });
       return res.json();
     },

@@ -106,7 +106,8 @@ export default function NutritionInsights() {
 
   const generateMealPlanMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/nutrition/generate-meal-plan");
+      const res = await apiRequest("/api/nutrition/generate-meal-plan", { method: "POST", json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/nutrition/active-plan"] });
@@ -127,7 +128,8 @@ export default function NutritionInsights() {
 
   const optimizeMedicationTimingMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/medications/optimize-timing");
+      const res = await apiRequest("/api/medications/optimize-timing", { method: "POST", json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/medications/schedules"] });
@@ -147,13 +149,17 @@ export default function NutritionInsights() {
 
   const markMedicationTakenMutation = useMutation({
     mutationFn: async (data: { medicationId: string; scheduledTime: Date }) => {
-      return await apiRequest("POST", "/api/medications/adherence", {
-        medicationId: data.medicationId,
-        scheduledTime: data.scheduledTime,
-        takenAt: new Date(),
-        status: "taken",
-        loggedBy: "patient",
+      const res = await apiRequest("/api/medications/adherence", {
+        method: "POST",
+        json: {
+          medicationId: data.medicationId,
+          scheduledTime: data.scheduledTime,
+          takenAt: new Date(),
+          status: "taken",
+          loggedBy: "patient",
+        }
       });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/medications/pending"] });

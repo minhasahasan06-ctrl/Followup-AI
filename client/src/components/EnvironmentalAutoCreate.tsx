@@ -19,17 +19,21 @@ export function EnvironmentalAutoCreate({ patientId }: EnvironmentalAutoCreatePr
   const [profileCreated, setProfileCreated] = useState(false);
 
   const createProfileMutation = useMutation({
-    mutationFn: async (data: { lat: number; lon: number; consent: boolean }) => {
+    mutationFn: async (data: { lat: number; lon: number; consent: boolean; allow_store_latlon?: boolean }) => {
       const endpoint = `/api/v1/environment/patient/${patientId || "me"}/auto_create`;
-      const response = await apiRequest("POST", endpoint, data);
-      return response;
+      const res = await apiRequest(endpoint, {
+        method: "POST",
+        json: { ...data, allow_store_latlon: false }
+      });
+      return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setProfileCreated(true);
       queryClient.invalidateQueries({ queryKey: ["/api/environment/profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/environment"] });
       toast({
         title: "Profile created",
-        description: "Your environmental health profile has been set up based on your location.",
+        description: data?.message || "Your environmental health profile has been set up based on your location.",
       });
     },
     onError: (error: Error) => {

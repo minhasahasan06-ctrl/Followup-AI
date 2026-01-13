@@ -59,7 +59,8 @@ export default function DoctorProfessionalInfoForm() {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: Partial<DoctorProfileExtended>) => {
-      return await apiRequest("POST", "/api/doctor/profile/extended", data);
+      const res = await apiRequest("/api/doctor/profile/extended", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/doctor/profile/extended"] });

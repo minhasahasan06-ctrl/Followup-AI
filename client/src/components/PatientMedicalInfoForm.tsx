@@ -60,7 +60,8 @@ export default function PatientMedicalInfoForm() {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: Partial<PatientProfileExtended>) => {
-      return await apiRequest("POST", "/api/patient/profile/extended", data);
+      const res = await apiRequest("/api/patient/profile/extended", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/patient/profile/extended"] });

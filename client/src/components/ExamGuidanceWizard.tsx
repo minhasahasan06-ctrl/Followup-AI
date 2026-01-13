@@ -126,8 +126,9 @@ export function ExamGuidanceWizard({ patientId, onComplete, onCancel }: ExamGuid
 
   const createSessionMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/video/exam-sessions", {
-        patient_id: patientId
+      const response = await apiRequest("/api/video/exam-sessions", {
+        method: "POST",
+        json: { patient_id: patientId }
       });
       return response.json();
     },
@@ -151,10 +152,9 @@ export function ExamGuidanceWizard({ patientId, onComplete, onCancel }: ExamGuid
     mutationFn: async ({ stage, imageData }: { stage: string; imageData: string }) => {
       if (!session) throw new Error("No active session");
       
-      const uploadUrlRes = await apiRequest("POST", `/api/video/exam-sessions/${session.session_id}/upload-url`, {
-        stage,
-        content_type: "image/jpeg",
-        file_extension: "jpg"
+      const uploadUrlRes = await apiRequest(`/api/video/exam-sessions/${session.session_id}/upload-url`, {
+        method: "POST",
+        json: { stage, content_type: "image/jpeg", file_extension: "jpg" }
       });
       const uploadData = await uploadUrlRes.json();
       
@@ -174,10 +174,9 @@ export function ExamGuidanceWizard({ patientId, onComplete, onCancel }: ExamGuid
         });
       }
       
-      await apiRequest("POST", `/api/video/exam-sessions/${session.session_id}/complete-stage`, {
-        stage,
-        s3_key: uploadData.s3_key,
-        quality_score: captures[stage]?.qualityScore || 70
+      await apiRequest(`/api/video/exam-sessions/${session.session_id}/complete-stage`, {
+        method: "POST",
+        json: { stage, s3_key: uploadData.s3_key, quality_score: captures[stage]?.qualityScore || 70 }
       });
       
       return { stage, s3_key: uploadData.s3_key };
@@ -204,7 +203,7 @@ export function ExamGuidanceWizard({ patientId, onComplete, onCancel }: ExamGuid
   const completeSessionMutation = useMutation({
     mutationFn: async () => {
       if (!session) throw new Error("No active session");
-      const response = await apiRequest("POST", `/api/video/exam-sessions/${session.session_id}/complete`);
+      const response = await apiRequest(`/api/video/exam-sessions/${session.session_id}/complete`, { method: "POST", json: {} });
       return response.json();
     },
     onSuccess: (data) => {
@@ -226,8 +225,9 @@ export function ExamGuidanceWizard({ patientId, onComplete, onCancel }: ExamGuid
   const checkQualityMutation = useMutation({
     mutationFn: async (imageData: string) => {
       const base64Data = imageData.split(",")[1] || imageData;
-      const response = await apiRequest("POST", "/api/video/quality-check", {
-        image_data: base64Data
+      const response = await apiRequest("/api/video/quality-check", {
+        method: "POST",
+        json: { image_data: base64Data }
       });
       return response.json();
     }

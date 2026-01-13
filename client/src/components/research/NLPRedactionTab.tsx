@@ -94,11 +94,14 @@ export function NLPRedactionTab() {
 
   const createDocumentMutation = useMutation({
     mutationFn: async (data: typeof newDocument) => {
-      const response = await apiRequest('POST', '/python-api/v1/research-center/nlp/documents', {
-        source_type: data.sourceType,
-        source_uri: data.sourceUri || `inline://${Date.now()}`,
-        patient_id: data.patientId || undefined,
-        text: data.text,
+      const response = await apiRequest('/python-api/v1/research-center/nlp/documents', {
+        method: 'POST',
+        json: {
+          source_type: data.sourceType,
+          source_uri: data.sourceUri || `inline://${Date.now()}`,
+          patient_id: data.patientId || undefined,
+          text: data.text,
+        }
       });
       return response.json();
     },
@@ -115,7 +118,7 @@ export function NLPRedactionTab() {
 
   const processDocumentMutation = useMutation({
     mutationFn: async (documentId: string) => {
-      const response = await apiRequest('POST', `/python-api/v1/research-center/nlp/documents/${documentId}/process`);
+      const response = await apiRequest(`/python-api/v1/research-center/nlp/documents/${documentId}/process`, { method: 'POST', json: {} });
       return response.json();
     },
     onSuccess: (data) => {

@@ -67,8 +67,9 @@ export function ResearchQATab() {
 
   const createSessionMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/python-api/v1/research-center/ai/qa/sessions', {
-        title: `Research Session ${format(new Date(), 'MMM d, h:mm a')}`,
+      const response = await apiRequest('/python-api/v1/research-center/ai/qa/sessions', {
+        method: 'POST',
+        json: { title: `Research Session ${format(new Date(), 'MMM d, h:mm a')}` }
       });
       return response.json();
     },
@@ -85,8 +86,9 @@ export function ResearchQATab() {
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
       if (!selectedSession) throw new Error('No session selected');
-      const response = await apiRequest('POST', `/python-api/v1/research-center/ai/qa/sessions/${selectedSession.id}/messages`, {
-        content,
+      const response = await apiRequest(`/python-api/v1/research-center/ai/qa/sessions/${selectedSession.id}/messages`, {
+        method: 'POST',
+        json: { content }
       });
       return response.json();
     },

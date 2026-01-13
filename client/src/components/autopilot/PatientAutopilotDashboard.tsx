@@ -403,7 +403,8 @@ function PreferencesPanel({ patientId }: { patientId: string }) {
   
   const updatePrefs = useMutation({
     mutationFn: async (prefs: Partial<NotificationPreferences>) => {
-      return apiRequest('PATCH', `/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/preferences`, prefs);
+      const res = await apiRequest(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/preferences`, { method: 'PATCH', json: prefs });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'preferences'] });
@@ -547,7 +548,8 @@ export function PatientAutopilotDashboard({ patientId }: { patientId: string }) 
   
   const completeTask = useMutation({
     mutationFn: async (taskId: string) => {
-      return apiRequest('POST', `/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/tasks/${encodeURIComponent(taskId)}/complete`, {});
+      const res = await apiRequest(`/api/v1/followup-autopilot/patients/${encodeURIComponent(patientId)}/tasks/${encodeURIComponent(taskId)}/complete`, { method: 'POST', json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/v1/followup-autopilot/patients', patientId, 'summary'] });

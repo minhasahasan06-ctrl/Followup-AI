@@ -53,12 +53,15 @@ export default function VideoConsultation() {
       if (!doctorId) {
         throw new Error('Could not determine doctor ID for consultation');
       }
-      const response = await apiRequest("POST", `/api/consultations/${consultationId}/start-video`, {
-        doctor_id: doctorId,
-        duration_minutes: 60,
-        enable_recording: false
+      const res = await apiRequest(`/api/consultations/${consultationId}/start-video`, {
+        method: "POST",
+        json: {
+          doctor_id: doctorId,
+          duration_minutes: 60,
+          enable_recording: false
+        }
       });
-      return response as VideoSession;
+      return await res.json() as VideoSession;
     },
     onSuccess: (data) => {
       setVideoSession(data);
@@ -80,7 +83,7 @@ export default function VideoConsultation() {
   const endSessionMutation = useMutation({
     mutationFn: async () => {
       if (!videoSession?.room_name) return;
-      await apiRequest("DELETE", `/api/consultations/${consultationId}/end-video?room_name=${videoSession.room_name}`);
+      await apiRequest(`/api/consultations/${consultationId}/end-video?room_name=${videoSession.room_name}`, { method: "DELETE" });
     },
     onSuccess: () => {
       setVideoSession(null);

@@ -36,7 +36,8 @@ export function AssignedDoctorCard() {
 
   const unassignMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("DELETE", "/api/patient/unassign-doctor");
+      const res = await apiRequest("/api/patient/unassign-doctor", { method: "DELETE" });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/patient/profile/extended"] });

@@ -38,7 +38,8 @@ export default function Profile() {
 
   const updatePatientProfileMutation = useMutation({
     mutationFn: async (data: Partial<PatientProfile>) => {
-      return await apiRequest("POST", "/api/patient/profile", data);
+      const res = await apiRequest("/api/patient/profile", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/patient/profile"] });
@@ -58,7 +59,8 @@ export default function Profile() {
 
   const updateDoctorProfileMutation = useMutation({
     mutationFn: async (data: Partial<DoctorProfile>) => {
-      return await apiRequest("POST", "/api/doctor/profile", data);
+      const res = await apiRequest("/api/doctor/profile", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/doctor/profile"] });

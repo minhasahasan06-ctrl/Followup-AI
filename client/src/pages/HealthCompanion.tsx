@@ -74,7 +74,8 @@ export default function HealthCompanion() {
 
   const checkInMutation = useMutation({
     mutationFn: async (data: { userInput: string; checkInType: string }) => {
-      return await apiRequest("POST", "/api/companion/check-in", data);
+      const res = await apiRequest("/api/companion/check-in", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companion/check-ins"] });
@@ -98,7 +99,8 @@ export default function HealthCompanion() {
 
   const updateEngagementMutation = useMutation({
     mutationFn: async (data: Partial<Engagement>) => {
-      return await apiRequest("PATCH", "/api/companion/engagement", data);
+      const res = await apiRequest("/api/companion/engagement", { method: "PATCH", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companion/engagement"] });

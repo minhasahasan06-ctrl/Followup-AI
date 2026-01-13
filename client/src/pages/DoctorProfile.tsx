@@ -55,10 +55,11 @@ export default function DoctorProfile() {
 
   const connectMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/doctors/connect", {
-        doctor_id: doctorId,
-        connection_type: "specialist",
+      const res = await apiRequest("/api/doctors/connect", {
+        method: "POST",
+        json: { doctor_id: doctorId, connection_type: "specialist" }
       });
+      return await res.json();
     },
     onSuccess: () => {
       toast({

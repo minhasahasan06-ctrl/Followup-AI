@@ -163,7 +163,7 @@ export default function CohortBuilderTab() {
 
   const previewMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/v1/research-center/cohorts/preview', { filters });
+      const response = await apiRequest('/api/v1/research-center/cohorts/preview', { method: 'POST', json: { filters } });
       return response.json();
     },
     onSuccess: (data) => {
@@ -176,10 +176,9 @@ export default function CohortBuilderTab() {
 
   const saveCohortMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/v1/research-center/cohorts', {
-        name: cohortName,
-        description: cohortDescription,
-        filters,
+      const response = await apiRequest('/api/v1/research-center/cohorts', {
+        method: 'POST',
+        json: { name: cohortName, description: cohortDescription, filters }
       });
       return response.json();
     },

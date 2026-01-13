@@ -75,7 +75,8 @@ export default function ConsultationRequests() {
       symptoms?: string;
       urgency?: string;
     }) => {
-      return await apiRequest("POST", "/api/v1/consultations/patient/request", data);
+      const res = await apiRequest("/api/v1/consultations/patient/request", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/consultations/patient/my-requests"] });

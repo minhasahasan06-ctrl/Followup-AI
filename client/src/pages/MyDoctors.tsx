@@ -145,7 +145,8 @@ export default function MyDoctors() {
       symptoms?: string;
       urgency?: string;
     }) => {
-      return await apiRequest("POST", "/api/v1/consultations/patient/request", data);
+      const res = await apiRequest("/api/v1/consultations/patient/request", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/consultations/patient/my-requests"] });
@@ -170,7 +171,8 @@ export default function MyDoctors() {
 
   const disconnectMutation = useMutation({
     mutationFn: async (doctorId: string) => {
-      return await apiRequest("DELETE", `/api/doctors/disconnect/${doctorId}`, {});
+      const res = await apiRequest(`/api/doctors/disconnect/${doctorId}`, { method: "DELETE" });
+      return await res.json();
     },
     onSuccess: () => {
       toast({

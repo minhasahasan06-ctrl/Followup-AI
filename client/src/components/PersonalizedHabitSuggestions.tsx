@@ -64,7 +64,11 @@ export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: Personal
 
   const addHabitMutation = useMutation({
     mutationFn: async (habitData: { name: string; description: string; category: string; frequency: string }) => {
-      return await apiRequest("POST", "/api/habits", habitData);
+      const res = await apiRequest("/api/habits", {
+        method: "POST",
+        json: habitData
+      });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/habits"] });

@@ -430,7 +430,8 @@ export function NotificationsBell({ patientId }: { patientId: string }) {
 
   const markReadMutation = useMutation({
     mutationFn: async (notificationId: string) => {
-      return apiRequest('POST', `/api/v1/followup-autopilot/patients/${patientId}/notifications/${notificationId}/read`, {});
+      const res = await apiRequest(`/api/v1/followup-autopilot/patients/${patientId}/notifications/${notificationId}/read`, { method: 'POST', json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ 

@@ -237,9 +237,9 @@ export default function PatientReview() {
   // Drug interaction check mutation
   const checkInteractionsMutation = useMutation({
     mutationFn: async (drugName: string) => {
-      const res = await apiRequest('POST', '/api/drug-interactions/analyze-for-patient', {
-        patientId,
-        drugName,
+      const res = await apiRequest('/api/drug-interactions/analyze-for-patient', {
+        method: 'POST',
+        json: { patientId, drugName }
       });
       return res.json();
     },
@@ -262,15 +262,18 @@ export default function PatientReview() {
   // Create prescription mutation
   const createPrescriptionMutation = useMutation({
     mutationFn: async (prescription: typeof newPrescription) => {
-      const res = await apiRequest('POST', '/api/prescriptions', {
-        patientId,
-        medicationName: prescription.medicationName,
-        dosage: prescription.dosage,
-        frequency: prescription.frequency,
-        quantity: parseInt(prescription.quantity) || null,
-        refills: parseInt(prescription.refills) || 0,
-        dosageInstructions: prescription.dosageInstructions || null,
-        notes: prescription.notes || null,
+      const res = await apiRequest('/api/prescriptions', {
+        method: 'POST',
+        json: {
+          patientId,
+          medicationName: prescription.medicationName,
+          dosage: prescription.dosage,
+          frequency: prescription.frequency,
+          quantity: parseInt(prescription.quantity) || null,
+          refills: parseInt(prescription.refills) || 0,
+          dosageInstructions: prescription.dosageInstructions || null,
+          notes: prescription.notes || null,
+        }
       });
       return res.json();
     },

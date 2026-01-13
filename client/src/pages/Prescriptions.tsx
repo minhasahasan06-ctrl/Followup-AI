@@ -266,19 +266,22 @@ export default function Prescriptions() {
 
   const createSoapNoteMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/v1/rx-builder/soap-notes", {
-        patient_id: soapNotePatient,
-        encounter_date: new Date().toISOString(),
-        chief_complaint: soapForm.chiefComplaint,
-        subjective: soapForm.subjective,
-        history_present_illness: soapForm.historyPresentIllness,
-        objective: soapForm.objective,
-        physical_exam: soapForm.physicalExam,
-        assessment: soapForm.assessment,
-        primary_diagnosis: soapForm.primaryDiagnosis,
-        primary_icd10: soapForm.primaryIcd10,
-        plan: soapForm.plan,
-        follow_up_instructions: soapForm.followUpInstructions,
+      const res = await apiRequest("/api/v1/rx-builder/soap-notes", {
+        method: "POST",
+        json: {
+          patient_id: soapNotePatient,
+          encounter_date: new Date().toISOString(),
+          chief_complaint: soapForm.chiefComplaint,
+          subjective: soapForm.subjective,
+          history_present_illness: soapForm.historyPresentIllness,
+          objective: soapForm.objective,
+          physical_exam: soapForm.physicalExam,
+          assessment: soapForm.assessment,
+          primary_diagnosis: soapForm.primaryDiagnosis,
+          primary_icd10: soapForm.primaryIcd10,
+          plan: soapForm.plan,
+          follow_up_instructions: soapForm.followUpInstructions,
+        }
       });
       return res.json();
     },
@@ -302,9 +305,9 @@ export default function Prescriptions() {
   const getIcd10SuggestionsMutation = useMutation({
     mutationFn: async (symptoms: string) => {
       setIcd10Loading(true);
-      const res = await apiRequest("POST", "/api/v1/rx-builder/icd10/suggest", {
-        symptoms,
-        include_related: true,
+      const res = await apiRequest("/api/v1/rx-builder/icd10/suggest", {
+        method: "POST",
+        json: { symptoms, include_related: true }
       });
       return res.json();
     },
@@ -358,9 +361,9 @@ export default function Prescriptions() {
 
   const respondToConflictMutation = useMutation({
     mutationFn: async ({ conflictId, response, notes }: { conflictId: string; response: string; notes: string }) => {
-      const res = await apiRequest("POST", `/api/doctor/medication-conflicts/${conflictId}/respond`, {
-        response,
-        notes,
+      const res = await apiRequest(`/api/doctor/medication-conflicts/${conflictId}/respond`, {
+        method: "POST",
+        json: { response, notes }
       });
       return res.json();
     },
@@ -390,7 +393,7 @@ export default function Prescriptions() {
 
   const checkSupersessionMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("GET", `/api/medications/supersession-check?patientId=${selectedPatient}&specialty=${prescriptionForm.specialty}`, {});
+      const res = await apiRequest(`/api/medications/supersession-check?patientId=${selectedPatient}&specialty=${prescriptionForm.specialty}`, { method: "GET" });
       return res.json();
     },
     onSuccess: (data) => {
@@ -408,10 +411,9 @@ export default function Prescriptions() {
 
   const checkInteractionsMutation = useMutation({
     mutationFn: async (drugName: string) => {
-      const res = await apiRequest("POST", "/api/drug-interactions/analyze", {
-        drugName,
-        patientId: selectedPatient,
-        createAlerts: false,
+      const res = await apiRequest("/api/drug-interactions/analyze", {
+        method: "POST",
+        json: { drugName, patientId: selectedPatient, createAlerts: false }
       });
       return res.json();
     },
@@ -432,23 +434,26 @@ export default function Prescriptions() {
 
   const createPrescriptionMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/prescriptions", {
-        patientId: selectedPatient,
-        drugId: selectedDrug?.id,
-        rxcui: selectedDrug?.rxcui,
-        medicationName: prescriptionForm.medicationName,
-        dosage: prescriptionForm.dosage,
-        frequency: prescriptionForm.frequency,
-        quantity: parseInt(prescriptionForm.quantity) || null,
-        refills: parseInt(prescriptionForm.refills) || 0,
-        dosageInstructions: prescriptionForm.dosageInstructions || null,
-        notes: prescriptionForm.notes || null,
-        startDate: new Date(prescriptionForm.startDate),
-        specialty: prescriptionForm.specialty || null,
-        isContinuous: prescriptionForm.isContinuous,
-        durationDays: prescriptionForm.isContinuous ? null : (parseInt(prescriptionForm.durationDays) || null),
-        intendedStartDate: prescriptionForm.startDate ? new Date(prescriptionForm.startDate) : null,
-        supersedes: prescriptionForm.supersedes || null,
+      const res = await apiRequest("/api/prescriptions", {
+        method: "POST",
+        json: {
+          patientId: selectedPatient,
+          drugId: selectedDrug?.id,
+          rxcui: selectedDrug?.rxcui,
+          medicationName: prescriptionForm.medicationName,
+          dosage: prescriptionForm.dosage,
+          frequency: prescriptionForm.frequency,
+          quantity: parseInt(prescriptionForm.quantity) || null,
+          refills: parseInt(prescriptionForm.refills) || 0,
+          dosageInstructions: prescriptionForm.dosageInstructions || null,
+          notes: prescriptionForm.notes || null,
+          startDate: new Date(prescriptionForm.startDate),
+          specialty: prescriptionForm.specialty || null,
+          isContinuous: prescriptionForm.isContinuous,
+          durationDays: prescriptionForm.isContinuous ? null : (parseInt(prescriptionForm.durationDays) || null),
+          intendedStartDate: prescriptionForm.startDate ? new Date(prescriptionForm.startDate) : null,
+          supersedes: prescriptionForm.supersedes || null,
+        }
       });
       return res.json();
     },
@@ -484,7 +489,7 @@ export default function Prescriptions() {
 
   const acknowledgePrescriptionMutation = useMutation({
     mutationFn: async (prescriptionId: string) => {
-      const res = await apiRequest("POST", `/api/prescriptions/${prescriptionId}/acknowledge`, {});
+      const res = await apiRequest(`/api/prescriptions/${prescriptionId}/acknowledge`, { method: "POST", json: {} });
       return res.json();
     },
     onSuccess: () => {
@@ -505,13 +510,16 @@ export default function Prescriptions() {
 
   const createDosageRequestMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/dosage-change-requests", {
-        medicationId: selectedMedicationForChange?.id,
-        currentDosage: selectedMedicationForChange?.dosage,
-        currentFrequency: selectedMedicationForChange?.frequency,
-        requestedDosage: dosageChangeForm.requestedDosage,
-        requestedFrequency: dosageChangeForm.requestedFrequency,
-        requestReason: dosageChangeForm.reason,
+      const res = await apiRequest("/api/dosage-change-requests", {
+        method: "POST",
+        json: {
+          medicationId: selectedMedicationForChange?.id,
+          currentDosage: selectedMedicationForChange?.dosage,
+          currentFrequency: selectedMedicationForChange?.frequency,
+          requestedDosage: dosageChangeForm.requestedDosage,
+          requestedFrequency: dosageChangeForm.requestedFrequency,
+          requestReason: dosageChangeForm.reason,
+        }
       });
       return res.json();
     },
