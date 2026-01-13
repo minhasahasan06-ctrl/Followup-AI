@@ -68,11 +68,12 @@ The backend consists of two main components:
   - **Agent Clona Habit Recommendations Integration**: AI-powered personalized habit suggestions with:
     - PersonalizedHabitSuggestions.tsx: Agent Clona-first recommendations with graceful fallback to EHR personalization
     - GET `/api/agent-clona/recommendations?patientId=<id>`: Returns categorized habit suggestions with evidence-based markers
-    - Optimistic UI updates: Instant habit addition with rollback on error
+    - Optimistic UI updates: Instant habit addition with rollback on error using query key `["/api/habits"]`
     - Response format: `{ recommendations: [{ category, condition_context, habits: [{ name, description, frequency, priority, evidence_based }] }], generated_at, source }`
-    - Dual query key support: Invalidates both `["/api/habits"]` and `["/api/v1/ml/habits"]` for full cache coherence
-    - Express proxy route at line 18645 forwards to FastAPI agent_clona router
-    - FastAPI endpoint at `app/routers/agent_clona.py` with role-based authorization
+    - Unified query key: All habits use `["/api/habits"]` for cache coherence
+    - External Agent proxy: Supports AGENT_CLONA_URL environment variable for external AI service with AGENT_CLONA_KEY for authentication
+    - Express proxy routes forward to FastAPI agent_clona router with JWT authentication
+    - FastAPI endpoint at `app/routers/agent_clona.py` with role-based authorization and HIPAA audit logging
 - **Tinker Thinking Machine Integration (Phase 12)**: HIPAA-compliant external AI analysis platform operating in NON-BAA mode with:
   - Privacy Firewall: Multi-layer PHI protection with 18+ regex patterns, SHA256 salted hashing, data bucketing (age, vitals)
   - K-Anonymity Enforcement: Hard-fail pattern requiring k≥25 cohort size for all operations

@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { 
   Sparkles, Plus, Wind, Heart, Brain, Activity, Pill, 
-  Scale, CheckCircle2, Bot, RefreshCw
+  Scale, CheckCircle2
 } from "lucide-react";
 
 interface HabitSuggestion {
@@ -26,7 +26,6 @@ interface HabitSuggestion {
 interface PersonalizedRecommendations {
   recommendations: HabitSuggestion[];
   generated_at: string;
-  source?: "agent_clona" | "personalization";
 }
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
@@ -36,22 +35,7 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   pain: Activity,
   metabolic: Scale,
   immune: Pill,
-  wellness: Sparkles,
-  exercise: Activity,
-  nutrition: Scale,
-  sleep: Brain,
 };
-
-const PRIORITY_COLORS: Record<string, string> = {
-  high: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-  medium: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
-  low: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-};
-
-interface PersonalizedHabitSuggestionsProps {
-  patientId?: string;
-  onAddHabit?: (habit: { name: string; description: string; category: string; frequency: string }) => void;
-}
 
 async function fetchRecommendations(patientId: string): Promise<PersonalizedRecommendations> {
   const pid = patientId || "me";
@@ -60,25 +44,30 @@ async function fetchRecommendations(patientId: string): Promise<PersonalizedReco
     const agentRes = await apiRequest(`/api/agent-clona/recommendations?patientId=${pid}`);
     if (agentRes.ok) {
       const data = await agentRes.json();
-      return { ...data, source: "agent_clona" };
+      return { recommendations: data.recommendations || [], generated_at: data.generated_at || new Date().toISOString() };
     }
   } catch {
-    // Agent Clona unavailable, fall through to fallback
+    // Agent Clona unavailable, continue to fallback
   }
   
-  const fallbackRes = await apiRequest(`/api/v1/personalization/patient/${pid}/recommendations`);
-  if (!fallbackRes.ok) {
-    throw new Error("Failed to fetch recommendations");
+  try {
+    const fallbackRes = await apiRequest(`/api/v1/personalization/patient/${pid}/recommendations`);
+    if (fallbackRes.ok) {
+      const data = await fallbackRes.json();
+      return { recommendations: data.recommendations || [], generated_at: data.generated_at || new Date().toISOString() };
+    }
+  } catch {
+    // Fallback also failed
   }
-  const data = await fallbackRes.json();
-  return { ...data, source: "personalization" };
+  
+  return { recommendations: [], generated_at: new Date().toISOString() };
 }
 
-export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: PersonalizedHabitSuggestionsProps) {
+export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: { patientId?: string; onAddHabit?: (h: { name: string; description: string; category: string; frequency: string }) => void }) {
   const { toast } = useToast();
 
-  const { data, isLoading, error, refetch, isFetching } = useQuery<PersonalizedRecommendations>({
-    queryKey: ["/api/personalization/recommendations", patientId || "me"],
+  const { data, isLoading, error } = useQuery<PersonalizedRecommendations>({
+    queryKey: ["/api/agent-clona/recommendations", patientId || "me"],
     queryFn: () => fetchRecommendations(patientId || "me"),
     staleTime: 60 * 60 * 1000,
     retry: 1,
@@ -90,31 +79,28 @@ export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: Personal
         method: "POST",
         json: habitData
       });
+      if (!res.ok) throw new Error("Failed to add habit");
       return await res.json();
     },
     onMutate: async (newHabit) => {
       await queryClient.cancelQueries({ queryKey: ["/api/habits"] });
-      await queryClient.cancelQueries({ queryKey: ["/api/v1/ml/habits"] });
-      const prevHabits = queryClient.getQueryData(["/api/habits"]);
-      const prevMlHabits = queryClient.getQueryData(["/api/v1/ml/habits"]);
-      
-      const optimisticHabit = { ...newHabit, id: `tmp-${Date.now()}`, currentStreak: 0, totalCompletions: 0 };
-      
-      queryClient.setQueryData(["/api/habits"], (old: unknown[]) => 
-        old ? [...old, optimisticHabit] : [optimisticHabit]
-      );
-      queryClient.setQueryData(["/api/v1/ml/habits"], (old: unknown[]) => 
-        old ? [...old, optimisticHabit] : [optimisticHabit]
-      );
-      
-      return { prevHabits, prevMlHabits };
+      const prev = queryClient.getQueryData(["/api/habits"]);
+      queryClient.setQueryData(["/api/habits"], (old: unknown[]) => {
+        const optimisticHabit = { 
+          ...newHabit, 
+          id: `tmp-${Date.now()}`,
+          currentStreak: 0,
+          totalCompletions: 0,
+          createdAt: new Date().toISOString()
+        };
+        if (!old) return [optimisticHabit];
+        return [...old, optimisticHabit];
+      });
+      return { prev };
     },
     onError: (_err, _newHabit, context) => {
-      if (context?.prevHabits) {
-        queryClient.setQueryData(["/api/habits"], context.prevHabits);
-      }
-      if (context?.prevMlHabits) {
-        queryClient.setQueryData(["/api/v1/ml/habits"], context.prevMlHabits);
+      if (context?.prev !== undefined) {
+        queryClient.setQueryData(["/api/habits"], context.prev);
       }
       toast({
         title: "Error",
@@ -124,7 +110,6 @@ export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: Personal
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/habits"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/ml/habits"] });
       toast({
         title: "Habit added",
         description: "The suggested habit has been added to your tracking list.",
@@ -174,32 +159,13 @@ export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: Personal
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              Personalized for You
-              {data.source === "agent_clona" && (
-                <Badge variant="secondary" className="text-xs gap-1">
-                  <Bot className="h-3 w-3" />
-                  Agent Clona
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              Habit suggestions based on your health profile and conditions
-            </CardDescription>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            data-testid="button-refresh-suggestions"
-          >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-primary" />
+          Personalized for You
+        </CardTitle>
+        <CardDescription>
+          Habit suggestions based on your health profile and conditions
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {data.recommendations.map((suggestion, idx) => {
@@ -209,7 +175,7 @@ export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: Personal
             <div key={idx} className="space-y-3">
               <div className="flex items-center gap-2">
                 <IconComponent className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium capitalize">{suggestion.category.replace(/_/g, " ")}</span>
+                <span className="font-medium capitalize">{suggestion.category.replace("_", " ")}</span>
                 {suggestion.condition_context && (
                   <Badge variant="outline" className="text-xs">
                     {suggestion.condition_context}
@@ -225,14 +191,12 @@ export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: Personal
                     data-testid={`suggestion-${suggestion.category}-${habitIdx}`}
                   >
                     <div className="space-y-1 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
                         <span className="font-medium">{habit.name}</span>
-                        <Badge className={PRIORITY_COLORS[habit.priority] || PRIORITY_COLORS.medium}>
-                          {habit.priority}
-                        </Badge>
+                        <Badge className="text-xs">{habit.priority}</Badge>
                         {habit.evidence_based && (
-                          <Badge variant="secondary" className="text-xs gap-1">
-                            <CheckCircle2 className="h-3 w-3" />
+                          <Badge variant="secondary" className="text-xs">
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
                             Evidence-based
                           </Badge>
                         )}

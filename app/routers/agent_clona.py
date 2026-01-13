@@ -3,8 +3,10 @@ Agent Clona - Enhanced AI Chatbot Router.
 Provides symptom analysis, differential diagnosis, and doctor suggestions.
 """
 
+import os
+import httpx
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -286,32 +288,66 @@ async def get_habit_recommendations(
                     detail="Not authorized to access this patient's recommendations"
                 )
         
-        service = get_personalized_recommendations_service(db)
-        raw_recommendations = await service.get_recommendations(
-            patient_id=str(pid),
-            accessor_id=str(current_user.id),
-            max_recommendations=15
-        )
+        # Try external Agent Clona service first if configured
+        AGENT_CLONA_URL = os.getenv("AGENT_CLONA_URL")
+        AGENT_CLONA_KEY = os.getenv("AGENT_CLONA_KEY")
         
-        # Transform to Agent Clona format with categories
-        category_map = {}
-        for rec in raw_recommendations:
-            category = rec.get("category", "wellness")
-            if category not in category_map:
-                category_map[category] = {
-                    "category": category,
-                    "condition_context": rec.get("reason", "").split(" for ")[-1] if " for " in rec.get("reason", "") else None,
-                    "habits": []
-                }
+        recommendations_result = None
+        source = "agent_clona"
+        
+        if AGENT_CLONA_URL:
+            try:
+                headers = {"Content-Type": "application/json"}
+                if AGENT_CLONA_KEY:
+                    headers["Authorization"] = f"Bearer {AGENT_CLONA_KEY}"
+                
+                async with httpx.AsyncClient(timeout=20) as client:
+                    resp = await client.get(
+                        f"{AGENT_CLONA_URL.rstrip('/')}/recommendations",
+                        params={"patientId": str(pid)},
+                        headers=headers
+                    )
+                    if resp.status_code == 200:
+                        recommendations_result = resp.json()
+                        source = "agent_clona_external"
+            except Exception as ext_err:
+                # Log external service failure, fall through to internal
+                print(f"External Agent Clona unavailable: {ext_err}")
+        
+        # Fallback to internal personalization service
+        if recommendations_result is None:
+            service = get_personalized_recommendations_service(db)
+            raw_recommendations = await service.get_recommendations(
+                patient_id=str(pid),
+                accessor_id=str(current_user.id),
+                max_recommendations=15
+            )
             
-            category_map[category]["habits"].append({
-                "name": rec.get("name", ""),
-                "description": rec.get("description", ""),
-                "frequency": rec.get("frequency", "daily"),
-                "priority": "high" if "important" in rec.get("reason", "").lower() else "medium",
-                "evidence_based": True,
-                "condition_link": rec.get("safety_notes")
-            })
+            # Transform to Agent Clona format with categories
+            category_map = {}
+            for rec in raw_recommendations:
+                category = rec.get("category", "wellness")
+                if category not in category_map:
+                    category_map[category] = {
+                        "category": category,
+                        "condition_context": rec.get("reason", "").split(" for ")[-1] if " for " in rec.get("reason", "") else None,
+                        "habits": []
+                    }
+                
+                category_map[category]["habits"].append({
+                    "name": rec.get("name", ""),
+                    "description": rec.get("description", ""),
+                    "frequency": rec.get("frequency", "daily"),
+                    "priority": "high" if "important" in rec.get("reason", "").lower() else "medium",
+                    "evidence_based": True,
+                    "condition_link": rec.get("safety_notes")
+                })
+            
+            recommendations_result = {
+                "recommendations": list(category_map.values()),
+                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "source": source
+            }
         
         # HIPAA Audit log successful access
         HIPAAAuditLogger.log_phi_access(
@@ -324,14 +360,10 @@ async def get_habit_recommendations(
             access_scope="full" if user_role == "doctor" else "self",
             access_reason="clinical_review" if user_role == "doctor" else "patient_self_access",
             consent_verified=True,
-            additional_context={"recommendations_count": len(category_map)}
+            additional_context={"recommendations_count": len(recommendations_result.get("recommendations", [])), "source": source}
         )
         
-        return {
-            "recommendations": list(category_map.values()),
-            "generated_at": datetime.utcnow().isoformat() + "Z",
-            "source": "agent_clona"
-        }
+        return recommendations_result
         
     except HTTPException:
         raise

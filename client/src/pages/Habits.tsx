@@ -266,16 +266,16 @@ export default function Habits() {
   
   const handleAddSuggestedHabit = async (habit: HabitSuggestion) => {
     try {
-      await apiRequest('/api/v1/ml/habits', {
+      await apiRequest('/api/habits', {
         method: 'POST',
-        body: JSON.stringify({
+        json: {
           name: habit.name,
           description: habit.description,
           category: habit.category,
           frequency: habit.frequency,
-        }),
+        }
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/v1/ml/habits'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/habits'] });
       toast({
         title: 'Habit added',
         description: `"${habit.name}" has been added to your habits.`,
@@ -292,7 +292,12 @@ export default function Habits() {
 
   // Fetch habits from Express backend
   const { data: habits = [], isLoading: habitsLoading, error: habitsError } = useQuery<Habit[]>({
-    queryKey: ['/api/v1/ml/habits'],
+    queryKey: ['/api/habits'],
+    queryFn: async () => {
+      const res = await apiRequest('/api/habits');
+      if (!res.ok) throw new Error('Failed to fetch habits');
+      return await res.json();
+    },
     retry: 1,
   });
 
@@ -456,11 +461,11 @@ export default function Habits() {
   // Create habit mutation
   const createHabitMutation = useMutation({
     mutationFn: async (data: z.infer<typeof createHabitSchema>) => {
-      const res = await apiRequest('/api/v1/ml/habits', { method: 'POST', json: data });
+      const res = await apiRequest('/api/habits', { method: 'POST', json: data });
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/v1/ml/habits'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/habits'] });
       setIsCreateDialogOpen(false);
       createHabitForm.reset();
       toast({
@@ -490,11 +495,11 @@ export default function Habits() {
   // Complete habit mutation
   const completeHabitMutation = useMutation({
     mutationFn: async ({ habitId, data }: { habitId: string; data: any }) => {
-      const res = await apiRequest(`/api/v1/ml/habits/${habitId}/complete`, { method: 'POST', json: data });
+      const res = await apiRequest(`/api/habits/${habitId}/complete`, { method: 'POST', json: data });
       return await res.json();
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/v1/ml/habits'] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/habits'] });
       queryClient.invalidateQueries({ queryKey: ['/api/habits/streaks'] });
       queryClient.invalidateQueries({ queryKey: ['/api/habits/rewards'] });
       setSelectedHabitForCompletion(null);

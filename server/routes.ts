@@ -18025,6 +18025,10 @@ Provide:
     await habitTrackerProxy(req, res, '/api/habits', 'GET');
   });
 
+  app.post('/api/habits', async (req: any, res) => {
+    await habitTrackerProxy(req, res, '/api/habits/create', 'POST');
+  });
+
   app.post('/api/habits/create', async (req: any, res) => {
     await habitTrackerProxy(req, res, '/api/habits/create', 'POST');
   });
