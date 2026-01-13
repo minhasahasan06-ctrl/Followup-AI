@@ -215,6 +215,27 @@ class CoachMessage(BaseModel):
 # FEATURE 1: Habit Creation & Daily Routine Builder
 # ============================================
 
+@router.post("/")
+async def create_habit_root(
+    habit: HabitCreate,
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    db: Session = Depends(get_db)
+):
+    """RESTful wrapper: POST /api/habits delegates to create_habit"""
+    return await create_habit(habit, user_id=user_id, db=db)
+
+
+@router.get("/")
+async def get_habits_root(
+    user_id: str = Depends(get_user_id_from_auth_or_query),
+    category: Optional[str] = None,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db)
+):
+    """RESTful wrapper: GET /api/habits delegates to list_habits"""
+    return await list_habits(user_id=user_id, category=category, include_inactive=include_inactive, db=db)
+
+
 @router.post("/create")
 async def create_habit(
     habit: HabitCreate,

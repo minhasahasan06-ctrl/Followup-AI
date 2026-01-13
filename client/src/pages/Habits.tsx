@@ -296,7 +296,9 @@ export default function Habits() {
     queryFn: async () => {
       const res = await apiRequest('/api/habits');
       if (!res.ok) throw new Error('Failed to fetch habits');
-      return await res.json();
+      const json = await res.json();
+      // Normalize response: backend returns {habits: [...], total: n}
+      return Array.isArray(json) ? json : json.habits || [];
     },
     retry: 1,
   });

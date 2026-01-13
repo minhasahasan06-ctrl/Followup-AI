@@ -1,3 +1,5 @@
+// client/src/components/PersonalizedHabitSuggestions.tsx
+import React from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +30,7 @@ interface PersonalizedRecommendations {
   generated_at: string;
 }
 
-const CATEGORY_ICONS: Record<string, React.ElementType> = {
+const CATEGORY_ICONS: Record<string, any> = {
   respiratory: Wind,
   cardiac: Heart,
   mental_health: Brain,
@@ -37,71 +39,53 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   immune: Pill,
 };
 
-async function fetchRecommendations(patientId: string): Promise<PersonalizedRecommendations> {
-  const pid = patientId || "me";
-  
-  try {
-    const agentRes = await apiRequest(`/api/agent-clona/recommendations?patientId=${pid}`);
-    if (agentRes.ok) {
-      const data = await agentRes.json();
-      return { recommendations: data.recommendations || [], generated_at: data.generated_at || new Date().toISOString() };
-    }
-  } catch {
-    // Agent Clona unavailable, continue to fallback
-  }
-  
-  try {
-    const fallbackRes = await apiRequest(`/api/v1/personalization/patient/${pid}/recommendations`);
-    if (fallbackRes.ok) {
-      const data = await fallbackRes.json();
-      return { recommendations: data.recommendations || [], generated_at: data.generated_at || new Date().toISOString() };
-    }
-  } catch {
-    // Fallback also failed
-  }
-  
-  return { recommendations: [], generated_at: new Date().toISOString() };
-}
-
-export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: { patientId?: string; onAddHabit?: (h: { name: string; description: string; category: string; frequency: string }) => void }) {
+export function PersonalizedHabitSuggestions({ patientId, onAddHabit }: { patientId?: string; onAddHabit?: (h: any) => void }) {
   const { toast } = useToast();
 
+  // Fetch suggestions from Agent Clona if available; fall back to existing personalization endpoint
   const { data, isLoading, error } = useQuery<PersonalizedRecommendations>({
-    queryKey: ["/api/agent-clona/recommendations", patientId || "me"],
-    queryFn: () => fetchRecommendations(patientId || "me"),
+    queryKey: ["/api/personalization/agent-clona", patientId || "me"],
+    queryFn: async () => {
+      // Prefer Agent Clona endpoint; backend should proxy or this can be a direct agent endpoint.
+      const pid = patientId || "me";
+      // Try agent-clona recommendations endpoint on backend that proxies to Agent Clona
+      try {
+        const res = await apiRequest(`/api/agent-clona/recommendations?patientId=${pid}`);
+        if (res.status === 200) {
+          return await res.json();
+        }
+      } catch (e) {
+        // fall through to fallback
+      }
+      // fallback to original personalization endpoint
+      const fallback = await fetch(`/api/v1/personalization/patient/${pid}/recommendations`);
+      if (!fallback.ok) throw new Error("Failed to fetch recommendations");
+      return await fallback.json();
+    },
+    enabled: true,
     staleTime: 60 * 60 * 1000,
-    retry: 1,
   });
 
+  // addHabitMutation: correct apiRequest usage + optimistic UI
   const addHabitMutation = useMutation({
     mutationFn: async (habitData: { name: string; description: string; category: string; frequency: string }) => {
       const res = await apiRequest("/api/habits", {
         method: "POST",
         json: habitData
       });
-      if (!res.ok) throw new Error("Failed to add habit");
       return await res.json();
     },
     onMutate: async (newHabit) => {
       await queryClient.cancelQueries({ queryKey: ["/api/habits"] });
       const prev = queryClient.getQueryData(["/api/habits"]);
-      queryClient.setQueryData(["/api/habits"], (old: unknown[]) => {
-        const optimisticHabit = { 
-          ...newHabit, 
-          id: `tmp-${Date.now()}`,
-          currentStreak: 0,
-          totalCompletions: 0,
-          createdAt: new Date().toISOString()
-        };
-        if (!old) return [optimisticHabit];
-        return [...old, optimisticHabit];
+      queryClient.setQueryData(["/api/habits"], (old: any) => {
+        if (!old) return [{ ...newHabit, id: `tmp-${Date.now()}` }];
+        return [...old, { ...newHabit, id: `tmp-${Date.now()}` }];
       });
       return { prev };
     },
     onError: (_err, _newHabit, context) => {
-      if (context?.prev !== undefined) {
-        queryClient.setQueryData(["/api/habits"], context.prev);
-      }
+      queryClient.setQueryData(["/api/habits"], (context as any)?.prev);
       toast({
         title: "Error",
         description: "Failed to add habit",
