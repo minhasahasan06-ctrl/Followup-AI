@@ -397,15 +397,46 @@ export default function Habits() {
     retry: 1,
   });
 
-  // Fetch AI recommendations
-  const { data: recommendationsData } = useQuery({
-    queryKey: ['/api/habits/recommendations'],
+  // Fetch AI recommendations from Agent Clona with fallback
+  const { data: recommendationsData, isLoading: isLoadingRecommendations } = useQuery({
+    queryKey: ['/api/agent-clona/recommendations'],
     queryFn: async () => {
-      const res = await fetch('/api/habits/recommendations?user_id=current&status=pending');
-      if (!res.ok) return { recommendations: [] };
-      return res.json();
+      try {
+        // Try Agent Clona first
+        const res = await fetch('/api/agent-clona/recommendations?patientId=me');
+        if (res.ok) {
+          const data = await res.json();
+          // Transform Agent Clona format to expected format
+          const flattened: any[] = [];
+          for (const category of data.recommendations || []) {
+            for (const habit of category.habits || []) {
+              flattened.push({
+                id: `${category.category}-${habit.name}`.replace(/\s+/g, '-').toLowerCase(),
+                title: habit.name,
+                description: habit.description,
+                category: category.category,
+                priority: habit.priority,
+                evidence_based: habit.evidence_based,
+              });
+            }
+          }
+          return { recommendations: flattened, source: 'agent_clona' };
+        }
+        // Fallback to legacy endpoint
+        const fallbackRes = await fetch('/api/habits/recommendations?user_id=current&status=pending');
+        if (fallbackRes.ok) return fallbackRes.json();
+        return { recommendations: [] };
+      } catch (error) {
+        // Fallback on network error
+        try {
+          const fallbackRes = await fetch('/api/habits/recommendations?user_id=current&status=pending');
+          if (fallbackRes.ok) return fallbackRes.json();
+        } catch {}
+        return { recommendations: [] };
+      }
     },
     retry: 1,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Create habit form
@@ -701,8 +732,9 @@ export default function Habits() {
       return res.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/agent-clona/recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['/api/habits/recommendations'] });
-      toast({ title: "Recommendations Generated", description: "Check the insights tab for personalized tips." });
+      toast({ title: "Recommendations Generated", description: "Check the overview for personalized AI tips." });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to generate recommendations", variant: "destructive" });
@@ -1050,10 +1082,24 @@ export default function Habits() {
                   <Target className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="font-semibold text-lg">No habits yet</h3>
                   <p className="text-muted-foreground mb-4">Start building healthy routines today!</p>
-                  <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-first-habit">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Create Your First Habit
-                  </Button>
+                  <div className="flex flex-col gap-3 items-center">
+                    <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-first-habit">
+                      <Plus className="h-4 w-4 mr-1" />
+                      Create Your First Habit
+                    </Button>
+                    {isLoadingRecommendations && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading AI suggestions...
+                      </div>
+                    )}
+                    {recommendationsData?.recommendations?.length > 0 && (
+                      <p className="text-sm text-primary">
+                        <Sparkles className="inline h-4 w-4 mr-1" />
+                        {recommendationsData.recommendations.length} AI suggestions available below
+                      </p>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -1061,22 +1107,60 @@ export default function Habits() {
 
           {/* AI Recommendations */}
           {recommendationsData?.recommendations?.length > 0 && (
-            <Card>
+            <Card data-testid="card-ai-recommendations">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-primary" />
-                  AI Recommendations
+                  AI-Powered Suggestions
+                  {recommendationsData.source === 'agent_clona' && (
+                    <Badge variant="secondary" className="text-xs">Agent Clona</Badge>
+                  )}
                 </CardTitle>
+                <CardDescription>Personalized habit recommendations based on your health profile</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {recommendationsData.recommendations.slice(0, 3).map((rec: any) => (
-                    <div key={rec.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                      <Zap className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-medium">{rec.title}</div>
-                        <p className="text-sm text-muted-foreground">{rec.description}</p>
+                  {recommendationsData.recommendations.slice(0, 5).map((rec: any) => (
+                    <div key={rec.id} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-muted/50 hover-elevate" data-testid={`recommendation-${rec.id}`}>
+                      <div className="flex items-start gap-3 flex-1">
+                        <div className="p-2 rounded-lg bg-primary/10">
+                          <Zap className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{rec.title}</span>
+                            {rec.evidence_based && (
+                              <Badge variant="outline" className="text-xs">Evidence-based</Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">{rec.description}</p>
+                          {rec.category && (
+                            <Badge variant="secondary" className="mt-2 text-xs capitalize">{rec.category}</Badge>
+                          )}
+                        </div>
                       </div>
+                      <Button 
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          createHabitForm.reset({
+                            name: rec.title,
+                            description: rec.description || "",
+                            category: rec.category === 'wellness' || rec.category === 'nutrition' || rec.category === 'exercise' || rec.category === 'medication' || rec.category === 'sleep' 
+                              ? rec.category as any 
+                              : 'health',
+                            frequency: "daily",
+                            goalCount: 1,
+                            reminderEnabled: true,
+                            reminderTime: "09:00",
+                          });
+                          setIsCreateDialogOpen(true);
+                        }}
+                        data-testid={`button-add-recommendation-${rec.id}`}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add
+                      </Button>
                     </div>
                   ))}
                 </div>

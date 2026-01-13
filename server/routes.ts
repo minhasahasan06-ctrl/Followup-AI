@@ -18517,14 +18517,26 @@ Provide:
 
   const PYTHON_AGENT_URL = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
 
-  // Agent proxy helper
+  // Agent proxy helper with JWT authentication forwarding
   async function agentProxy(req: any, res: any, path: string, method: string = 'GET') {
     try {
       const userId = req.session?.passport?.user;
       const user = userId ? await storage.getUser(userId) : null;
       
+      // Generate JWT token for Python backend authentication
+      let authHeader = req.headers.authorization || '';
+      if (!authHeader && userId && process.env.DEV_MODE_SECRET) {
+        const token = jwt.sign(
+          { sub: userId, email: user?.email || '', role: user?.role || 'patient' },
+          process.env.DEV_MODE_SECRET,
+          { expiresIn: '1h' }
+        );
+        authHeader = `Bearer ${token}`;
+      }
+      
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
+        'Authorization': authHeader,
         'X-User-Id': userId || '',
         'X-User-Role': user?.role || 'patient',
       };
