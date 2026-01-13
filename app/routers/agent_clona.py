@@ -192,3 +192,77 @@ async def suggest_treatment(
             status_code=500,
             detail=f"Error generating treatment suggestions: {str(e)}"
         )
+
+
+@router.get("/recommendations")
+async def get_habit_recommendations(
+    patientId: str = "me",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI-powered personalized habit recommendations from Agent Clona.
+    
+    Uses the patient's health profile, conditions, and medications to generate
+    evidence-based habit suggestions categorized by health domain.
+    
+    Returns:
+        recommendations: List of habit suggestions by category
+        generated_at: Timestamp of generation
+        source: "agent_clona"
+    """
+    from datetime import datetime
+    from app.services.personalized_recommendations_service import get_personalized_recommendations_service
+    
+    try:
+        # Determine patient ID
+        pid = current_user.id if patientId == "me" else patientId
+        
+        # If accessing another patient's data, verify authorization
+        if patientId != "me" and str(pid) != str(current_user.id):
+            if current_user.role != "doctor":
+                raise HTTPException(
+                    status_code=403,
+                    detail="Not authorized to access this patient's recommendations"
+                )
+        
+        service = get_personalized_recommendations_service(db)
+        raw_recommendations = await service.get_recommendations(
+            patient_id=str(pid),
+            accessor_id=str(current_user.id),
+            max_recommendations=15
+        )
+        
+        # Transform to Agent Clona format with categories
+        category_map = {}
+        for rec in raw_recommendations:
+            category = rec.get("category", "wellness")
+            if category not in category_map:
+                category_map[category] = {
+                    "category": category,
+                    "condition_context": rec.get("reason", "").split(" for ")[-1] if " for " in rec.get("reason", "") else None,
+                    "habits": []
+                }
+            
+            category_map[category]["habits"].append({
+                "name": rec.get("name", ""),
+                "description": rec.get("description", ""),
+                "frequency": rec.get("frequency", "daily"),
+                "priority": "high" if "important" in rec.get("reason", "").lower() else "medium",
+                "evidence_based": True,
+                "condition_link": rec.get("safety_notes")
+            })
+        
+        return {
+            "recommendations": list(category_map.values()),
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "source": "agent_clona"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating recommendations: {str(e)}"
+        )

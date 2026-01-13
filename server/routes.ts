@@ -18634,6 +18634,20 @@ Provide:
   // =============================================================================
 
   // =============================================================================
+  // AGENT CLONA FASTAPI PROXY ROUTES
+  // AI-powered personalized habit recommendations from Agent Clona
+  // =============================================================================
+
+  // Get personalized habit recommendations from Agent Clona
+  app.get('/api/agent-clona/recommendations', isAuthenticated, async (req: any, res) => {
+    await agentProxy(req, res, '/api/agent-clona/recommendations', 'GET');
+  });
+
+  // =============================================================================
+  // END AGENT CLONA FASTAPI PROXY ROUTES
+  // =============================================================================
+
+  // =============================================================================
   // END MULTI-AGENT COMMUNICATION SYSTEM PROXY ROUTES
   // =============================================================================
 
