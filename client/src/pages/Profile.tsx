@@ -16,6 +16,7 @@ import PhoneVerification from "@/components/PhoneVerification";
 import TrainingConsentSettings from "@/components/TrainingConsentSettings";
 import { PersonalizationToggle } from "@/components/PersonalizationToggle";
 import VideoSettingsPanel from "@/components/VideoSettingsPanel";
+import EnvironmentalAutoCreate from "@/components/EnvironmentalAutoCreate";
 import { AssignedDoctorCard } from "@/components/AssignedDoctorCard";
 import { AuditLogViewer } from "@/components/AuditLogViewer";
 import PatientMedicalInfoForm from "@/components/PatientMedicalInfoForm";
@@ -246,7 +247,30 @@ export default function Profile() {
         </TabsContent>
 
         <TabsContent value="personalization">
-          <PersonalizationToggle />
+          <div className="space-y-4">
+            <PersonalizationToggle />
+            {isPatient ? (
+              <div className="mt-4">
+                <EnvironmentalAutoCreate patientId={user?.id} />
+              </div>
+            ) : (
+              <div className="mt-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Environment Auto-Create</CardTitle>
+                    <CardDescription>
+                      Clinicians can auto-create an environmental profile for patients from the patient management panel.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      To create or update an environmental profile for a patient, open the patient in the Doctor Patient Management Panel and use the "Auto-create Environmental Profile" action.
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
         </TabsContent>
 
         {isPatient && (
