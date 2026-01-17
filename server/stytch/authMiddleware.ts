@@ -1,3 +1,12 @@
+/**
+ * Stytch Consumer Authentication Middleware
+ * 
+ * Uses Stytch CONSUMER SDK for session validation:
+ * - sessions.authenticate() - Validates session tokens from HttpOnly cookies
+ * - RBAC via user.trusted_metadata.role (admin, doctor, patient)
+ * - No B2B organization logic - individual user sessions only
+ * - M2M token validation for service-to-service authentication
+ */
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import { getStytchClient, isStytchConfigured, validateM2MToken } from "./stytchClient";
 import { storage } from "../storage";

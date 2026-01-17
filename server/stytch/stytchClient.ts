@@ -1,3 +1,12 @@
+/**
+ * Stytch Consumer SDK Client Manager
+ * 
+ * This module uses the Stytch CONSUMER SDK (not B2B).
+ * - Uses stytch.Client (Consumer) instead of stytch.B2BClient
+ * - No organization/member logic - authenticates individual users
+ * - RBAC is implemented via user.trusted_metadata.role
+ * - Supports Magic Links, SMS OTP, and M2M authentication
+ */
 import * as stytch from "stytch";
 
 const STYTCH_PROJECT_ID = process.env.STYTCH_PROJECT_ID;

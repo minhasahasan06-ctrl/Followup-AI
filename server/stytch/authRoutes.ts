@@ -1,3 +1,19 @@
+/**
+ * Stytch Consumer Authentication Routes
+ * 
+ * Uses Stytch CONSUMER SDK methods:
+ * - magicLinks.email.loginOrCreate() - Send magic link to user email
+ * - magicLinks.authenticate() - Authenticate magic link token
+ * - otps.sms.loginOrCreate() - Send SMS OTP to user phone
+ * - otps.sms.authenticate() - Verify SMS OTP code
+ * - sessions.authenticate() - Validate session token
+ * - sessions.revoke() - Logout/revoke session
+ * - users.update() - Update user trusted_metadata for RBAC roles
+ * 
+ * RBAC Implementation:
+ * - Roles (admin, doctor, patient) stored in user.trusted_metadata.role
+ * - No B2B organizations - individual user authentication only
+ */
 import { Router, Request, Response } from "express";
 import { getStytchClient, isStytchConfigured } from "./stytchClient";
 import { getSessionCookieOptions, requireAuth } from "./authMiddleware";
@@ -149,7 +165,7 @@ router.post("/sms-otp/send", async (req: Request, res: Response) => {
       });
     }
 
-    console.log(`[STYTCH] SMS OTP sent to ${phone}`);
+    console.log(`[STYTCH] SMS OTP sent to ${phoneValue}`);
     res.json({
       success: true,
       message: "Verification code sent via SMS",
@@ -167,9 +183,10 @@ router.post("/sms-otp/authenticate", async (req: Request, res: Response) => {
     return res.status(503).json({ error: "Authentication service not configured" });
   }
 
-  const { phone, code } = req.body;
+  const { phone, phone_number, code } = req.body;
+  const phoneValue = phone || phone_number;
 
-  if (!phone || typeof phone !== "string") {
+  if (!phoneValue || typeof phoneValue !== "string") {
     return res.status(400).json({ error: "Phone number is required" });
   }
 
@@ -180,12 +197,12 @@ router.post("/sms-otp/authenticate", async (req: Request, res: Response) => {
   try {
     const client = getStytchClient();
     const response = await client.otps.sms.authenticate({
-      phone_number: phone,
+      phone_number: phoneValue,
       code,
       session_duration_minutes: SESSION_DURATION_MINUTES,
     });
 
-    const userPhone = response.user.phone_numbers?.[0]?.phone_number || phone;
+    const userPhone = response.user.phone_numbers?.[0]?.phone_number || phoneValue;
     const userEmail = response.user.emails?.[0]?.email;
     const trustedMetadata = response.user.trusted_metadata as Record<string, any> || {};
     const role = trustedMetadata.role || "patient";
@@ -204,7 +221,7 @@ router.post("/sms-otp/authenticate", async (req: Request, res: Response) => {
     const isProduction = process.env.NODE_ENV === "production";
     res.cookie(SESSION_COOKIE_NAME, response.session_token, getSessionCookieOptions(isProduction));
 
-    console.log(`[STYTCH] SMS OTP authenticated for ${phone}`);
+    console.log(`[STYTCH] SMS OTP authenticated for ${phoneValue}`);
     res.json({
       success: true,
       user: {
