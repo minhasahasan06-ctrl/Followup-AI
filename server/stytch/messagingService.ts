@@ -1,4 +1,49 @@
 import { getStytchClient, isStytchConfigured } from "./stytchClient";
+import { Resend } from "resend";
+
+let cachedResendClient: { client: Resend; fromEmail: string } | null = null;
+
+async function getResendClient(): Promise<{ client: Resend; fromEmail: string } | null> {
+  try {
+    const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
+    const xReplitToken = process.env.REPL_IDENTITY
+      ? "repl " + process.env.REPL_IDENTITY
+      : process.env.WEB_REPL_RENEWAL
+        ? "depl " + process.env.WEB_REPL_RENEWAL
+        : null;
+
+    if (!xReplitToken || !hostname) {
+      console.warn("[RESEND] Replit connector credentials not available");
+      return null;
+    }
+
+    const response = await fetch(
+      `https://${hostname}/api/v2/connection?include_secrets=true&connector_names=resend`,
+      {
+        headers: {
+          Accept: "application/json",
+          X_REPLIT_TOKEN: xReplitToken,
+        },
+      }
+    );
+
+    const data = await response.json();
+    const connectionSettings = data.items?.[0];
+
+    if (!connectionSettings?.settings?.api_key) {
+      console.warn("[RESEND] API key not configured in Replit connector");
+      return null;
+    }
+
+    return {
+      client: new Resend(connectionSettings.settings.api_key),
+      fromEmail: connectionSettings.settings.from_email || "noreply@followupai.io",
+    };
+  } catch (error: any) {
+    console.error("[RESEND] Failed to initialize client:", error.message);
+    return null;
+  }
+}
 
 export interface SendSMSOptions {
   to: string;
@@ -14,31 +59,14 @@ export interface SendEmailOptions {
 }
 
 export async function sendSMS({ to, message }: SendSMSOptions): Promise<boolean> {
-  if (!isStytchConfigured()) {
-    console.warn("[STYTCH] SMS not configured - falling back to log only");
-    console.log(`[SMS] Would send to ${to}: ${message}`);
-    return false;
-  }
-
-  try {
-    const client = getStytchClient();
-    
-    const response = await client.otps.sms.send({
-      phone_number: to,
-      expiration_minutes: 10,
-    });
-
-    console.log(`[STYTCH] SMS sent to ${to}, phone_id: ${response.phone_id}`);
-    return true;
-  } catch (error: any) {
-    console.error("[STYTCH] SMS send error:", error.message);
-    return false;
-  }
+  console.log(`[SMS] Would send to ${to}: ${message}`);
+  console.warn("[SMS] Note: Custom SMS requires Twilio or similar provider. Stytch SMS is for OTP only.");
+  return false;
 }
 
 export async function sendVerificationSMS(to: string): Promise<{ success: boolean; phoneId?: string }> {
   if (!isStytchConfigured()) {
-    console.warn("[STYTCH] SMS not configured");
+    console.warn("[STYTCH] SMS OTP not configured");
     return { success: false };
   }
 
@@ -63,11 +91,10 @@ export async function sendMedicationReminder(
   dosage: string,
   time: string
 ): Promise<boolean> {
-  console.log(`[SMS] Medication reminder to ${to}: Take ${medicationName} ${dosage} at ${time}`);
-  return sendSMS({
-    to,
-    message: `Medication Reminder: It's time to take ${medicationName} ${dosage}. Scheduled for ${time}. - Followup AI`,
-  });
+  const message = `Medication Reminder: It's time to take ${medicationName} ${dosage}. Scheduled for ${time}. - Followup AI`;
+  console.log(`[SMS] Medication reminder to ${to}: ${message}`);
+  console.warn("[SMS] Note: Medication reminders require a transactional SMS provider (e.g., Twilio).");
+  return false;
 }
 
 export async function sendAppointmentConfirmation(
@@ -76,11 +103,9 @@ export async function sendAppointmentConfirmation(
   date: string,
   time: string
 ): Promise<boolean> {
-  console.log(`[SMS] Appointment confirmation to ${to}: Dr. ${doctorName} on ${date} at ${time}`);
-  return sendSMS({
-    to,
-    message: `Appointment Confirmed: Your consultation with Dr. ${doctorName} is scheduled for ${date} at ${time}. - Followup AI`,
-  });
+  const message = `Appointment Confirmed: Your consultation with Dr. ${doctorName} is scheduled for ${date} at ${time}. - Followup AI`;
+  console.log(`[SMS] Appointment confirmation to ${to}: ${message}`);
+  return false;
 }
 
 export async function sendAppointmentReminder(
@@ -88,50 +113,54 @@ export async function sendAppointmentReminder(
   doctorName: string,
   timeUntil: string
 ): Promise<boolean> {
-  return sendSMS({
-    to,
-    message: `Reminder: Your appointment with Dr. ${doctorName} is in ${timeUntil}. - Followup AI`,
-  });
+  const message = `Reminder: Your appointment with Dr. ${doctorName} is in ${timeUntil}. - Followup AI`;
+  console.log(`[SMS] Appointment reminder to ${to}: ${message}`);
+  return false;
 }
 
 export async function sendEmergencyAlert(to: string, alertMessage: string): Promise<boolean> {
-  return sendSMS({
-    to,
-    message: `⚠️ HEALTH ALERT: ${alertMessage} Please contact your healthcare provider immediately. - Followup AI`,
-  });
+  const message = `HEALTH ALERT: ${alertMessage} Please contact your healthcare provider immediately. - Followup AI`;
+  console.log(`[SMS] Emergency alert to ${to}: ${message}`);
+  console.warn("[SMS] Critical: Emergency alerts require immediate SMS delivery via Twilio.");
+  return false;
 }
 
 export async function sendWelcomeSMS(to: string, firstName: string): Promise<boolean> {
-  return sendSMS({
-    to,
-    message: `Welcome to Followup AI, ${firstName}! We're here to support your health journey. Your caring AI companion Agent Clona is ready to help.`,
-  });
+  const message = `Welcome to Followup AI, ${firstName}! We're here to support your health journey.`;
+  console.log(`[SMS] Welcome SMS to ${to}: ${message}`);
+  return false;
 }
 
 export async function sendEmail({ to, subject, htmlBody, textBody }: SendEmailOptions): Promise<boolean> {
-  if (!isStytchConfigured()) {
-    console.warn("[STYTCH] Email not configured - falling back to log only");
+  const resendClient = await getResendClient();
+  
+  if (!resendClient) {
+    console.warn("[EMAIL] Resend not configured - falling back to log only");
     const recipients = Array.isArray(to) ? to.join(", ") : to;
     console.log(`[EMAIL] Would send to ${recipients}: ${subject}`);
     return false;
   }
 
   try {
-    const client = getStytchClient();
     const recipients = Array.isArray(to) ? to : [to];
 
-    for (const recipient of recipients) {
-      await client.magicLinks.email.send({
-        email: recipient,
-        login_magic_link_url: process.env.APP_URL || "https://followupai.io",
-        signup_magic_link_url: process.env.APP_URL || "https://followupai.io",
-      });
+    const result = await resendClient.client.emails.send({
+      from: resendClient.fromEmail,
+      to: recipients,
+      subject,
+      html: htmlBody,
+      text: textBody,
+    });
+
+    if (result.error) {
+      console.error("[RESEND] Email send error:", result.error.message);
+      return false;
     }
 
-    console.log(`[STYTCH] Email sent to ${recipients.join(", ")}: ${subject}`);
+    console.log(`[RESEND] Email sent to ${recipients.join(", ")}: ${subject}, id: ${result.data?.id}`);
     return true;
   } catch (error: any) {
-    console.error("[STYTCH] Email send error:", error.message);
+    console.error("[RESEND] Email send error:", error.message);
     return false;
   }
 }
