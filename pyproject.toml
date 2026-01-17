@@ -48,6 +48,8 @@ dependencies = [
     "numpy>=1.26.4",
     "pandas>=2.3.3",
     "asyncpg>=0.31.0",
+    "google-cloud-storage>=3.8.0",
+    "google-cloud-kms>=3.9.0",
 ]
 
 [[tool.uv.index]]
