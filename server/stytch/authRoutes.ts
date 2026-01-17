@@ -117,14 +117,15 @@ router.post("/sms-otp/send", async (req: Request, res: Response) => {
     return res.status(503).json({ error: "Authentication service not configured" });
   }
 
-  const { phone, role = "patient" } = req.body;
+  const { phone, phone_number, role = "patient" } = req.body;
+  const phoneValue = phone || phone_number;
 
-  if (!phone || typeof phone !== "string") {
+  if (!phoneValue || typeof phoneValue !== "string") {
     return res.status(400).json({ error: "Phone number is required" });
   }
 
   const phoneRegex = /^\+[1-9]\d{1,14}$/;
-  if (!phoneRegex.test(phone)) {
+  if (!phoneRegex.test(phoneValue)) {
     return res.status(400).json({ error: "Invalid phone format. Use E.164 format (e.g., +14155551234)" });
   }
 
@@ -136,7 +137,7 @@ router.post("/sms-otp/send", async (req: Request, res: Response) => {
     const client = getStytchClient();
     
     const response = await client.otps.sms.loginOrCreate({
-      phone_number: phone,
+      phone_number: phoneValue,
       expiration_minutes: 10,
       create_user_as_pending: false,
     });
@@ -230,6 +231,42 @@ router.post("/session/refresh", requireAuth, async (req: Request, res: Response)
       role: req.stytchUser?.role,
     },
   });
+});
+
+router.get("/session", async (req: Request, res: Response) => {
+  const sessionToken = req.cookies?.[SESSION_COOKIE_NAME];
+  
+  if (!sessionToken) {
+    return res.status(401).json({ authenticated: false, error: "No session token" });
+  }
+  
+  if (!isStytchConfigured()) {
+    return res.status(503).json({ authenticated: false, error: "Authentication service not configured" });
+  }
+  
+  try {
+    const client = getStytchClient();
+    const authResponse = await client.sessions.authenticate({
+      session_token: sessionToken,
+      session_duration_minutes: SESSION_DURATION_MINUTES,
+    });
+    
+    const userEmail = authResponse.user.emails?.[0]?.email || "";
+    const trustedMetadata = authResponse.user.trusted_metadata as Record<string, any> || {};
+    const role = trustedMetadata.role || "patient";
+    
+    res.json({
+      authenticated: true,
+      user: {
+        id: authResponse.session.user_id,
+        email: userEmail,
+        role: role,
+      },
+    });
+  } catch (error: any) {
+    res.clearCookie(SESSION_COOKIE_NAME);
+    return res.status(401).json({ authenticated: false, error: "Invalid or expired session" });
+  }
 });
 
 router.get("/session/me", requireAuth, async (req: Request, res: Response) => {
