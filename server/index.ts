@@ -1,8 +1,10 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { spawn, ChildProcess } from "child_process";
+import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedDatabase } from "./seed";
+import { isStytchConfigured } from "./stytch";
 
 // Python backend configuration
 const PYTHON_PORT = 8000;
@@ -97,8 +99,16 @@ async function initializePythonBackend(): Promise<void> {
 const app = express();
 // Trust the first proxy so secure cookies are set correctly when running behind a load balancer
 app.set("trust proxy", 1);
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Log Stytch configuration status
+if (isStytchConfigured()) {
+  log("[STYTCH] Authentication service configured and ready");
+} else {
+  log("[STYTCH] Warning: STYTCH_PROJECT_ID or STYTCH_SECRET not set - auth features disabled");
+}
 
 app.use((req, res, next) => {
   const start = Date.now();

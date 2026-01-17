@@ -3,6 +3,14 @@ import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { isAuthenticated, isDoctor, isPatient, isAdmin, getSession, isAuthenticatedOrDevBypass } from "./auth";
+import { 
+  stytchAuthRoutes,
+  requireAuth as stytchRequireAuth,
+  requireDoctor as stytchRequireDoctor,
+  requirePatient as stytchRequirePatient,
+  optionalAuth as stytchOptionalAuth,
+  devBypassAuth as stytchDevBypass,
+} from "./stytch";
 import { db } from "./db";
 import { eq, and, desc, gte, sql as drizzleSql, isNull } from "drizzle-orm";
 import * as schema from "@shared/schema";
@@ -1008,8 +1016,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   initDoctorIntegrationService(storage);
   
   // ============== SESSION CONFIGURATION ==============
-  // Configure session middleware for cookie-based authentication
+  // Configure session middleware for cookie-based authentication (legacy - keeping for backward compatibility)
   app.use(getSession());
+  
+  // ============== STYTCH AUTHENTICATION ROUTES ==============
+  // Register Stytch auth routes for Magic Link, SMS OTP, and session management
+  app.use("/api/auth", stytchAuthRoutes);
+  console.log('[AUTH] Stytch authentication routes registered at /api/auth/*');
 
   // ============== DEV-ONLY: AUTHENTICATION BYPASS ==============
   // ⚠️ SECURITY WARNING: This bypass is ONLY for development testing!
