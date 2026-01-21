@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 class RedFlagCategory(str, Enum):
-    """Categories of medical red flags"""
+    """Categories of medical red flags - 13 emergency categories"""
     CARDIOVASCULAR = "cardiovascular"
     RESPIRATORY = "respiratory"
     NEUROLOGICAL = "neurological"
@@ -43,6 +43,7 @@ class RedFlagCategory(str, Enum):
     MENTAL_HEALTH = "mental_health"
     GASTROINTESTINAL = "gastrointestinal"
     RENAL = "renal"
+    TOXICOLOGICAL = "toxicological"
     OTHER = "other"
 
 
@@ -391,6 +392,71 @@ class RedFlagDetectionService:
                 "Turn on side after shaking stops"
             ],
             emergency_instructions="Call 911 if this is a first seizure, seizure lasts over 5 minutes, or person doesn't regain consciousness."
+        ),
+        RedFlagSymptom(
+            name="Drug Overdose",
+            category=RedFlagCategory.TOXICOLOGICAL,
+            severity=RedFlagSeverity.CRITICAL,
+            keywords=["overdose", "took too many pills", "poisoning", "overdosed", "drug overdose",
+                     "took too much", "accidental overdose", "intentional overdose"],
+            patterns=[
+                r"\b(overdose[d]?|od'?d|od'?ing)\b",
+                r"\b(took|taken)\s*(too\s*many|too\s*much)\s*(pills?|medication|medicine|drugs?)\b",
+                r"\b(poison(ed|ing)?|toxic\s*exposure)\b",
+                r"\b(accidental|intentional)\s*(overdose|poisoning)\b"
+            ],
+            escalation_type=EscalationType.EMERGENCY_911,
+            description="Drug overdose is a life-threatening emergency requiring immediate medical intervention",
+            recommended_actions=[
+                "Call 911 immediately",
+                "Do not induce vomiting unless directed by poison control",
+                "Keep the person awake if possible",
+                "Identify the substance if known"
+            ],
+            emergency_instructions="Call 911 and Poison Control (1-800-222-1222) immediately. If person is unconscious or not breathing, start CPR."
+        ),
+        RedFlagSymptom(
+            name="Chemical Poisoning",
+            category=RedFlagCategory.TOXICOLOGICAL,
+            severity=RedFlagSeverity.CRITICAL,
+            keywords=["poisoning", "toxic exposure", "chemical exposure", "inhaled fumes",
+                     "swallowed chemicals", "drank bleach", "drank poison"],
+            patterns=[
+                r"\b(swallowed|drank|inhaled|exposed\s*to)\s*(chemical|bleach|poison|cleaner|solvent)\b",
+                r"\b(chemical|toxic)\s*(exposure|burn|poisoning)\b",
+                r"\b(carbon\s*monoxide|gas\s*leak|fume\s*exposure)\b"
+            ],
+            escalation_type=EscalationType.EMERGENCY_911,
+            description="Chemical or toxic exposure can cause severe organ damage or death",
+            recommended_actions=[
+                "Call 911 and Poison Control immediately",
+                "Move to fresh air if inhaled",
+                "Remove contaminated clothing if skin exposure",
+                "Do not induce vomiting"
+            ],
+            emergency_instructions="Call Poison Control at 1-800-222-1222 immediately. Move to fresh air if gas/fume exposure."
+        ),
+        RedFlagSymptom(
+            name="Alcohol Poisoning",
+            category=RedFlagCategory.TOXICOLOGICAL,
+            severity=RedFlagSeverity.HIGH,
+            keywords=["alcohol poisoning", "drank too much", "extremely intoxicated", "passing out from drinking",
+                     "can't wake up after drinking", "vomiting after drinking"],
+            patterns=[
+                r"\b(alcohol)\s*(poisoning|overdose)\b",
+                r"\b(binge\s*drink|drank\s*a\s*lot|drank\s*too\s*much)\b",
+                r"\b(pass(ed|ing)\s*out|unconscious)\s*(from|after)\s*drinking\b",
+                r"\b(can'?t|cannot)\s*(wake|rouse)\s*(him|her|them|up)\s*(after\s*drinking)?\b"
+            ],
+            escalation_type=EscalationType.IMMEDIATE_DOCTOR,
+            description="Alcohol poisoning can cause respiratory depression and death",
+            recommended_actions=[
+                "Call 911 if person is unconscious or breathing is slow/irregular",
+                "Keep person on their side to prevent choking on vomit",
+                "Do not leave person alone",
+                "Do not give coffee or try to walk them around"
+            ],
+            emergency_instructions="Call 911 if person is unconscious, has slow or irregular breathing, or you cannot wake them up."
         ),
     ]
     
