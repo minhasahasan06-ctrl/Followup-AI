@@ -55,4 +55,41 @@ The platform is HIPAA-compliant, utilizing Stytch for passwordless authenticatio
 - **Caching**: Redis
 - **Communication**: Stytch (SMS, Email) - replaces Twilio/SES
 - **Video Conferencing**: Daily.co
-- **Cloud Services**: AWS S3, AWS Textract
+- **Cloud Services**: Google Cloud Platform (GCS, Document AI, Healthcare NLP API)
+
+## Google Cloud Platform Architecture
+
+### GCP Services Integration
+The platform has migrated from AWS to Google Cloud Platform for HIPAA-compliant cloud services:
+
+- **Google Cloud Storage (GCS)**: Replaces AWS S3 for all file storage (audio, images, research exports, medical documents) with signed URLs and local filesystem fallback for development
+- **Document AI Healthcare Parser**: Replaces AWS Textract for OCR processing of medical documents with specialized healthcare document parsing
+- **Healthcare NLP API**: Replaces AWS Comprehend Medical for medical entity extraction (ICD-10, RxNorm, SNOMED CT codes, PHI detection)
+- **Cloud KMS**: Customer-managed encryption keys for PHI data at rest
+- **Healthcare API (FHIR)**: Clinical data store for structured health records
+
+### GCP Configuration Files
+**TypeScript (Express backend)**:
+- `server/config/gcpConstants.ts` - Centralized GCP project IDs, regions, bucket names, KMS keys
+- `server/gcpConfig.ts` - Google Cloud client initialization (Storage, KMS, Healthcare API, Document AI)
+- `server/services/gcpStorageService.ts` - GCS with signed URLs, KMS encryption, Zod validation
+- `server/services/gcpHealthcareNLP.ts` - Healthcare NLP API for medical entity extraction
+- `server/services/gcpDocumentAI.ts` - Document AI for OCR and healthcare document parsing
+- `server/services/gcpFhirService.ts` - Healthcare API FHIR store operations
+- `server/services/gcpKmsService.ts` - Cloud KMS encryption/decryption
+
+**Python (FastAPI backend)**:
+- `app/gcp_config.py` - Python Google Cloud client initialization with local fallback
+- `app/services/gcs_service.py` - Async GCS storage service with local filesystem fallback
+- `app/services/gcp_healthcare_service.py` - Healthcare NLP and FHIR services
+
+### Environment Variables for GCP
+- `GOOGLE_APPLICATION_CREDENTIALS` - Path to GCP service account JSON (optional, falls back to local storage)
+- `GCP_PROJECT_ID` - Google Cloud project ID
+- `GCS_BUCKET_NAME` - Cloud Storage bucket for PHI data
+- `GCP_LOCATION` - Region for Healthcare API services (default: us-central1)
+- `GCP_KMS_KEY_RING` - KMS key ring name
+- `GCP_KMS_KEY_NAME` - KMS key name for encryption
+
+### Development Mode
+When GCP credentials are not configured, the system automatically falls back to local filesystem storage in `./local_storage/` for development purposes. All GCS operations gracefully degrade without errors
