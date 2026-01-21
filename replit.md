@@ -39,8 +39,13 @@ The backend consists of a Node.js Express server (Port 5000) handling chat, appo
 - **HIPAA Compliance & Access Control**: Unified Access Control Service, `HIPAAAuditLogger`, and route-level access control with `AccessScope` and `PHICategory` enums.
 - **Authentication Flow**: Stytch-based passwordless authentication with Magic Links and SMS OTP, session-based cookies for Express, and M2M Client Credentials for inter-service communication.
 - **Conversational AI Voice System**: Production-grade voice conversation pipeline with real-time ASR (OpenAI Whisper) and TTS, session management, and intelligent interruption handling.
-- **Medical Emergency Detection System**: Real-time universal red flag detection service integrated with chat, using pattern-based, keyword, and AI-powered analysis, with an automated escalation flow to doctors.
+- **Medical Emergency Detection System**: Real-time universal red flag detection service integrated with chat, using pattern-based, keyword, and AI-powered analysis, with an automated escalation flow to doctors (13 RedFlagCategories including TOXICOLOGICAL).
 - **Feature Flag System**: Production-grade feature flag management for controlled rollouts and A/B testing, configurable via JSON and environment variables, with user and role-based overrides.
+- **Voice Session Orchestration**: WebSocket-based voice streaming at 16kHz sample rate with MediaStream API, useVoiceSession hook for frontend integration, and VoiceCallControls UI component.
+- **Daily.co Video Console**: Telemedicine video consultations with useDailyCall hook and VideoConsole component (mute, camera toggle, screen share, quality indicators, duration tracking).
+- **Communication Preferences System**: User-configurable communication method preferences (voice, video, chat) with availability scheduling, Do Not Disturb mode, and emergency override.
+- **Action Cards System**: Voice-triggered task cards with medication reminders, symptom checks, quick confirmations, and emergency escalation cards with voice response matching.
+- **Voice Consent Service**: HIPAA-compliant consent management with version tracking, expiration, revocation, and audit logging for voice/video recording.
 
 ### Security and Compliance
 The platform ensures HIPAA compliance through Stytch for passwordless authentication, HttpOnly session cookies, M2M tokens, comprehensive audit logging, end-to-end encryption, strict PHI handling, explicit doctor-patient assignment authorization, and Google Authenticator TOTP for Admin ML Training Hub.
