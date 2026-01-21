@@ -30,33 +30,38 @@ function loadCredentialsFromFile(): object | null {
   return null;
 }
 
+let initAttempted = false;
+
 function initializeGCS(): void {
   if (storage) return;
+  if (initAttempted) return;
+  initAttempted = true;
 
-  const credentials = process.env.GCS_SERVICE_ACCOUNT_KEY;
+  let credentials = process.env.GCS_SERVICE_ACCOUNT_KEY;
   let parsedCredentials: object | null = null;
   
   if (credentials) {
     try {
-      // Handle various formats the secret might be in
       let credentialsToUse = credentials.trim();
       
-      // If it starts with a quote, it might be double-encoded
       if (credentialsToUse.startsWith('"') || credentialsToUse.startsWith("'")) {
         credentialsToUse = credentialsToUse.slice(1, -1);
       }
       
-      // Replace escaped newlines with actual newlines in private_key
       credentialsToUse = credentialsToUse.replace(/\\\\n/g, '\\n');
       
+      const lastBraceIndex = credentialsToUse.lastIndexOf('}');
+      if (lastBraceIndex !== -1 && lastBraceIndex < credentialsToUse.length - 1) {
+        credentialsToUse = credentialsToUse.substring(0, lastBraceIndex + 1);
+      }
+      
       parsedCredentials = JSON.parse(credentialsToUse);
-      console.log("✅ GCS credentials loaded from environment variable");
+      console.log(`[GCS] Credentials loaded for project: ${(parsedCredentials as any).project_id}`);
     } catch (error) {
-      console.warn("Could not parse GCS credentials from env var, trying file fallback...");
+      console.warn("[GCS] Could not parse credentials from env var, trying file fallback...");
       parsedCredentials = loadCredentialsFromFile();
     }
   } else {
-    // Try file fallback
     parsedCredentials = loadCredentialsFromFile();
   }
   
@@ -65,8 +70,9 @@ function initializeGCS(): void {
       projectId: GCS_PROJECT_ID || (parsedCredentials as any).project_id,
       credentials: parsedCredentials,
     });
+    console.log("[GCS] Storage client initialized successfully");
   } else {
-    console.warn("GCS credentials not available - GCS operations may fail");
+    console.warn("[GCS] Credentials not available - storage operations may fail");
     storage = new Storage({
       projectId: GCS_PROJECT_ID,
     });
@@ -76,8 +82,6 @@ function initializeGCS(): void {
     bucket = storage.bucket(GCS_BUCKET_NAME);
   }
 }
-
-initializeGCS();
 
 export function getStorage(): Storage {
   if (!storage) {

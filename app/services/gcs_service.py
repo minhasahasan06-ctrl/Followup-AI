@@ -340,7 +340,28 @@ class GCSService:
         return self.use_gcs
 
 
-gcs_service = GCSService()
+_gcs_service_instance = None
+
+
+def get_gcs_service() -> GCSService:
+    """Get the GCS service singleton with lazy initialization."""
+    global _gcs_service_instance
+    if _gcs_service_instance is None:
+        _gcs_service_instance = GCSService()
+    return _gcs_service_instance
+
+
+class _LazyGCSService:
+    """Lazy proxy for GCS service to support both attribute and call access."""
+    
+    def __getattr__(self, name):
+        return getattr(get_gcs_service(), name)
+    
+    def __call__(self):
+        return get_gcs_service()
+
+
+gcs_service = _LazyGCSService()
 
 
 async def upload_symptom_image(
@@ -366,7 +387,7 @@ async def upload_symptom_image(
         "upload-timestamp": timestamp,
     }
     
-    result = await gcs_service.upload_file(
+    result = await get_gcs_service().upload_file(
         file_data,
         key,
         content_type,
@@ -391,7 +412,7 @@ async def upload_file_to_storage(
     Generic file upload for exam coach and other features.
     Replaces S3 upload_file_to_s3 function.
     """
-    result = await gcs_service.upload_file(
+    result = await get_gcs_service().upload_file(
         file_data,
         filename,
         content_type,
@@ -416,10 +437,10 @@ def generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> Opt
         if loop.is_running():
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, gcs_service.generate_signed_url(key, "read", expiration))
+                future = pool.submit(asyncio.run, get_gcs_service().generate_signed_url(key, "read", expiration))
                 return future.result()
         else:
-            return asyncio.run(gcs_service.generate_signed_url(key, "read", expiration))
+            return asyncio.run(get_gcs_service().generate_signed_url(key, "read", expiration))
     except Exception as e:
         logger.error(f"[GCS] Error generating presigned URL: {e}")
         return None
