@@ -91,5 +91,31 @@ The platform has migrated from AWS to Google Cloud Platform for HIPAA-compliant 
 - `GCP_KMS_KEY_RING` - KMS key ring name
 - `GCP_KMS_KEY_NAME` - KMS key name for encryption
 
+### GCP Fallback Services with OpenAI
+The platform includes intelligent fallback services that gracefully degrade to OpenAI GPT-4o when GCP services are unavailable:
+
+**Healthcare NLP Fallback Service** (`app/services/healthcare_nlp_fallback.py`):
+- Extracts medical entities (medications, diagnoses, procedures) with clinical precision
+- Returns GCP Healthcare API-compatible JSON format
+- Provides ICD-10, RxNorm, and SNOMED CT code extraction
+- PHI detection and entity categorization
+- API: `/api/gcp-fallback/healthcare-nlp/*`
+
+**Document AI Fallback Service** (`app/services/document_ai_fallback.py`):
+- OCR text extraction from medical documents
+- Key-value extraction for structured data
+- Healthcare document parsing
+- API: `/api/gcp-fallback/document-ai/*`
+
+**Configuration** (`app/config/gcp_constants.py`):
+- `is_openai_fallback_available()` - Check OpenAI availability
+- `get_healthcare_nlp_status()` - Healthcare NLP service status
+- `get_document_ai_status()` - Document AI service status
+
+**Fallback Priority**:
+1. Attempt GCP API if credentials configured
+2. Fall back to OpenAI GPT-4o (BAA-protected) if GCP unavailable
+3. All prompts maintain HIPAA-compliant clinical formatting
+
 ### Development Mode
-When GCP credentials are not configured, the system automatically falls back to local filesystem storage in `./local_storage/` for development purposes. All GCS operations gracefully degrade without errors
+When GCP credentials are not configured, the system automatically falls back to local filesystem storage in `./local_storage/` for development purposes. All GCS operations gracefully degrade without errors. The Healthcare NLP and Document AI services use OpenAI GPT-4o as their primary source when GCP is not configured.
