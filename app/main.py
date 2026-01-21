@@ -221,6 +221,12 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import cbt_router: {e}")
 
+try:
+    from app.routers import gcp_fallback
+    _optional_routers.append(('gcp_fallback', gcp_fallback))
+except ImportError as e:
+    logger.warning(f"❌ Could not import gcp_fallback router: {e}")
+
 # Import lysa_drafts models for table creation
 try:
     from app.models import lysa_drafts
@@ -578,6 +584,9 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'doctor_profile':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Doctor Profile)")
+        elif router_name == 'gcp_fallback':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (GCP Fallback Services)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

@@ -90,6 +90,32 @@ def is_document_ai_configured() -> bool:
     return bool(GCP_CONFIG.PROJECT_ID and GCP_CONFIG.DOCUMENT_AI.PROCESSOR_ID)
 
 
+def is_openai_fallback_available() -> bool:
+    """Check if OpenAI fallback is available for GCP services."""
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AI_INTEGRATIONS_OPENAI_API_KEY")
+    return bool(api_key)
+
+
+def get_healthcare_nlp_status() -> dict:
+    """Get Healthcare NLP service status including fallback availability."""
+    return {
+        "gcp_configured": is_healthcare_configured(),
+        "openai_fallback_available": is_openai_fallback_available(),
+        "primary_source": "gcp" if is_healthcare_configured() else "openai",
+    }
+
+
+def get_document_ai_status() -> dict:
+    """Get Document AI service status including fallback availability."""
+    return {
+        "gcp_configured": is_document_ai_configured(),
+        "openai_fallback_available": is_openai_fallback_available(),
+        "primary_source": "gcp" if is_document_ai_configured() else "openai",
+        "processor_id": GCP_CONFIG.DOCUMENT_AI.PROCESSOR_ID or None,
+        "healthcare_processor_id": GCP_CONFIG.DOCUMENT_AI.HEALTHCARE_PROCESSOR_ID or None,
+    }
+
+
 def get_kms_key_path() -> str:
     """Get the full Cloud KMS key path."""
     return (
