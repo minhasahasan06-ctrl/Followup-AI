@@ -28,6 +28,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ApprovalDialog, ApprovalBadge } from "@/components/ApprovalDialog";
 import { ToolResultDisplay } from "@/components/ToolResultDisplay";
+import { VoiceCallControls } from "@/components/VoiceCallControls";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useVoiceSession } from "@/hooks/useVoiceSession";
 import { 
   Send, 
   Bot, 
@@ -154,6 +157,15 @@ export default function AgentHub() {
   const [toolCallStatuses, setToolCallStatuses] = useState<ToolCallStatus[]>([]);
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [selectedApproval, setSelectedApproval] = useState<ToolCallApproval | null>(null);
+
+  const { isEnabled } = useFeatureFlags();
+  const voiceSession = useVoiceSession();
+  const showVoiceButtons = isEnabled("showClonaCallIcons") && isEnabled("enableVoice");
+
+  const handleStartVoiceCall = useCallback(() => {
+    const agentType = isDoctor ? "lysa" : "clona";
+    voiceSession.startSession(agentType);
+  }, [isDoctor, voiceSession]);
 
   const agentName = isDoctor ? "Assistant Lysa" : "Agent Clona";
   const agentDescription = isDoctor 
@@ -1040,12 +1052,28 @@ export default function AgentHub() {
                 <Shield className="h-3 w-3" />
                 HIPAA Compliant
               </Badge>
-              <Button variant="ghost" size="icon" data-testid="button-voice-call">
-                <Phone className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" data-testid="button-video-call">
-                <Video className="h-4 w-4" />
-              </Button>
+              {showVoiceButtons && (
+                <>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={handleStartVoiceCall}
+                    disabled={voiceSession.sessionState !== "idle"}
+                    data-testid="button-voice-call"
+                  >
+                    <Phone className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    disabled
+                    title="Video calls coming soon"
+                    data-testid="button-video-call"
+                  >
+                    <Video className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
               <Button variant="ghost" size="icon" data-testid="button-chat-settings">
                 <MoreVertical className="h-4 w-4" />
               </Button>
@@ -1485,6 +1513,16 @@ export default function AgentHub() {
         </CardContent>
       </Card>
     </div>
+
+    <VoiceCallControls
+      sessionState={voiceSession.sessionState}
+      isMuted={voiceSession.isMuted}
+      agentName={agentName}
+      error={voiceSession.error}
+      onToggleMute={voiceSession.toggleMute}
+      onEndCall={voiceSession.endSession}
+      onInterrupt={voiceSession.interrupt}
+    />
     </>
   );
 }
