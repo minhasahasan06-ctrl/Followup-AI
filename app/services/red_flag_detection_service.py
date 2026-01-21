@@ -721,3 +721,14 @@ Analyze the clinical significance and confirm severity assessment."""
 def get_red_flag_service(db: Optional[Session] = None) -> RedFlagDetectionService:
     """Factory function to get red flag detection service instance"""
     return RedFlagDetectionService(db=db)
+
+
+_detection_service_instance: Optional[RedFlagDetectionService] = None
+
+
+def get_red_flag_detection_service() -> RedFlagDetectionService:
+    """Get singleton instance of the red flag detection service for real-time chat integration"""
+    global _detection_service_instance
+    if _detection_service_instance is None:
+        _detection_service_instance = RedFlagDetectionService()
+    return _detection_service_instance

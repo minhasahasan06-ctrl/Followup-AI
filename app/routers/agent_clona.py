@@ -30,11 +30,24 @@ class ChatRequest(BaseModel):
     conversation_history: List[Message] = []
 
 
+class RedFlagInfo(BaseModel):
+    detected: bool
+    severity: Optional[str] = None
+    categories: List[str] = []
+    symptoms: List[dict] = []
+    escalation_type: Optional[str] = None
+    emergency_instructions: Optional[str] = None
+    confidence: Optional[float] = None
+
+
 class SymptomAnalysisResponse(BaseModel):
     ai_response: str
     structured_recommendations: Optional[dict] = None
     suggested_doctors: List[dict] = []
     timestamp: str
+    red_flag_detection: Optional[RedFlagInfo] = None
+    escalation_triggered: bool = False
+    escalation_id: Optional[str] = None
 
 
 class DiagnosticQuestionsRequest(BaseModel):
@@ -77,6 +90,41 @@ def extract_symptoms_background(
         db.close()
 
 
+async def trigger_escalation_background(
+    patient_id: str,
+    red_flag_detection: dict,
+    conversation_context: str
+):
+    """
+    Background task to trigger escalation flow when red flags are detected.
+    """
+    try:
+        from app.services.escalation_flow_service import get_escalation_flow_service
+        from app.services.red_flag_detection_service import RedFlagDetectionResult, RedFlagSeverity, EscalationType
+        
+        escalation_service = get_escalation_flow_service()
+        
+        detection_result = RedFlagDetectionResult(
+            has_red_flags=True,
+            symptoms=red_flag_detection.get("symptoms", []),
+            categories=red_flag_detection.get("categories", []),
+            highest_severity=RedFlagSeverity(red_flag_detection.get("severity", "moderate")),
+            confidence_score=red_flag_detection.get("confidence", 0.8),
+            escalation_type=EscalationType(red_flag_detection.get("escalation_type", "doctor_alert")),
+            emergency_instructions=red_flag_detection.get("emergency_instructions"),
+            detected_at=None
+        )
+        
+        await escalation_service.initiate_escalation(
+            patient_id=patient_id,
+            red_flag_detection=detection_result,
+            conversation_context=conversation_context
+        )
+        
+    except Exception as e:
+        print(f"[ESCALATION] Background escalation error: {e}")
+
+
 @router.post("/chat", response_model=SymptomAnalysisResponse)
 async def chat_with_clona(
     request: ChatRequest,
@@ -92,6 +140,11 @@ async def chat_with_clona(
     - Analyzes patient messages for symptom mentions
     - Automatically creates SymptomLog entries in background
     - Integrates with Medication Side-Effect Predictor
+    
+    RED FLAG DETECTION:
+    - Real-time detection of 13 emergency symptom categories
+    - Automatic escalation to Lysa and assigned doctor when detected
+    - Multi-channel alerts (dashboard, SMS, email) for critical symptoms
     """
     try:
         conversation = [
@@ -106,8 +159,6 @@ async def chat_with_clona(
             conversation_history=conversation
         )
         
-        # Background task: Extract and save symptoms from this conversation
-        # FIX: No DB session passed - background task creates its own
         background_tasks.add_task(
             extract_symptoms_background,
             patient_id=current_user.id,
@@ -115,7 +166,32 @@ async def chat_with_clona(
             ai_response=analysis["ai_response"]
         )
         
-        return analysis
+        escalation_id = None
+        if analysis.get("escalation_triggered") and analysis.get("red_flag_detection"):
+            full_context = request.message
+            for msg in request.conversation_history:
+                if msg.role == "user":
+                    full_context = f"{msg.content}\n{full_context}"
+            
+            background_tasks.add_task(
+                trigger_escalation_background,
+                patient_id=str(current_user.id),
+                red_flag_detection=analysis["red_flag_detection"],
+                conversation_context=full_context
+            )
+            
+            import uuid
+            escalation_id = str(uuid.uuid4())
+        
+        return {
+            "ai_response": analysis["ai_response"],
+            "structured_recommendations": analysis.get("structured_recommendations"),
+            "suggested_doctors": analysis.get("suggested_doctors", []),
+            "timestamp": analysis["timestamp"],
+            "red_flag_detection": analysis.get("red_flag_detection"),
+            "escalation_triggered": analysis.get("escalation_triggered", False),
+            "escalation_id": escalation_id
+        }
         
     except Exception as e:
         raise HTTPException(
