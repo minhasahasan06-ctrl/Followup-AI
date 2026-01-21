@@ -33,6 +33,7 @@ import API from "@/pages/API";
 import Blog from "@/pages/Blog";
 import Dashboard from "@/pages/Dashboard";
 import AgentHub from "@/pages/AgentHub";
+import DemoFlow from "@/pages/DemoFlow";
 import Wellness from "@/pages/Wellness";
 import Files from "@/pages/Files";
 import Profile from "@/pages/Profile";
@@ -121,6 +122,7 @@ function PatientRouter() {
       <Route path="/nutrition-insights" component={NutritionInsights} />
       <Route path="/health-companion" component={HealthCompanion} />
       <Route path="/voice-followups" component={VoiceFollowups} />
+      <Route path="/demo-flow" component={DemoFlow} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/security/2fa" component={TwoFactorAuth} />

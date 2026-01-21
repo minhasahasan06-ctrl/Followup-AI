@@ -524,6 +524,30 @@ try:
 except Exception as e:
     logger.warning(f"❌ ML Training Infrastructure unavailable: {e}")
 
+# Communication Preferences API - PRODUCTION READY
+try:
+    from app.routers import communication_preferences_router
+    app.include_router(communication_preferences_router.router)
+    logger.info("✅ Communication Preferences router registered")
+except Exception as e:
+    logger.warning(f"❌ Communication Preferences unavailable: {e}")
+
+# Action Cards API (Voice-triggered tasks) - PRODUCTION READY
+try:
+    from app.routers import action_cards_router
+    app.include_router(action_cards_router.router)
+    logger.info("✅ Action Cards router registered")
+except Exception as e:
+    logger.warning(f"❌ Action Cards unavailable: {e}")
+
+# Voice Consent API (HIPAA-compliant consent management) - PRODUCTION READY
+try:
+    from app.routers import consent_router
+    app.include_router(consent_router.router)
+    logger.info("✅ Voice Consent router registered")
+except Exception as e:
+    logger.warning(f"❌ Voice Consent unavailable: {e}")
+
 # Optional routers (fail gracefully if imports broken)
 for router_name, router_module in _optional_routers:
     try:
