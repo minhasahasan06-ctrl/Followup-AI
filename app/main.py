@@ -227,6 +227,24 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import gcp_fallback router: {e}")
 
+try:
+    from app.routers import escalation
+    _optional_routers.append(('escalation', escalation))
+except ImportError as e:
+    logger.warning(f"❌ Could not import escalation router: {e}")
+
+try:
+    from app.routers import voice_session
+    _optional_routers.append(('voice_session', voice_session))
+except ImportError as e:
+    logger.warning(f"❌ Could not import voice_session router: {e}")
+
+try:
+    from app.routers import feature_flags
+    _optional_routers.append(('feature_flags', feature_flags))
+except ImportError as e:
+    logger.warning(f"❌ Could not import feature_flags router: {e}")
+
 # Import lysa_drafts models for table creation
 try:
     from app.models import lysa_drafts
@@ -587,6 +605,15 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'gcp_fallback':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (GCP Fallback Services)")
+        elif router_name == 'escalation':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Red Flag Detection & Escalation)")
+        elif router_name == 'voice_session':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Voice Session Orchestration)")
+        elif router_name == 'feature_flags':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Feature Flag Management)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 
