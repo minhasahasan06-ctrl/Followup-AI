@@ -1,9 +1,15 @@
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import twilio from 'twilio';
 import type { Storage } from './storage';
 import { addDays, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
+import { Resend } from 'resend';
 
-const sesClient = new SESClient({ region: process.env.AWS_REGION || 'us-east-1' });
+function getResendClient(): Resend | null {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Email] Resend API key not configured - email reminders disabled');
+    return null;
+  }
+  return new Resend(process.env.RESEND_API_KEY);
+}
 
 interface ReminderConfig {
   enableSMS: boolean;
@@ -207,27 +213,19 @@ class AppointmentReminderService {
       </html>
     `;
 
-    const command = new SendEmailCommand({
-      Source: process.env.SES_FROM_EMAIL || 'noreply@followupai.com',
-      Destination: {
-        ToAddresses: [patient.email],
-      },
-      Message: {
-        Subject: {
-          Data: `Appointment Reminder - ${formattedDate}`,
-        },
-        Body: {
-          Html: {
-            Data: emailHtml,
-          },
-          Text: {
-            Data: `Reminder: You have an appointment with Dr. ${doctor.firstName} ${doctor.lastName} on ${formattedDate} at ${formattedTime}. Location: ${appointment.location || 'TBD'}`,
-          },
-        },
-      },
+    const resendClient = getResendClient();
+    if (!resendClient) {
+      console.warn('[Email] Skipping email reminder - Resend not configured');
+      return;
+    }
+    
+    await resendClient.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || 'noreply@followupai.com',
+      to: patient.email,
+      subject: `Appointment Reminder - ${formattedDate}`,
+      html: emailHtml,
+      text: `Reminder: You have an appointment with Dr. ${doctor.firstName} ${doctor.lastName} on ${formattedDate} at ${formattedTime}. Location: ${appointment.location || 'TBD'}`,
     });
-
-    await sesClient.send(command);
   }
 
   async sendImmediateReminder(appointmentId: string): Promise<{

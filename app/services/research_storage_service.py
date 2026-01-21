@@ -15,7 +15,7 @@ import asyncio
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
-from app.services.s3_service import s3_service
+from app.services.gcs_service import gcs_service
 from app.services.access_control import HIPAAAuditLogger
 from app.models.research_models import (
     AnalysisArtifact, 
@@ -41,7 +41,7 @@ class ResearchStorageService:
     
     def __init__(self, db: Session):
         self.db = db
-        self.s3 = s3_service
+        self.s3 = gcs_service
     
     def _compute_checksum(self, data: bytes) -> str:
         """Compute SHA-256 checksum for data integrity"""

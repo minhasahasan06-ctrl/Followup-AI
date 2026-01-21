@@ -189,14 +189,20 @@ class ResearchExportService:
             
             content_type = self._get_content_type(str(export_record.format))
             
-            from app.services.s3_service import s3_service
-            storage_uri = s3_service.upload_file(
-                file_data=file_data,
-                s3_key=s3_key,
-                content_type=content_type,
+            from app.services.gcs_service import gcs_service
+            import asyncio
+            result = asyncio.get_event_loop().run_until_complete(
+                gcs_service.upload_file(
+                    file_data=file_data,
+                    key=s3_key,
+                    content_type=content_type,
+                )
             )
+            storage_uri = result["uri"]
             
-            signed_url = s3_service.generate_presigned_url(s3_key, SIGNED_URL_EXPIRY)
+            signed_url = asyncio.get_event_loop().run_until_complete(
+                gcs_service.generate_signed_url(s3_key, "read", SIGNED_URL_EXPIRY)
+            )
             
             export_record.status = JobStatus.COMPLETED.value
             export_record.completed_at = datetime.utcnow()
@@ -328,8 +334,8 @@ class ResearchExportService:
             parts = str(export_record.storage_uri).replace("s3://", "").split("/", 1)
             s3_key = parts[1]
             
-            from app.services.s3_service import s3_service
-            signed_url = s3_service.generate_presigned_url(s3_key, SIGNED_URL_EXPIRY)
+            from app.services.gcs_service import generate_presigned_url
+            signed_url = generate_presigned_url("", s3_key, SIGNED_URL_EXPIRY)
             
             export_record.signed_url = signed_url
             export_record.signed_url_expires_at = datetime.utcnow() + timedelta(seconds=SIGNED_URL_EXPIRY)

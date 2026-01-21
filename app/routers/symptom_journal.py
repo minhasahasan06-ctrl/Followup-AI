@@ -23,7 +23,7 @@ from app.models.user import User
 from app.models.patient_doctor_connection import PatientDoctorConnection
 from app.dependencies import require_role
 from app.services.openai_service import analyze_symptom_image, generate_weekly_summary
-from app.services.s3_service import upload_symptom_image, generate_presigned_url
+from app.services.gcs_service import upload_symptom_image, generate_presigned_url
 from app.services.respiratory_analysis import RespiratoryAnalysisService
 
 

@@ -16,10 +16,11 @@ import { eq, and, desc, gte, sql as drizzleSql, isNull } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { z } from "zod";
 import { pubmedService, physionetService, kaggleService, whoService } from "./dataIntegration";
-import { textractClient, comprehendMedicalClient, AWS_S3_BUCKET } from "./aws";
 import { uploadFile, getSignedUrl, GCS_BUCKET_NAME, getPublicUrl } from "./gcs";
-import { StartDocumentAnalysisCommand, GetDocumentAnalysisCommand } from "@aws-sdk/client-textract";
-import { DetectEntitiesV2Command, DetectPHICommand } from "@aws-sdk/client-comprehendmedical";
+import { gcsService } from "./services/gcpStorageService";
+import { healthcareNLPService } from "./services/gcpHealthcareNLP";
+import { documentAIService } from "./services/gcpDocumentAI";
+import { GCP_CONFIG } from "./config/gcpConstants";
 import OpenAI from "openai";
 import Sentiment from "sentiment";
 import multer from "multer";
@@ -1218,70 +1219,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   // ============== END DEV-ONLY BYPASS ==============
 
-  // ============== AUTHENTICATION ROUTES (AWS Cognito) ==============
-  const { signUp, signIn, confirmSignUp, adminConfirmSignUp, resendConfirmationCode, adminConfirmUser, forgotPassword, confirmForgotPassword, getUserInfo, describeUserPoolSchema } = await import('./cognitoAuth');
-  const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = await import('./awsSES');
+  // ============== AUTHENTICATION ROUTES (Stytch - Primary Auth) ==============
+  // Note: Cognito removed in favor of Stytch for all authentication
   const { metadataStorage } = await import('./metadataStorage');
 
-  // Debug endpoint to inspect Cognito User Pool schema
-  app.get('/api/debug/cognito-schema', async (req, res) => {
-    try {
-      const schema = await describeUserPoolSchema();
-      res.json(schema);
-    } catch (error: any) {
-      console.error('Error describing Cognito schema:', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Debug endpoint to check Cognito email configuration
-  app.get('/api/debug/cognito-email-config', async (req, res) => {
-    try {
-      const schema = await describeUserPoolSchema();
-      const emailConfig = schema.emailConfiguration;
-      
-      const diagnostics = {
-        emailSendingAccount: emailConfig.emailSendingAccount,
-        sourceArn: emailConfig.sourceArn,
-        from: emailConfig.from,
-        replyToEmailAddress: emailConfig.replyToEmailAddress,
-        configurationSet: emailConfig.configurationSet,
-        recommendations: [] as string[],
-      };
-      
-      // Add recommendations based on configuration
-      if (emailConfig.emailSendingAccount === 'COGNITO_DEFAULT') {
-        diagnostics.recommendations.push(
-          'Cognito is using its default email service. This has limitations:',
-          '- Only works in sandbox mode (verified emails only)',
-          '- Limited email sending capacity',
-          '- Consider configuring SES for production use'
-        );
-      } else if (emailConfig.emailSendingAccount === 'DEVELOPER') {
-        if (!emailConfig.sourceArn) {
-          diagnostics.recommendations.push(
-            'SES is configured but SourceArn is missing. Emails may not be sent properly.'
-          );
-        } else {
-          diagnostics.recommendations.push(
-            'SES is configured. Ensure the SES identity (email/domain) is verified in AWS SES console.'
-          );
-        }
-      }
-      
-      if (!emailConfig.from) {
-        diagnostics.recommendations.push(
-          'No "From" email address configured. Cognito may use a default address.'
-        );
-      }
-      
-      res.json(diagnostics);
-    } catch (error: any) {
-      console.error('Error checking Cognito email config:', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
   // Patient Signup
   app.post('/api/auth/signup/patient', async (req, res) => {
     try {
@@ -1554,28 +1495,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid verification code. Please try again." });
       }
       
-      // If we verified with our code, confirm with Cognito using admin API
-      // This ensures Cognito knows the user is verified and can log in
+      // Code verified successfully - using Stytch for all auth now
       if (codeVerified && metadata.verificationCode === code) {
-        try {
-          const { adminConfirmSignUp } = await import('./cognitoAuth');
-          await adminConfirmSignUp(cognitoUsername);
-          console.log(`[AUTH] User confirmed in Cognito via admin API for ${email}`);
-        } catch (adminError: any) {
-          // If admin confirm fails, try regular confirm as fallback
-          try {
-            await confirmSignUp(email, code, cognitoUsername).catch((cognitoError: any) => {
-              if (cognitoError.name === 'NotAuthorizedException' && cognitoError.message?.includes('already confirmed')) {
-                console.log(`[AUTH] User already confirmed in Cognito for ${email}`);
-              } else {
-                console.warn(`[AUTH] Could not confirm with Cognito for ${email}, but our code was valid:`, cognitoError.message);
-              }
-            });
-          } catch (err) {
-            // Ignore Cognito errors if our code was valid - user can still proceed
-            console.warn(`[AUTH] Cognito confirmation failed for ${email}, but proceeding with our verification`);
-          }
-        }
+        console.log(`[AUTH] User email verified for ${email}`);
       }
       
       // Get phone number from metadata
@@ -5267,9 +5189,19 @@ All questions and discussions should be focused on this patient.`;
         return res.status(404).json({ message: "Failed to verify doctor" });
       }
       
-      // Send approval email notification
-      const { sendDoctorApprovedEmail } = await import('./awsSES');
-      await sendDoctorApprovedEmail(doctor.email, doctor.firstName).catch(console.error);
+      // Send approval email notification using Resend
+      try {
+        const { Resend } = await import('resend');
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'noreply@followupai.com',
+          to: doctor.email,
+          subject: 'Your Doctor Account Has Been Approved',
+          html: `<p>Hello Dr. ${doctor.firstName},</p><p>Your account has been verified and approved. You can now log in to Followup AI.</p>`,
+        });
+      } catch (emailError) {
+        console.error('Failed to send approval email:', emailError);
+      }
       
       res.json({ success: true, user: result.user, doctorProfile: result.doctorProfile });
     } catch (error) {
@@ -5300,9 +5232,19 @@ All questions and discussions should be focused on this patient.`;
         return res.status(404).json({ message: "Failed to reject doctor" });
       }
       
-      // Send rejection email notification
-      const { sendDoctorRejectedEmail } = await import('./awsSES');
-      await sendDoctorRejectedEmail(doctor.email, doctor.firstName, reason || 'Please contact our verification team for more information.').catch(console.error);
+      // Send rejection email notification using Resend
+      try {
+        const { Resend } = await import('resend');
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'noreply@followupai.com',
+          to: doctor.email,
+          subject: 'Doctor Application Status Update',
+          html: `<p>Hello Dr. ${doctor.firstName},</p><p>Unfortunately, your application has been declined.</p><p>Reason: ${reason || 'Please contact our verification team for more information.'}</p>`,
+        });
+      } catch (emailError) {
+        console.error('Failed to send rejection email:', emailError);
+      }
       
       res.json({ success: true, user: result.user, doctorProfile: result.doctorProfile });
     } catch (error) {
@@ -6025,155 +5967,86 @@ All questions and discussions should be focused on this patient.`;
     }
   });
 
-  async function processDocumentOCR(documentId: string, s3Key: string) {
+  async function processDocumentOCR(documentId: string, gcsPath: string) {
     try {
       await storage.updateMedicalDocument(documentId, { processingStatus: 'processing' });
       
-      const startCommand = new StartDocumentAnalysisCommand({
-        DocumentLocation: {
-          S3Object: {
-            Bucket: AWS_S3_BUCKET,
-            Name: s3Key,
-          },
-        },
-        FeatureTypes: ['TABLES', 'FORMS'],
-      });
+      let extractedText = '';
+      let extractedData: any = {
+        medications: [],
+        diagnosis: [],
+        labResults: [],
+        vitalSigns: [],
+        allergies: [],
+        procedures: [],
+      };
       
-      const startResponse = await textractClient.send(startCommand);
-      const jobId = startResponse.JobId;
-      
-      if (!jobId) {
-        throw new Error('Failed to start Textract job');
+      try {
+        const ocrResult = await documentAIService.processDocument(gcsPath);
+        extractedText = ocrResult.text || '';
+        
+        if (ocrResult.pages) {
+          for (const page of ocrResult.pages) {
+            if (page.tables) {
+              for (const table of page.tables) {
+                extractedData.tables = extractedData.tables || [];
+                extractedData.tables.push(table);
+              }
+            }
+            if (page.formFields) {
+              for (const field of page.formFields) {
+                extractedData.formFields = extractedData.formFields || [];
+                extractedData.formFields.push(field);
+              }
+            }
+          }
+        }
+      } catch (ocrError) {
+        console.warn('Document AI OCR failed, using fallback:', ocrError);
+        const document = await storage.getMedicalDocument(documentId);
+        if (document?.extractedText) {
+          extractedText = document.extractedText;
+        }
       }
       
-      let jobStatus = 'IN_PROGRESS';
-      let attempts = 0;
-      const maxAttempts = 300;
-      
-      while (jobStatus === 'IN_PROGRESS' && attempts < maxAttempts) {
-        const baseDelay = 2000;
-        const delay = attempts < 30 ? baseDelay : 
-                     attempts < 60 ? baseDelay * 2 : 
-                     attempts < 120 ? baseDelay * 3 : 
-                     baseDelay * 4;
-        
-        await new Promise(resolve => setTimeout(resolve, delay));
-        
-        const getCommand = new GetDocumentAnalysisCommand({ JobId: jobId });
-        const getResponse = await textractClient.send(getCommand);
-        
-        jobStatus = getResponse.JobStatus || 'IN_PROGRESS';
-        
-        if (jobStatus === 'SUCCEEDED') {
-          let extractedText = '';
-          let allBlocks = getResponse.Blocks || [];
-          let nextToken = getResponse.NextToken;
-          
-          while (nextToken) {
-            const nextCommand = new GetDocumentAnalysisCommand({ 
-              JobId: jobId,
-              NextToken: nextToken,
-            });
-            const nextResponse = await textractClient.send(nextCommand);
-            allBlocks = allBlocks.concat(nextResponse.Blocks || []);
-            nextToken = nextResponse.NextToken;
-          }
-          
-          for (const block of allBlocks) {
-            if (block.BlockType === 'LINE' && block.Text) {
-              extractedText += block.Text + '\n';
-            }
-          }
-          
-          let allMedicalEntities: any[] = [];
-          if (extractedText.trim().length > 0) {
-            try {
-              const MAX_CHUNK_SIZE = 19000;
-              const chunks: string[] = [];
-              
-              if (extractedText.length <= MAX_CHUNK_SIZE) {
-                chunks.push(extractedText);
-              } else {
-                const lines = extractedText.split('\n');
-                let currentChunk = '';
-                
-                for (const line of lines) {
-                  if ((currentChunk.length + line.length + 1) > MAX_CHUNK_SIZE) {
-                    if (currentChunk.length > 0) {
-                      chunks.push(currentChunk);
-                    }
-                    currentChunk = line;
-                  } else {
-                    currentChunk += (currentChunk ? '\n' : '') + line;
-                  }
-                }
-                
-                if (currentChunk.length > 0) {
-                  chunks.push(currentChunk);
-                }
-              }
-              
-              for (const chunk of chunks) {
-                try {
-                  const comprehendCommand = new DetectEntitiesV2Command({
-                    Text: chunk,
-                  });
-                  
-                  const comprehendResponse = await comprehendMedicalClient.send(comprehendCommand);
-                  allMedicalEntities = allMedicalEntities.concat(comprehendResponse.Entities || []);
-                  
-                  await new Promise(resolve => setTimeout(resolve, 100));
-                } catch (chunkError) {
-                  console.error('Comprehend Medical chunk error:', chunkError);
-                }
-              }
-            } catch (comprehendError) {
-              console.error('Comprehend Medical error:', comprehendError);
-            }
-          }
-          
-          const extractedData: any = {
-            medications: [],
-            diagnosis: [],
-            labResults: [],
-            vitalSigns: [],
-            allergies: [],
-            procedures: [],
-          };
+      if (extractedText.trim().length > 0) {
+        try {
+          const nlpResult = await healthcareNLPService.analyzeText(extractedText);
           
           const seenTexts = new Set<string>();
           
-          for (const entity of allMedicalEntities) {
-            const normalizedText = entity.Text?.toLowerCase().trim();
-            if (!normalizedText || seenTexts.has(normalizedText)) continue;
-            seenTexts.add(normalizedText);
-            
-            if (entity.Category === 'MEDICATION' && entity.Text) {
-              extractedData.medications.push(entity.Text);
-            } else if (entity.Category === 'MEDICAL_CONDITION' && entity.Text) {
-              extractedData.diagnosis.push(entity.Text);
-            } else if (entity.Category === 'TEST_TREATMENT_PROCEDURE' && entity.Text) {
-              extractedData.procedures.push(entity.Text);
+          if (nlpResult.entities) {
+            for (const entity of nlpResult.entities) {
+              const normalizedText = entity.text?.toLowerCase().trim();
+              if (!normalizedText || seenTexts.has(normalizedText)) continue;
+              seenTexts.add(normalizedText);
+              
+              const category = entity.type || entity.category;
+              const text = entity.text;
+              
+              if (category === 'MEDICATION' || category === 'MEDICINE') {
+                extractedData.medications.push(text);
+              } else if (category === 'MEDICAL_CONDITION' || category === 'PROBLEM' || category === 'DIAGNOSIS') {
+                extractedData.diagnosis.push(text);
+              } else if (category === 'PROCEDURE' || category === 'TEST') {
+                extractedData.procedures.push(text);
+              } else if (category === 'LAB_VALUE' || category === 'LABORATORY_DATA') {
+                extractedData.labResults.push(text);
+              } else if (category === 'ALLERGY') {
+                extractedData.allergies.push(text);
+              }
             }
           }
-          
-          await storage.updateMedicalDocument(documentId, {
-            extractedText,
-            extractedData,
-            processingStatus: 'completed',
-          });
-          
-          return;
-        } else if (jobStatus === 'FAILED') {
-          throw new Error(getResponse.StatusMessage || 'Textract job failed');
+        } catch (nlpError) {
+          console.warn('Healthcare NLP analysis failed:', nlpError);
         }
-        
-        attempts++;
       }
       
-      if (jobStatus === 'IN_PROGRESS') {
-        throw new Error('Textract job timeout - processing took too long');
-      }
+      await storage.updateMedicalDocument(documentId, {
+        extractedText,
+        extractedData,
+        processingStatus: 'completed',
+      });
       
     } catch (error) {
       console.error('OCR processing error:', error);

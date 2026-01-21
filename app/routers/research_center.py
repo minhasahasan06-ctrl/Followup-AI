@@ -39,7 +39,7 @@ from app.services.research_storage_service import ResearchStorageService
 from app.services.research_qa_service import ResearchQAService
 from app.services.phi_redaction_service import PHIRedactionService
 from app.services.access_control import HIPAAAuditLogger
-from app.services.s3_service import s3_service
+from app.services.gcs_service import gcs_service
 
 logger = logging.getLogger(__name__)
 
@@ -1029,7 +1029,10 @@ async def get_export_status(
             s3_key = "/".join(s3_key.split("/")[3:])  # Remove s3://bucket/ prefix
         
         # Generate fresh short-lived URL (15 minutes)
-        fresh_url = s3_service.generate_presigned_url(s3_key, expiration=SIGNED_URL_EXPIRY_SECONDS)
+        import asyncio
+        fresh_url = asyncio.get_event_loop().run_until_complete(
+            gcs_service.generate_signed_url(s3_key, "read", SIGNED_URL_EXPIRY_SECONDS)
+        )
         url_expires_at = (datetime.utcnow() + timedelta(seconds=SIGNED_URL_EXPIRY_SECONDS)).isoformat()
         
         if fresh_url:
