@@ -125,32 +125,47 @@ class TestOpenAIClientConfiguration:
         client = OpenAIClientWrapper()
         assert client is not None
     
-    @patch.dict(os.environ, {"OPENAI_API_KEY": ""})
     def test_missing_api_key_raises_error(self):
         """Test that missing API key raises error"""
-        with pytest.raises(OpenAIConfigError):
-            OpenAIClientWrapper()
+        import importlib
+        import app.services.openai_client as client_module
+        
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "", "ENV": "dev"}):
+            importlib.reload(client_module)
+            
+            with pytest.raises(client_module.OpenAIConfigError):
+                client_module.OpenAIClientWrapper()
+        
+        with patch.dict(os.environ, {"ENV": "dev", "OPENAI_API_KEY": "test-key"}):
+            importlib.reload(client_module)
 
 
 class TestPHIBlocking:
     """Tests for PHI blocking behavior"""
     
-    @patch.dict(os.environ, {
-        "ENV": "dev",
-        "OPENAI_API_KEY": "test-key",
-        "PHI_DETECTION_ENABLED": "true",
-        "PHI_BLOCK_ON_DETECT": "true"
-    })
     def test_phi_detected_raises_error(self):
         """Test that PHI triggers blocking when enabled"""
-        client = OpenAIClientWrapper()
+        import importlib
+        import app.services.openai_client as client_module
         
-        text_with_phi = "Patient SSN is 123-45-6789"
+        with patch.dict(os.environ, {
+            "ENV": "dev",
+            "OPENAI_API_KEY": "test-key",
+            "PHI_DETECTION_ENABLED": "true",
+            "PHI_BLOCK_ON_DETECT": "true"
+        }):
+            importlib.reload(client_module)
+            
+            client = client_module.OpenAIClientWrapper()
+            text_with_phi = "Patient SSN is 123-45-6789"
+            
+            with pytest.raises(client_module.PHIDetectionError) as exc_info:
+                client._check_and_handle_phi(text_with_phi, "test")
+            
+            assert "SSN" in str(exc_info.value)
         
-        with pytest.raises(PHIDetectionError) as exc_info:
-            client._check_and_handle_phi(text_with_phi, "test")
-        
-        assert "SSN" in str(exc_info.value)
+        with patch.dict(os.environ, {"ENV": "dev", "OPENAI_API_KEY": "test-key"}):
+            importlib.reload(client_module)
     
     @patch.dict(os.environ, {
         "ENV": "dev",
