@@ -1,0 +1,68 @@
+{
+  "resources": {
+    "blog": {
+      "title": "Blog",
+      "path": "/blog",
+      "short": "News, clinical insights, product updates and best practices for enabling safe, automated follow-up and early deterioration detection."
+    },
+    "faq": {
+      "title": "FAQ",
+      "path": "/faq",
+      "short": "Answers about onboarding, data, and how our detection works."
+    },
+    "pricing": {
+      "title": "Pricing",
+      "path": "/pricing",
+      "short": "Flexible pricing for pilots, clinical programs, and enterprise deployments."
+    },
+    "documentation": {
+      "title": "Documentation",
+      "path": "/documentation",
+      "short": "Developer guides, API reference, ML system guides, and operational best practices."
+    },
+    "api": {
+      "title": "API",
+      "path": "/api",
+      "short": "Direct API access for predictions, model management, and audit logs."
+    }
+  },
+  "company": {
+    "terms": {
+      "title": "Terms & Conditions",
+      "path": "/terms",
+      "short": "Legal terms, service level and acceptable use."
+    },
+    "privacy": {
+      "title": "Privacy Policy",
+      "path": "/privacy",
+      "short": "How we collect, use, store and protect patient and user data."
+    },
+    "hipaa": {
+      "title": "HIPAA Compliance",
+      "path": "/hipaa",
+      "short": "How the product meets HIPAA obligations and supports secure deployment."
+    },
+    "contact": {
+      "title": "Contact Us",
+      "path": "/contact",
+      "short": "Request demo, pricing or support."
+    }
+  },
+  "social": {
+    "x": {
+      "title": "X",
+      "url": "https://x.com/FollowupAI",
+      "short": "Product updates, research highlights, and engineering notes."
+    },
+    "discord": {
+      "title": "Discord",
+      "url": "https://discord.gg/followupai",
+      "short": "Developer & community support for integrations and pilots."
+    },
+    "linkedin": {
+      "title": "LinkedIn",
+      "url": "https://linkedin.com/company/followupai",
+      "short": "Company updates, thought leadership, and careers."
+    }
+  }
+}
