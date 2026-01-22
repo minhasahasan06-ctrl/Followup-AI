@@ -83,7 +83,6 @@ export default function Contact() {
   });
 
   const onSubmit = (data: ContactFormData) => {
-    console.log('[Contact Form] Submitting data:', data);
     submitMutation.mutate(data);
   };
 
