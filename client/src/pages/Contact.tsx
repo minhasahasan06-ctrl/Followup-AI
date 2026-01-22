@@ -57,12 +57,12 @@ export default function Contact() {
     mutationFn: async (data: ContactFormData) => {
       const response = await apiRequest("/api/contact", {
         method: "POST",
-        body: JSON.stringify({
+        json: {
           name: data.name,
           email: data.email,
           subject: data.subject,
           message: data.message,
-        }),
+        },
       });
       return response;
     },
@@ -83,6 +83,7 @@ export default function Contact() {
   });
 
   const onSubmit = (data: ContactFormData) => {
+    console.log('[Contact Form] Submitting data:', data);
     submitMutation.mutate(data);
   };
 
@@ -221,7 +222,7 @@ export default function Contact() {
                     <Label htmlFor="subject">Subject *</Label>
                     <Select
                       value={form.watch("subject")}
-                      onValueChange={(value) => form.setValue("subject", value as ContactFormData["subject"])}
+                      onValueChange={(value) => form.setValue("subject", value as ContactFormData["subject"], { shouldValidate: true })}
                     >
                       <SelectTrigger data-testid="select-subject">
                         <SelectValue placeholder="Select a subject" />
