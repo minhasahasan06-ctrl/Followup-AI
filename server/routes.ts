@@ -22498,6 +22498,57 @@ Provide:
 
   const httpServer = createServer(app);
 
+  // ==========================================================================
+  // CATCH-ALL PROXY FOR /api/py/* ROUTES TO PYTHON FASTAPI BACKEND
+  // ==========================================================================
+  // This must be placed AFTER all specific Express routes but BEFORE catch-all handlers
+  app.all('/api/py/*', async (req, res) => {
+    try {
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      // Strip /api/py prefix and forward to Python backend
+      const pythonPath = req.path.replace('/api/py', '/api');
+      const url = new URL(pythonPath, pythonBackendUrl);
+      
+      // Forward query parameters
+      Object.entries(req.query).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          url.searchParams.append(key, value);
+        }
+      });
+
+      const fetchOptions: RequestInit = {
+        method: req.method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      };
+
+      // Forward body for POST/PUT/PATCH requests
+      if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+        fetchOptions.body = JSON.stringify(req.body);
+      }
+
+      const response = await fetch(url.toString(), fetchOptions);
+      
+      // Forward the response
+      const contentType = response.headers.get('content-type');
+      if (contentType?.includes('application/json')) {
+        const data = await response.json();
+        res.status(response.status).json(data);
+      } else {
+        const text = await response.text();
+        res.status(response.status).send(text);
+      }
+    } catch (error) {
+      console.error('[API Proxy] Error forwarding to Python backend:', error);
+      res.status(502).json({ 
+        error: 'Python backend unavailable',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // WebSocket proxy for agent communication
   // Forward /ws/agent connections to Python FastAPI backend
   httpServer.on('upgrade', (request, socket, head) => {
