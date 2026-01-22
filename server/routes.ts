@@ -1020,6 +1020,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Configure session middleware for cookie-based authentication (legacy - keeping for backward compatibility)
   app.use(getSession());
   
+  // ============== PUBLIC CONTACT FORM ENDPOINT ==============
+  app.post('/api/contact', async (req: any, res) => {
+    try {
+      const { name, email, subject, message } = req.body;
+      
+      if (!name || !email || !subject || !message) {
+        return res.status(400).json({ error: 'All fields are required' });
+      }
+      
+      if (typeof name !== 'string' || name.length < 2 || name.length > 100) {
+        return res.status(400).json({ error: 'Invalid name' });
+      }
+      
+      if (typeof email !== 'string' || !email.includes('@') || email.length > 255) {
+        return res.status(400).json({ error: 'Invalid email' });
+      }
+      
+      const validSubjects = ['demo', 'pricing', 'support', 'partnership', 'other'];
+      if (!validSubjects.includes(subject)) {
+        return res.status(400).json({ error: 'Invalid subject' });
+      }
+      
+      if (typeof message !== 'string' || message.length < 10 || message.length > 2000) {
+        return res.status(400).json({ error: 'Invalid message length' });
+      }
+      
+      const sanitizedMessage = message.replace(/<[^>]*>/g, '').trim();
+      
+      const contactSubmission = {
+        id: crypto.randomUUID(),
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        subject,
+        message: sanitizedMessage,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+        userAgent: (req.headers['user-agent'] || 'unknown').substring(0, 500),
+        createdAt: new Date().toISOString(),
+      };
+      
+      console.log('[CONTACT] New contact form submission:', {
+        id: contactSubmission.id,
+        email: contactSubmission.email,
+        subject: contactSubmission.subject,
+        ip: contactSubmission.ipAddress,
+        timestamp: contactSubmission.createdAt,
+      });
+      
+      res.json({ 
+        success: true, 
+        message: 'Contact form submitted successfully',
+        id: contactSubmission.id,
+      });
+    } catch (error) {
+      console.error('[CONTACT] Error processing contact form:', error);
+      res.status(500).json({ error: 'Failed to submit contact form' });
+    }
+  });
+  console.log('[CONTACT] Contact form endpoint registered at /api/contact');
+
   // ============== STYTCH AUTHENTICATION ROUTES ==============
   // Register Stytch auth routes for Magic Link, SMS OTP, and session management
   app.use("/api/auth", stytchAuthRoutes);
