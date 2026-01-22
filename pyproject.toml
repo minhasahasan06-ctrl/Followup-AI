@@ -50,6 +50,9 @@ dependencies = [
     "asyncpg>=0.31.0",
     "google-cloud-storage>=3.8.0",
     "google-cloud-kms>=3.9.0",
+    "llama-index-vector-stores-postgres>=0.7.2",
+    "llama-index-embeddings-openai>=0.5.1",
+    "llama-index-core>=0.14.13",
 ]
 
 [[tool.uv.index]]

@@ -1,23 +1,21 @@
 """
-Entity Embedding Learning - DEPRECATED LOCATION
-=================================================
+RESEARCH-ONLY: Entity Embedding Learning
+=========================================
 
-⚠️  DEPRECATION WARNING ⚠️
+⚠️  WARNING: RESEARCH USE ONLY - NOT FOR CLINICAL PRODUCTION ⚠️
 
-This module has been moved to: app/research/entity_embeddings.py
-
-The new location:
-- Enforces USE_RESEARCH_EMBEDDINGS=true for all operations
-- Provides proper research-only gating
-- Has updated HIPAA compliance notices
-
-This file remains for backward compatibility but imports from the new location.
-All new code should use: from app.research.entity_embeddings import ...
-
-Production-grade embedding generation for:
+This module provides entity embedding generation for research purposes:
 - Patient embeddings (similar patient lookup)
-- Drug embeddings (rare drug scenarios)
+- Drug embeddings (rare drug scenarios)  
 - Location embeddings (small area estimation)
+
+REQUIREMENTS:
+- USE_RESEARCH_EMBEDDINGS=true environment variable
+- IRB approval for any human data processing
+- Signed validation protocol before any clinical use
+
+This module has NOT completed clinical validation and MUST NOT be used 
+for clinical decision support or patient care decisions.
 
 HIPAA-compliant with comprehensive audit logging.
 """
@@ -25,7 +23,6 @@ HIPAA-compliant with comprehensive audit logging.
 import os
 import json
 import logging
-import warnings
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, field
@@ -35,15 +32,9 @@ import psycopg2
 import psycopg2.extras
 import uuid
 
-logger = logging.getLogger(__name__)
+from app.research import require_research_flag, USE_RESEARCH_EMBEDDINGS
 
-warnings.warn(
-    "python_backend/ml_analysis/embeddings.py is deprecated. "
-    "Use app.research.entity_embeddings instead. "
-    "This module requires USE_RESEARCH_EMBEDDINGS=true.",
-    DeprecationWarning,
-    stacklevel=2
-)
+logger = logging.getLogger(__name__)
 
 
 class EntityType(str, Enum):
@@ -124,27 +115,20 @@ class EmbeddingResult:
 
 
 class AutoencoderEmbedder:
-    """
-    Learn embeddings using an autoencoder architecture
-    """
+    """Learn embeddings using an autoencoder architecture"""
     
     def __init__(self, config: EmbeddingConfig):
         self.config = config
         self.encoder_weights: List[Dict] = []
         self.decoder_weights: List[Dict] = []
     
+    @require_research_flag
     def fit(
         self, 
         feature_matrix: np.ndarray,
         entity_ids: List[str]
     ) -> EmbeddingResult:
-        """
-        Train autoencoder on feature matrix
-        
-        Args:
-            feature_matrix: (n_entities, n_features) matrix
-            entity_ids: List of entity IDs corresponding to rows
-        """
+        """Train autoencoder on feature matrix"""
         np.random.seed(self.config.random_seed)
         
         entity_to_idx = {eid: i for i, eid in enumerate(entity_ids)}
@@ -217,28 +201,20 @@ class AutoencoderEmbedder:
 
 
 class SkipGramEmbedder:
-    """
-    Learn embeddings using Skip-gram (Word2Vec-style) approach
-    Useful for sequential data (e.g., patient journeys)
-    """
+    """Learn embeddings using Skip-gram (Word2Vec-style) approach"""
     
     def __init__(self, config: EmbeddingConfig):
         self.config = config
         self.embeddings: Optional[np.ndarray] = None
         self.context_embeddings: Optional[np.ndarray] = None
     
+    @require_research_flag
     def fit(
         self,
         sequences: List[List[str]],
         entity_ids: Optional[List[str]] = None
     ) -> EmbeddingResult:
-        """
-        Train skip-gram model on sequences
-        
-        Args:
-            sequences: List of entity ID sequences
-            entity_ids: Optional explicit list of all entity IDs
-        """
+        """Train skip-gram model on sequences"""
         np.random.seed(self.config.random_seed)
         
         if entity_ids is None:
@@ -315,18 +291,28 @@ class SkipGramEmbedder:
         )
 
 
-class EmbeddingManager:
+class ResearchEmbeddingManager:
     """
-    Manages embedding learning and storage
+    RESEARCH-ONLY: Manages embedding learning and storage.
+    
+    This manager requires USE_RESEARCH_EMBEDDINGS=true and is NOT approved
+    for clinical production use.
     """
     
     def __init__(self, db_url: Optional[str] = None):
+        if not USE_RESEARCH_EMBEDDINGS:
+            raise RuntimeError(
+                "ResearchEmbeddingManager requires USE_RESEARCH_EMBEDDINGS=true. "
+                "This functionality is not approved for clinical production use."
+            )
         self.db_url = db_url or os.environ.get('DATABASE_URL')
         self.cached_embeddings: Dict[str, EmbeddingResult] = {}
+        logger.warning("RESEARCH-ONLY: ResearchEmbeddingManager initialized - not for clinical use")
     
     def get_connection(self):
         return psycopg2.connect(self.db_url)
     
+    @require_research_flag
     def learn_patient_embeddings(
         self,
         config: Optional[EmbeddingConfig] = None
@@ -393,6 +379,7 @@ class EmbeddingManager:
             logger.error(f"Error learning patient embeddings: {e}")
             raise
     
+    @require_research_flag
     def learn_drug_embeddings(
         self,
         config: Optional[EmbeddingConfig] = None
@@ -440,6 +427,7 @@ class EmbeddingManager:
             logger.error(f"Error learning drug embeddings: {e}")
             raise
     
+    @require_research_flag
     def learn_location_embeddings(
         self,
         config: Optional[EmbeddingConfig] = None
@@ -534,6 +522,7 @@ class EmbeddingManager:
         except Exception as e:
             logger.error(f"Failed to save embeddings: {e}")
     
+    @require_research_flag
     def find_similar_entities(
         self,
         entity_type: EntityType,
