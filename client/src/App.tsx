@@ -31,6 +31,7 @@ import FAQ from "@/pages/FAQ";
 import Documentation from "@/pages/Documentation";
 import API from "@/pages/API";
 import Blog from "@/pages/Blog";
+import Contact from "@/pages/Contact";
 import Dashboard from "@/pages/Dashboard";
 import AgentHub from "@/pages/AgentHub";
 import DemoFlow from "@/pages/DemoFlow";
@@ -186,7 +187,7 @@ function AuthenticatedApp() {
   };
 
   // Public routes that don't require auth
-  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/verify-phone", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog"];
+  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/verify-phone", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/contact"];
   const isPublicRoute = publicRoutes.includes(location) || (!user && location === "/");
 
   // Show loading while checking auth
@@ -225,6 +226,7 @@ function AuthenticatedApp() {
         <Route path="/documentation" component={Documentation} />
         <Route path="/api" component={API} />
         <Route path="/blog" component={Blog} />
+        <Route path="/contact" component={Contact} />
         <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>
