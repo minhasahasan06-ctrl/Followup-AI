@@ -7,7 +7,7 @@ import os
 import logging
 from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
@@ -219,3 +219,85 @@ async def logout(token: TokenPayload = Depends(get_current_token)):
     """
     logger.info(f"[Auth] User logged out: {token.user_id}")
     return {"message": "Logged out successfully"}
+
+
+class AccountUpdate(BaseModel):
+    """Account update request"""
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+
+@router.post("/me/update")
+async def update_current_user(
+    update: AccountUpdate,
+    request: Request,
+    token: TokenPayload = Depends(get_current_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Update the current authenticated user's account information
+    Only allows updating first_name and last_name
+    HIPAA-compliant with full audit logging
+    """
+    from app.services.user_audit_service import log_user_audit, AuditEventType
+    from app.services.audit_logger import AuditLogger
+    
+    user = db.query(User).filter(User.id == token.user_id).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent", "")[:500]
+    
+    changes = []
+    old_values = {}
+    
+    if update.first_name is not None and update.first_name != getattr(user, 'first_name', None):
+        old_values["first_name"] = getattr(user, 'first_name', None)
+        user.first_name = update.first_name
+        changes.append("first_name")
+    
+    if update.last_name is not None and update.last_name != getattr(user, 'last_name', None):
+        old_values["last_name"] = getattr(user, 'last_name', None)
+        user.last_name = update.last_name
+        changes.append("last_name")
+    
+    if changes:
+        db.commit()
+        db.refresh(user)
+        
+        log_user_audit(
+            user_id=token.user_id,
+            event_type=AuditEventType.PROFILE_UPDATED,
+            event_data={"updated_fields": changes},
+            ip_address=ip_address,
+            user_agent=user_agent,
+            db=db
+        )
+        
+        AuditLogger.log_phi_access(
+            user_id=token.user_id,
+            action="UPDATE",
+            resource_type="ACCOUNT_PROFILE",
+            resource_id=token.user_id,
+            phi_categories=["DEMOGRAPHICS"],
+            details={
+                "updated_fields": changes,
+                "old_values": old_values
+            },
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        
+        logger.info(f"[Auth] Updated user {token.user_id}: {changes}")
+    
+    return {
+        "status": "ok",
+        "updated_fields": changes,
+        "first_name": getattr(user, 'first_name', None),
+        "last_name": getattr(user, 'last_name', None)
+    }

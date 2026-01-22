@@ -396,7 +396,7 @@ export default function DoctorProfessionalInfoForm() {
           data-testid="button-save-professional-info"
         >
           {updateProfileMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-          Save Professional Information
+          Save Professional Profile
         </Button>
       </div>
     </div>

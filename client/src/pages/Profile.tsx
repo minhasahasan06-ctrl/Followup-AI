@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Shield, Bell, Heart, Lock, Video, Clock, Stethoscope } from "lucide-react";
+import { User, Shield, Bell, Heart, Lock, Video, Clock, Stethoscope, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { PatientProfile, DoctorProfile } from "@shared/schema";
 import PhoneVerification from "@/components/PhoneVerification";
 import TrainingConsentSettings from "@/components/TrainingConsentSettings";
 import { PersonalizationToggle } from "@/components/PersonalizationToggle";
@@ -23,57 +22,36 @@ import PatientMedicalInfoForm from "@/components/PatientMedicalInfoForm";
 import DoctorProfessionalInfoForm from "@/components/DoctorProfessionalInfoForm";
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, refetch: refetchUser } = useAuth();
   const { toast } = useToast();
   const isPatient = user?.role === "patient";
 
-  const { data: patientProfile } = useQuery<PatientProfile>({
-    queryKey: ["/api/patient/profile"],
-    enabled: isPatient,
-  });
+  const [firstName, setFirstName] = useState(user?.firstName || "");
+  const [lastName, setLastName] = useState(user?.lastName || "");
 
-  const { data: doctorProfile } = useQuery<DoctorProfile>({
-    queryKey: ["/api/doctor/profile"],
-    enabled: !isPatient,
-  });
+  useEffect(() => {
+    setFirstName(user?.firstName || "");
+    setLastName(user?.lastName || "");
+  }, [user?.firstName, user?.lastName]);
 
-  const updatePatientProfileMutation = useMutation({
-    mutationFn: async (data: Partial<PatientProfile>) => {
-      const res = await apiRequest("/api/patient/profile", { method: "POST", json: data });
+  const updateAccountMutation = useMutation({
+    mutationFn: async (data: { first_name?: string; last_name?: string }) => {
+      const res = await apiRequest("/api/auth/me/update", { method: "POST", json: data });
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/patient/profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      if (refetchUser) refetchUser();
       toast({
-        title: "Profile updated",
-        description: "Your profile has been updated successfully",
+        title: "Account updated",
+        description: "Your name has been saved",
       });
     },
     onError: (error: Error) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to update profile",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const updateDoctorProfileMutation = useMutation({
-    mutationFn: async (data: Partial<DoctorProfile>) => {
-      const res = await apiRequest("/api/doctor/profile", { method: "POST", json: data });
-      return await res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/doctor/profile"] });
-      toast({
-        title: "Profile updated",
-        description: "Your profile has been updated successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update profile",
+        description: error.message || "Failed to update account",
         variant: "destructive",
       });
     },
@@ -173,7 +151,8 @@ export default function Profile() {
                   <Label htmlFor="firstName">First Name</Label>
                   <Input
                     id="firstName"
-                    defaultValue={user?.firstName || ""}
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
                     data-testid="input-first-name"
                   />
                 </div>
@@ -181,7 +160,8 @@ export default function Profile() {
                   <Label htmlFor="lastName">Last Name</Label>
                   <Input
                     id="lastName"
-                    defaultValue={user?.lastName || ""}
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
                     data-testid="input-last-name"
                   />
                 </div>
@@ -191,7 +171,14 @@ export default function Profile() {
                 <Input id="email" type="email" defaultValue={user?.email || ""} disabled />
                 <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>
-              <Button data-testid="button-save-account">Save Changes</Button>
+              <Button 
+                onClick={() => updateAccountMutation.mutate({ first_name: firstName, last_name: lastName })}
+                disabled={updateAccountMutation.isPending}
+                data-testid="button-save-account"
+              >
+                {updateAccountMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save Account
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
