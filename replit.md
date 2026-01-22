@@ -20,6 +20,12 @@ The backend consists of a Node.js Express server (Port 5000) handling chat, appo
 
 ### Core Features & Technical Implementations
 - **AI Integration**: Utilizes OpenAI API for PHI detection, symptom extraction, and clinical reasoning.
+- **Centralized OpenAI Client** (`app/services/openai_client.py`): Production-grade OpenAI wrapper with PHI detection (SSN, MRN, email, phone, credit card patterns), BAA/ZDR runtime enforcement that blocks production without proper flags, audit logging for all API calls, and embedding standardization (text-embedding-3-small, 1536D, v1.0.0).
+- **Long-Term Memory Service** (`app/services/memory_service.py`, `app/services/memory_db.py`): pgvector-based semantic memory with cosine similarity search, embedding model/version tracking, access_count/last_accessed_at metrics, and async PostgreSQL operations.
+- **LlamaIndex Integration** (`app/services/llama_memory_service.py`): PostgresVectorStore adapter wrapping MemoryService for retrieval-augmented generation, agent/patient/memory_type filtering.
+- **ML Observability** (`app/services/ml_observability.py`): MetricHistogram for latency p50/p95/p99, MetricCounter for events, MetricGauge for current values, comprehensive tracking of retrieval, embedding, and LLM operations.
+- **ML Alerting** (`app/services/ml_alerting.py`): Threshold-based alerts for retrieval failure rate (>10%), latency SLA violations (retrieval >1000ms, embedding >2000ms), API error rate (>5%), with background monitoring.
+- **ML Governance** (`app/models/ml_governance_models.py`, `app/services/ml_governance_service.py`): Clinical model validation requirements, research-only flagging, human approval gates (technical/QA/clinical/regulatory/executive levels), data provenance tracking with lineage graphs, embedding standardization enforcement.
 - **PHI Detection Service**: GPT-4o-based HIPAA-compliant PHI detection and medical entity extraction.
 - **Deterioration Prediction System**: Statistical and AI models for health change detection and risk scoring.
 - **ML Inference Infrastructure**: Self-hosted, HIPAA-compliant system with model registry, Redis caching, and ONNX optimization.
