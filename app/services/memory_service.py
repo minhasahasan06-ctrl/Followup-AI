@@ -95,12 +95,28 @@ class MemoryService:
     2. Long-term: PostgreSQL with vector embeddings for semantic search
     """
 
-    def __init__(self):
+    def __init__(self, audit_logger=None):
         self._redis_client = None
         self._openai_client = None
         self._memory_db = None
         self._initialized = False
         self._metrics = MemoryServiceMetrics()
+        self._audit_logger = audit_logger
+    
+    def _log_phi_access(self, action: str, patient_id: str, details: Dict[str, Any]):
+        """Log PHI access event for HIPAA compliance"""
+        if self._audit_logger:
+            try:
+                self._audit_logger.log_event(
+                    event_type=f"memory_{action}",
+                    event_data={
+                        "patient_id": patient_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        **details
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Failed to log audit event: {e}")
 
     async def initialize(self, db_pool=None):
         """Initialize memory service connections"""
@@ -335,6 +351,13 @@ class MemoryService:
             latency_ms = (time.time() - start_time) * 1000
             self._metrics.record_store(latency_ms)
             
+            self._log_phi_access("store", patient_id, {
+                "memory_id": memory_id,
+                "agent_id": agent_id,
+                "memory_type": memory_type,
+                "latency_ms": latency_ms
+            })
+            
             logger.info(f"Stored long-term memory: {memory_id} for patient {patient_id} ({latency_ms:.1f}ms)")
             return memory_id
 
@@ -390,6 +413,13 @@ class MemoryService:
             latency_ms = (time.time() - start_time) * 1000
             similarities = [r.get("similarity", 0) for r in results]
             self._metrics.record_search(latency_ms, len(results), similarities)
+            
+            self._log_phi_access("search", patient_id, {
+                "agent_id": agent_id,
+                "result_count": len(results),
+                "latency_ms": latency_ms,
+                "memory_type": memory_type
+            })
             
             logger.info(f"Searched long-term memories for patient {patient_id}: {len(results)} results ({latency_ms:.1f}ms)")
             return results

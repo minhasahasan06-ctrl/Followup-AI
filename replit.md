@@ -26,6 +26,10 @@ The backend consists of a Node.js Express server (Port 5000) handling chat, appo
 - **ML Observability** (`app/services/ml_observability.py`): MetricHistogram for latency p50/p95/p99, MetricCounter for events, MetricGauge for current values, comprehensive tracking of retrieval, embedding, and LLM operations.
 - **ML Alerting** (`app/services/ml_alerting.py`): Threshold-based alerts for retrieval failure rate (>10%), latency SLA violations (retrieval >1000ms, embedding >2000ms), API error rate (>5%), with background monitoring.
 - **ML Governance** (`app/models/ml_governance_models.py`, `app/services/ml_governance_service.py`): Clinical model validation requirements, research-only flagging, human approval gates (technical/QA/clinical/regulatory/executive levels), data provenance tracking with lineage graphs, embedding standardization enforcement.
+- **Dual-Write Migration** (`app/services/dual_write_migration.py`): Shadow-run pattern for migrating from legacy to new vector storage with precision@k metrics collection, latency comparison, and migration readiness checks.
+- **Immutable Audit Log** (`app/services/immutable_audit_log.py`): HIPAA-compliant append-only audit logging with cryptographic hash chain for tamper detection, retention policy (6 years), and patient access reports per 45 CFR 164.528.
+- **MONAI Medical Imaging** (`app/services/monai_imaging.py`, `app/routes/imaging.py`): Medical imaging inference service with DICOM/NIfTI PHI stripping, UNet segmentation, GPU containerization via Docker (`docker/monai/`), and comprehensive audit logging.
+- **LangGraph Orchestration** (`app/services/langgraph_orchestration.py`): Graph-based agent orchestration pilot for Clona patient support with state machine pattern, conditional routing, and migration assessment tools.
 - **PHI Detection Service**: GPT-4o-based HIPAA-compliant PHI detection and medical entity extraction.
 - **Deterioration Prediction System**: Statistical and AI models for health change detection and risk scoring.
 - **ML Inference Infrastructure**: Self-hosted, HIPAA-compliant system with model registry, Redis caching, and ONNX optimization.
@@ -52,6 +56,14 @@ The backend consists of a Node.js Express server (Port 5000) handling chat, appo
 - **Communication Preferences System**: User-configurable communication method preferences (voice, video, chat) with availability scheduling, Do Not Disturb mode, and emergency override.
 - **Action Cards System**: Voice-triggered task cards with medication reminders, symptom checks, quick confirmations, and emergency escalation cards with voice response matching.
 - **Voice Consent Service**: HIPAA-compliant consent management with version tracking, expiration, revocation, and audit logging for voice/video recording.
+
+### Testing & CI Infrastructure
+- **Unit Tests** (`tests/python/`): 77 tests covering PHI detection, BAA/ZDR enforcement, memory operations, governance, observability, and alerting.
+- **Integration Tests** (`tests/python/test_integration_rag.py`): End-to-end RAG pipeline tests, PHI gating flows, dual-write migration validation.
+- **Performance Tests** (`tests/python/test_performance.py`): Latency SLA validation (p50/p95/p99), ingestion throughput, observability overhead.
+- **CI Pipeline** (`.github/workflows/ml-tests.yml`): GitHub Actions for unit/integration/performance tests, embedding standardization enforcement, PHI detection validation, governance checks.
+- **Re-embedding Script** (`scripts/reembed_memories.py`): Batch migration script with checkpointing, dry-run mode, and OpenAI API integration.
+- **Embedding Standardization Check** (`scripts/check_embedding_standardization.py`): CI enforcement for embedding model/version compliance.
 
 ### Security and Compliance
 The platform ensures HIPAA compliance through Stytch for passwordless authentication, HttpOnly session cookies, M2M tokens, comprehensive audit logging, end-to-end encryption, strict PHI handling, explicit doctor-patient assignment authorization, and Google Authenticator TOTP for Admin ML Training Hub.
