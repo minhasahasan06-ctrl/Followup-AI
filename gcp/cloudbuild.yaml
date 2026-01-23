@@ -24,6 +24,7 @@ substitutions:
   _GPU_COUNT: '1'
   _TIMEOUT: '60'
   _CONCURRENCY: '80'
+  _CORS_ORIGINS: 'https://followup-ai.replit.app'
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -74,7 +75,7 @@ steps:
       - '--gpu-type=${_GPU_TYPE}'
       - '--timeout=${_TIMEOUT}'
       - '--concurrency=${_CONCURRENCY}'
-      - '--set-env-vars=ENV=production,LOG_LEVEL=INFO'
+      - '--set-env-vars=ENV=production,LOG_LEVEL=INFO,CORS_ALLOWED_ORIGINS=${_CORS_ORIGINS}'
       - '--set-secrets=DATABASE_URL=DATABASE_URL:latest,STYTCH_PROJECT_ID=STYTCH_PROJECT_ID:latest,STYTCH_SECRET=STYTCH_SECRET:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BAA=OPENAI_BAA:latest,OPENAI_ZDR=OPENAI_ZDR:latest'
       - '--service-account=followup-backend@${PROJECT_ID}.iam.gserviceaccount.com'
     waitFor:

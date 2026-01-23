@@ -189,6 +189,24 @@ deploy_service() {
     local image_uri="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVICE_NAME}:${IMAGE_TAG}"
     local sa_email="${SERVICE_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
     
+    # Get the current Cloud Run URL for CORS (if service already exists)
+    local cors_origins=""
+    local existing_url=$(gcloud run services describe "$SERVICE_NAME" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --format='value(status.url)' 2>/dev/null || echo "")
+    
+    if [ -n "$existing_url" ]; then
+        cors_origins="$existing_url"
+    fi
+    
+    # Add Replit domain if set
+    if [ -n "${REPLIT_FRONTEND_URL:-}" ]; then
+        cors_origins="${cors_origins:+$cors_origins,}$REPLIT_FRONTEND_URL"
+    else
+        cors_origins="${cors_origins:+$cors_origins,}https://followup-ai.replit.app"
+    fi
+    
     gcloud run deploy "$SERVICE_NAME" \
         --image="$image_uri" \
         --region="$REGION" \
@@ -202,7 +220,7 @@ deploy_service() {
         --gpu-type=nvidia-l4 \
         --timeout=60 \
         --concurrency=80 \
-        --set-env-vars="ENV=production,LOG_LEVEL=INFO" \
+        --set-env-vars="ENV=production,LOG_LEVEL=INFO,CORS_ALLOWED_ORIGINS=$cors_origins" \
         --set-secrets="DATABASE_URL=DATABASE_URL:latest,STYTCH_PROJECT_ID=STYTCH_PROJECT_ID:latest,STYTCH_SECRET=STYTCH_SECRET:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BAA=OPENAI_BAA:latest,OPENAI_ZDR=OPENAI_ZDR:latest" \
         --service-account="$sa_email" \
         --project="$PROJECT_ID"

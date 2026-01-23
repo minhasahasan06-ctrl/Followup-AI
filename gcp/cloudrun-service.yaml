@@ -54,6 +54,8 @@ spec:
               value: "4"
             - name: MODEL_REGISTRY_PATH
               value: /models
+            - name: CORS_ALLOWED_ORIGINS
+              value: "https://followup-ai.replit.app"
             # Secrets from Secret Manager
             - name: DATABASE_URL
               valueFrom:

@@ -10,8 +10,9 @@
 # Run (GPU): docker run --gpus all -p 8000:8000 gcr.io/PROJECT_ID/followup-backend:latest
 
 # ============================================================================
-# Stage 1: Base image with CUDA and system dependencies
+# Stage 1: Base image with CUDA and Python 3.12
 # ============================================================================
+# Using NVIDIA CUDA runtime with Python installed via deadsnakes
 FROM nvidia/cuda:12.1-runtime-ubuntu22.04 AS base
 
 LABEL maintainer="Followup AI <dev@followup.ai>"
@@ -24,12 +25,16 @@ ENV PYTHONPATH=/app
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# System dependencies for medical imaging and ML
+# Add deadsnakes PPA for Python 3.12 and install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    gpg-agent \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-dev \
     python3.12-venv \
-    python3-pip \
+    python3.12-distutils \
     curl \
     wget \
     git \
@@ -47,6 +52,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Install pip for Python 3.12
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
+
+# Set Python 3.12 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
 
 # Create non-root user for security
 RUN useradd -m -u 1000 -s /bin/bash appuser && \
