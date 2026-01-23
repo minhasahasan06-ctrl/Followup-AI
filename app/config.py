@@ -40,7 +40,32 @@ class Settings(BaseSettings):
     APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://localhost:8000")
     FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "http://localhost:5000")
     
-    CORS_ORIGINS: list = ["http://localhost:5000", "http://127.0.0.1:5000"]
+    # CORS Configuration - supports environment-based origins
+    # In production, set CORS_ALLOWED_ORIGINS as comma-separated list
+    # Example: CORS_ALLOWED_ORIGINS=https://myapp.replit.app,https://followup.ai
+    CORS_ALLOWED_ORIGINS: str = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    
+    @property
+    def CORS_ORIGINS(self) -> list:
+        """Get CORS origins from environment or defaults."""
+        env_origins = self.CORS_ALLOWED_ORIGINS
+        if env_origins:
+            origins = [o.strip() for o in env_origins.split(",") if o.strip()]
+            return origins
+        # Default development origins
+        defaults = [
+            "http://localhost:5000",
+            "http://127.0.0.1:5000",
+            "http://localhost:3000",
+        ]
+        # Include Replit domain if available
+        replit_domain = os.getenv("REPLIT_DEV_DOMAIN")
+        if replit_domain:
+            defaults.append(f"https://{replit_domain}")
+        replit_app_url = os.getenv("REPLIT_APP_URL")
+        if replit_app_url:
+            defaults.append(replit_app_url)
+        return defaults
     
     ENVIRONMENT: str = os.getenv("NODE_ENV", "development")
     

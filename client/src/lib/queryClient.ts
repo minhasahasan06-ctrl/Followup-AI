@@ -1,7 +1,22 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-// Python backend URL (FastAPI on port 8000)
+// GCP Backend URL - Primary API endpoint for production
+// In production: Set VITE_API_URL to your GCP Cloud Run URL
+// In development: Falls back to local Python backend
+const GCP_API_URL = import.meta.env.VITE_API_URL || "";
+
+// Python backend URL (FastAPI on port 8000) - Used for development
 const PYTHON_BACKEND_URL = import.meta.env.VITE_PYTHON_BACKEND_URL || "http://localhost:8000";
+
+// Determine which backend to use
+const getBackendUrl = (): string => {
+  // If GCP API URL is set, use it for all API calls
+  if (GCP_API_URL) {
+    return GCP_API_URL;
+  }
+  // Fall back to Python backend URL for local development
+  return PYTHON_BACKEND_URL;
+};
 
 // Helper to determine if URL should go to Python backend
 function getPythonBackendUrl(url: string): string {
@@ -12,6 +27,11 @@ function getPythonBackendUrl(url: string): string {
 
   // Normalize URL (ensure leading slash for relative paths)
   const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
+  
+  // If GCP API URL is configured, route all API calls to GCP
+  if (GCP_API_URL && normalizedUrl.startsWith("/api/")) {
+    return `${GCP_API_URL}${normalizedUrl}`;
+  }
 
   // Routes that should go to Python FastAPI backend
   // NOTE: mental-health routes go through Express proxy for authentication/CORS handling

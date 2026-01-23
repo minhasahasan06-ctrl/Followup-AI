@@ -1,0 +1,106 @@
+# Followup AI Backend - Cloud Run Service Configuration
+#
+# This YAML defines the Cloud Run service with GPU support and Secret Manager integration.
+#
+# Deploy with:
+#   gcloud run services replace gcp/cloudrun-service.yaml --region=us-central1
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: followup-backend
+  labels:
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/description: "Followup AI HIPAA-Compliant Health Backend"
+    run.googleapis.com/ingress: all
+    run.googleapis.com/launch-stage: BETA
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/startup-cpu-boost: "true"
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/gpu: "1"
+        run.googleapis.com/gpu-type: "nvidia-l4"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 60
+      serviceAccountName: followup-backend@PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - name: followup-backend
+          image: us-central1-docker.pkg.dev/PROJECT_ID/followup-ai/followup-backend:latest
+          ports:
+            - name: http1
+              containerPort: 8000
+          resources:
+            limits:
+              cpu: "4"
+              memory: 8Gi
+              nvidia.com/gpu: "1"
+          env:
+            - name: ENV
+              value: production
+            - name: LOG_LEVEL
+              value: INFO
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8000"
+            - name: WORKERS
+              value: "4"
+            - name: MODEL_REGISTRY_PATH
+              value: /models
+            # Secrets from Secret Manager
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: DATABASE_URL
+                  key: latest
+            - name: STYTCH_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: STYTCH_PROJECT_ID
+                  key: latest
+            - name: STYTCH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: STYTCH_SECRET
+                  key: latest
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: OPENAI_API_KEY
+                  key: latest
+            - name: OPENAI_BAA
+              valueFrom:
+                secretKeyRef:
+                  name: OPENAI_BAA
+                  key: latest
+            - name: OPENAI_ZDR
+              valueFrom:
+                secretKeyRef:
+                  name: OPENAI_ZDR
+                  key: latest
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+  traffic:
+    - percent: 100
+      latestRevision: true
