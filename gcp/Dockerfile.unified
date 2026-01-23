@@ -1,0 +1,172 @@
+# ============================================================================
+# Unified Backend Dockerfile: Express + Python FastAPI with CUDA Support
+# ============================================================================
+# Production-grade container for Followup AI backend
+# Supports CPU-only deployment with GPU upgrade path (no rebuild needed)
+#
+# Architecture:
+#   - Supervisord manages both processes
+#   - Express (Node.js) on port 5000 - Auth, API gateway
+#   - FastAPI (Python) on port 8000 - AI/ML services
+#   - Cloud Run routes external traffic to port 5000
+#
+# Build: docker build -t followup-backend -f gcp/Dockerfile.unified .
+# Run:   docker run -p 5000:5000 followup-backend
+
+# ============================================================================
+# Stage 1: Base image with CUDA and system dependencies
+# ============================================================================
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04 AS base
+
+LABEL maintainer="Followup AI <dev@followup.ai>"
+LABEL description="HIPAA-Compliant Unified Backend (Express + FastAPI)"
+LABEL version="2.1.0"
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+ENV NODE_ENV=production
+
+# Add deadsnakes PPA for Python 3.12 and NodeSource for Node.js 20
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    gpg-agent \
+    ca-certificates \
+    curl \
+    gnupg \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    # Python 3.12
+    python3.12 \
+    python3.12-dev \
+    python3.12-venv \
+    python3.12-distutils \
+    # Node.js 20
+    nodejs \
+    # Process manager
+    supervisor \
+    # Medical imaging dependencies
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    # Build dependencies
+    build-essential \
+    pkg-config \
+    git \
+    wget \
+    # Health check
+    procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Install pip for Python 3.12
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
+
+# Set Python 3.12 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
+
+# Create non-root user for security
+RUN useradd -m -u 1000 -s /bin/bash appuser && \
+    mkdir -p /app /models /data /tmp/checkpoints /var/log/supervisor && \
+    chown -R appuser:appuser /app /models /data /tmp/checkpoints /var/log/supervisor
+
+WORKDIR /app
+
+# ============================================================================
+# Stage 2: Python dependencies
+# ============================================================================
+FROM base AS python-deps
+
+COPY gcp/requirements-gcp.txt /tmp/requirements.txt
+
+# Install Python dependencies with caching
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3.12 -m pip install --no-cache-dir -r /tmp/requirements.txt
+
+# ============================================================================
+# Stage 3: Node.js dependencies (including tsx for TypeScript execution)
+# ============================================================================
+FROM base AS node-deps
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including tsx for TypeScript server)
+# tsx is needed at runtime to execute server/index.ts
+RUN npm ci --ignore-scripts && \
+    npm cache clean --force
+
+# ============================================================================
+# Stage 4: Build frontend assets
+# ============================================================================
+FROM node-deps AS frontend-build
+
+# Copy source for build
+COPY client/ ./client/
+COPY shared/ ./shared/
+COPY vite.config.ts tsconfig.json ./
+
+# Install dev dependencies for build
+RUN npm ci --ignore-scripts
+
+# Build frontend
+RUN npm run build
+
+# ============================================================================
+# Stage 5: Production image
+# ============================================================================
+FROM base AS production
+
+# Copy Python dependencies from python-deps stage
+COPY --from=python-deps /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
+COPY --from=python-deps /usr/local/bin /usr/local/bin
+
+# Copy Node.js dependencies
+COPY --from=node-deps /app/node_modules ./node_modules
+
+# Copy built frontend
+COPY --from=frontend-build /app/dist ./dist
+
+# Copy application code
+COPY app/ ./app/
+COPY server/ ./server/
+COPY shared/ ./shared/
+COPY package*.json tsconfig.json ./
+
+# Copy supervisor configuration
+COPY gcp/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Set ownership
+RUN chown -R appuser:appuser /app
+
+# Environment variables (can be overridden at runtime)
+ENV HOST=0.0.0.0
+ENV PORT=5000
+ENV PYTHON_PORT=8000
+ENV WORKERS=4
+ENV MODEL_REGISTRY_PATH=/models
+
+# Health check - check Express server (which proxies to FastAPI)
+# Extended start period for ML model loading
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=5 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+# Expose ports
+EXPOSE 5000 8000
+
+# Run as non-root user
+USER appuser
+
+# Start supervisord to manage both processes
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

@@ -1,30 +1,36 @@
-# Followup AI Backend - Google Cloud Build Configuration
+# Followup AI Unified Backend - Google Cloud Build Configuration
 #
-# This configuration builds and deploys the backend to Cloud Run with GPU support.
+# Builds and deploys the unified backend (Express + FastAPI) to Cloud Run.
+# Supports CPU-only deployment (default) with optional GPU acceleration.
 #
 # Prerequisites:
 # 1. Enable Cloud Build, Cloud Run, Artifact Registry, and Secret Manager APIs
 # 2. Create secrets in Secret Manager: DATABASE_URL, STYTCH_PROJECT_ID, STYTCH_SECRET, OPENAI_API_KEY
 # 3. Grant Cloud Build service account access to secrets and Cloud Run
 #
-# Trigger: Push to main branch or manual trigger
-# 
 # Usage:
+#   # CPU-only deployment (default, scale-to-zero, minimal cost)
 #   gcloud builds submit --config=gcp/cloudbuild.yaml .
+#
+#   # GPU deployment (for production with paying customers)
+#   gcloud builds submit --config=gcp/cloudbuild.yaml --substitutions=_ENABLE_GPU=true .
 
 substitutions:
   _REGION: us-central1
   _SERVICE_NAME: followup-backend
   _REPOSITORY: followup-ai
-  _MIN_INSTANCES: '1'
+  _MIN_INSTANCES: '0'
   _MAX_INSTANCES: '10'
-  _MEMORY: '8Gi'
-  _CPU: '4'
-  _GPU_TYPE: nvidia-l4
-  _GPU_COUNT: '1'
-  _TIMEOUT: '60'
+  _MEMORY: '4Gi'
+  _CPU: '2'
+  _TIMEOUT: '300'
   _CONCURRENCY: '80'
   _CORS_ORIGINS: 'https://followup-ai.replit.app'
+  _ENABLE_GPU: 'false'
+  _GPU_TYPE: nvidia-l4
+  _GPU_COUNT: '1'
+  _GPU_MEMORY: '8Gi'
+  _GPU_CPU: '4'
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -42,7 +48,7 @@ steps:
           --cache-from ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest \
           -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA} \
           -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest \
-          -f gcp/Dockerfile \
+          -f gcp/Dockerfile.unified \
           .
 
   # Step 2: Push to Artifact Registry
@@ -55,33 +61,54 @@ steps:
     waitFor:
       - 'build'
 
-  # Step 3: Deploy to Cloud Run with GPU
+  # Step 3: Deploy to Cloud Run (CPU or GPU based on _ENABLE_GPU)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy'
-    entrypoint: 'gcloud'
+    entrypoint: 'bash'
     args:
-      - 'run'
-      - 'deploy'
-      - '${_SERVICE_NAME}'
-      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA}'
-      - '--region=${_REGION}'
-      - '--platform=managed'
-      - '--allow-unauthenticated'
-      - '--min-instances=${_MIN_INSTANCES}'
-      - '--max-instances=${_MAX_INSTANCES}'
-      - '--memory=${_MEMORY}'
-      - '--cpu=${_CPU}'
-      - '--gpu=${_GPU_COUNT}'
-      - '--gpu-type=${_GPU_TYPE}'
-      - '--timeout=${_TIMEOUT}'
-      - '--concurrency=${_CONCURRENCY}'
-      - '--set-env-vars=ENV=production,LOG_LEVEL=INFO,CORS_ALLOWED_ORIGINS=${_CORS_ORIGINS}'
-      - '--set-secrets=DATABASE_URL=DATABASE_URL:latest,STYTCH_PROJECT_ID=STYTCH_PROJECT_ID:latest,STYTCH_SECRET=STYTCH_SECRET:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BAA=OPENAI_BAA:latest,OPENAI_ZDR=OPENAI_ZDR:latest'
-      - '--service-account=followup-backend@${PROJECT_ID}.iam.gserviceaccount.com'
+      - '-c'
+      - |
+        if [ "${_ENABLE_GPU}" = "true" ]; then
+          echo "Deploying with GPU support..."
+          gcloud run deploy ${_SERVICE_NAME} \
+            --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA} \
+            --region=${_REGION} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --min-instances=1 \
+            --max-instances=${_MAX_INSTANCES} \
+            --memory=${_GPU_MEMORY} \
+            --cpu=${_GPU_CPU} \
+            --gpu=${_GPU_COUNT} \
+            --gpu-type=${_GPU_TYPE} \
+            --timeout=${_TIMEOUT} \
+            --concurrency=${_CONCURRENCY} \
+            --port=5000 \
+            --set-env-vars=ENV=production,LOG_LEVEL=INFO,CORS_ALLOWED_ORIGINS=${_CORS_ORIGINS},WORKERS=4 \
+            --set-secrets=DATABASE_URL=DATABASE_URL:latest,STYTCH_PROJECT_ID=STYTCH_PROJECT_ID:latest,STYTCH_SECRET=STYTCH_SECRET:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BAA=OPENAI_BAA:latest,OPENAI_ZDR=OPENAI_ZDR:latest \
+            --service-account=followup-backend@${PROJECT_ID}.iam.gserviceaccount.com
+        else
+          echo "Deploying CPU-only (scale-to-zero enabled)..."
+          gcloud run deploy ${_SERVICE_NAME} \
+            --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA} \
+            --region=${_REGION} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --min-instances=${_MIN_INSTANCES} \
+            --max-instances=${_MAX_INSTANCES} \
+            --memory=${_MEMORY} \
+            --cpu=${_CPU} \
+            --timeout=${_TIMEOUT} \
+            --concurrency=${_CONCURRENCY} \
+            --port=5000 \
+            --set-env-vars=ENV=production,LOG_LEVEL=INFO,CORS_ALLOWED_ORIGINS=${_CORS_ORIGINS},WORKERS=2 \
+            --set-secrets=DATABASE_URL=DATABASE_URL:latest,STYTCH_PROJECT_ID=STYTCH_PROJECT_ID:latest,STYTCH_SECRET=STYTCH_SECRET:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BAA=OPENAI_BAA:latest,OPENAI_ZDR=OPENAI_ZDR:latest \
+            --service-account=followup-backend@${PROJECT_ID}.iam.gserviceaccount.com
+        fi
     waitFor:
       - 'push'
 
-  # Step 4: Get service URL and configure traffic
+  # Step 4: Configure traffic and display URL
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'traffic'
     entrypoint: 'bash'
@@ -92,10 +119,18 @@ steps:
           --region=${_REGION} \
           --to-latest
         
-        echo "Deployment complete!"
-        gcloud run services describe ${_SERVICE_NAME} \
+        echo ""
+        echo "=========================================="
+        echo "Deployment Complete!"
+        echo "=========================================="
+        SERVICE_URL=$(gcloud run services describe ${_SERVICE_NAME} \
           --region=${_REGION} \
-          --format='value(status.url)'
+          --format='value(status.url)')
+        echo "Service URL: $SERVICE_URL"
+        echo ""
+        echo "Configure your Replit frontend with:"
+        echo "VITE_API_URL=$SERVICE_URL"
+        echo "=========================================="
     waitFor:
       - 'deploy'
 
@@ -103,4 +138,4 @@ images:
   - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA}'
   - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest'
 
-timeout: '1800s'
+timeout: '2400s'

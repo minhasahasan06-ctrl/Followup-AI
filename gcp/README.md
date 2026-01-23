@@ -1,198 +1,220 @@
-# Followup AI - GCP Backend Deployment
+# Followup AI - GCP Cloud Run Deployment
 
-This guide covers deploying the Followup AI Python backend to Google Cloud Platform (GCP) Cloud Run with GPU support.
+Production-grade deployment of the Followup AI unified backend (Express + FastAPI) to Google Cloud Run.
 
 ## Architecture
 
 ```
-┌─────────────────────┐     ┌─────────────────────────────────┐
-│  Replit Frontend    │────▶│  GCP Cloud Run (GPU)            │
-│  (React/TypeScript) │     │  - FastAPI Backend              │
-│                     │     │  - MONAI Medical Imaging        │
-└─────────────────────┘     │  - LangGraph Orchestration      │
-                            │  - PostgreSQL (Neon)            │
-                            └─────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Google Cloud Run                          │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │              Unified Container (CUDA-ready)              ││
+│  │  ┌──────────────────┐    ┌────────────────────────────┐ ││
+│  │  │   Express.js     │    │      FastAPI (Python)      │ ││
+│  │  │   (Port 5000)    │───▶│       (Port 8000)          │ ││
+│  │  │   - Auth         │    │   - AI/ML Services         │ ││
+│  │  │   - API Gateway  │    │   - MONAI Imaging          │ ││
+│  │  │   - Chat         │    │   - LangGraph              │ ││
+│  │  └──────────────────┘    └────────────────────────────┘ ││
+│  │                    Supervisord                           ││
+│  └─────────────────────────────────────────────────────────┘│
+│                           ▲                                  │
+│           External traffic (Port 5000)                       │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+              ┌─────────────────────────────┐
+              │      Replit Frontend        │
+              │    (React/TypeScript)       │
+              │   VITE_API_URL → Cloud Run  │
+              └─────────────────────────────┘
 ```
 
-## Prerequisites
+## Cost Comparison
 
-1. **GCP Account** with billing enabled
-2. **gcloud CLI** installed and authenticated
-3. **Docker** installed locally (for building images)
-4. **Neon PostgreSQL** database with connection string
+| Mode | Min Instances | Idle Cost | Active Cost | Best For |
+|------|---------------|-----------|-------------|----------|
+| CPU-only (default) | 0 | **$0/month** | ~$0.00002400/vCPU-sec | Pre-revenue, testing |
+| GPU (NVIDIA L4) | 1 | ~$200/month | ~$0.001234/GPU-sec | Production with paying customers |
 
 ## Quick Start
 
-### 1. Set up GCP Project
+### Prerequisites
+
+1. [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) installed and authenticated
+2. Docker installed locally
+3. GCP project with billing enabled
+
+### 1. Set Up GCP Secrets
 
 ```bash
-# Set your project ID
-export PROJECT_ID=your-project-id
-gcloud config set project $PROJECT_ID
+export PROJECT_ID="your-gcp-project-id"
 
-# Enable required APIs
-gcloud services enable \
-  cloudbuild.googleapis.com \
-  run.googleapis.com \
-  artifactregistry.googleapis.com \
-  secretmanager.googleapis.com
+# Create required secrets (replace with actual values)
+echo -n "postgresql://user:pass@host/db" | gcloud secrets create DATABASE_URL --data-file=- --project=$PROJECT_ID
+echo -n "project-live-xxx" | gcloud secrets create STYTCH_PROJECT_ID --data-file=- --project=$PROJECT_ID  
+echo -n "secret-live-xxx" | gcloud secrets create STYTCH_SECRET --data-file=- --project=$PROJECT_ID
+echo -n "sk-xxx" | gcloud secrets create OPENAI_API_KEY --data-file=- --project=$PROJECT_ID
+echo -n "true" | gcloud secrets create OPENAI_BAA --data-file=- --project=$PROJECT_ID
+echo -n "true" | gcloud secrets create OPENAI_ZDR --data-file=- --project=$PROJECT_ID
 ```
 
-### 2. Create Secrets in Secret Manager
+### 2. Deploy (CPU-Only, Scale-to-Zero)
 
 ```bash
-# Database URL (Neon PostgreSQL)
-echo -n "postgresql://user:password@host/db" | \
-  gcloud secrets create DATABASE_URL --data-file=-
-
-# Stytch Authentication
-echo -n "your-stytch-project-id" | \
-  gcloud secrets create STYTCH_PROJECT_ID --data-file=-
-echo -n "your-stytch-secret" | \
-  gcloud secrets create STYTCH_SECRET --data-file=-
-
-# OpenAI with BAA/ZDR for HIPAA compliance
-echo -n "your-openai-api-key" | \
-  gcloud secrets create OPENAI_API_KEY --data-file=-
-echo -n "true" | \
-  gcloud secrets create OPENAI_BAA --data-file=-
-echo -n "true" | \
-  gcloud secrets create OPENAI_ZDR --data-file=-
+# Default: CPU-only, scale-to-zero ($0 when idle)
+./gcp/deploy.sh your-project-id us-central1
 ```
 
-### 3. Deploy
+### 3. Configure Frontend
 
-```bash
-# Run the deployment script
-./gcp/deploy.sh $PROJECT_ID us-central1
+After deployment, add to Replit secrets:
+```
+VITE_API_URL=https://followup-backend-xxxxx-uc.a.run.app
 ```
 
-Or use Cloud Build:
+Restart the Replit application.
+
+## Deployment Options
+
+### CPU-Only (Default) - Recommended for Pre-Revenue
 
 ```bash
+./gcp/deploy.sh PROJECT_ID us-central1
+```
+
+- Scales to zero when idle (**$0 cost**)
+- Cold starts: ~5-10 seconds for first request
+- Suitable for: Development, testing, early customers
+
+### GPU Enabled - For Production Workloads
+
+```bash
+./gcp/deploy.sh PROJECT_ID us-central1 --gpu
+```
+
+- NVIDIA L4 GPU attached
+- Min 1 instance (no scale-to-zero)
+- Fast MONAI medical imaging inference
+- Suitable for: Paying customers, production
+
+### Using Cloud Build (CI/CD)
+
+```bash
+# CPU-only
 gcloud builds submit --config=gcp/cloudbuild.yaml .
+
+# With GPU
+gcloud builds submit --config=gcp/cloudbuild.yaml --substitutions=_ENABLE_GPU=true .
 ```
 
-### 4. Configure Frontend
+## File Structure
 
-After deployment, update your Replit frontend:
-
-1. Go to Secrets/Environment Variables in Replit
-2. Add: `VITE_API_URL=https://your-cloud-run-url.run.app`
-3. Restart the frontend
-
-## Files
-
-| File | Description |
-|------|-------------|
-| `Dockerfile` | Production Docker image with CUDA/MONAI |
-| `requirements-gcp.txt` | Python dependencies for GCP |
-| `cloudbuild.yaml` | Cloud Build pipeline configuration |
-| `cloudrun-service.yaml` | Cloud Run service definition (Knative) |
-| `deploy.sh` | Automated deployment script |
-
-## GPU Configuration
-
-The deployment is configured for NVIDIA L4 GPU:
-
-- **GPU Type**: nvidia-l4
-- **GPU Count**: 1
-- **Memory**: 8Gi
-- **CPU**: 4
-
-Modify in `cloudbuild.yaml` or `cloudrun-service.yaml` to change GPU type:
-- `nvidia-l4` - Good balance of cost/performance
-- `nvidia-t4` - Budget option
-- `nvidia-a100-40gb` - High performance
+```
+gcp/
+├── Dockerfile.unified    # Combined Express + FastAPI with CUDA
+├── supervisord.conf      # Process manager for both services
+├── requirements-gcp.txt  # Python dependencies (ML/AI)
+├── cloudbuild.yaml       # Cloud Build pipeline
+├── cloudrun-service.yaml # Knative service definition
+├── deploy.sh            # One-command deployment script
+└── README.md            # This file
+```
 
 ## Environment Variables
 
-### Required Secrets (via Secret Manager)
+| Variable | Description | Set By |
+|----------|-------------|--------|
+| `DATABASE_URL` | Neon PostgreSQL connection | Secret Manager |
+| `STYTCH_PROJECT_ID` | Stytch auth project | Secret Manager |
+| `STYTCH_SECRET` | Stytch auth secret | Secret Manager |
+| `OPENAI_API_KEY` | OpenAI API key | Secret Manager |
+| `OPENAI_BAA` | BAA compliance flag | Secret Manager |
+| `OPENAI_ZDR` | ZDR compliance flag | Secret Manager |
+| `CORS_ALLOWED_ORIGINS` | Allowed frontend URLs | Deploy script |
+| `WORKERS` | Uvicorn worker count | Deploy script (2 CPU, 4 GPU) |
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | Neon PostgreSQL connection string |
-| `STYTCH_PROJECT_ID` | Stytch project ID for auth |
-| `STYTCH_SECRET` | Stytch secret key |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `OPENAI_BAA` | OpenAI BAA signed flag (true/false) |
-| `OPENAI_ZDR` | OpenAI ZDR enabled flag (true/false) |
+## Upgrading from CPU to GPU
 
-### Environment Variables (set in deployment)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENV` | production | Environment mode |
-| `LOG_LEVEL` | INFO | Logging level |
-| `WORKERS` | 4 | Uvicorn worker count |
-| `CORS_ALLOWED_ORIGINS` | - | Comma-separated allowed origins |
-
-## CORS Configuration
-
-Set `CORS_ALLOWED_ORIGINS` to allow your Replit frontend:
+When you have paying customers and need faster inference:
 
 ```bash
-CORS_ALLOWED_ORIGINS=https://your-app.replit.app,https://followup.ai
+# Upgrade to GPU (same image, just different resource allocation)
+./gcp/deploy.sh PROJECT_ID us-central1 --gpu
 ```
+
+No rebuild required - the container image includes CUDA support.
 
 ## Monitoring
 
-View logs:
+### View Logs
+
 ```bash
-gcloud run services logs read followup-backend --region=us-central1
+gcloud run services logs read followup-backend --region=us-central1 --limit=100
 ```
 
-View metrics:
+### Check Service Status
+
 ```bash
-gcloud run services describe followup-backend \
-  --region=us-central1 \
-  --format='yaml(status)'
+gcloud run services describe followup-backend --region=us-central1
 ```
 
-## Scaling
+### View Metrics
 
-Adjust scaling in `cloudbuild.yaml`:
-
-```yaml
-substitutions:
-  _MIN_INSTANCES: '1'    # Minimum instances (0 = scale to zero)
-  _MAX_INSTANCES: '10'   # Maximum instances
-  _CONCURRENCY: '80'     # Requests per instance
-```
+Visit: https://console.cloud.google.com/run/detail/us-central1/followup-backend/metrics
 
 ## Troubleshooting
 
-### GPU Not Available
+### Cold Start Timeout
 
-Ensure your project has GPU quota in the region:
+If first requests fail after idle period:
+- Increase `startupProbe.failureThreshold` in cloudrun-service.yaml
+- Consider min-instances=1 if cold starts are unacceptable
+
+### Memory Issues
+
+For large medical images:
 ```bash
-gcloud compute regions describe us-central1 \
-  --format="value(quotas[name='NVIDIA_L4_GPUS'])"
+# Increase memory (requires proportional CPU)
+gcloud run services update followup-backend --memory=8Gi --cpu=4 --region=us-central1
 ```
 
-### Container Fails to Start
+### CORS Errors
 
-Check startup logs:
+Update CORS origins:
 ```bash
-gcloud run services logs read followup-backend \
-  --region=us-central1 \
-  --limit=50
+gcloud run services update followup-backend \
+  --set-env-vars="CORS_ALLOWED_ORIGINS=https://your-domain.com,https://another.com" \
+  --region=us-central1
 ```
 
-### Secret Access Denied
+## Security
 
-Grant the service account access:
+- All secrets managed via GCP Secret Manager
+- Non-root container user
+- HTTPS enforced by Cloud Run
+- CORS restricted to configured origins
+- HIPAA-compliant audit logging enabled
+- Service account with minimal permissions
+
+## Rolling Back
+
 ```bash
-gcloud secrets add-iam-policy-binding DATABASE_URL \
-  --member="serviceAccount:followup-backend@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
+# List revisions
+gcloud run revisions list --service=followup-backend --region=us-central1
+
+# Route traffic to previous revision
+gcloud run services update-traffic followup-backend \
+  --to-revisions=followup-backend-00001=100 \
+  --region=us-central1
 ```
 
-## Cost Estimation
+## Deleting the Deployment
 
-With 1 GPU instance running 24/7:
-- Cloud Run GPU: ~$500-800/month
-- Artifact Registry: ~$5/month
-- Secret Manager: ~$1/month
+```bash
+# Delete service (stops billing)
+gcloud run services delete followup-backend --region=us-central1
 
-Consider setting `_MIN_INSTANCES: '0'` for development to reduce costs.
+# Optionally delete repository
+gcloud artifacts repositories delete followup-ai --location=us-central1
+```
