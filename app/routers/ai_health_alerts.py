@@ -703,11 +703,34 @@ class AlertGenerationService:
 @router.get("/trend-metrics/{patient_id}", response_model=List[TrendMetricResponse])
 async def get_trend_metrics(
     patient_id: str,
+    request: Request,
     metric_name: Optional[str] = None,
     days: int = Query(default=14, le=90),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get trend metrics for a patient with optional filtering"""
+    # Access control: patients see their own, doctors see connected patients
+    if current_user.role == "patient":
+        if current_user.id != patient_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.role == "doctor":
+        acs = get_access_control()
+        decision = acs.verify_doctor_patient_access(
+            db=db, doctor_id=current_user.id, patient_id=patient_id,
+            required_scope=AccessScope.READ, phi_categories=[PHICategory.CLINICAL.value]
+        )
+        if not decision.allowed:
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=current_user.id, actor_role="doctor", patient_id=patient_id,
+                action="view_trend_metrics_denied", phi_categories=[PHICategory.CLINICAL.value],
+                resource_type="trend_metrics", success=False, error_message=decision.reason,
+                ip_address=request.client.host if request.client else None
+            )
+            raise HTTPException(status_code=403, detail=decision.reason)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     try:
         cutoff = datetime.utcnow() - timedelta(days=days)
         
@@ -731,6 +754,13 @@ async def get_trend_metrics(
         
         result = db.execute(query, params)
         rows = result.fetchall()
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=current_user.id, actor_role=str(current_user.role), patient_id=patient_id,
+            action="view_trend_metrics", phi_categories=[PHICategory.CLINICAL.value],
+            resource_type="trend_metrics", success=True,
+            ip_address=request.client.host if request.client else None
+        )
         
         return [
             TrendMetricResponse(
@@ -763,10 +793,27 @@ async def get_trend_metrics(
 @router.post("/trend-metrics/compute/{patient_id}")
 async def compute_trend_metrics(
     patient_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Compute and store trend metrics for all tracked data sources"""
+    # Access control: patients compute for themselves, doctors for connected patients
+    if current_user.role == "patient":
+        if current_user.id != patient_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.role == "doctor":
+        acs = get_access_control()
+        decision = acs.verify_doctor_patient_access(
+            db=db, doctor_id=current_user.id, patient_id=patient_id,
+            required_scope=AccessScope.FULL, phi_categories=[PHICategory.CLINICAL.value]
+        )
+        if not decision.allowed:
+            raise HTTPException(status_code=403, detail=decision.reason)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     try:
         metrics_computed = []
         trend_service = TrendComputationService()
@@ -1218,13 +1265,36 @@ async def compute_qol_metrics(
 @router.get("/alerts/{patient_id}", response_model=List[HealthAlertResponse])
 async def get_health_alerts(
     patient_id: str,
+    request: Request,
     status: Optional[str] = None,
     alert_type: Optional[str] = None,
     severity: Optional[str] = None,
     limit: int = Query(default=50, le=200),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get health alerts for a patient with optional filtering"""
+    # Access control: patients see their own, doctors see connected patients
+    if current_user.role == "patient":
+        if current_user.id != patient_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.role == "doctor":
+        acs = get_access_control()
+        decision = acs.verify_doctor_patient_access(
+            db=db, doctor_id=current_user.id, patient_id=patient_id,
+            required_scope=AccessScope.READ, phi_categories=[PHICategory.CLINICAL.value]
+        )
+        if not decision.allowed:
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=current_user.id, actor_role="doctor", patient_id=patient_id,
+                action="view_health_alerts_denied", phi_categories=[PHICategory.CLINICAL.value],
+                resource_type="health_alerts", success=False, error_message=decision.reason,
+                ip_address=request.client.host if request.client else None
+            )
+            raise HTTPException(status_code=403, detail=decision.reason)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     try:
         filters = ["patient_id = :patient_id"]
         params = {"patient_id": patient_id, "limit": limit}

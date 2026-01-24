@@ -69,6 +69,7 @@ class ConnectionResponse(BaseModel):
 
 @router.get("/search", response_model=List[DoctorSearchResponse])
 async def search_doctors(
+    request: Request,
     query: Optional[str] = Query(None, description="Search by name, email, or LinkedIn"),
     specialty: Optional[str] = Query(None, description="Filter by specialty"),
     location_city: Optional[str] = Query(None, description="Filter by city"),
@@ -92,6 +93,17 @@ async def search_doctors(
         hospital_name=hospital_name,
         limit=limit,
         offset=offset
+    )
+    
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=current_user.id,
+        actor_role=str(current_user.role),
+        patient_id=None,
+        action="search_doctors",
+        phi_categories=[PHICategory.PROVIDER_INFO.value],
+        resource_type="doctor_search",
+        success=True,
+        ip_address=request.client.host if request.client else None
     )
     
     return doctors
@@ -131,7 +143,8 @@ async def get_my_doctors(
 
 @router.post("/connect", response_model=ConnectionResponse)
 async def connect_to_doctor(
-    request: ConnectDoctorRequest,
+    connect_request: ConnectDoctorRequest,
+    request: Request,
     current_user: User = Depends(require_role("patient")),
     db: Session = Depends(get_db)
 ):
@@ -143,9 +156,21 @@ async def connect_to_doctor(
         connection = DoctorSearchService.connect_patient_to_doctor(
             db=db,
             patient_id=current_user.id,
-            doctor_id=request.doctor_id,
-            connection_type=request.connection_type,
-            notes=request.notes
+            doctor_id=connect_request.doctor_id,
+            connection_type=connect_request.connection_type,
+            notes=connect_request.notes
+        )
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=current_user.id,
+            actor_role="patient",
+            patient_id=current_user.id,
+            action="connect_to_doctor",
+            phi_categories=[PHICategory.PROVIDER_INFO.value],
+            resource_type="doctor_connection",
+            resource_id=str(connection.id) if hasattr(connection, 'id') else None,
+            success=True,
+            ip_address=request.client.host if request.client else None
         )
         
         return connection
@@ -156,6 +181,7 @@ async def connect_to_doctor(
 @router.delete("/disconnect/{doctor_id}")
 async def disconnect_from_doctor(
     doctor_id: str,
+    request: Request,
     current_user: User = Depends(require_role("patient")),
     db: Session = Depends(get_db)
 ):
@@ -171,6 +197,17 @@ async def disconnect_from_doctor(
     
     if not success:
         raise HTTPException(status_code=404, detail="Connection not found")
+    
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=current_user.id,
+        actor_role="patient",
+        patient_id=current_user.id,
+        action="disconnect_from_doctor",
+        phi_categories=[PHICategory.PROVIDER_INFO.value],
+        resource_type="doctor_connection",
+        success=True,
+        ip_address=request.client.host if request.client else None
+    )
     
     return {"message": "Successfully disconnected from doctor"}
 
