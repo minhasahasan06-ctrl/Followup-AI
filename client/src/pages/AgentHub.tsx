@@ -175,18 +175,28 @@ export default function AgentHub() {
   const AgentIcon = agentIcon;
 
   // Fetch conversations list
-  const { data: conversationsData, isLoading: conversationsLoading } = useQuery<{ conversations: Conversation[], total: number }>({
+  const { data: conversations = [], isLoading: conversationsLoading } = useQuery<Conversation[]>({
     queryKey: ["/api/agent/conversations"],
     refetchInterval: 30000,
+    select: (data: any) => {
+      // Handle both array response and object with conversations property
+      if (Array.isArray(data)) return data;
+      if (data && Array.isArray(data.conversations)) return data.conversations;
+      return [];
+    },
   });
-  const conversations = conversationsData?.conversations ?? [];
 
   // Fetch messages for selected conversation
-  const { data: messagesData, isLoading: messagesLoading, refetch: refetchMessages } = useQuery<{ messages: AgentMessage[], total: number }>({
+  const { data: messages = [], isLoading: messagesLoading, refetch: refetchMessages } = useQuery<AgentMessage[]>({
     queryKey: ["/api/agent/messages", selectedConversation],
     enabled: !!selectedConversation,
+    select: (data: any) => {
+      // Handle both array response and object with messages property
+      if (Array.isArray(data)) return data;
+      if (data && Array.isArray(data.messages)) return data.messages;
+      return [];
+    },
   });
-  const messages = messagesData?.messages ?? [];
 
   // Fetch pending approvals for doctors
   const { data: apiApprovals = [], refetch: refetchApprovals } = useQuery<ToolCallApproval[]>({
