@@ -1,10 +1,9 @@
 """
 Video Session Storage Service
-HIPAA-compliant storage for video exam frames and recordings with:
-- S3 server-side encryption (SSE-S3 or SSE-KMS)
-- Pre-signed URLs for secure upload/download (15-minute TTL)
-- Lifecycle policies for automatic retention management
-- Comprehensive HIPAA audit logging
+HIPAA-compliant storage for video exam frames and recordings.
+
+NOTE: AWS S3/boto3 integration has been disabled. All storage operations
+use local filesystem fallback or return mock data.
 """
 
 import os
@@ -15,14 +14,13 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Tuple
 from enum import Enum
 
-import boto3
-from botocore.exceptions import ClientError
-from botocore.config import Config as BotoConfig
-
 from app.config import settings
 from app.services.access_control import HIPAAAuditLogger
 
 logger = logging.getLogger(__name__)
+
+# STUB: boto3 has been removed - S3 operations are disabled
+logger.warning("AWS S3 integration disabled - video storage using local filesystem fallback")
 
 
 class StorageType(str, Enum):
@@ -34,6 +32,8 @@ class StorageType(str, Enum):
 class VideoSessionStorageService:
     """
     HIPAA-compliant video session storage service.
+    
+    NOTE: S3 integration is disabled. All operations use local storage fallback.
     
     Handles:
     - Frame uploads from guided exams (eyes, palm, tongue, lips, skin)
@@ -103,33 +103,20 @@ class VideoSessionStorageService:
         raise PermissionError(f"Role {user_role} cannot access video session data")
     
     def __init__(self):
-        self.use_s3 = self._should_use_s3()
-        self.bucket_name = os.getenv('AWS_S3_BUCKET_NAME')
-        self.kms_key_id = os.getenv('AWS_KMS_KEY_ID')
-        self.region = self._parse_region(os.getenv('AWS_REGION', 'us-east-1'))
+        # STUB: S3 is disabled - always use local storage
+        self.use_s3 = False
+        self.bucket_name = os.getenv('AWS_S3_BUCKET_NAME', 'local-storage')
+        self.kms_key_id = None
+        self.region = 'us-east-1'
+        self.s3_client = None  # STUB: No S3 client available
         
-        if self.use_s3:
-            self.s3_client = boto3.client(
-                's3',
-                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-                region_name=self.region,
-                config=BotoConfig(signature_version='s3v4')
-            )
-            logger.info(f"VideoSessionStorageService initialized with S3 (bucket: {self.bucket_name})")
-        else:
-            self.s3_client = None
-            self.local_storage_dir = 'tmp/video_sessions'
-            os.makedirs(self.local_storage_dir, exist_ok=True)
-            logger.warning("VideoSessionStorageService using LOCAL storage fallback")
+        self.local_storage_dir = 'tmp/video_sessions'
+        os.makedirs(self.local_storage_dir, exist_ok=True)
+        logger.warning("VideoSessionStorageService: S3 disabled, using LOCAL storage fallback")
     
     def _should_use_s3(self) -> bool:
-        """Check if S3 credentials are available"""
-        return all([
-            os.getenv('AWS_ACCESS_KEY_ID'),
-            os.getenv('AWS_SECRET_ACCESS_KEY'),
-            os.getenv('AWS_S3_BUCKET_NAME')
-        ])
+        """Check if S3 credentials are available - STUB: always returns False"""
+        return False
     
     @staticmethod
     def _parse_region(region_str: str) -> str:
@@ -181,7 +168,7 @@ class VideoSessionStorageService:
         client_ip: Optional[str] = None
     ) -> Dict:
         """
-        Generate a pre-signed URL for secure direct upload to S3.
+        Generate a URL for upload. STUB: Returns local file path since S3 is disabled.
         
         Enforces RBAC: patients can only upload to their own sessions.
         
@@ -202,88 +189,29 @@ class VideoSessionStorageService:
         
         expires_at = datetime.utcnow() + timedelta(seconds=self.SIGNED_URL_TTL_SECONDS)
         
-        if not self.use_s3:
-            local_path = os.path.join(self.local_storage_dir, s3_key.replace('/', '_'))
-            HIPAAAuditLogger.log_phi_access(
-                action="generate_upload_url",
-                resource_type="video_session_frame",
-                resource_id=session_id,
-                user_id=user_id or "system",
-                patient_id=patient_id,
-                access_context={"storage": "local", "s3_key": s3_key},
-                client_ip=client_ip
-            )
-            return {
-                "upload_url": f"file://{os.path.abspath(local_path)}",
-                "s3_key": s3_key,
-                "bucket": "local",
-                "expires_at": expires_at.isoformat(),
-                "method": "PUT",
-                "storage_mode": "local"
-            }
+        # STUB: S3 disabled - return local file path
+        local_path = os.path.join(self.local_storage_dir, s3_key.replace('/', '_'))
+        logger.warning(f"S3 disabled: returning local upload path for {s3_key}")
         
-        try:
-            presigned_params = {
-                'Bucket': self.bucket_name,
-                'Key': s3_key,
-                'ContentType': content_type,
-            }
-            
-            conditions = [
-                {"bucket": self.bucket_name},
-                {"key": s3_key},
-                {"Content-Type": content_type},
-                {"x-amz-server-side-encryption": "AES256"},
-            ]
-            
-            if self.kms_key_id:
-                conditions[-1] = {"x-amz-server-side-encryption": "aws:kms"}
-                conditions.append({"x-amz-server-side-encryption-aws-kms-key-id": self.kms_key_id})
-            
-            if file_size_bytes:
-                conditions.append(["content-length-range", file_size_bytes - 1000, file_size_bytes + 1000])
-            
-            presigned_url = await asyncio.to_thread(
-                self.s3_client.generate_presigned_url,
-                'put_object',
-                Params={
-                    **presigned_params,
-                    'ServerSideEncryption': 'aws:kms' if self.kms_key_id else 'AES256',
-                    **({"SSEKMSKeyId": self.kms_key_id} if self.kms_key_id else {})
-                },
-                ExpiresIn=self.SIGNED_URL_TTL_SECONDS
-            )
-            
-            HIPAAAuditLogger.log_phi_access(
-                action="generate_upload_url",
-                resource_type="video_session_frame",
-                resource_id=session_id,
-                user_id=user_id or "system",
-                patient_id=patient_id,
-                access_context={
-                    "s3_key": s3_key,
-                    "storage_type": storage_type.value,
-                    "stage": stage,
-                    "expires_at": expires_at.isoformat(),
-                    "encrypted": True,
-                    "kms_enabled": bool(self.kms_key_id)
-                },
-                client_ip=client_ip
-            )
-            
-            return {
-                "upload_url": presigned_url,
-                "s3_key": s3_key,
-                "bucket": self.bucket_name,
-                "expires_at": expires_at.isoformat(),
-                "method": "PUT",
-                "storage_mode": "s3",
-                "encryption": "aws:kms" if self.kms_key_id else "AES256"
-            }
-            
-        except ClientError as e:
-            logger.error(f"Failed to generate upload URL: {e}")
-            raise
+        HIPAAAuditLogger.log_phi_access(
+            action="generate_upload_url",
+            resource_type="video_session_frame",
+            resource_id=session_id,
+            user_id=user_id or "system",
+            patient_id=patient_id,
+            access_context={"storage": "local_stub", "s3_key": s3_key},
+            client_ip=client_ip
+        )
+        
+        return {
+            "upload_url": f"file://{os.path.abspath(local_path)}",
+            "s3_key": s3_key,
+            "bucket": "local",
+            "expires_at": expires_at.isoformat(),
+            "method": "PUT",
+            "storage_mode": "local_stub",
+            "warning": "AWS S3 integration disabled - using local storage"
+        }
     
     async def generate_download_url(
         self,
@@ -295,69 +223,38 @@ class VideoSessionStorageService:
         user_agent: Optional[str] = None
     ) -> Dict:
         """
-        Generate a pre-signed URL for secure download from S3.
+        Generate a URL for download. STUB: Returns local file path since S3 is disabled.
         
         Enforces RBAC: patients can only download their own session data.
-        Always generates fresh URLs (never stores) - 15-minute TTL.
         """
         if user_id and user_role:
             self._authorize_access(user_id, user_role, patient_id, "download", client_ip)
         
         expires_at = datetime.utcnow() + timedelta(seconds=self.SIGNED_URL_TTL_SECONDS)
         
-        if not self.use_s3:
-            local_path = os.path.join(self.local_storage_dir, s3_key.replace('/', '_'))
-            if not os.path.exists(local_path):
-                raise FileNotFoundError(f"Local file not found: {local_path}")
-            
-            HIPAAAuditLogger.log_phi_access(
-                action="generate_download_url",
-                resource_type="video_session_frame",
-                resource_id=s3_key,
-                user_id=user_id or "system",
-                patient_id=patient_id,
-                access_context={"storage": "local"},
-                client_ip=client_ip
-            )
-            
-            return {
-                "download_url": f"file://{os.path.abspath(local_path)}",
-                "s3_key": s3_key,
-                "expires_at": expires_at.isoformat(),
-                "storage_mode": "local"
-            }
+        # STUB: S3 disabled - return local file path
+        local_path = os.path.join(self.local_storage_dir, s3_key.replace('/', '_'))
         
-        try:
-            presigned_url = await asyncio.to_thread(
-                self.s3_client.generate_presigned_url,
-                'get_object',
-                Params={'Bucket': self.bucket_name, 'Key': s3_key},
-                ExpiresIn=self.SIGNED_URL_TTL_SECONDS
-            )
-            
-            HIPAAAuditLogger.log_phi_access(
-                action="generate_download_url",
-                resource_type="video_session_frame",
-                resource_id=s3_key,
-                user_id=user_id or "system",
-                patient_id=patient_id,
-                access_context={
-                    "url_expiry": expires_at.isoformat(),
-                    "user_agent": user_agent
-                },
-                client_ip=client_ip
-            )
-            
-            return {
-                "download_url": presigned_url,
-                "s3_key": s3_key,
-                "expires_at": expires_at.isoformat(),
-                "storage_mode": "s3"
-            }
-            
-        except ClientError as e:
-            logger.error(f"Failed to generate download URL: {e}")
-            raise
+        if not os.path.exists(local_path):
+            logger.warning(f"S3 disabled: Local file not found: {local_path}")
+        
+        HIPAAAuditLogger.log_phi_access(
+            action="generate_download_url",
+            resource_type="video_session_frame",
+            resource_id=s3_key,
+            user_id=user_id or "system",
+            patient_id=patient_id,
+            access_context={"storage": "local_stub"},
+            client_ip=client_ip
+        )
+        
+        return {
+            "download_url": f"file://{os.path.abspath(local_path)}",
+            "s3_key": s3_key,
+            "expires_at": expires_at.isoformat(),
+            "storage_mode": "local_stub",
+            "warning": "AWS S3 integration disabled - using local storage"
+        }
     
     async def upload_frame_direct(
         self,
@@ -371,11 +268,12 @@ class VideoSessionStorageService:
         client_ip: Optional[str] = None
     ) -> Dict:
         """
-        Upload a frame directly (server-side upload for backend processing).
+        Upload a frame directly. STUB: Saves to local filesystem since S3 is disabled.
         Enforces RBAC: patients can only upload to their own sessions.
         """
         if user_id and user_role:
             self._authorize_access(user_id, user_role, patient_id, "upload_frame", client_ip)
+        
         file_extension = "jpg" if "jpeg" in content_type else content_type.split("/")[-1]
         s3_key = self._generate_s3_key(
             storage_type=StorageType.EXAM_FRAME,
@@ -385,76 +283,36 @@ class VideoSessionStorageService:
             stage=stage
         )
         
-        if not self.use_s3:
-            local_path = os.path.join(self.local_storage_dir, s3_key.replace('/', '_'))
-            os.makedirs(os.path.dirname(local_path) if '/' in s3_key else self.local_storage_dir, exist_ok=True)
-            
-            def _write_file():
-                with open(local_path, 'wb') as f:
-                    f.write(file_data)
-            
-            await asyncio.to_thread(_write_file)
-            
-            HIPAAAuditLogger.log_phi_access(
-                action="upload_frame",
-                resource_type="video_session_frame",
-                resource_id=session_id,
-                user_id=user_id or "system",
-                patient_id=patient_id,
-                access_context={"stage": stage, "storage": "local", "size_bytes": len(file_data)},
-                client_ip=client_ip
-            )
-            
-            return {
-                "s3_key": s3_key,
-                "s3_uri": f"file://{os.path.abspath(local_path)}",
-                "bucket": "local",
-                "size_bytes": len(file_data),
-                "storage_mode": "local"
-            }
+        # STUB: S3 disabled - save to local filesystem
+        local_path = os.path.join(self.local_storage_dir, s3_key.replace('/', '_'))
+        os.makedirs(os.path.dirname(local_path) if '/' in s3_key else self.local_storage_dir, exist_ok=True)
         
-        try:
-            upload_params = {
-                'Bucket': self.bucket_name,
-                'Key': s3_key,
-                'Body': file_data,
-                'ContentType': content_type,
-                'ServerSideEncryption': 'AES256'
-            }
-            
-            if self.kms_key_id:
-                upload_params['ServerSideEncryption'] = 'aws:kms'
-                upload_params['SSEKMSKeyId'] = self.kms_key_id
-            
-            await asyncio.to_thread(self.s3_client.put_object, **upload_params)
-            
-            HIPAAAuditLogger.log_phi_access(
-                action="upload_frame",
-                resource_type="video_session_frame",
-                resource_id=session_id,
-                user_id=user_id or "system",
-                patient_id=patient_id,
-                access_context={
-                    "stage": stage,
-                    "s3_key": s3_key,
-                    "size_bytes": len(file_data),
-                    "encrypted": True
-                },
-                client_ip=client_ip
-            )
-            
-            return {
-                "s3_key": s3_key,
-                "s3_uri": f"s3://{self.bucket_name}/{s3_key}",
-                "bucket": self.bucket_name,
-                "size_bytes": len(file_data),
-                "storage_mode": "s3",
-                "kms_key_id": self.kms_key_id
-            }
-            
-        except ClientError as e:
-            logger.error(f"Failed to upload frame: {e}")
-            raise
+        def _write_file():
+            with open(local_path, 'wb') as f:
+                f.write(file_data)
+        
+        await asyncio.to_thread(_write_file)
+        
+        logger.warning(f"S3 disabled: Frame saved to local path {local_path}")
+        
+        HIPAAAuditLogger.log_phi_access(
+            action="upload_frame",
+            resource_type="video_session_frame",
+            resource_id=session_id,
+            user_id=user_id or "system",
+            patient_id=patient_id,
+            access_context={"stage": stage, "storage": "local_stub", "size_bytes": len(file_data)},
+            client_ip=client_ip
+        )
+        
+        return {
+            "s3_key": s3_key,
+            "s3_uri": f"file://{os.path.abspath(local_path)}",
+            "bucket": "local",
+            "size_bytes": len(file_data),
+            "storage_mode": "local_stub",
+            "warning": "AWS S3 integration disabled - using local storage"
+        }
     
     async def delete_session_content(
         self,
@@ -481,36 +339,16 @@ class VideoSessionStorageService:
                 client_ip=client_ip
             )
             raise PermissionError("Only doctors and admins can delete session content")
-        prefix = f"video-exams/{patient_id}/{session_id}/"
-        deleted_count = 0
         
-        if not self.use_s3:
-            import glob
-            pattern = os.path.join(self.local_storage_dir, f"video-exams_{patient_id}_{session_id}_*")
-            for f in glob.glob(pattern):
-                os.remove(f)
-                deleted_count += 1
-        else:
-            try:
-                paginator = self.s3_client.get_paginator('list_objects_v2')
-                pages = paginator.paginate(Bucket=self.bucket_name, Prefix=prefix)
-                
-                objects_to_delete = []
-                for page in pages:
-                    for obj in page.get('Contents', []):
-                        objects_to_delete.append({'Key': obj['Key']})
-                
-                if objects_to_delete:
-                    await asyncio.to_thread(
-                        self.s3_client.delete_objects,
-                        Bucket=self.bucket_name,
-                        Delete={'Objects': objects_to_delete}
-                    )
-                    deleted_count = len(objects_to_delete)
-                    
-            except ClientError as e:
-                logger.error(f"Failed to delete session content: {e}")
-                raise
+        # STUB: S3 disabled - delete local files
+        import glob
+        pattern = os.path.join(self.local_storage_dir, f"video-exams_{patient_id}_{session_id}_*")
+        deleted_count = 0
+        for f in glob.glob(pattern):
+            os.remove(f)
+            deleted_count += 1
+        
+        logger.warning(f"S3 disabled: Deleted {deleted_count} local files for session {session_id}")
         
         HIPAAAuditLogger.log_phi_access(
             action="delete_session_content",
@@ -518,14 +356,15 @@ class VideoSessionStorageService:
             resource_id=session_id,
             user_id=user_id or "system",
             patient_id=patient_id,
-            access_context={"deleted_count": deleted_count, "reason": "HIPAA_deletion_request"},
+            access_context={"deleted_count": deleted_count, "reason": "HIPAA_deletion_request", "storage": "local_stub"},
             client_ip=client_ip
         )
         
         return {
             "session_id": session_id,
             "deleted_objects": deleted_count,
-            "deleted_at": datetime.utcnow().isoformat()
+            "deleted_at": datetime.utcnow().isoformat(),
+            "warning": "AWS S3 integration disabled - deleted from local storage"
         }
     
     async def get_session_manifest(
@@ -537,40 +376,23 @@ class VideoSessionStorageService:
         client_ip: Optional[str] = None
     ) -> Dict:
         """
-        Get a manifest of all files for a session with fresh signed URLs.
-        Enforces RBAC: patients can only view their own session manifests.
+        Get a manifest of all files for a session.
+        STUB: Returns local files since S3 is disabled.
         """
         if user_id and user_role:
             self._authorize_access(user_id, user_role, patient_id, "get_manifest", client_ip)
-        prefix = f"video-exams/{patient_id}/{session_id}/"
+        
+        # STUB: S3 disabled - list local files
+        import glob
+        pattern = os.path.join(self.local_storage_dir, f"video-exams_{patient_id}_{session_id}_*")
         files = []
         
-        if not self.use_s3:
-            import glob
-            pattern = os.path.join(self.local_storage_dir, f"video-exams_{patient_id}_{session_id}_*")
-            for f in glob.glob(pattern):
-                files.append({
-                    "key": f,
-                    "size_bytes": os.path.getsize(f),
-                    "last_modified": datetime.fromtimestamp(os.path.getmtime(f)).isoformat()
-                })
-        else:
-            try:
-                paginator = self.s3_client.get_paginator('list_objects_v2')
-                pages = paginator.paginate(Bucket=self.bucket_name, Prefix=prefix)
-                
-                for page in pages:
-                    for obj in page.get('Contents', []):
-                        files.append({
-                            "key": obj['Key'],
-                            "size_bytes": obj['Size'],
-                            "last_modified": obj['LastModified'].isoformat(),
-                            "etag": obj.get('ETag', '').strip('"')
-                        })
-                        
-            except ClientError as e:
-                logger.error(f"Failed to get session manifest: {e}")
-                raise
+        for f in glob.glob(pattern):
+            files.append({
+                "key": f,
+                "size_bytes": os.path.getsize(f),
+                "last_modified": datetime.fromtimestamp(os.path.getmtime(f)).isoformat()
+            })
         
         manifest_files = []
         for f in files:
@@ -593,7 +415,7 @@ class VideoSessionStorageService:
             resource_id=session_id,
             user_id=user_id or "system",
             patient_id=patient_id,
-            access_context={"file_count": len(files)},
+            access_context={"file_count": len(files), "storage": "local_stub"},
             client_ip=client_ip
         )
         
@@ -602,50 +424,22 @@ class VideoSessionStorageService:
             "patient_id": patient_id,
             "files": manifest_files,
             "total_size_bytes": sum(f.get("size_bytes", 0) for f in files),
-            "generated_at": datetime.utcnow().isoformat()
+            "generated_at": datetime.utcnow().isoformat(),
+            "warning": "AWS S3 integration disabled - using local storage"
         }
     
     def configure_lifecycle_policy(self) -> Dict:
         """
         Configure S3 lifecycle policy for HIPAA-compliant retention.
-        Should be called once during bucket setup.
-        
-        Note: This modifies bucket policy - requires appropriate IAM permissions.
+        STUB: S3 is disabled - returns error.
         """
-        if not self.use_s3:
-            return {"status": "skipped", "reason": "local_storage"}
-        
-        lifecycle_config = {
-            'Rules': [
-                {
-                    'ID': 'VideoExamRetention7Years',
-                    'Status': 'Enabled',
-                    'Filter': {'Prefix': 'video-exams/'},
-                    'Expiration': {'Days': 2555},
-                    'NoncurrentVersionExpiration': {'NoncurrentDays': 2555},
-                    'AbortIncompleteMultipartUpload': {'DaysAfterInitiation': 7}
-                },
-                {
-                    'ID': 'TransitionToGlacierAfter1Year',
-                    'Status': 'Enabled',
-                    'Filter': {'Prefix': 'video-exams/'},
-                    'Transitions': [
-                        {'Days': 365, 'StorageClass': 'GLACIER'}
-                    ]
-                }
-            ]
+        logger.warning("S3 disabled: Cannot configure lifecycle policy")
+        return {
+            "success": False,
+            "error": "AWS S3 integration disabled - lifecycle policy not available",
+            "storage_mode": "local_stub"
         }
-        
-        try:
-            self.s3_client.put_bucket_lifecycle_configuration(
-                Bucket=self.bucket_name,
-                LifecycleConfiguration=lifecycle_config
-            )
-            logger.info(f"Configured lifecycle policy for bucket {self.bucket_name}")
-            return {"status": "configured", "rules": len(lifecycle_config['Rules'])}
-        except ClientError as e:
-            logger.error(f"Failed to configure lifecycle policy: {e}")
-            return {"status": "error", "error": str(e)}
 
 
+# Singleton instance
 video_session_storage_service = VideoSessionStorageService()

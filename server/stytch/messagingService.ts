@@ -1,48 +1,24 @@
 import { getStytchClient, isStytchConfigured } from "./stytchClient";
-import { Resend } from "resend";
 
-let cachedResendClient: { client: Resend; fromEmail: string } | null = null;
-
-async function getResendClient(): Promise<{ client: Resend; fromEmail: string } | null> {
-  try {
-    const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-    const xReplitToken = process.env.REPL_IDENTITY
-      ? "repl " + process.env.REPL_IDENTITY
-      : process.env.WEB_REPL_RENEWAL
-        ? "depl " + process.env.WEB_REPL_RENEWAL
-        : null;
-
-    if (!xReplitToken || !hostname) {
-      console.warn("[RESEND] Replit connector credentials not available");
-      return null;
+// Resend integration disabled - using stub
+class ResendStub {
+  emails = {
+    send: async (opts: any) => {
+      console.warn('[RESEND] Email sending disabled - Resend removed from dependencies');
+      console.log('[RESEND] Would send email:', { to: opts.to, subject: opts.subject });
+      return { data: { id: 'mock-email-id-' + Date.now() }, error: null };
     }
+  };
+}
 
-    const response = await fetch(
-      `https://${hostname}/api/v2/connection?include_secrets=true&connector_names=resend`,
-      {
-        headers: {
-          Accept: "application/json",
-          X_REPLIT_TOKEN: xReplitToken,
-        },
-      }
-    );
+let cachedResendClient: { client: ResendStub; fromEmail: string } | null = null;
 
-    const data = await response.json();
-    const connectionSettings = data.items?.[0];
-
-    if (!connectionSettings?.settings?.api_key) {
-      console.warn("[RESEND] API key not configured in Replit connector");
-      return null;
-    }
-
-    return {
-      client: new Resend(connectionSettings.settings.api_key),
-      fromEmail: connectionSettings.settings.from_email || "noreply@followupai.io",
-    };
-  } catch (error: any) {
-    console.error("[RESEND] Failed to initialize client:", error.message);
-    return null;
-  }
+async function getResendClient(): Promise<{ client: ResendStub; fromEmail: string } | null> {
+  console.warn("[RESEND] Using stub client - Resend removed from dependencies");
+  return {
+    client: new ResendStub(),
+    fromEmail: "noreply@followupai.io",
+  };
 }
 
 export interface SendSMSOptions {

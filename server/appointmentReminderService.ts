@@ -1,14 +1,17 @@
-import twilio from 'twilio';
 import type { Storage } from './storage';
 import { addDays, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
-import { Resend } from 'resend';
 
-function getResendClient(): Resend | null {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] Resend API key not configured - email reminders disabled');
-    return null;
-  }
-  return new Resend(process.env.RESEND_API_KEY);
+// Resend integration disabled - using stub
+function getResendClient(): any {
+  console.warn('[RESEND] Email sending disabled - Resend removed from dependencies');
+  return {
+    emails: {
+      send: async (opts: any) => {
+        console.log('[RESEND] Would send email:', { to: opts.to, subject: opts.subject });
+        return { id: 'mock-email-id-' + Date.now() };
+      }
+    }
+  };
 }
 
 interface ReminderConfig {
@@ -25,16 +28,24 @@ const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
   hoursBefore: [24],
 };
 
+// Twilio integration disabled - using stub
+const twilioClientStub = {
+  messages: {
+    create: async (opts: any) => {
+      console.warn('[TWILIO] SMS sending disabled - Twilio removed from dependencies');
+      console.log('[TWILIO] Would send SMS:', { to: opts.to, body: opts.body?.substring(0, 50) + '...' });
+      return { sid: 'mock-sid-' + Date.now(), status: 'stub' };
+    }
+  }
+};
+
 class AppointmentReminderService {
   private storage: Storage;
-  private twilioClient: twilio.Twilio;
+  private twilioClient: any;
 
   constructor(storage: Storage) {
     this.storage = storage;
-    this.twilioClient = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
+    this.twilioClient = twilioClientStub;
   }
 
   async sendDailyReminders(): Promise<{

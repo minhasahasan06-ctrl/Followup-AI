@@ -7,6 +7,10 @@ Production-grade email automation with:
 - Smart auto-reply generation
 - Urgent email forwarding
 - HIPAA-compliant PHI handling
+
+NOTE: AWS SES integration has been removed. 
+Email sending via SES will log warnings but not actually send.
+Gmail API integration for sync/send via OAuth remains functional.
 """
 
 import os
@@ -32,11 +36,17 @@ from app.models.calendar_sync import GmailSync
 
 logger = logging.getLogger(__name__)
 
+# STUB: AWS SES has been removed
+logger.warning("AWS SES integration disabled - SES email sending will not work")
+
 openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 class EmailAutomationService:
-    """Handles all email automation tasks for Assistant Lysa"""
+    """Handles all email automation tasks for Assistant Lysa
+    
+    NOTE: AWS SES is disabled. Only Gmail API email operations work.
+    """
     
     @staticmethod
     async def sync_emails(
@@ -307,6 +317,7 @@ Respond with:
     ) -> Dict[str, Any]:
         """
         Generate and optionally send an auto-reply to an email.
+        Uses Gmail API (not SES) for sending.
         """
         email_id = input_data.get("email_id")
         send_reply = input_data.get("send_reply", False)
@@ -442,6 +453,7 @@ Generate the reply text only, no subject line needed."""
     ) -> Dict[str, Any]:
         """
         Forward urgent emails to the doctor's configured email address.
+        Uses Gmail API (not SES) for forwarding.
         """
         email_id = input_data.get("email_id")
         
@@ -628,7 +640,9 @@ This email was automatically forwarded because it was classified as urgent.
         input_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Send an email via Gmail API or AWS SES.
+        Send an email via Gmail API.
+        
+        NOTE: AWS SES is disabled. Only Gmail API sending works.
         
         Args:
             input_data: Should contain:
@@ -642,22 +656,21 @@ This email was automatically forwarded because it was classified as urgent.
             Result with success status and message details
         """
         to_email = input_data.get("to_email")
-        to_name = input_data.get("to_name", "")
         subject = input_data.get("subject")
         body = input_data.get("body")
-        template_type = input_data.get("template_type", "general")
         
         if not to_email or not subject or not body:
             return {
                 "success": False,
-                "error": "Missing required fields: to_email, subject, or body"
+                "error": "to_email, subject, and body are required"
             }
         
+        # Try Gmail API first
         sync_config = db.query(GmailSync).filter(
             GmailSync.doctor_id == doctor_id
         ).first()
         
-        if sync_config and sync_config.sync_enabled and sync_config.access_token:
+        if sync_config and sync_config.sync_enabled:
             try:
                 creds = Credentials(
                     token=sync_config.access_token,
@@ -670,96 +683,36 @@ This email was automatically forwarded because it was classified as urgent.
                 service = build('gmail', 'v1', credentials=creds)
                 
                 message = MIMEText(body)
-                message['to'] = f"{to_name} <{to_email}>" if to_name else to_email
-                message['subject'] = subject
+                message['To'] = to_email
+                message['Subject'] = subject
                 
-                raw = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+                raw = base64.urlsafe_b64encode(
+                    message.as_bytes()
+                ).decode('utf-8')
                 
                 result = service.users().messages().send(
                     userId='me',
                     body={'raw': raw}
                 ).execute()
                 
-                logger.info(f"Email sent via Gmail to {to_email}: {result.get('id')}")
+                logger.info(f"Email sent via Gmail API to {to_email}")
                 
                 return {
                     "success": True,
                     "message_id": result.get('id'),
-                    "method": "gmail",
-                    "to": to_email,
-                    "subject": subject
+                    "method": "gmail_api"
                 }
                 
-            except HttpError as e:
-                logger.error(f"Gmail send error: {e}")
-                pass
             except Exception as e:
-                logger.error(f"Gmail send error: {e}")
-                pass
-        
-        try:
-            import boto3
-            from botocore.exceptions import ClientError
-            
-            ses_client = boto3.client(
-                'ses',
-                region_name=os.getenv('AWS_REGION', 'us-east-1'),
-                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-            )
-            
-            sender_email = os.getenv('AWS_SES_SENDER_EMAIL', 'noreply@followupai.com')
-            
-            result = ses_client.send_email(
-                Source=sender_email,
-                Destination={
-                    'ToAddresses': [to_email]
-                },
-                Message={
-                    'Subject': {
-                        'Data': subject,
-                        'Charset': 'UTF-8'
-                    },
-                    'Body': {
-                        'Text': {
-                            'Data': body,
-                            'Charset': 'UTF-8'
-                        }
-                    }
-                }
-            )
-            
-            logger.info(f"Email sent via AWS SES to {to_email}: {result.get('MessageId')}")
-            
-            return {
-                "success": True,
-                "message_id": result.get('MessageId'),
-                "method": "ses",
-                "to": to_email,
-                "subject": subject
-            }
-            
-        except ImportError:
-            logger.warning("boto3 not available for SES")
-            return {
-                "success": False,
-                "error": "Email sending not configured - no Gmail or SES available"
-            }
-        except Exception as e:
-            error_msg = str(e)
-            if "sandbox" in error_msg.lower() or "verify" in error_msg.lower():
-                logger.warning(f"SES sandbox mode - email queued for {to_email}")
+                logger.error(f"Gmail API send failed: {e}")
                 return {
-                    "success": True,
-                    "message_id": f"queued_{datetime.utcnow().timestamp()}",
-                    "method": "ses_queued",
-                    "to": to_email,
-                    "subject": subject,
-                    "note": "Email queued - SES sandbox mode"
+                    "success": False,
+                    "error": f"Gmail API error: {str(e)}"
                 }
-            
-            logger.error(f"SES send error: {e}")
-            return {
-                "success": False,
-                "error": f"Email send failed: {str(e)}"
-            }
+        
+        # STUB: AWS SES is disabled
+        logger.warning(f"Cannot send email to {to_email} - AWS SES disabled and Gmail not connected")
+        return {
+            "success": False,
+            "error": "AWS SES integration disabled and Gmail not connected"
+        }

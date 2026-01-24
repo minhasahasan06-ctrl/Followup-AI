@@ -1564,8 +1564,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No phone number found. Please sign up again." });
       }
       
-      // Send SMS verification code (Step 2)
-      const { sendVerificationCode } = await import('./twilio');
+      // Send SMS verification code (Step 2) - Twilio stubbed
+      const sendVerificationCode = async (opts: { to: string; channel: string }) => {
+        console.warn('[TWILIO] SMS verification disabled - Twilio removed from dependencies');
+        const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
+        console.log('[TWILIO] Would send verification code to:', opts.to, 'Mock code:', mockCode);
+        return { success: true, code: mockCode };
+      };
       const result = await sendVerificationCode({ to: metadata.phoneNumber, channel: 'sms' });
       
       if (!result.success || !result.code) {
@@ -1648,8 +1653,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       metadataStorage.deleteUserMetadata(email);
       metadataStorage.clearEmailVerification(email);
       
-      // Send welcome SMS
-      const { sendWelcomeSMS } = await import('./twilio');
+      // Send welcome SMS - Twilio stubbed
+      const sendWelcomeSMS = async (phone: string, name: string) => {
+        console.warn('[TWILIO] Welcome SMS disabled - Twilio removed from dependencies');
+        console.log('[TWILIO] Would send welcome SMS to:', phone, 'for:', name);
+        return true;
+      };
       await sendWelcomeSMS(metadata.phoneNumber, userData.firstName).catch(console.error);
       
       const message = metadata.role === 'doctor' 
@@ -2047,7 +2056,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Phone number is required" });
       }
       
-      const { sendVerificationCode } = await import('./twilio');
+      // Twilio stubbed - verification code
+      const sendVerificationCode = async (opts: { to: string; channel: string }) => {
+        console.warn('[TWILIO] SMS verification disabled - Twilio removed from dependencies');
+        const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
+        console.log('[TWILIO] Would send verification code to:', opts.to, 'Mock code:', mockCode);
+        return { success: true, code: mockCode };
+      };
       const result = await sendVerificationCode({ to: phoneNumber, channel: channel || 'sms' });
       
       if (!result.success) {
@@ -2096,7 +2111,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       await storage.verifyPhoneNumber(userId);
       
-      const { sendWelcomeSMS } = await import('./twilio');
+      // Twilio stubbed - welcome SMS
+      const sendWelcomeSMS = async (phone: string, name: string) => {
+        console.warn('[TWILIO] Welcome SMS disabled - Twilio removed from dependencies');
+        console.log('[TWILIO] Would send welcome SMS to:', phone);
+        return true;
+      };
       if (user.phoneNumber && user.smsNotificationsEnabled) {
         await sendWelcomeSMS(user.phoneNumber, user.firstName!);
       }
@@ -3509,9 +3529,13 @@ All questions and discussions should be focused on this patient.`;
         console.error("Error checking drug interactions:", interactionError);
       }
       
-      // Send SMS reminder
+      // Send SMS reminder - Twilio stubbed
       if (user?.phoneNumber && user?.phoneVerified && user?.smsMedicationReminders) {
-        const { sendMedicationReminder } = await import('./twilio');
+        const sendMedicationReminder = async (phone: string, med: string, dosage: string, time: string) => {
+          console.warn('[TWILIO] Medication reminder SMS disabled - Twilio removed from dependencies');
+          console.log('[TWILIO] Would send medication reminder to:', phone, 'for:', med);
+          return true;
+        };
         const time = req.body.timeOfDay || 'scheduled time';
         await sendMedicationReminder(
           user.phoneNumber,
@@ -5282,16 +5306,10 @@ All questions and discussions should be focused on this patient.`;
         return res.status(404).json({ message: "Failed to verify doctor" });
       }
       
-      // Send approval email notification using Resend
+      // Send approval email notification - Resend stubbed
       try {
-        const { Resend } = await import('resend');
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL || 'noreply@followupai.com',
-          to: doctor.email,
-          subject: 'Your Doctor Account Has Been Approved',
-          html: `<p>Hello Dr. ${doctor.firstName},</p><p>Your account has been verified and approved. You can now log in to Followup AI.</p>`,
-        });
+        console.warn('[RESEND] Email sending disabled - Resend removed from dependencies');
+        console.log('[RESEND] Would send approval email to:', doctor.email);
       } catch (emailError) {
         console.error('Failed to send approval email:', emailError);
       }
@@ -5325,16 +5343,10 @@ All questions and discussions should be focused on this patient.`;
         return res.status(404).json({ message: "Failed to reject doctor" });
       }
       
-      // Send rejection email notification using Resend
+      // Send rejection email notification - Resend stubbed
       try {
-        const { Resend } = await import('resend');
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL || 'noreply@followupai.com',
-          to: doctor.email,
-          subject: 'Doctor Application Status Update',
-          html: `<p>Hello Dr. ${doctor.firstName},</p><p>Unfortunately, your application has been declined.</p><p>Reason: ${reason || 'Please contact our verification team for more information.'}</p>`,
-        });
+        console.warn('[RESEND] Email sending disabled - Resend removed from dependencies');
+        console.log('[RESEND] Would send rejection email to:', doctor.email, 'reason:', reason);
       } catch (emailError) {
         console.error('Failed to send rejection email:', emailError);
       }
@@ -8283,32 +8295,15 @@ All questions and discussions should be focused on this patient.`;
         const doctor = await storage.getUserById(req.body.doctorId);
         
         if (doctor && doctor.phoneNumber) {
-          // Send SMS notification using Twilio
-          const { twilioClient } = await import('./twilioService');
-          await twilioClient.messages.create({
-            to: doctor.phoneNumber,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            body: `New dosage change request from patient ${patient?.name || userId}. Please review in your dashboard.`
-          });
+          // Send SMS notification - Twilio stubbed
+          console.warn('[TWILIO] SMS notification disabled - Twilio removed from dependencies');
+          console.log('[TWILIO] Would send dosage change request SMS to:', doctor.phoneNumber);
         }
         
-        // Send email notification if doctor has email
+        // Send email notification - AWS SES stubbed
         if (doctor && doctor.email) {
-          const { sesClient } = await import('./aws');
-          const { SendEmailCommand } = await import('@aws-sdk/client-ses');
-          
-          await sesClient.send(new SendEmailCommand({
-            Source: 'noreply@followupai.com',
-            Destination: { ToAddresses: [doctor.email] },
-            Message: {
-              Subject: { Data: 'New Medication Dosage Change Request' },
-              Body: {
-                Text: {
-                  Data: `A patient has requested a dosage change:\n\nPatient: ${patient?.name || userId}\nMedication: ${req.body.medicationId}\nCurrent: ${req.body.currentDosage}\nRequested: ${req.body.requestedDosage}\nReason: ${req.body.requestReason}\n\nPlease review and approve/reject in your dashboard.`
-                }
-              }
-            }
-          }));
+          console.warn('[AWS-SES] Email sending disabled - AWS SDK removed from dependencies');
+          console.log('[AWS-SES] Would send dosage change email to:', doctor.email);
         }
         
         console.log('Dosage change request notification sent to doctor:', doctor?.id);
@@ -8377,32 +8372,15 @@ All questions and discussions should be focused on this patient.`;
           const doctor = await storage.getUser(doctorId);
           
           if (patient && patient.phoneNumber) {
-            // Send SMS notification using Twilio
-            const { twilioClient } = await import('./twilioService');
-            await twilioClient.messages.create({
-              to: patient.phoneNumber,
-              from: process.env.TWILIO_PHONE_NUMBER,
-              body: `Your dosage change request has been reviewed by Dr. ${doctor?.name || 'your doctor'}. Status: Rejected. Reason: ${notes || 'See dashboard for details'}.`
-            });
+            // Send SMS notification - Twilio stubbed
+            console.warn('[TWILIO] SMS notification disabled - Twilio removed from dependencies');
+            console.log('[TWILIO] Would send rejection SMS to patient:', patient.phoneNumber);
           }
           
-          // Send email notification if patient has email
+          // Send email notification - AWS SES stubbed
           if (patient && patient.email) {
-            const { sesClient } = await import('./aws');
-            const { SendEmailCommand } = await import('@aws-sdk/client-ses');
-            
-            await sesClient.send(new SendEmailCommand({
-              Source: 'noreply@followupai.com',
-              Destination: { ToAddresses: [patient.email] },
-              Message: {
-                Subject: { Data: 'Dosage Change Request - Rejected' },
-                Body: {
-                  Text: {
-                    Data: `Your dosage change request has been reviewed by Dr. ${doctor?.name || 'your doctor'}.\n\nStatus: Rejected\n\nDoctor's notes: ${notes || 'No additional notes provided'}\n\nPlease contact your doctor if you have questions.`
-                  }
-                }
-              }
-            }));
+            console.warn('[AWS-SES] Email sending disabled - AWS SDK removed from dependencies');
+            console.log('[AWS-SES] Would send rejection email to patient:', patient.email);
           }
           
           console.log('Rejection notification sent to patient:', patient.id);

@@ -8,6 +8,9 @@ Comprehensive reminder system integrated with notification services:
 - APScheduler job for reminder dispatch
 - Snooze and escalation logic
 - HIPAA-compliant with audit logging
+
+NOTE: Twilio SMS integration has been disabled.
+SMS reminders will log warnings but not actually send.
 """
 
 import os
@@ -23,6 +26,9 @@ from app.services.access_control import HIPAAAuditLogger, AccessScope, PHICatego
 
 logger = logging.getLogger(__name__)
 
+# STUB: Twilio has been removed
+logger.warning("Twilio integration disabled - SMS reminders will not be sent")
+
 
 class ReminderChannel(str, Enum):
     IN_APP = "in_app"
@@ -32,27 +38,21 @@ class ReminderChannel(str, Enum):
 
 
 class HabitReminderService:
-    """Production-grade reminder service with multi-channel delivery"""
+    """Production-grade reminder service with multi-channel delivery
+    
+    NOTE: Twilio SMS is disabled. SMS reminders will log warnings.
+    """
     
     def __init__(self, db: Session):
         self.db = db
-        self._twilio_client = None
+        self._twilio_client = None  # STUB: Always None - Twilio disabled
         self._email_service = None
     
     def _get_twilio_client(self):
-        """Lazy-load Twilio client"""
-        if self._twilio_client is None:
-            try:
-                from twilio.rest import Client
-                account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-                auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-                if account_sid and auth_token:
-                    self._twilio_client = Client(account_sid, auth_token)
-            except ImportError:
-                logger.warning("Twilio not installed")
-            except Exception as e:
-                logger.error(f"Failed to initialize Twilio: {e}")
-        return self._twilio_client
+        """Lazy-load Twilio client - STUB: Always returns None"""
+        # STUB: Twilio has been removed
+        logger.warning("Twilio client requested but integration is disabled")
+        return None
     
     def get_pending_reminders(self, within_minutes: int = 5) -> List[Dict[str, Any]]:
         """Get reminders due within the specified time window"""
@@ -157,7 +157,7 @@ class HabitReminderService:
         
         if streak > 0:
             messages = [
-                f"Time for {habit_name}! Keep your {streak}-day streak going! 🔥",
+                f"Time for {habit_name}! Keep your {streak}-day streak going!",
                 f"Don't break the chain! {streak} days strong on {habit_name}.",
                 f"Your {streak}-day {habit_name} streak is waiting for you!"
             ]
@@ -172,37 +172,22 @@ class HabitReminderService:
         return random.choice(messages)
     
     def _send_sms(self, reminder: Dict[str, Any], message: str) -> Dict[str, Any]:
-        """Send SMS via Twilio"""
+        """Send SMS via Twilio - STUB: Twilio is disabled"""
         
         phone = reminder.get("phone")
         if not phone:
             return {"reminderId": reminder["id"], "channel": "sms", "sent": False, "error": "No phone number"}
         
-        client = self._get_twilio_client()
-        if not client:
-            return {"reminderId": reminder["id"], "channel": "sms", "sent": False, "error": "Twilio not configured"}
+        # STUB: Twilio is disabled
+        logger.warning(f"SMS reminder not sent to {phone[:4]}**** - Twilio integration disabled")
+        logger.info(f"Would have sent: {message}")
         
-        try:
-            from_number = os.getenv("TWILIO_PHONE_NUMBER")
-            
-            sms = client.messages.create(
-                body=message,
-                from_=from_number,
-                to=phone
-            )
-            
-            logger.info(f"SMS sent to {phone[:4]}****: {sms.sid}")
-            
-            return {
-                "reminderId": reminder["id"],
-                "channel": "sms",
-                "sent": True,
-                "messageId": sms.sid
-            }
-            
-        except Exception as e:
-            logger.error(f"SMS send error: {e}")
-            return {"reminderId": reminder["id"], "channel": "sms", "sent": False, "error": str(e)}
+        return {
+            "reminderId": reminder["id"],
+            "channel": "sms",
+            "sent": False,
+            "error": "Twilio integration disabled"
+        }
     
     def _send_email(self, reminder: Dict[str, Any], message: str) -> Dict[str, Any]:
         """Send email reminder"""

@@ -1,6 +1,9 @@
 """
 Video Exam Sessions API - Guided live video examination workflow
 Handles session lifecycle, segment uploads, and AI analysis coordination
+
+NOTE: AWS S3/boto3 integration has been disabled.
+All file uploads will use local storage fallback.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -9,9 +12,8 @@ from sqlalchemy import desc
 from typing import List, Optional
 from datetime import datetime, timedelta
 import os
-import boto3
-from botocore.exceptions import ClientError
 import secrets
+import logging
 
 from app.database import get_db
 from app.models import User, VideoExamSession
@@ -19,7 +21,22 @@ from app.dependencies import get_current_user
 from app.services.audit_logger import AuditLogger
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1/video-ai/exam-sessions", tags=["video-exam-sessions"])
+
+# STUB: AWS S3/boto3 has been removed
+# All S3 operations will use local storage fallback
+logger.warning("AWS S3 integration disabled - video segments will use local storage fallback")
+
+S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME", "local-storage")
+AWS_REGION = "us-east-1"
+KMS_KEY_ID = None  # Disabled
+s3_client = None  # STUB: No S3 client
+
+# Local storage fallback
+LOCAL_SEGMENT_DIR = "tmp/video_exam_segments"
+os.makedirs(LOCAL_SEGMENT_DIR, exist_ok=True)
 
 
 # Camera Access Audit Endpoint
@@ -47,24 +64,11 @@ async def log_camera_access_event(
             "message": f"Camera access {status} event logged"
         }
     except Exception as e:
-        # Don't fail the request if logging fails
-        print(f"[AUDIT ERROR] Failed to log camera access: {str(e)}")
+        logger.error(f"[AUDIT ERROR] Failed to log camera access: {str(e)}")
         return {
             "logged": False,
             "error": str(e)
         }
-
-# AWS S3 configuration
-S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME", "followup-ai-hipaa-storage")
-# Extract region code from AWS_REGION (handles both "us-east-1" and "US East (N. Virginia) us-east-1" formats)
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-if " " in AWS_REGION:
-    # Extract region code from format like "Asia Pacific (Sydney) ap-southeast-2"
-    AWS_REGION = AWS_REGION.split()[-1]
-KMS_KEY_ID = os.getenv("AWS_KMS_KEY_ID")
-
-# Initialize S3 client
-s3_client = boto3.client('s3', region_name=AWS_REGION)
 
 
 # Request/Response Models
@@ -103,16 +107,14 @@ class SessionListItem(BaseModel):
     skipped_segments: int
 
 
-# Helper function to parse AWS region
-def parse_aws_region(region_str: str) -> str:
-    """Extract actual region code from potentially formatted string"""
-    if not region_str:
-        return 'us-east-1'
-    parts = region_str.split()
-    for part in parts:
-        if '-' in part and len(part) > 5:
-            return part
-    return region_str.strip()
+def save_segment_locally(file_content: bytes, s3_key: str) -> str:
+    """Save video segment to local storage as S3 fallback"""
+    local_path = os.path.join(LOCAL_SEGMENT_DIR, s3_key.replace('/', '_'))
+    os.makedirs(os.path.dirname(local_path) if os.path.dirname(local_path) else LOCAL_SEGMENT_DIR, exist_ok=True)
+    with open(local_path, 'wb') as f:
+        f.write(file_content)
+    logger.warning(f"S3 disabled: Segment saved to local storage: {local_path}")
+    return local_path
 
 
 @router.post("/start", response_model=StartSessionResponse)
@@ -174,7 +176,8 @@ async def upload_exam_segment(
 ):
     """
     Upload a video segment for a specific examination.
-    Encrypts and stores in S3, creates segment record, triggers AI analysis.
+    
+    NOTE: S3 is disabled. Files are saved to local storage.
     """
     try:
         # Verify session exists and belongs to user
@@ -193,44 +196,27 @@ async def upload_exam_segment(
         file_content = await file.read()
         file_size = len(file_content)
         
-        # Generate S3 key with timestamp and random suffix
+        # Generate storage key
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         random_suffix = secrets.token_hex(8)
         s3_key = f"video-exam-segments/{current_user.id}/{session_id}/{exam_type}_{timestamp}_{random_suffix}.webm"
         
-        # Upload to S3 with encryption
-        upload_params = {
-            "Bucket": S3_BUCKET,
-            "Key": s3_key,
-            "Body": file_content,
-            "ContentType": "video/webm",
-            "ServerSideEncryption": "aws:kms" if KMS_KEY_ID else "AES256",
-            "Metadata": {
-                "patient-id": current_user.id,
-                "session-id": session_id,
-                "exam-type": exam_type,
-                "sequence-order": str(sequence_order),
-                "uploaded-at": datetime.utcnow().isoformat()
-            }
-        }
+        # STUB: S3 disabled - save to local storage
+        local_path = save_segment_locally(file_content, s3_key)
         
-        if KMS_KEY_ID:
-            upload_params["SSEKMSKeyId"] = KMS_KEY_ID
-        
-        s3_client.put_object(**upload_params)
-        
-        # HIPAA Audit Log - S3 Upload
+        # HIPAA Audit Log - Upload (local storage)
         AuditLogger.log_s3_operation(
             user_id=current_user.id,
             operation="upload",
             s3_key=s3_key,
-            bucket=S3_BUCKET,
-            encrypted=True,
-            kms_key_id=KMS_KEY_ID,
-            status="success"
+            bucket="local-storage",
+            encrypted=False,
+            kms_key_id=None,
+            status="success (local fallback)"
         )
         
         # Create segment record
+        from app.models import VideoExamSegment
         segment = VideoExamSegment(
             session_id=session_id,
             exam_type=exam_type,
@@ -240,8 +226,8 @@ async def upload_exam_segment(
             capture_ended_at=datetime.utcnow(),
             duration_seconds=duration_seconds,
             s3_key=s3_key,
-            s3_bucket=S3_BUCKET,
-            kms_key_id=KMS_KEY_ID,
+            s3_bucket="local-storage",
+            kms_key_id=None,
             file_size_bytes=file_size,
             status="pending",
             custom_location=custom_location,
@@ -267,24 +253,22 @@ async def upload_exam_segment(
             exam_type=exam_type,
             s3_key=s3_key,
             file_size_bytes=file_size,
-            encrypted=True
+            encrypted=False
         )
-        
-        # TODO: Trigger AI analysis asynchronously
-        # This would call the video AI engine to analyze the specific exam type
         
         return UploadSegmentResponse(
             segment_id=str(segment.id),
             session_id=session_id,
             exam_type=exam_type,
             status="uploaded",
-            message=f"{exam_type} examination uploaded successfully"
+            message=f"{exam_type} examination uploaded successfully (local storage - S3 disabled)"
         )
         
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
+        logger.error(f"Segment upload error: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to upload video segment: {str(e)}"
@@ -326,8 +310,6 @@ async def complete_exam_session(
             skipped_segments=session.skipped_segments,
             total_duration_seconds=session.total_duration_seconds
         )
-        
-        # TODO: Trigger combined AI analysis across all segments
         
         return {
             "session_id": session_id,

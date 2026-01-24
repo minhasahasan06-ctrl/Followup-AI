@@ -12,6 +12,9 @@ Wellness Positioning:
 - Alerts use "wellness monitoring" language, NOT diagnostic language
 - Recommendations focus on "discussing with healthcare provider"
 - System is a change detection platform, not a medical diagnostic tool
+
+NOTE: AWS SES and Twilio integrations have been disabled. 
+Email and SMS notifications will log warnings but not send.
 """
 
 import asyncio
@@ -28,47 +31,22 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Helper function to parse AWS region
-def parse_aws_region(region_str: str) -> str:
-    """Extract actual region code from potentially formatted string"""
-    if not region_str:
-        return 'us-east-1'
-    # Extract region code pattern (e.g., "ap-southeast-2" from "Asia Pacific (Sydney) ap-southeast-2")
-    parts = region_str.split()
-    for part in parts:
-        if '-' in part and len(part) > 5:  # Region codes have hyphens
-            return part
-    return region_str.strip()
+# STUB: AWS SES and Twilio have been removed
+# All notification channels are disabled except dashboard
+SES_AVAILABLE = False
+TWILIO_AVAILABLE = False
+ses_client = None
+twilio_client = None
 
-# Notification channel availability
-SES_AVAILABLE = bool(os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"))
-TWILIO_AVAILABLE = bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN"))
-
-if SES_AVAILABLE:
-    try:
-        import boto3
-        aws_region = parse_aws_region(os.getenv("AWS_REGION", "us-east-1"))
-        ses_client = boto3.client('ses', region_name=aws_region)
-        logger.info(f"SES client initialized successfully with region: {aws_region}")
-    except Exception as e:
-        logger.warning(f"SES client initialization failed: {e}")
-        SES_AVAILABLE = False
-
-if TWILIO_AVAILABLE:
-    try:
-        from twilio.rest import Client
-        twilio_client = Client(
-            os.getenv("TWILIO_ACCOUNT_SID"),
-            os.getenv("TWILIO_AUTH_TOKEN")
-        )
-    except Exception as e:
-        logger.warning(f"Twilio client initialization failed: {e}")
-        TWILIO_AVAILABLE = False
+logger.warning("AWS SES integration disabled - email notifications will not be sent")
+logger.warning("Twilio integration disabled - SMS notifications will not be sent")
 
 
 class AlertOrchestrationEngine:
     """
     Alert Orchestration Engine with multi-channel delivery
+    
+    NOTE: Email (SES) and SMS (Twilio) are disabled. Only dashboard alerts work.
     
     Responsibilities:
     1. Monitor risk events and trend snapshots
@@ -144,12 +122,10 @@ class AlertOrchestrationEngine:
             
             if rule.rule_type == "risk_threshold":
                 threshold = conditions.get("risk_threshold", 0.7)
-                # Extract risk score from event details or use severity-based estimation
                 risk_score = risk_event.risk_delta if risk_event.risk_delta else self._estimate_risk_score(risk_event.new_risk_level)
                 return risk_score >= threshold
             
             elif rule.rule_type == "trend_change":
-                # Alert on any risk level increase
                 if risk_event.event_type == "risk_increase":
                     required_change = conditions.get("minimum_change", "green_to_yellow")
                     if required_change == "any":
@@ -161,7 +137,6 @@ class AlertOrchestrationEngine:
                 return False
             
             elif rule.rule_type == "metric_deviation":
-                # Check if event details contain specific metric deviations
                 if risk_event.event_details:
                     metric_name = conditions.get("metric_name")
                     threshold = conditions.get("deviation_threshold", 2.0)
@@ -196,7 +171,6 @@ class AlertOrchestrationEngine:
         Generate an alert based on rule and risk event
         """
         try:
-            # Determine severity based on risk level
             severity_mapping = {
                 "green": "low",
                 "yellow": "medium",
@@ -204,11 +178,9 @@ class AlertOrchestrationEngine:
             }
             severity = severity_mapping.get(risk_event.new_risk_level, "medium")
             
-            # Generate alert title and message (wellness-focused language)
             title = self._generate_alert_title(risk_event, rule)
             message = self._generate_alert_message(risk_event, rule)
             
-            # Create alert
             alert = Alert(
                 rule_id=rule.id,
                 patient_id=patient_id,
@@ -231,7 +203,6 @@ class AlertOrchestrationEngine:
             self.db.commit()
             self.db.refresh(alert)
             
-            # Audit log
             await self._audit_alert_generation(alert, risk_event)
             
             return alert
@@ -254,21 +225,18 @@ class AlertOrchestrationEngine:
         """Generate wellness-focused alert message (NOT diagnostic language)"""
         message_parts = []
         
-        # Risk change description
         if risk_event.previous_risk_level and risk_event.new_risk_level:
             message_parts.append(
                 f"Patient wellness priority has changed from {risk_event.previous_risk_level.upper()} "
                 f"to {risk_event.new_risk_level.upper()}."
             )
         
-        # Event details
         if risk_event.event_details:
             message_parts.append("Notable changes detected in:")
             for metric, details in risk_event.event_details.items():
                 if isinstance(details, dict) and "z_score" in details:
                     message_parts.append(f"• {metric}: {details.get('description', 'Deviation from baseline')}")
         
-        # Wellness recommendation (NOT medical advice)
         message_parts.append(
             "\nRecommendation: Please review patient data and consider scheduling a wellness check "
             "to discuss these changes with the patient. This system provides wellness monitoring "
@@ -281,6 +249,8 @@ class AlertOrchestrationEngine:
         """
         Deliver alert via configured notification channels
         
+        NOTE: Email (SES) and SMS (Twilio) are disabled. Only dashboard works.
+        
         Returns:
             Dict mapping channel -> success status
         """
@@ -292,13 +262,15 @@ class AlertOrchestrationEngine:
                     # Alert is already stored in database, accessible via dashboard
                     delivery_results["dashboard"] = True
                 
-                elif channel == "email" and SES_AVAILABLE:
-                    success = await self._send_email_notification(alert, rule)
-                    delivery_results["email"] = success
+                elif channel == "email":
+                    # STUB: SES is disabled
+                    self.logger.warning(f"Email notification skipped - AWS SES integration disabled")
+                    delivery_results["email"] = False
                 
-                elif channel == "sms" and TWILIO_AVAILABLE:
-                    success = await self._send_sms_notification(alert, rule)
-                    delivery_results["sms"] = success
+                elif channel == "sms":
+                    # STUB: Twilio is disabled
+                    self.logger.warning(f"SMS notification skipped - Twilio integration disabled")
+                    delivery_results["sms"] = False
                 
                 else:
                     self.logger.warning(f"Channel {channel} not available or not configured")
@@ -318,75 +290,18 @@ class AlertOrchestrationEngine:
     async def _send_email_notification(self, alert: Alert, rule: AlertRule) -> bool:
         """
         Send email notification via AWS SES (HIPAA-compliant)
-        Uses real doctor contact info from users table.
+        STUB: AWS SES is disabled - always returns False
         """
-        try:
-            if not SES_AVAILABLE:
-                return False
-            
-            from app.models.user import User
-            doctor = self.db.query(User).filter(User.id == rule.doctor_id).first()
-            
-            if not doctor or not doctor.email:
-                self.logger.warning(f"No email found for doctor {rule.doctor_id}")
-                return False
-            
-            doctor_email = doctor.email
-            
-            response = ses_client.send_email(
-                Source=os.getenv("SES_FROM_EMAIL", "alerts@followupai.health"),
-                Destination={"ToAddresses": [doctor_email]},
-                Message={
-                    "Subject": {"Data": f"[Followup AI] {alert.title}"},
-                    "Body": {
-                        "Text": {"Data": self._format_email_body(alert)},
-                        "Html": {"Data": self._format_email_html(alert)}
-                    }
-                }
-            )
-            
-            self.logger.info(f"Email sent to {doctor_email} for alert {alert.id}")
-            return response['ResponseMetadata']['HTTPStatusCode'] == 200
-            
-        except Exception as e:
-            self.logger.error(f"Error sending email: {e}")
-            return False
+        self.logger.warning("Email notification not sent - AWS SES integration disabled")
+        return False
     
     async def _send_sms_notification(self, alert: Alert, rule: AlertRule) -> bool:
         """
         Send SMS notification via Twilio (HIPAA-compliant)
-        Uses real doctor contact info from users table.
+        STUB: Twilio is disabled - always returns False
         """
-        try:
-            if not TWILIO_AVAILABLE:
-                return False
-            
-            from app.models.user import User
-            doctor = self.db.query(User).filter(User.id == rule.doctor_id).first()
-            
-            if not doctor or not doctor.phone_number:
-                self.logger.warning(f"No phone found for doctor {rule.doctor_id}")
-                return False
-            
-            doctor_phone = doctor.phone_number
-            twilio_from = os.getenv("TWILIO_PHONE_NUMBER")
-            
-            if not twilio_from:
-                self.logger.warning("TWILIO_PHONE_NUMBER not configured")
-                return False
-            
-            message = twilio_client.messages.create(
-                body=self._format_sms_body(alert),
-                from_=twilio_from,
-                to=doctor_phone
-            )
-            
-            self.logger.info(f"SMS sent to {doctor_phone} for alert {alert.id}")
-            return message.status in ["queued", "sent", "delivered"]
-            
-        except Exception as e:
-            self.logger.error(f"Error sending SMS: {e}")
-            return False
+        self.logger.warning("SMS notification not sent - Twilio integration disabled")
+        return False
     
     def _format_email_body(self, alert: Alert) -> str:
         """Format alert as plain text email"""
@@ -490,7 +405,6 @@ Followup AI - HIPAA-Compliant Wellness Monitoring Platform
             
         except Exception as e:
             self.logger.error(f"Error creating audit log: {e}")
-            # Don't fail alert generation if audit logging fails, but log the error
     
     async def acknowledge_alert(
         self,
@@ -500,14 +414,6 @@ Followup AI - HIPAA-Compliant Wellness Monitoring Platform
     ) -> bool:
         """
         Mark alert as acknowledged by doctor
-        
-        Args:
-            alert_id: Alert ID to acknowledge
-            acknowledged_by: User ID of person acknowledging
-            user_role: Role of acknowledging user (for audit)
-        
-        Returns:
-            True if successful, False otherwise
         """
         try:
             alert = self.db.query(Alert).filter(Alert.id == alert_id).first()
@@ -522,7 +428,6 @@ Followup AI - HIPAA-Compliant Wellness Monitoring Platform
             
             self.db.commit()
             
-            # Audit log
             audit_log = AuditLog(
                 user_id=acknowledged_by,
                 user_role=user_role,
@@ -552,366 +457,16 @@ Followup AI - HIPAA-Compliant Wellness Monitoring Platform
         """
         Deliver an alert to a specific doctor via default channels.
         
-        Used for direct alerts (crisis routing, mental health escalation) that
-        bypass the rule-based system.
+        NOTE: Email and SMS are disabled. Only dashboard alerts work.
         
-        Args:
-            alert: Alert to deliver
-            doctor_id: Doctor ID to deliver to
-            
         Returns:
             Dict mapping channel -> success status
         """
         delivery_results = {"dashboard": True}
         
-        try:
-            from app.models.user import User
-            doctor = self.db.query(User).filter(User.id == doctor_id).first()
-            
-            if SES_AVAILABLE and doctor and doctor.email:
-                try:
-                    response = ses_client.send_email(
-                        Source=os.getenv("SES_FROM_EMAIL", "alerts@followupai.health"),
-                        Destination={"ToAddresses": [doctor.email]},
-                        Message={
-                            "Subject": {"Data": f"[Followup AI] {alert.title}"},
-                            "Body": {
-                                "Text": {"Data": self._format_email_body(alert)},
-                                "Html": {"Data": self._format_email_html(alert)}
-                            }
-                        }
-                    )
-                    delivery_results["email"] = response['ResponseMetadata']['HTTPStatusCode'] == 200
-                except Exception as e:
-                    self.logger.error(f"Email delivery failed: {e}")
-                    delivery_results["email"] = False
-            
-            if TWILIO_AVAILABLE and doctor:
-                doctor_phone = getattr(doctor, 'phone', None)
-                twilio_from = os.getenv("TWILIO_PHONE_NUMBER")
-                if doctor_phone and twilio_from:
-                    try:
-                        sms_body = f"[Followup AI Alert] {alert.title}\n\nSeverity: {alert.severity.upper()}\nPlease check your dashboard for details."
-                        message = twilio_client.messages.create(
-                            body=sms_body[:1600],
-                            from_=twilio_from,
-                            to=doctor_phone
-                        )
-                        delivery_results["sms"] = message.status in ["queued", "sent", "delivered"]
-                    except Exception as e:
-                        self.logger.error(f"SMS delivery failed: {e}")
-                        delivery_results["sms"] = False
-                else:
-                    skip_reason = "missing_twilio_phone_number" if not twilio_from else "no_doctor_phone"
-                    self.logger.warning(f"SMS delivery skipped: {skip_reason}")
-                    delivery_results["sms_skipped"] = skip_reason
-                        
-        except Exception as e:
-            self.logger.error(f"Alert delivery error: {e}")
-        
-        if any(delivery_results.values()):
-            alert.status = "sent"
-            self.db.commit()
-        
-        self._audit_alert_delivery(alert, doctor_id, delivery_results)
+        # STUB: Email and SMS disabled
+        self.logger.warning("Email/SMS delivery skipped - AWS SES and Twilio integrations disabled")
+        delivery_results["email"] = False
+        delivery_results["sms"] = False
         
         return delivery_results
-    
-    def _audit_alert_delivery(
-        self,
-        alert: Alert,
-        doctor_id: str,
-        delivery_results: Dict[str, bool]
-    ) -> None:
-        """Audit log for alert delivery for HIPAA compliance (system-initiated)"""
-        try:
-            channels_succeeded = [k for k, v in delivery_results.items() if v]
-            channels_failed = [k for k, v in delivery_results.items() if not v]
-            
-            audit_entry = AuditLog(
-                user_id="alert_orchestration_engine",
-                user_type="system",
-                action_type="share",
-                action_category="clinical_alert",
-                resource_type="alert_delivery",
-                resource_id=str(alert.id),
-                phi_accessed=True,
-                patient_id_accessed=alert.patient_id,
-                action_description=f"Alert {alert.id} ({alert.alert_type}) delivered to doctor {doctor_id}",
-                action_result="success" if channels_succeeded else "failure",
-                data_fields_accessed={
-                    "alert_id": alert.id,
-                    "alert_type": alert.alert_type,
-                    "severity": alert.severity,
-                    "patient_id": alert.patient_id,
-                    "doctor_id": doctor_id,
-                    "channels_attempted": list(delivery_results.keys()),
-                    "channels_succeeded": channels_succeeded,
-                    "channels_failed": channels_failed,
-                    "delivery_timestamp": datetime.now().isoformat()
-                },
-                ip_address="127.0.0.1",
-                user_agent="AlertOrchestrationEngine/1.0"
-            )
-            self.db.add(audit_entry)
-            self.db.commit()
-        except Exception as e:
-            self.logger.warning(f"Alert delivery audit failed (non-blocking): {e}")
-    
-    async def generate_mental_health_alert(
-        self,
-        patient_id: str,
-        doctor_id: str,
-        severity: str,
-        questionnaire_type: str,
-        total_score: int,
-        max_score: int,
-        severity_level: str,
-        crisis_detected: bool = False
-    ) -> Optional[int]:
-        """
-        Generate a clinician alert for mental health score changes.
-        
-        Args:
-            patient_id: Patient identifier
-            doctor_id: Doctor to alert
-            severity: Alert severity (low, medium, high)
-            questionnaire_type: Type of questionnaire
-            total_score: Questionnaire score
-            max_score: Maximum possible score
-            severity_level: Score severity classification
-            crisis_detected: Whether crisis was detected
-            
-        Returns:
-            Alert ID if created, None otherwise
-        """
-        try:
-            from app.models.user import User
-            patient = self.db.query(User).filter(User.id == patient_id).first()
-            patient_name = f"{patient.first_name} {patient.last_name}" if patient else "Patient"
-            
-            title = f"Mental Health Update: {questionnaire_type} Score Change - {patient_name}"
-            if crisis_detected:
-                title = f"ALERT: Mental Health Crisis Indicator - {patient_name}"
-            
-            percentage = (total_score / max_score * 100) if max_score > 0 else 0
-            
-            message_parts = [
-                f"Patient {patient_name} completed a {questionnaire_type} assessment.",
-                f"",
-                f"Score: {total_score}/{max_score} ({percentage:.0f}%)",
-                f"Severity Level: {severity_level.upper()}",
-            ]
-            
-            if crisis_detected:
-                message_parts.append("")
-                message_parts.append("CRISIS INDICATORS DETECTED - Review immediately.")
-            
-            message_parts.extend([
-                "",
-                "Recommendation: Review patient's mental health trends and consider scheduling a wellness check.",
-                "",
-                "Note: This system provides wellness monitoring, not medical diagnosis."
-            ])
-            
-            alert = Alert(
-                patient_id=patient_id,
-                doctor_id=doctor_id,
-                alert_type="mental_health_update",
-                severity=severity,
-                title=title,
-                message="\n".join(message_parts),
-                metadata={
-                    "questionnaire_type": questionnaire_type,
-                    "total_score": total_score,
-                    "max_score": max_score,
-                    "severity_level": severity_level,
-                    "crisis_detected": crisis_detected
-                },
-                status="pending"
-            )
-            
-            self.db.add(alert)
-            self.db.commit()
-            self.db.refresh(alert)
-            
-            await self._deliver_alert_to_doctor(alert, doctor_id)
-            
-            return alert.id
-            
-        except Exception as e:
-            self.logger.error(f"Error generating mental health alert: {e}")
-            self.db.rollback()
-            return None
-    
-    async def get_pending_alerts(
-        self,
-        doctor_id: str,
-        severity_filter: Optional[List[str]] = None
-    ) -> List[Alert]:
-        """
-        Get pending/unacknowledged alerts for a doctor
-        
-        Args:
-            doctor_id: Doctor ID to filter alerts
-            severity_filter: Optional list of severities to filter (e.g., ["high", "critical"])
-        
-        Returns:
-            List of pending alerts
-        """
-        try:
-            query = self.db.query(Alert).filter(
-                and_(
-                    Alert.doctor_id == doctor_id,
-                    Alert.status.in_(["pending", "sent"])
-                )
-            )
-            
-            if severity_filter:
-                query = query.filter(Alert.severity.in_(severity_filter))
-            
-            alerts = query.order_by(desc(Alert.created_at)).all()
-            
-            return alerts
-            
-        except Exception as e:
-            self.logger.error(f"Error getting pending alerts: {e}")
-            return []
-    
-    async def create_crisis_alert(
-        self,
-        patient_id: str,
-        doctor_id: str,
-        crisis_type: str,
-        severity: str,
-        details: Dict[str, Any]
-    ) -> Optional[int]:
-        """
-        Create a crisis alert for immediate clinician attention.
-        Used by CBT tools, mental health modules, and other crisis detection systems.
-        
-        Args:
-            patient_id: Patient identifier
-            doctor_id: Doctor to alert
-            crisis_type: Type of crisis (cbt_session_crisis, mental_health_crisis, etc.)
-            severity: Alert severity (medium, high, critical)
-            details: Additional context (session_id, matched_keywords, etc.)
-            
-        Returns:
-            Alert ID if created, None otherwise
-        """
-        try:
-            from app.models.user import User
-            patient = self.db.query(User).filter(User.id == patient_id).first()
-            patient_name = f"{patient.first_name} {patient.last_name}" if patient else "Patient"
-            
-            severity_emoji = {
-                "medium": "⚠️",
-                "high": "🔴",
-                "critical": "‼️"
-            }
-            
-            title = f"CRISIS ALERT: {patient_name} - Immediate Review Required"
-            
-            message_parts = [
-                f"A crisis indicator has been detected during a patient session.",
-                "",
-                f"Patient: {patient_name}",
-                f"Crisis Type: {crisis_type}",
-                f"Severity: {severity.upper()}",
-            ]
-            
-            if details.get("matched_keywords"):
-                message_parts.append("")
-                message_parts.append("Detected keywords: " + ", ".join(details["matched_keywords"]))
-            
-            if details.get("session_id"):
-                message_parts.append(f"Session ID: {details['session_id']}")
-            
-            message_parts.extend([
-                "",
-                "IMMEDIATE ACTION REQUIRED:",
-                "1. Review patient's session details in the dashboard",
-                "2. Contact patient as soon as possible",
-                "3. If patient is in immediate danger, follow crisis protocol",
-                "",
-                "Crisis Resources to Share with Patient:",
-                "• 988 Suicide and Crisis Lifeline",
-                "• Text HOME to 741741 (Crisis Text Line)",
-                "• 911 for immediate danger"
-            ])
-            
-            alert = Alert(
-                patient_id=patient_id,
-                doctor_id=doctor_id,
-                alert_type=crisis_type,
-                severity=severity,
-                title=title,
-                message="\n".join(message_parts),
-                metadata=details,
-                status="pending"
-            )
-            
-            self.db.add(alert)
-            self.db.commit()
-            self.db.refresh(alert)
-            
-            await self._deliver_alert_to_doctor(alert, doctor_id)
-            
-            self.logger.info(f"Crisis alert {alert.id} created for patient {patient_id}")
-            return alert.id
-            
-        except Exception as e:
-            self.logger.error(f"Error creating crisis alert: {e}")
-            self.db.rollback()
-            return None
-
-
-# Utility function for batch processing
-async def process_pending_risk_events(db: Session, batch_size: int = 50) -> Dict[str, Any]:
-    """
-    Process all pending risk events that haven't triggered alerts yet
-    
-    This function should be run periodically (e.g., every 5 minutes) to ensure
-    all risk events are evaluated against alert rules.
-    
-    Args:
-        db: Database session
-        batch_size: Number of events to process per batch
-    
-    Returns:
-        Processing summary stats
-    """
-    try:
-        engine = AlertOrchestrationEngine(db)
-        
-        # Get risk events that haven't triggered alerts yet
-        pending_events = db.query(RiskEvent).filter(
-            RiskEvent.triggered_alert == False
-        ).limit(batch_size).all()
-        
-        total_processed = 0
-        total_alerts_generated = 0
-        
-        for event in pending_events:
-            alerts = await engine.evaluate_risk_event(
-                risk_event=event,
-                patient_id=event.patient_id
-            )
-            
-            if alerts:
-                total_alerts_generated += len(alerts)
-                event.triggered_alert = True
-                db.commit()
-            
-            total_processed += 1
-        
-        return {
-            "events_processed": total_processed,
-            "alerts_generated": total_alerts_generated,
-            "timestamp": datetime.utcnow()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error processing risk events: {e}")
-        return {"error": str(e), "events_processed": 0, "alerts_generated": 0}

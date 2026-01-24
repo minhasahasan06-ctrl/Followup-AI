@@ -3,9 +3,12 @@ Multi-Channel Notification Service - Dashboard, SMS, Email, Push notifications.
 
 Channels:
 1. Dashboard - Real-time WebSocket/SSE notifications
-2. SMS - Via Twilio for urgent alerts (PHI-minimal)
-3. Email - Via AWS SES with secure portal links
+2. SMS - Via Twilio for urgent alerts (PHI-minimal) - DISABLED
+3. Email - Via AWS SES with secure portal links - DISABLED
 4. Push - Via Firebase/OneSignal for mobile app
+
+NOTE: Twilio and AWS SES integrations have been disabled.
+SMS and email notifications will log warnings but not send.
 
 Includes:
 - Template-based messaging
@@ -28,20 +31,12 @@ from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
-# Optional imports for notification providers
-try:
-    from twilio.rest import Client as TwilioClient
-    TWILIO_AVAILABLE = True
-except ImportError:
-    TWILIO_AVAILABLE = False
-    logger.warning("Twilio not available for SMS notifications")
+# STUB: Twilio and AWS SES have been removed
+TWILIO_AVAILABLE = False
+AWS_SES_AVAILABLE = False
 
-try:
-    import boto3
-    AWS_SES_AVAILABLE = True
-except ImportError:
-    AWS_SES_AVAILABLE = False
-    logger.warning("AWS SES not available for email notifications")
+logger.warning("Twilio not available for SMS notifications - integration disabled")
+logger.warning("AWS SES not available for email notifications - integration disabled")
 
 from .config_service import AlertConfigService
 from .rule_engine import AlertRecord, AlertSeverity
@@ -79,42 +74,24 @@ class NotificationResult:
 
 
 class NotificationService:
-    """Service for multi-channel notification delivery"""
+    """Service for multi-channel notification delivery
+    
+    NOTE: SMS (Twilio) and Email (AWS SES) are disabled.
+    Only Dashboard and Push notifications work.
+    """
     
     def __init__(self, db: Session):
         self.db = db
         self.config_service = AlertConfigService()
         
-        # Initialize Twilio client
+        # STUB: Twilio client disabled
         self.twilio_client = None
-        if TWILIO_AVAILABLE:
-            try:
-                account_sid = os.getenv('TWILIO_ACCOUNT_SID')
-                auth_token = os.getenv('TWILIO_AUTH_TOKEN')
-                if account_sid and auth_token:
-                    self.twilio_client = TwilioClient(account_sid, auth_token)
-                    self.twilio_from_number = os.getenv('TWILIO_PHONE_NUMBER')
-                    logger.info("Twilio SMS notifications enabled")
-            except Exception as e:
-                logger.warning(f"Twilio initialization failed: {e}")
+        self.twilio_from_number = None
         
-        # Initialize AWS SES client
+        # STUB: AWS SES client disabled
         self.ses_client = None
-        if AWS_SES_AVAILABLE:
-            try:
-                aws_key = os.getenv('AWS_ACCESS_KEY_ID')
-                aws_secret = os.getenv('AWS_SECRET_ACCESS_KEY')
-                aws_region = os.getenv('AWS_REGION', 'us-east-1')
-                if aws_key and aws_secret:
-                    self.ses_client = boto3.client(
-                        'ses',
-                        region_name=aws_region,
-                        aws_access_key_id=aws_key,
-                        aws_secret_access_key=aws_secret
-                    )
-                    logger.info("AWS SES email notifications enabled")
-            except Exception as e:
-                logger.warning(f"AWS SES initialization failed: {e}")
+        
+        logger.info("NotificationService initialized - SMS and Email disabled")
     
     async def send_alert_notification(
         self,
@@ -123,6 +100,8 @@ class NotificationService:
     ) -> List[NotificationResult]:
         """
         Send notification for an alert through configured channels.
+        
+        NOTE: SMS and Email are disabled.
         
         Returns list of results for each channel attempted.
         """
@@ -150,13 +129,13 @@ class NotificationService:
         if config.dashboard_enabled:
             channels.append(NotificationChannel.DASHBOARD)
         
-        # SMS for critical and high severity
-        if config.sms_enabled and severity in ["critical", "high"]:
-            channels.append(NotificationChannel.SMS)
+        # STUB: SMS disabled - skip even for critical
+        # if config.sms_enabled and severity in ["critical", "high"]:
+        #     channels.append(NotificationChannel.SMS)
         
-        # Email for all severities
-        if config.email_enabled:
-            channels.append(NotificationChannel.EMAIL)
+        # STUB: Email disabled
+        # if config.email_enabled:
+        #     channels.append(NotificationChannel.EMAIL)
         
         # Push for critical and high
         if config.push_enabled and severity in ["critical", "high"]:
@@ -177,9 +156,13 @@ class NotificationService:
             if channel == NotificationChannel.DASHBOARD:
                 success = await self._send_dashboard_notification(alert, request)
             elif channel == NotificationChannel.SMS:
-                success = await self._send_sms_notification(alert, request)
+                # STUB: SMS disabled
+                logger.warning("SMS notification skipped - Twilio integration disabled")
+                success = False
             elif channel == NotificationChannel.EMAIL:
-                success = await self._send_email_notification(alert, request)
+                # STUB: Email disabled
+                logger.warning("Email notification skipped - AWS SES integration disabled")
+                success = False
             elif channel == NotificationChannel.PUSH:
                 success = await self._send_push_notification(alert, request)
             else:
@@ -194,7 +177,8 @@ class NotificationService:
                 notification_id=notification_id,
                 channel=channel,
                 success=success,
-                delivered_at=datetime.utcnow() if success else None
+                delivered_at=datetime.utcnow() if success else None,
+                error_message="Integration disabled" if not success and channel in [NotificationChannel.SMS, NotificationChannel.EMAIL] else None
             )
             
         except Exception as e:
@@ -250,150 +234,22 @@ class NotificationService:
         alert: AlertRecord,
         request: NotificationRequest
     ) -> bool:
-        """Send SMS notification via Twilio (PHI-minimal)"""
-        if not self.twilio_client or not request.recipient_phone:
-            logger.warning("SMS not available or no phone number")
-            return False
-        
-        try:
-            # PHI-minimal SMS content
-            if request.is_escalation:
-                message_body = (
-                    f"[ESCALATION] Health Alert requires attention. "
-                    f"Severity: {alert.severity.upper()}. "
-                    f"Please review in secure portal."
-                )
-            else:
-                message_body = (
-                    f"Health Alert: {alert.severity.upper()} priority pattern detected. "
-                    f"Review details in secure portal."
-                )
-            
-            message = self.twilio_client.messages.create(
-                body=message_body,
-                from_=self.twilio_from_number,
-                to=request.recipient_phone
-            )
-            
-            logger.info(f"SMS sent: {message.sid}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error sending SMS: {e}")
-            return False
+        """Send SMS notification via Twilio (PHI-minimal)
+        STUB: Twilio is disabled - always returns False
+        """
+        logger.warning("SMS notification not sent - Twilio integration disabled")
+        return False
     
     async def _send_email_notification(
         self,
         alert: AlertRecord,
         request: NotificationRequest
     ) -> bool:
-        """Send email notification via AWS SES"""
-        if not self.ses_client or not request.recipient_email:
-            logger.warning("Email not available or no email address")
-            return False
-        
-        try:
-            # Get patient name for context (non-PHI)
-            patient_display = "Patient"  # Default to non-identifying
-            
-            # Build secure portal link
-            portal_link = f"https://app.followupai.com/alerts/{alert.id}"
-            
-            subject = f"[{alert.severity.upper()}] Health Alert - Requires Review"
-            if request.is_escalation:
-                subject = f"[ESCALATION] {subject}"
-            
-            # Get top contributing metrics
-            top_metrics = ""
-            if alert.trigger_metrics:
-                metrics_list = alert.trigger_metrics[:3]
-                top_metrics = "\n".join([
-                    f"  - {m.get('name', 'Unknown')}: {m.get('z_score', m.get('value', 'N/A'))}"
-                    for m in metrics_list
-                ])
-            
-            html_body = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
-                    .alert-box {{ padding: 20px; border-radius: 8px; margin: 20px 0; }}
-                    .critical {{ background-color: #fee2e2; border-left: 4px solid #ef4444; }}
-                    .high {{ background-color: #fef3c7; border-left: 4px solid #f59e0b; }}
-                    .moderate {{ background-color: #e0f2fe; border-left: 4px solid #3b82f6; }}
-                    .low {{ background-color: #f0fdf4; border-left: 4px solid #22c55e; }}
-                    .btn {{ display: inline-block; padding: 12px 24px; background-color: #3b82f6; 
-                           color: white; text-decoration: none; border-radius: 6px; }}
-                    .disclaimer {{ font-size: 12px; color: #6b7280; margin-top: 20px; }}
-                </style>
-            </head>
-            <body>
-                <h2>Health Alert Notification</h2>
-                
-                <div class="alert-box {alert.severity}">
-                    <h3>{alert.title}</h3>
-                    <p><strong>Severity:</strong> {alert.severity.upper()}</p>
-                    <p><strong>Priority:</strong> {alert.priority}/10</p>
-                </div>
-                
-                <p><strong>Alert Details:</strong></p>
-                <p>{alert.message}</p>
-                
-                <p><strong>Key Indicators:</strong></p>
-                <pre>{top_metrics or 'See portal for details'}</pre>
-                
-                <p>
-                    <a href="{portal_link}" class="btn">View Full Details in Secure Portal</a>
-                </p>
-                
-                <p class="disclaimer">
-                    <strong>IMPORTANT:</strong> {alert.disclaimer}<br><br>
-                    This notification was sent to {request.recipient_email} because you are 
-                    assigned to monitor this patient. For security, full patient details 
-                    are only available in the authenticated portal.
-                </p>
-            </body>
-            </html>
-            """
-            
-            text_body = f"""
-Health Alert Notification
-=========================
-
-{alert.title}
-Severity: {alert.severity.upper()}
-Priority: {alert.priority}/10
-
-{alert.message}
-
-Key Indicators:
-{top_metrics or 'See portal for details'}
-
-View full details: {portal_link}
-
-IMPORTANT: {alert.disclaimer}
-            """
-            
-            sender_email = os.getenv('AWS_SES_SENDER_EMAIL', 'alerts@followupai.com')
-            
-            response = self.ses_client.send_email(
-                Source=sender_email,
-                Destination={'ToAddresses': [request.recipient_email]},
-                Message={
-                    'Subject': {'Data': subject},
-                    'Body': {
-                        'Text': {'Data': text_body},
-                        'Html': {'Data': html_body}
-                    }
-                }
-            )
-            
-            logger.info(f"Email sent: {response['MessageId']}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error sending email: {e}")
-            return False
+        """Send email notification via AWS SES
+        STUB: AWS SES is disabled - always returns False
+        """
+        logger.warning("Email notification not sent - AWS SES integration disabled")
+        return False
     
     async def _send_push_notification(
         self,
@@ -533,6 +389,9 @@ IMPORTANT: {alert.disclaimer}
                     "failed": row[3],
                     "success_rate": (row[2] / row[1] * 100) if row[1] > 0 else 0
                 }
+            
+            # Add note about disabled channels
+            stats["_warning"] = "SMS and Email channels are disabled - Twilio and AWS SES integrations removed"
             
             return stats
             

@@ -1,10 +1,43 @@
 import { google, gmail_v1 } from 'googleapis';
-import twilio from 'twilio';
 import type { Storage } from './storage';
 import type { DoctorIntegration, DoctorEmail, DoctorWhatsappMessage, CallLog } from '@shared/schema';
 import OpenAI from 'openai';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+
+// Twilio integration disabled - using stub
+function twilioStub(apiKey?: string, apiSecret?: string, options?: { accountSid?: string }) {
+  console.warn('[TWILIO] Twilio client disabled - using stub');
+  return {
+    api: {
+      accounts: (sid: string) => ({
+        fetch: async () => {
+          console.warn('[TWILIO] Account fetch disabled - returning mock');
+          return { sid, status: 'active' };
+        }
+      })
+    },
+    messages: {
+      create: async (opts: any) => {
+        console.warn('[TWILIO] SMS sending disabled - Twilio removed from dependencies');
+        console.log('[TWILIO] Would send SMS:', { to: opts.to });
+        return { sid: 'mock-sid-' + Date.now(), status: 'stub' };
+      }
+    },
+    calls: {
+      create: async (opts: any) => {
+        console.warn('[TWILIO] Calling disabled - Twilio removed from dependencies');
+        console.log('[TWILIO] Would call:', { to: opts.to });
+        return { sid: 'mock-call-sid-' + Date.now(), status: 'stub' };
+      },
+      list: async (opts?: any) => {
+        console.warn('[TWILIO] Call list disabled - returning empty');
+        return [];
+      }
+    }
+  };
+}
+const twilio = twilioStub;
 
 interface GoogleOAuthConfig {
   clientId: string;
