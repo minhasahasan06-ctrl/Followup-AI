@@ -5,7 +5,6 @@ description = "Followup AI - HIPAA-Compliant AI Deterioration Detection SaaS Pla
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "alembic>=1.17.1",
-    "boto3>=1.40.71",
     "fastapi>=0.121.1",
     "google-api-python-client>=2.187.0",
     "google-auth>=2.43.0",
@@ -22,7 +21,6 @@ dependencies = [
     "python-multipart>=0.0.20",
     "requests>=2.32.5",
     "sqlalchemy>=2.0.44",
-    "twilio>=9.8.6",
     "uvicorn[standard]>=0.38.0",
     "torch>=2.0.0",
     "onnxruntime>=1.16.0",
