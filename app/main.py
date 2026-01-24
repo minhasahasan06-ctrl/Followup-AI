@@ -61,7 +61,7 @@ from app.routers import (
     medical_nlp,  # ✅ Medical NLP (GPT-4o PHI Detection & Entity Extraction) - PRODUCTION READY
     agent_api,  # ✅ Multi-Agent REST API - Agent Clona & Assistant Lysa
     agent_websocket,  # ✅ Multi-Agent WebSocket - Real-time Communication
-    auth_api,  # ✅ Auth0 Authentication API - PRODUCTION READY
+    auth_api,  # ✅ Authentication API (Stytch M2M) - PRODUCTION READY
     ml_prediction_api,  # ✅ ML Prediction API - Disease Risk, Deterioration, Time-Series, Segmentation
     environmental_risk_api,  # ✅ Environmental Risk Map - Comprehensive Environmental Health Intelligence
     followup_autopilot,  # ✅ Followup Autopilot - ML-Powered Adaptive Follow-up Engine
@@ -528,7 +528,7 @@ app.include_router(medical_nlp.router)
 app.include_router(agent_api.router)
 app.include_router(agent_websocket.router)
 
-# Auth0 Authentication API - PRODUCTION READY
+# Authentication API (Stytch M2M) - PRODUCTION READY
 app.include_router(auth_api.router)
 
 # ML Prediction API (Disease Risk, Deterioration, Time-Series, Segmentation) - PRODUCTION READY

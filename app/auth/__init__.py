@@ -1,6 +1,17 @@
 """
 Authentication Module for Followup AI
-Provides Auth0-based JWT authentication for the FastAPI backend
+
+MIGRATION STATUS:
+- Auth0 JWT authentication is DEPRECATED (legacy)
+- Stytch M2M is the PRIMARY auth method for Python backend
+- See app/dependencies.py for Stytch M2M validation
+
+Auth flow:
+1. Express backend authenticates users via Stytch (magic links, sessions)
+2. Express calls Python FastAPI using Stytch M2M tokens
+3. Python validates M2M tokens via app/dependencies.py
+
+Legacy Auth0 exports below are for backward compatibility only.
 """
 
 from app.auth.auth0 import (

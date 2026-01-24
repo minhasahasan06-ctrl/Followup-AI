@@ -1,11 +1,14 @@
 """
-Auth0 JWT Authentication for FastAPI
-HIPAA-compliant authentication using Auth0
+DEPRECATED: Auth0 JWT Authentication for FastAPI
+================================================================
+NOTE: Auth0 has been REPLACED by Stytch for authentication.
+- User auth: Express backend uses Stytch (magic links, sessions)
+- Service auth: Python FastAPI uses Stytch M2M tokens
+- See app/dependencies.py for Stytch M2M validation
 
-This module provides:
-- JWT token verification using Auth0 JWKS
-- User extraction from tokens
-- Development mode bypass for testing
+This module is kept for backward compatibility but should NOT
+be used for new code. Use Stytch M2M authentication instead.
+================================================================
 """
 
 import os
