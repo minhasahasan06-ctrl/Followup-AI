@@ -2,7 +2,7 @@
 Authentication and authorization utilities for HIPAA-compliant video exam system
 
 This module uses JWT tokens signed with DEV_MODE_SECRET for Express-to-Python authentication.
-For production Auth0 authentication, see app/auth/auth0.py
+For production authentication, use Stytch M2M tokens - see app/dependencies.py
 """
 
 from fastapi import Depends, HTTPException, status

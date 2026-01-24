@@ -34,7 +34,7 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
     """
     Verify JWT token using DEV_MODE_SECRET.
     This is used for Express-to-Python backend authentication.
-    Auth0 tokens are verified separately via app/auth/auth0.py
+    Stytch M2M tokens are verified via app/dependencies.py
     """
     try:
         secret = settings.DEV_MODE_SECRET
