@@ -95,17 +95,6 @@ async def search_doctors(
         offset=offset
     )
     
-    HIPAAAuditLogger.log_phi_access(
-        actor_id=current_user.id,
-        actor_role=str(current_user.role),
-        patient_id=None,
-        action="search_doctors",
-        phi_categories=[PHICategory.PROVIDER_INFO.value],
-        resource_type="doctor_search",
-        success=True,
-        ip_address=request.client.host if request.client else None
-    )
-    
     return doctors
 
 
@@ -166,7 +155,7 @@ async def connect_to_doctor(
             actor_role="patient",
             patient_id=current_user.id,
             action="connect_to_doctor",
-            phi_categories=[PHICategory.PROVIDER_INFO.value],
+            phi_categories=[PHICategory.APPOINTMENTS.value],
             resource_type="doctor_connection",
             resource_id=str(connection.id) if hasattr(connection, 'id') else None,
             success=True,
@@ -203,7 +192,7 @@ async def disconnect_from_doctor(
         actor_role="patient",
         patient_id=current_user.id,
         action="disconnect_from_doctor",
-        phi_categories=[PHICategory.PROVIDER_INFO.value],
+        phi_categories=[PHICategory.APPOINTMENTS.value],
         resource_type="doctor_connection",
         success=True,
         ip_address=request.client.host if request.client else None

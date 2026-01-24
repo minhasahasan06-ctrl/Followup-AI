@@ -718,12 +718,12 @@ async def get_trend_metrics(
         acs = get_access_control()
         decision = acs.verify_doctor_patient_access(
             db=db, doctor_id=current_user.id, patient_id=patient_id,
-            required_scope=AccessScope.READ, phi_categories=[PHICategory.CLINICAL.value]
+            required_scope=AccessScope.READ, phi_categories=[PHICategory.VITALS.value, PHICategory.SYMPTOMS.value]
         )
         if not decision.allowed:
             HIPAAAuditLogger.log_phi_access(
                 actor_id=current_user.id, actor_role="doctor", patient_id=patient_id,
-                action="view_trend_metrics_denied", phi_categories=[PHICategory.CLINICAL.value],
+                action="view_trend_metrics_denied", phi_categories=[PHICategory.VITALS.value, PHICategory.SYMPTOMS.value],
                 resource_type="trend_metrics", success=False, error_message=decision.reason,
                 ip_address=request.client.host if request.client else None
             )
@@ -757,7 +757,7 @@ async def get_trend_metrics(
         
         HIPAAAuditLogger.log_phi_access(
             actor_id=current_user.id, actor_role=str(current_user.role), patient_id=patient_id,
-            action="view_trend_metrics", phi_categories=[PHICategory.CLINICAL.value],
+            action="view_trend_metrics", phi_categories=[PHICategory.VITALS.value, PHICategory.SYMPTOMS.value],
             resource_type="trend_metrics", success=True,
             ip_address=request.client.host if request.client else None
         )
@@ -807,7 +807,7 @@ async def compute_trend_metrics(
         acs = get_access_control()
         decision = acs.verify_doctor_patient_access(
             db=db, doctor_id=current_user.id, patient_id=patient_id,
-            required_scope=AccessScope.FULL, phi_categories=[PHICategory.CLINICAL.value]
+            required_scope=AccessScope.FULL, phi_categories=[PHICategory.VITALS.value, PHICategory.SYMPTOMS.value]
         )
         if not decision.allowed:
             raise HTTPException(status_code=403, detail=decision.reason)
@@ -1282,12 +1282,12 @@ async def get_health_alerts(
         acs = get_access_control()
         decision = acs.verify_doctor_patient_access(
             db=db, doctor_id=current_user.id, patient_id=patient_id,
-            required_scope=AccessScope.READ, phi_categories=[PHICategory.CLINICAL.value]
+            required_scope=AccessScope.READ, phi_categories=[PHICategory.VITALS.value, PHICategory.SYMPTOMS.value]
         )
         if not decision.allowed:
             HIPAAAuditLogger.log_phi_access(
                 actor_id=current_user.id, actor_role="doctor", patient_id=patient_id,
-                action="view_health_alerts_denied", phi_categories=[PHICategory.CLINICAL.value],
+                action="view_health_alerts_denied", phi_categories=[PHICategory.VITALS.value, PHICategory.SYMPTOMS.value],
                 resource_type="health_alerts", success=False, error_message=decision.reason,
                 ip_address=request.client.host if request.client else None
             )
