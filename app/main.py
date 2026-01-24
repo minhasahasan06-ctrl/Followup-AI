@@ -245,6 +245,37 @@ try:
 except ImportError as e:
     logger.warning(f"❌ Could not import feature_flags router: {e}")
 
+# Payment & Clinical Documentation Routers (HIPAA-compliant)
+try:
+    from app.routers import payments_router
+    _optional_routers.append(('payments', payments_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import payments_router: {e}")
+
+try:
+    from app.routers import wallet_router
+    _optional_routers.append(('wallet', wallet_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import wallet_router: {e}")
+
+try:
+    from app.routers import doctor_lysa_router
+    _optional_routers.append(('doctor_lysa', doctor_lysa_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import doctor_lysa_router: {e}")
+
+try:
+    from app.routers import doctor_billing_router
+    _optional_routers.append(('doctor_billing', doctor_billing_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import doctor_billing_router: {e}")
+
+try:
+    from app.routers import emergency_access_router
+    _optional_routers.append(('emergency_access', emergency_access_router))
+except ImportError as e:
+    logger.warning(f"❌ Could not import emergency_access_router: {e}")
+
 # Import lysa_drafts models for table creation
 try:
     from app.models import lysa_drafts
@@ -279,6 +310,13 @@ try:
     logger.info("✅ Tinker models imported for table creation")
 except ImportError as e:
     logger.warning(f"❌ Could not import tinker_models: {e}")
+
+# Import payment models for Phase B table creation
+try:
+    from app.models import payments
+    logger.info("✅ Payment models imported for table creation")
+except ImportError as e:
+    logger.warning(f"❌ Could not import payments: {e}")
 
 
 @asynccontextmanager
@@ -638,6 +676,21 @@ for router_name, router_module in _optional_routers:
         elif router_name == 'feature_flags':
             app.include_router(router_module.router)
             logger.info(f"✅ Registered {router_name} router (Feature Flag Management)")
+        elif router_name == 'payments':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Stripe Payments)")
+        elif router_name == 'wallet':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Wallet & Credits)")
+        elif router_name == 'doctor_lysa':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Doctor Lysa Clinical AI)")
+        elif router_name == 'doctor_billing':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Doctor Billing & Verification)")
+        elif router_name == 'emergency_access':
+            app.include_router(router_module.router)
+            logger.info(f"✅ Registered {router_name} router (Break-the-Glass Emergency Access)")
     except Exception as e:
         logger.warning(f"❌ Could not register {router_name}: {e}")
 

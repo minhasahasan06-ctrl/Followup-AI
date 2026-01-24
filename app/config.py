@@ -17,6 +17,31 @@ class Settings(BaseSettings):
     OPENAI_ZDR_ENABLED: bool = os.getenv("OPENAI_ZDR_ENABLED", "false").lower() == "true"
     OPENAI_ENTERPRISE: bool = os.getenv("OPENAI_ENTERPRISE", "false").lower() == "true"
     
+    # Stytch Authentication (replaces Auth0/Twilio for verification)
+    STYTCH_PROJECT_ID: Optional[str] = os.getenv("STYTCH_PROJECT_ID")
+    STYTCH_SECRET: Optional[str] = os.getenv("STYTCH_SECRET")
+    STYTCH_PUBLIC_TOKEN: Optional[str] = os.getenv("STYTCH_PUBLIC_TOKEN")
+    STYTCH_ENV: str = os.getenv("STYTCH_ENV", "test")
+    
+    # Stripe Payments & Connect
+    STRIPE_API_KEY: Optional[str] = os.getenv("STRIPE_API_KEY")
+    STRIPE_WEBHOOK_SECRET: Optional[str] = os.getenv("STRIPE_WEBHOOK_SECRET")
+    STRIPE_CONNECT_CLIENT_ID: Optional[str] = os.getenv("STRIPE_CONNECT_CLIENT_ID")
+    PAYMENTS_WEBHOOK_SECRET: Optional[str] = os.getenv("PAYMENTS_WEBHOOK_SECRET")
+    PAYMENT_PROVIDER: str = os.getenv("PAYMENT_PROVIDER", "stripe")
+    
+    # Google Cloud Platform (for KMS, Logging)
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    GCP_PROJECT_ID: Optional[str] = os.getenv("GCP_PROJECT_ID")
+    GCP_REGION: str = os.getenv("GCP_REGION", "us-central1")
+    GCP_KMS_KEY_RING_ID: Optional[str] = os.getenv("GCP_KMS_KEY_RING_ID")
+    GCP_KMS_CRYPTO_KEY_ID: Optional[str] = os.getenv("GCP_KMS_CRYPTO_KEY_ID")
+    
+    # Monitoring and Logging
+    SENTRY_DSN: Optional[str] = os.getenv("SENTRY_DSN")
+    SIEM_ENDPOINT: Optional[str] = os.getenv("SIEM_ENDPOINT")
+    
+    # Legacy - Twilio (deprecated, use Stytch)
     TWILIO_ACCOUNT_SID: Optional[str] = os.getenv("TWILIO_ACCOUNT_SID")
     TWILIO_AUTH_TOKEN: Optional[str] = os.getenv("TWILIO_AUTH_TOKEN")
     TWILIO_PHONE_NUMBER: Optional[str] = os.getenv("TWILIO_PHONE_NUMBER")
