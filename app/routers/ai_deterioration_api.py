@@ -37,6 +37,8 @@ from app.models.audio_ai_models import AudioMetrics
 from app.models.trend_models import TrendSnapshot, RiskEvent, PatientBaseline
 from app.models.alert_models import AlertRule, Alert
 from app.models.security_models import AuditLog, ConsentRecord
+from app.services.access_control import HIPAAAuditLogger, PHICategory
+from app.dependencies import get_current_user
 
 # Import services
 # Note: AIEngineManager is imported directly in endpoints to avoid blocking module-level imports

@@ -8,14 +8,15 @@ import uuid
 import json
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel, Field
 
 from app.database import get_db
-from app.auth import get_current_user
+from app.dependencies import get_current_user, get_current_patient
 from app.models.user import User
+from app.services.access_control import HIPAAAuditLogger, PHICategory
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/medication-adherence", tags=["medication-adherence"])
@@ -46,38 +47,39 @@ class AdherenceStats(BaseModel):
     streak_best: int
 
 
-def audit_log(db: Session, user_id: str, action: str, resource_type: str, 
-              resource_id: str, details: Optional[Dict[str, Any]] = None):
-    """HIPAA-compliant audit logging"""
-    try:
-        db.execute(
-            text("""
-                INSERT INTO hipaa_audit_logs (id, user_id, action, resource_type, resource_id, details, created_at)
-                VALUES (:id, :user_id, :action, :resource_type, :resource_id, :details, NOW())
-            """),
-            {
-                "id": str(uuid.uuid4()),
-                "user_id": user_id,
-                "action": action,
-                "resource_type": resource_type,
-                "resource_id": resource_id,
-                "details": json.dumps(details if details else {})
-            }
-        )
-        db.commit()
-    except Exception as e:
-        logger.warning(f"Audit log failed: {e}")
+def audit_phi_access(
+    actor_id: str, 
+    actor_role: str, 
+    patient_id: str,
+    action: str, 
+    resource_type: str, 
+    resource_id: str, 
+    request: Optional[Request] = None
+):
+    """HIPAA-compliant audit logging using centralized service"""
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=actor_id,
+        actor_role=actor_role,
+        patient_id=patient_id,
+        action=action,
+        phi_categories=[PHICategory.MEDICATIONS.value],
+        resource_type=resource_type,
+        resource_id=resource_id,
+        access_scope="full",
+        access_reason="clinical_care",
+        ip_address=request.client.host if request and request.client else None,
+        success=True
+    )
 
 
 @router.post("/log")
 def log_adherence(
     log: AdherenceLogCreate,
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    current_user: User = Depends(get_current_patient),
     db: Session = Depends(get_db)
 ):
     """Log medication adherence event"""
-    if current_user.role != "patient":
-        raise HTTPException(status_code=403, detail="Only patients can log adherence")
     
     result = db.execute(
         text("SELECT patient_id, name FROM medications WHERE id = :id"),
@@ -146,8 +148,15 @@ def log_adherence(
         except Exception as e:
             logger.warning(f"Failed to send Autopilot signal: {e}")
         
-        audit_log(db, current_user.id, "log_adherence", "medication_adherence", log_id,
-                  {"medication_id": log.medication_id, "status": log.status})
+        audit_phi_access(
+            actor_id=current_user.id, 
+            actor_role="patient",
+            patient_id=current_user.id,
+            action="log_adherence", 
+            resource_type="medication_adherence", 
+            resource_id=log_id,
+            request=request
+        )
         
         return {
             "id": log_id,
@@ -163,12 +172,11 @@ def log_adherence(
 @router.post("/log/batch")
 def log_adherence_batch(
     batch: AdherenceLogBatch,
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    current_user: User = Depends(get_current_patient),
     db: Session = Depends(get_db)
 ):
     """Log multiple adherence events at once"""
-    if current_user.role != "patient":
-        raise HTTPException(status_code=403, detail="Only patients can log adherence")
     
     results = []
     for log in batch.logs:
@@ -207,8 +215,15 @@ def log_adherence_batch(
     db.commit()
     
     success_count = sum(1 for r in results if r.get("success"))
-    audit_log(db, current_user.id, "log_adherence_batch", "medication_adherence", "batch",
-              {"total": len(batch.logs), "success": success_count})
+    audit_phi_access(
+        actor_id=current_user.id, 
+        actor_role="patient",
+        patient_id=current_user.id,
+        action="log_adherence_batch", 
+        resource_type="medication_adherence", 
+        resource_id="batch",
+        request=request
+    )
     
     return {"results": results, "success_count": success_count, "total": len(batch.logs)}
 

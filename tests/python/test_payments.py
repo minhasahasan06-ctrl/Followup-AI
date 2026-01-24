@@ -272,21 +272,29 @@ class TestStripeConnect:
     def test_create_connect_account_link(self):
         """Test creating Connect account onboarding link."""
         with patch('app.services.stripe_service.settings') as mock_settings, \
+             patch('stripe.Account.create') as mock_account, \
              patch('stripe.AccountLink.create') as mock_link:
             
             mock_settings.STRIPE_API_KEY = 'sk_test_123'
             mock_settings.STRIPE_WEBHOOK_SECRET = 'whsec_123'
             mock_settings.STRIPE_CONNECT_CLIENT_ID = 'ca_123'
             
-            mock_link.return_value = MagicMock(
-                url='https://connect.stripe.com/setup/...'
-            )
+            mock_account.return_value = MagicMock(id='acct_test123')
+            mock_link.return_value = MagicMock(url='https://connect.stripe.com/setup/...')
+            
+            mock_doctor = MagicMock()
+            mock_doctor.id = 'doc-123'
+            mock_doctor.email = 'doctor@example.com'
+            
+            mock_db = MagicMock()
+            mock_db.execute.return_value.fetchone.return_value = None
             
             service = StripeService()
             result = service.create_connect_account_link(
-                'acct_123',
-                'https://example.com/return',
-                'https://example.com/refresh'
+                mock_db,
+                mock_doctor,
+                'https://example.com/refresh',
+                'https://example.com/return'
             )
             
             assert result.success is True
@@ -300,16 +308,20 @@ class TestStripeConnect:
             mock_settings.STRIPE_WEBHOOK_SECRET = 'whsec_123'
             mock_settings.STRIPE_CONNECT_CLIENT_ID = 'ca_123'
             
-            mock_transfer.return_value = MagicMock(
-                id='tr_123',
-                amount=10000
-            )
+            mock_transfer.return_value = MagicMock(id='tr_123', amount=10000)
+            
+            mock_doctor = MagicMock()
+            mock_doctor.id = 'doc-123'
+            
+            mock_db = MagicMock()
+            mock_db.execute.return_value.fetchone.return_value = ('acct_test123', 'active')
             
             service = StripeService()
-            result = service.create_transfer(
+            result = service.create_payout(
+                db=mock_db,
+                doctor=mock_doctor,
                 amount_cents=10000,
-                destination_account='acct_123',
-                description='Doctor payout'
+                withdraw_request_id='wr-123'
             )
             
             assert result.success is True
@@ -319,7 +331,7 @@ class TestWebhookHandling:
     """Test Stripe webhook signature verification."""
 
     def test_verify_webhook_signature(self):
-        """Test webhook signature verification."""
+        """Test webhook signature verification returns PaymentResult."""
         with patch('app.services.stripe_service.settings') as mock_settings, \
              patch('stripe.Webhook.construct_event') as mock_construct:
             
@@ -333,15 +345,16 @@ class TestWebhookHandling:
             }
             
             service = StripeService()
-            event = service.verify_webhook(
+            result = service.verify_webhook(
                 payload=b'{}',
                 signature='sig_123'
             )
             
-            assert event['type'] == 'checkout.session.completed'
+            assert result.success is True
+            assert result.data['event']['type'] == 'checkout.session.completed'
 
-    def test_invalid_webhook_signature_raises(self):
-        """Test invalid webhook signature raises error."""
+    def test_invalid_webhook_signature_returns_error(self):
+        """Test invalid webhook signature returns error result."""
         import stripe
         
         with patch('app.services.stripe_service.settings') as mock_settings, \
@@ -356,12 +369,13 @@ class TestWebhookHandling:
             )
             
             service = StripeService()
+            result = service.verify_webhook(
+                payload=b'{}',
+                signature='invalid_sig'
+            )
             
-            with pytest.raises(stripe.SignatureVerificationError):
-                service.verify_webhook(
-                    payload=b'{}',
-                    signature='invalid_sig'
-                )
+            assert result.success is False
+            assert result.error == "Invalid signature"
 
 
 class TestWalletBalance:

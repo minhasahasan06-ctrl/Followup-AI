@@ -12,10 +12,11 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_current_patient
 from app.models.user import User
 from app.models.health_baseline import HealthBaseline
 from app.services.baseline_service import BaselineCalculationService
+from app.services.access_control import HIPAAAuditLogger, PHICategory
 
 
 router = APIRouter(prefix="/api/v1/baseline", tags=["Health Baselines"])

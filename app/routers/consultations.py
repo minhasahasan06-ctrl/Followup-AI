@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_doctor, get_current_user
 from app.models.user import User
 from app.services.doctor_consultation_service import DoctorConsultationService
+from app.services.access_control import HIPAAAuditLogger, PHICategory
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime

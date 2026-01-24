@@ -338,10 +338,10 @@ class TestLLMSafeClient:
         from app.services import openai_client
         assert openai_client is not None
 
-    def test_openai_client_class_exists(self):
-        """Test OpenAIClient class is available."""
-        from app.services.openai_client import OpenAIClient
-        assert OpenAIClient is not None
+    def test_openai_client_wrapper_exists(self):
+        """Test OpenAIClientWrapper class is available."""
+        from app.services.openai_client import OpenAIClientWrapper
+        assert OpenAIClientWrapper is not None
 
 
 class TestMedicalNLPResult:

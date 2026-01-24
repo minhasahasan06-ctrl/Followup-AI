@@ -15,8 +15,9 @@ import logging
 import os
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_current_doctor
 from app.models.user import User
+from app.services.access_control import HIPAAAuditLogger, PHICategory, AccessControlService
 from app.models.patient_sharing import PatientSharingLink, SharingAccessLog, SharingStatus
 from app.models.medication_side_effects import MedicationTimeline
 from app.schemas.clinical_assessment_schemas import (

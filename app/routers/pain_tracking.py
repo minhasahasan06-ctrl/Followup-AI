@@ -20,8 +20,9 @@ from app.database import get_db
 from app.models.pain_tracking import PainMeasurement, PainQuestionnaire, PainTrendSummary
 from app.models.user import User
 from app.models.patient_doctor_connection import PatientDoctorConnection
-from app.dependencies import require_role
+from app.dependencies import require_role, get_current_patient
 from app.services.signal_ingestor_service import SignalIngestorService
+from app.services.access_control import HIPAAAuditLogger, PHICategory
 
 logger = logging.getLogger(__name__)
 
