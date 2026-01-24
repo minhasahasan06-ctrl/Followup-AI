@@ -15,7 +15,18 @@ from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.auth import get_current_user
+from app.dependencies import get_current_doctor
 from app.models.user import User
+
+
+def require_verified_doctor(current_user: User = Depends(get_current_doctor)) -> User:
+    """Dependency that requires a verified doctor license."""
+    if not hasattr(current_user, 'license_verified') or not current_user.license_verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Doctor license verification required for clinical operations"
+        )
+    return current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/rx-builder", tags=["rx-builder"])
@@ -117,12 +128,10 @@ def audit_log(db: Session, user_id: str, action: str, resource_type: str,
 @router.post("/soap-notes", response_model=Dict[str, Any])
 def create_soap_note(
     note: SOAPNoteCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_doctor),
     db: Session = Depends(get_db)
 ):
-    """Create a new SOAP note for a patient encounter"""
-    if current_user.role != "doctor":
-        raise HTTPException(status_code=403, detail="Only doctors can create SOAP notes")
+    """Create a new SOAP note for a patient encounter (requires verified license)"""
     
     if not verify_doctor_patient_access(current_user.id, note.patient_id, db):
         raise HTTPException(status_code=403, detail="No active connection with this patient")
@@ -381,12 +390,10 @@ def update_soap_note(
 @router.post("/soap-notes/{note_id}/sign")
 def sign_soap_note(
     note_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_doctor),
     db: Session = Depends(get_db)
 ):
-    """Sign and finalize a SOAP note"""
-    if current_user.role != "doctor":
-        raise HTTPException(status_code=403, detail="Only doctors can sign SOAP notes")
+    """Sign and finalize a SOAP note (requires verified license)"""
     
     result = db.execute(
         text("SELECT doctor_id, status FROM soap_notes WHERE id = :id"),
@@ -484,12 +491,10 @@ Important: Only suggest valid, billable ICD-10-CM codes. Include the full code w
 @router.post("/prescription/suggest")
 async def suggest_prescription(
     request: PrescriptionSuggestionRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_doctor),
     db: Session = Depends(get_db)
 ):
-    """AI-powered prescription suggestions based on diagnosis"""
-    if current_user.role != "doctor":
-        raise HTTPException(status_code=403, detail="Only doctors can request prescription suggestions")
+    """AI-powered prescription suggestions based on diagnosis (requires verified license)"""
     
     if not verify_doctor_patient_access(current_user.id, request.patient_id, db):
         raise HTTPException(status_code=403, detail="No active connection with this patient")
