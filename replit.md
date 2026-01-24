@@ -68,6 +68,16 @@ The backend consists of a Node.js Express server (Port 5000) handling chat, appo
 ### Security and Compliance
 The platform ensures HIPAA compliance through Stytch for passwordless authentication, HttpOnly session cookies, M2M tokens, comprehensive audit logging, end-to-end encryption, strict PHI handling, explicit doctor-patient assignment authorization, and Google Authenticator TOTP for Admin ML Training Hub.
 
+### Development Environment Guardrails
+The development environment includes HIPAA compliance guardrails to prevent PHI exposure:
+- **Config Guard** (`server/config_guard.ts`): Fail-closed startup checks that block production identifiers (GCP projects, Neon hosts, Auth0 domains, live Stripe keys). Application exits immediately with generic error if production patterns detected.
+- **Safe Logger** (`server/safe_logger.ts`): PHI-redacting logger with 15+ pattern types (emails, phones, SSNs, MRNs, JWT tokens, API keys). All sensitive data replaced with `[REDACTED-*]` markers.
+- **Production Identifiers** (`prod_identifiers.json`): Configurable blocklist of production identifiers. PLACEHOLDER values require review by authorized engineer.
+- **CI/CD Security** (`.github/workflows/ci_checks.yml`): GitHub Actions with gitleaks secret scanning, production identifier detection, and dependency auditing.
+- **Development Seeding** (`server/dev_seed.ts`): Synthetic data seeder with config guard integration for safe development.
+- **Key Environment Variables**: `REPLIT_DEV_ONLY=true` (required for dev mode), `NODE_ENV=development` (enforced).
+- **Documentation**: `DEV_README.md` (no-PHI rules), `AUDIT_SUMMARY.md` (compliance controls).
+
 ## External Dependencies
 
 - **Authentication**: Stytch (Magic Links, SMS OTP, M2M)
