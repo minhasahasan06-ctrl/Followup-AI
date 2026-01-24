@@ -1,0 +1,61 @@
+{
+  "version": "1.0.1",
+  "description": "Production identifiers for fail-closed environment checks. PLACEHOLDERS - must be reviewed by authorized engineer.",
+  "last_updated": "2026-01-24",
+  "reviewed_by": null,
+  "gcp_project_ids": [
+    "PLACEHOLDER-prod-project",
+    "followupai-prod",
+    "followupai-production"
+  ],
+  "gcp_cloud_run_services": [
+    "prod-api",
+    "production-api"
+  ],
+  "gcp_storage_buckets": [
+    "followupai-prod-",
+    "production-phi-",
+    "prod-patient-data"
+  ],
+  "neon_host_suffixes": [
+    ".prod.neon.tech",
+    "-prod.neon.tech",
+    "neon-prod.",
+    "production.neon"
+  ],
+  "auth0_domains": [
+    "followupai-prod.auth0.com",
+    "followupai-production.auth0.com"
+  ],
+  "auth0_audiences": [
+    "https://api.followupai.com",
+    "https://prod.followupai.com"
+  ],
+  "api_host_suffixes": [
+    "api.followupai.com",
+    "prod.followupai.com",
+    "production.followupai.com"
+  ],
+  "cloudflare_zones": [
+    "followupai.com",
+    "followup-ai.com"
+  ],
+  "redis_hosts": [
+    "redis-prod.followupai",
+    "production-redis.followupai"
+  ],
+  "s3_buckets": [
+    "followupai-prod-",
+    "production-phi-",
+    "prod-medical-"
+  ],
+  "blocked_env_var_prefixes": [
+    "PROD_API",
+    "PRODUCTION_API",
+    "PATIENT_DATA_"
+  ],
+  "secret_patterns": [
+    "sk_live_",
+    "pk_live_"
+  ]
+}

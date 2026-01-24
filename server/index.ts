@@ -5,6 +5,17 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedDatabase } from "./seed";
 import { isStytchConfigured } from "./stytch";
+import { runConfigGuard } from "./config_guard";
+import { safeLogger } from "./safe_logger";
+
+// HIPAA Config Guard - Run BEFORE any other initialization
+// This must be the first thing that runs to ensure we're in a safe environment
+try {
+  runConfigGuard(true);
+} catch (error) {
+  console.error('[STARTUP] Config guard failed - exiting');
+  process.exit(1);
+}
 
 // Python backend configuration
 const PYTHON_PORT = 8000;
@@ -110,6 +121,8 @@ if (isStytchConfigured()) {
   log("[STYTCH] Warning: STYTCH_PROJECT_ID or STYTCH_SECRET not set - auth features disabled");
 }
 
+// HIPAA-compliant request logging middleware
+// Uses safe_logger to redact PHI from response bodies before logging
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -124,16 +137,10 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
+      // HIPAA: Log request info without response body to prevent PHI leakage
+      // Response bodies may contain patient data and should never be logged
+      const logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      safeLogger.info(logLine);
     }
   });
 

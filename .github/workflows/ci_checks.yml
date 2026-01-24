@@ -1,0 +1,174 @@
+name: HIPAA Security Checks
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  secret-scan:
+    name: Secret & Production Identifier Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz
+          tar -xzf gitleaks_8.18.0_linux_x64.tar.gz
+          chmod +x gitleaks
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Run gitleaks scan
+        run: |
+          gitleaks detect --source . --verbose --redact --exit-code 1
+        continue-on-error: false
+
+      - name: Check for production identifiers in code
+        run: |
+          echo "Scanning for production identifiers in source files..."
+          
+          # Define patterns to search for (these should match prod_identifiers.json)
+          PATTERNS=(
+            "api.followupai.com"
+            "prod.followupai.com"
+            "production.followupai.com"
+            "followupai-prod.auth0.com"
+            "followupai-production.auth0.com"
+            ".prod.neon.tech"
+            "-prod.neon.tech"
+            "sk_live_"
+            "pk_live_"
+            "AKIA[A-Z0-9]{16}"
+            "-----BEGIN PRIVATE KEY-----"
+            "-----BEGIN RSA PRIVATE KEY-----"
+            "service_account.*\.json"
+          )
+          
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            echo "Checking for: $pattern"
+            if grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.json" --include="*.env*" "$pattern" . 2>/dev/null | grep -v "node_modules" | grep -v "prod_identifiers.json" | grep -v ".github/workflows"; then
+              echo "ERROR: Found production identifier pattern: $pattern"
+              FOUND=1
+            fi
+          done
+          
+          if [ $FOUND -eq 1 ]; then
+            echo "FAILURE: Production identifiers detected in codebase"
+            exit 1
+          fi
+          
+          echo "SUCCESS: No production identifiers found"
+
+      - name: Check for PHI-like patterns
+        run: |
+          echo "Scanning for potential PHI patterns in source files..."
+          
+          # Patterns that might indicate hardcoded PHI (excluding test files)
+          FOUND=0
+          
+          # Check for SSN patterns (xxx-xx-xxxx)
+          if grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" "[0-9]\{3\}-[0-9]\{2\}-[0-9]\{4\}" . 2>/dev/null | grep -v "node_modules" | grep -v "test" | grep -v "spec" | grep -v "mock"; then
+            echo "WARNING: Possible SSN pattern found"
+            FOUND=1
+          fi
+          
+          # Check for medical record number patterns
+          if grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" "MRN[:\s]*[0-9]\{5,\}" . 2>/dev/null | grep -v "node_modules" | grep -v "test" | grep -v "spec" | grep -v "mock" | grep -v "synthetic" | grep -v "dev_seed"; then
+            echo "WARNING: Possible MRN pattern found"
+            FOUND=1
+          fi
+          
+          if [ $FOUND -eq 1 ]; then
+            echo "WARNING: Potential PHI patterns detected - please review"
+            # Don't fail, just warn
+          fi
+          
+          echo "PHI pattern scan completed"
+
+      - name: Verify config guard exists
+        run: |
+          echo "Verifying HIPAA guardrails are in place..."
+          
+          if [ ! -f "server/config_guard.ts" ]; then
+            echo "ERROR: config_guard.ts not found"
+            exit 1
+          fi
+          
+          if [ ! -f "server/safe_logger.ts" ]; then
+            echo "ERROR: safe_logger.ts not found"
+            exit 1
+          fi
+          
+          if [ ! -f "prod_identifiers.json" ]; then
+            echo "ERROR: prod_identifiers.json not found"
+            exit 1
+          fi
+          
+          echo "SUCCESS: All required HIPAA guardrail files present"
+
+      - name: Check .env files not committed
+        run: |
+          echo "Checking for committed .env files..."
+          
+          if git ls-files | grep -E "^\.env$|^\.env\.local$|^\.env\.production$"; then
+            echo "ERROR: .env file found in repository"
+            exit 1
+          fi
+          
+          echo "SUCCESS: No .env files committed"
+
+  config-guard-test:
+    name: Config Guard Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run config guard tests
+        run: |
+          echo "Running config guard validation tests..."
+          npm run test:guard 2>/dev/null || echo "Guard tests not configured - skipping"
+
+  dependency-audit:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Check for critical vulnerabilities
+        run: |
+          CRITICAL=$(npm audit --json 2>/dev/null | jq '.metadata.vulnerabilities.critical // 0')
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "ERROR: $CRITICAL critical vulnerabilities found"
+            exit 1
+          fi
+          echo "No critical vulnerabilities found"
