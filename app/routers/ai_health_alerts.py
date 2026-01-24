@@ -20,12 +20,17 @@ import numpy as np
 from scipy import stats
 from sklearn.linear_model import LinearRegression
 
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text, desc, func
 
 from app.database import get_db
+from app.dependencies import get_current_user
+from app.models.user import User
+from app.services.access_control import (
+    HIPAAAuditLogger, PHICategory, AccessControlService, AccessScope, get_access_control
+)
 
 # Health Section Analytics integration
 try:

@@ -4,7 +4,7 @@ Allows patients to search for doctors and manage connections.
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -12,6 +12,7 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.services.doctor_search_service import DoctorSearchService
+from app.services.access_control import HIPAAAuditLogger, PHICategory
 
 
 router = APIRouter(prefix="/api/doctors", tags=["doctors"])
