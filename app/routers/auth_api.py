@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import User
-from app.auth.auth0 import (
+from app.dependencies import (
     get_current_token,
     get_optional_token,
     get_auth_status,

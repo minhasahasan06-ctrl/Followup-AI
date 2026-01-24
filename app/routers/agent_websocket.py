@@ -20,7 +20,7 @@ from app.models.agent_models import (
 from app.services.message_router import get_message_router, MessageRouter
 from app.services.agent_engine import get_agent_engine, AgentEngine
 from app.services.memory_service import get_memory_service, MemoryService
-from app.auth.auth0 import authenticate_websocket, TokenPayload
+from app.dependencies import authenticate_websocket, TokenPayload
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ws", tags=["Agent WebSocket"])

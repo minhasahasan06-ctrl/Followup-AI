@@ -1,11 +1,169 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, WebSocket
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from typing import Optional, List
+from pydantic import BaseModel
 from app.database import get_db
 from app.utils.security import verify_token
 from app.models.user import User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
+
+
+# ============================================================================
+# TOKEN PAYLOAD MODEL (Auth0-compatible)
+# ============================================================================
+
+class TokenPayload(BaseModel):
+    """JWT token payload - compatible with Auth0/Stytch tokens"""
+    user_id: str
+    email: Optional[str] = None
+    name: Optional[str] = None
+    picture: Optional[str] = None
+    role: str = "patient"
+    permissions: List[str] = []
+    email_verified: bool = False
+
+
+# ============================================================================
+# TOKEN-BASED AUTHENTICATION DEPENDENCIES
+# ============================================================================
+
+async def get_current_token(
+    token: Optional[str] = Depends(oauth2_scheme),
+) -> TokenPayload:
+    """
+    FastAPI dependency that extracts and validates JWT token.
+    Returns TokenPayload with user info extracted from token claims.
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing user ID",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return TokenPayload(
+        user_id=str(user_id),
+        email=payload.get("email"),
+        name=payload.get("name"),
+        picture=payload.get("picture"),
+        role=payload.get("role", "patient"),
+        permissions=payload.get("permissions", []),
+        email_verified=payload.get("email_verified", False),
+    )
+
+
+async def get_optional_token(
+    token: Optional[str] = Depends(oauth2_scheme),
+) -> Optional[TokenPayload]:
+    """
+    Same as get_current_token but returns None if no token provided.
+    """
+    if not token:
+        return None
+    
+    payload = verify_token(token)
+    if payload is None:
+        return None
+    
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    
+    return TokenPayload(
+        user_id=str(user_id),
+        email=payload.get("email"),
+        name=payload.get("name"),
+        picture=payload.get("picture"),
+        role=payload.get("role", "patient"),
+        permissions=payload.get("permissions", []),
+        email_verified=payload.get("email_verified", False),
+    )
+
+
+async def authenticate_websocket(token: Optional[str]) -> Optional[TokenPayload]:
+    """
+    Validates websocket token and returns TokenPayload.
+    Used for WebSocket authentication.
+    """
+    if not token:
+        return None
+    
+    payload = verify_token(token)
+    if payload is None:
+        return None
+    
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    
+    return TokenPayload(
+        user_id=str(user_id),
+        email=payload.get("email"),
+        name=payload.get("name"),
+        picture=payload.get("picture"),
+        role=payload.get("role", "patient"),
+        permissions=payload.get("permissions", []),
+        email_verified=payload.get("email_verified", False),
+    )
+
+
+def is_auth0_configured() -> bool:
+    """Returns False - Auth0 is not used, we use Stytch."""
+    return False
+
+
+def get_auth_status() -> dict:
+    """Returns auth configuration status."""
+    return {
+        "provider": "stytch",
+        "configured": True,
+        "dev_mode": True,
+        "domain": None,
+    }
+
+
+def require_permissions(*required_permissions: str):
+    """
+    Dependency factory for checking permissions.
+    Usage: token = Depends(require_permissions("read:users", "write:users"))
+    """
+    async def permission_checker(
+        token: TokenPayload = Depends(get_current_token),
+    ) -> TokenPayload:
+        if required_permissions:
+            missing = [p for p in required_permissions if p not in token.permissions]
+            if missing:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Missing required permissions: {', '.join(missing)}"
+                )
+        return token
+    return permission_checker
+
+
+# ============================================================================
+# USER-BASED AUTHENTICATION DEPENDENCIES (existing)
+# ============================================================================
+
+oauth2_scheme_required = OAuth2PasswordBearer(tokenUrl="token")
 
 
 async def get_current_user(

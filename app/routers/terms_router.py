@@ -15,7 +15,7 @@ from app.database import get_db
 from app.models.terms_audit import TermsAcceptance
 from app.schemas.terms_audit_schemas import TermsAcceptResponse
 from app.services.user_audit_service import log_user_audit, AuditEventType
-from app.auth.auth0 import get_current_token, TokenPayload
+from app.dependencies import get_current_token, TokenPayload
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/terms", tags=["Terms"])
