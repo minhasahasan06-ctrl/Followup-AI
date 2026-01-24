@@ -58,3 +58,6 @@ ENV = "dev"
 PHI_DETECTION_ENABLED = "true"
 PHI_BLOCK_ON_DETECT = "true"
 USE_RESEARCH_EMBEDDINGS = "false"
+
+[userenv.development]
+LEGACY_SESSION_ENABLED = "true"
