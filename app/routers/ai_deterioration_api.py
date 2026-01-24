@@ -37,8 +37,9 @@ from app.models.audio_ai_models import AudioMetrics
 from app.models.trend_models import TrendSnapshot, RiskEvent, PatientBaseline
 from app.models.alert_models import AlertRule, Alert
 from app.models.security_models import AuditLog, ConsentRecord
-from app.services.access_control import HIPAAAuditLogger, PHICategory
-from app.dependencies import get_current_user
+from app.services.access_control import HIPAAAuditLogger, PHICategory, AccessControlService, AccessScope, get_access_control
+from app.dependencies import get_current_user as get_current_user_centralized
+from app.models.user import User
 
 # Import services
 # Note: AIEngineManager is imported directly in endpoints to avoid blocking module-level imports
@@ -114,10 +115,13 @@ class AlertAcknowledge(BaseModel):
 
 
 # ==================== JWT Validation ====================
+# Note: This local get_current_user is legacy. New endpoints should use
+# Depends(get_current_user) from app.dependencies for centralized Stytch auth
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+async def get_current_user_legacy(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """
-    Extract and validate user from JWT token
+    LEGACY: Extract and validate user from JWT token.
+    Use app.dependencies.get_current_user for new endpoints.
     
     Uses DEV_MODE_SECRET or SESSION_SECRET for HS256 JWT verification.
     
@@ -221,7 +225,7 @@ async def upload_video(
     file: UploadFile,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """
     Upload video for AI analysis with S3 SSE-KMS encryption
@@ -309,7 +313,7 @@ async def analyze_video(
     session_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """
     Trigger AI analysis on uploaded video
@@ -536,7 +540,7 @@ async def get_video_sessions(
     request: Request,
     limit: int = 10,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """Get recent video sessions for a patient"""
     await audit_log_request(request, db, user, "view", "video_sessions", patient_id, phi_accessed=True)
@@ -564,7 +568,7 @@ async def upload_audio(
     file: UploadFile,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """
     Upload audio for AI analysis with S3 SSE-KMS encryption
@@ -643,7 +647,7 @@ async def analyze_audio(
     session_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """
     Trigger AI analysis on uploaded audio
@@ -723,7 +727,7 @@ async def assess_risk(
     patient_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """
     Run comprehensive risk assessment using Trend Prediction Engine
@@ -790,7 +794,7 @@ async def get_trend_history(
     request: Request,
     days: int = 30,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """Get historical trend snapshots for patient"""
     await audit_log_request(request, db, user, "view", "trend_history", patient_id, phi_accessed=True)
@@ -819,7 +823,7 @@ async def create_alert_rule(
     rule: AlertRuleCreate,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """Create new alert rule for doctor"""
     try:
@@ -850,7 +854,7 @@ async def get_pending_alerts(
     request: Request,
     severity_filter: Optional[str] = None,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """Get pending alerts for current doctor"""
     await audit_log_request(request, db, user, "view", "alerts", None, phi_accessed=True)
@@ -878,7 +882,7 @@ async def acknowledge_alert(
     alert_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """Acknowledge alert"""
     await audit_log_request(request, db, user, "update", "alert", None, phi_accessed=True)
