@@ -1,11 +1,12 @@
 """
 Wallet Router - Credit balance and transaction management
 Endpoints for balance queries, credit purchases, and withdrawals.
+HIPAA-compliant with audit logging for all financial transactions.
 """
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -14,8 +15,10 @@ from app.dependencies import get_current_user, get_current_doctor
 from app.models.user import User
 from app.services.stripe_service import get_stripe_service
 from app.services.wallet_service import get_wallet_service
+from app.services.access_control import HIPAAAuditLogger
 
 logger = logging.getLogger(__name__)
+audit_logger = HIPAAAuditLogger()
 router = APIRouter(prefix="/api/wallet", tags=["wallet"])
 
 
@@ -109,6 +112,14 @@ async def purchase_credits(
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
     
+    audit_logger.log_access(
+        user_id=current_user.id,
+        action="CREDIT_PURCHASE_INITIATED",
+        resource_type="wallet",
+        resource_id=result.data["session_id"],
+        details={"credits": request.credits, "price_cents": request.price_cents}
+    )
+    
     return {
         "success": True,
         "session_id": result.data["session_id"],
@@ -139,6 +150,14 @@ async def request_withdrawal(
     
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
+    
+    audit_logger.log_access(
+        user_id=current_user.id,
+        action="WITHDRAWAL_REQUESTED",
+        resource_type="wallet",
+        resource_id=result.data["request_id"],
+        details={"amount_cents": request.amount_cents, "status": result.data["status"]}
+    )
     
     return {
         "success": True,
