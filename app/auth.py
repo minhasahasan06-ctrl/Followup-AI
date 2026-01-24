@@ -8,7 +8,8 @@ For production authentication, use Stytch M2M tokens - see app/dependencies.py
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError as JWTError
 import os
 
 from app.database import get_db

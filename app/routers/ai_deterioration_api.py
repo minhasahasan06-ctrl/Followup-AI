@@ -28,7 +28,8 @@ import tempfile
 import boto3
 from botocore.exceptions import ClientError
 import secrets
-from jose import jwt, JWTError
+import jwt
+from jwt.exceptions import InvalidTokenError as JWTError
 
 # Import database and models
 from app.database import get_db
