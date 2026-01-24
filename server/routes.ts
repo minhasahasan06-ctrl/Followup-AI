@@ -1864,6 +1864,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // WebSocket token endpoint - generates short-lived JWT for WebSocket authentication
+  app.get('/api/auth/ws-token', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id || req.session?.passport?.user || req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const secret = process.env.DEV_MODE_SECRET || 'dev-secret-key';
+      
+      // Generate short-lived token (5 minutes) for WebSocket authentication
+      const token = jwt.sign(
+        {
+          sub: userId,
+          email: user.email || '',
+          role: user.role || 'patient',
+          type: 'websocket'
+        },
+        secret,
+        { expiresIn: '5m' }
+      );
+
+      res.json({ token, expiresIn: 300 });
+    } catch (error) {
+      console.error("Error generating WebSocket token:", error);
+      res.status(500).json({ message: "Failed to generate token" });
+    }
+  });
+
   // Auth0 proxy routes - forward to Python FastAPI for JWT verification
   const pythonAuthUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
 
@@ -18469,8 +18503,10 @@ Provide:
   // Agent proxy helper with JWT authentication forwarding
   async function agentProxy(req: any, res: any, path: string, method: string = 'GET') {
     try {
-      const userId = req.session?.passport?.user;
-      const user = userId ? await storage.getUser(userId) : null;
+      // Get user from isAuthenticated middleware (set by req.user)
+      // Fall back to session.passport.user or session.userId for legacy support
+      const userId = req.user?.id || req.session?.passport?.user || req.session?.userId;
+      const user = req.user || (userId ? await storage.getUser(userId) : null);
       
       // Generate JWT token for Python backend authentication
       let authHeader = req.headers.authorization || '';
@@ -18488,6 +18524,7 @@ Provide:
         'Authorization': authHeader,
         'X-User-Id': userId || '',
         'X-User-Role': user?.role || 'patient',
+        'X-User-Email': user?.email || '',
       };
 
       const options: RequestInit = {

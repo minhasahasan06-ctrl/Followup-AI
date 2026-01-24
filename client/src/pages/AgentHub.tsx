@@ -240,9 +240,31 @@ export default function AgentHub() {
     let reconnectTimeout: ReturnType<typeof setTimeout>;
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 5;
+    let wsToken: string | null = null;
     
-    const connectWebSocket = () => {
+    // Fetch WebSocket authentication token
+    const fetchWsToken = async (): Promise<string | null> => {
       try {
+        const response = await fetch('/api/auth/ws-token', { credentials: 'include' });
+        if (response.ok) {
+          const data = await response.json();
+          return data.token;
+        }
+        console.warn("Failed to fetch WebSocket token:", response.status);
+        return null;
+      } catch (error) {
+        console.error("Error fetching WebSocket token:", error);
+        return null;
+      }
+    };
+    
+    const connectWebSocket = async () => {
+      try {
+        // Get a fresh token if we don't have one or it might be expired
+        if (!wsToken) {
+          wsToken = await fetchWsToken();
+        }
+        
         const ws = new WebSocket(wsUrl);
         
         ws.onopen = () => {
@@ -250,13 +272,13 @@ export default function AgentHub() {
           setWsConnected(true);
           reconnectAttempts = 0;
           
-          // Send authentication
+          // Send authentication with JWT token
           ws.send(JSON.stringify({
             type: "auth",
             payload: { 
               userId: user?.id, 
               role: user?.role,
-              token: document.cookie.includes('session') ? 'session' : undefined
+              token: wsToken
             }
           }));
         };
@@ -273,6 +295,9 @@ export default function AgentHub() {
         ws.onclose = (event) => {
           console.log("Agent WebSocket disconnected:", event.code, event.reason);
           setWsConnected(false);
+          
+          // Clear token to get a fresh one on reconnect
+          wsToken = null;
           
           // Reconnect with exponential backoff
           if (reconnectAttempts < maxReconnectAttempts) {

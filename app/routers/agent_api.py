@@ -51,26 +51,40 @@ class MessageListResponse(BaseModel):
 
 # Dependency for getting current user
 async def get_current_user(request: Request) -> dict:
-    """Get current user from request (session or token)"""
+    """Get current user from request (session, token, or forwarded headers from Express)"""
+    import jwt
+    
     # Check session
     if hasattr(request.state, "user"):
         return request.state.user
 
-    # Check Authorization header
+    dev_mode_secret = os.getenv("DEV_MODE_SECRET")
+    
+    # Check Authorization header with JWT
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header[7:]
-        # In production, verify token
-        # For dev mode, extract user info
-        if os.getenv("DEV_MODE_SECRET"):
-            return {"id": "dev-user", "role": "patient"}
+        if dev_mode_secret:
+            try:
+                payload = jwt.decode(token, dev_mode_secret, algorithms=["HS256"])
+                return {
+                    "id": payload.get("sub", ""),
+                    "email": payload.get("email", ""),
+                    "role": payload.get("role", "patient")
+                }
+            except jwt.ExpiredSignatureError:
+                logger.warning("JWT token expired")
+            except jwt.InvalidTokenError as e:
+                logger.warning(f"Invalid JWT token: {e}")
 
-    # Check X-User-ID header (dev mode)
-    if os.getenv("DEV_MODE_SECRET"):
-        user_id = request.headers.get("X-User-ID")
-        user_role = request.headers.get("X-User-Role", "patient")
-        if user_id:
-            return {"id": user_id, "role": user_role}
+    # Check X-User-Id header (forwarded from Express proxy - case insensitive)
+    # HTTP headers are case-insensitive, use lowercase for lookup
+    user_id = request.headers.get("X-User-Id") or request.headers.get("X-User-ID") or request.headers.get("x-user-id")
+    user_role = request.headers.get("X-User-Role") or request.headers.get("x-user-role") or "patient"
+    user_email = request.headers.get("X-User-Email") or request.headers.get("x-user-email") or ""
+    
+    if user_id and dev_mode_secret:
+        return {"id": user_id, "role": user_role, "email": user_email}
 
     raise HTTPException(status_code=401, detail="Not authenticated")
 

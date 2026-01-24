@@ -30,14 +30,46 @@ security = HTTPBearer(auto_error=False)
 
 async def verify_token(token: str, role_hint: str = "patient") -> Optional[dict]:
     """
-    Verify JWT token using Auth0 and return user info
+    Verify JWT token using multiple strategies and return user info
     
     Args:
-        token: JWT token or dev token (format: "dev_<userId>" or "dev_<userId>_doctor")
+        token: JWT token, dev token (format: "dev_<userId>" or "dev_<userId>_doctor"), 
+               or session-based token
         role_hint: Default role if not specified in token
     """
+    import jwt as pyjwt
+    
     try:
-        # Use Auth0 authentication (handles dev mode internally with proper validation)
+        dev_mode_secret = os.getenv("DEV_MODE_SECRET")
+        
+        # Strategy 1: Try to decode JWT signed with DEV_MODE_SECRET (from Express proxy)
+        if dev_mode_secret and token and not token.startswith("dev_"):
+            try:
+                payload = pyjwt.decode(token, dev_mode_secret, algorithms=["HS256"])
+                return {
+                    "id": payload.get("sub", ""),
+                    "email": payload.get("email", ""),
+                    "name": payload.get("name", payload.get("email", "")),
+                    "role": payload.get("role", role_hint)
+                }
+            except pyjwt.ExpiredSignatureError:
+                logger.warning("JWT token expired")
+            except pyjwt.InvalidTokenError:
+                pass  # Try other strategies
+        
+        # Strategy 2: Handle dev tokens (format: "dev_<userId>" or "dev_<userId>_doctor")
+        if token and token.startswith("dev_") and dev_mode_secret:
+            parts = token[4:]  # Remove "dev_" prefix
+            is_doctor = parts.endswith("_doctor")
+            user_id = parts.replace("_doctor", "") if is_doctor else parts
+            return {
+                "id": user_id,
+                "email": "",
+                "name": user_id,
+                "role": "doctor" if is_doctor else role_hint
+            }
+        
+        # Strategy 3: Use Stytch/Auth0 authentication
         token_payload = await authenticate_websocket(token)
         
         if token_payload:
