@@ -49,9 +49,6 @@ integrations = ["javascript_database:1.0.0", "javascript_websocket:1.0.0", "java
 [userenv]
 
 [userenv.shared]
-VITE_AUTH0_DOMAIN = "${AUTH0_DOMAIN}"
-VITE_AUTH0_CLIENT_ID = "${AUTH0_CLIENT_ID}"
-VITE_AUTH0_API_AUDIENCE = "${AUTH0_API_AUDIENCE}"
 TINKER_ENABLED = "true"
 TINKER_API_URL = "https://api.thinkingmachines.ai"
 ENV = "dev"

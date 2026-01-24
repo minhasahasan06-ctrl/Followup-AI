@@ -80,10 +80,33 @@ The development environment includes HIPAA compliance guardrails to prevent PHI 
 
 ## External Dependencies
 
-- **Authentication**: Stytch (Magic Links, SMS OTP, M2M)
+- **Authentication**: Stytch (Magic Links, SMS OTP, M2M) - Auth0 has been removed
 - **Database**: Neon serverless PostgreSQL
 - **AI Services**: OpenAI API, TensorFlow.js, PyTorch, HuggingFace Transformers, ONNX Runtime
 - **Caching**: Redis
-- **Communication**: Stytch (SMS, Email)
+- **Communication**: Dashboard notifications (in-app) - SMS/Email services are stubbed
 - **Video Conferencing**: Daily.co
 - **Cloud Services**: Google Cloud Platform (GCS, Document AI, Healthcare NLP API, Cloud KMS, Healthcare API FHIR)
+
+## Removed/Stubbed Services (Security Hardening - Jan 2026)
+
+The following third-party services have been removed and replaced with stub implementations:
+
+### Removed Packages
+- **AWS SDK**: S3, SES, ComprehendMedical, Cognito, HealthLake, Textract, Medical Imaging, Omics
+- **boto3/botocore**: Python AWS SDK - also removed vulnerable ecdsa and python-jose dependencies
+- **Twilio**: SMS messaging (Node.js and Python)
+- **Resend**: Email delivery (Node.js)
+- **Auth0**: Authentication - replaced with Stytch
+
+### Stub Behavior
+- **Video/Media Storage**: Uses local filesystem fallback (`tmp/video_sessions/`, `tmp/media_uploads/`, `tmp/video_exam_segments/`)
+- **SMS Notifications**: Logs warnings, returns success - no actual SMS sent
+- **Email Notifications**: Logs warnings, returns success - no actual email sent (Gmail API integration for sync remains functional)
+- **Dashboard Notifications**: Fully functional - in-app alerts work normally
+- **HIPAA Audit Logging**: Fully preserved - all access controls and audit trails intact
+
+### Future Restoration
+To restore these services, reinstall the packages and update the stub implementations in:
+- Python: `app/services/video_session_storage_service.py`, `app/services/alert_orchestration_engine.py`
+- Node.js: `server/appointmentReminderService.ts`, `server/whatsappService.ts`, `server/doctorIntegrationService.ts`
