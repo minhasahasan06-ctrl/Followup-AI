@@ -1,67 +1,61 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-// GCP Backend URL - Primary API endpoint for production
-// In production: Set VITE_API_URL to your GCP Cloud Run URL
-// In development: Falls back to local Python backend
-const GCP_API_URL = import.meta.env.VITE_API_URL || "";
+// Cloud Run Proxy Mode - When enabled, routes Python backend calls through Express proxy
+// The Express proxy handles: Stytch auth verification -> Google ID token generation -> Cloud Run forwarding
+const USE_CLOUD_RUN_PROXY = import.meta.env.VITE_USE_CLOUD_RUN_PROXY === "true";
 
-// Python backend URL (FastAPI on port 8000) - Used for development
+// Python backend URL (FastAPI on port 8000) - Used for direct development
 const PYTHON_BACKEND_URL = import.meta.env.VITE_PYTHON_BACKEND_URL || "http://localhost:8000";
 
-// Determine which backend to use
-const getBackendUrl = (): string => {
-  // If GCP API URL is set, use it for all API calls
-  if (GCP_API_URL) {
-    return GCP_API_URL;
-  }
-  // Fall back to Python backend URL for local development
-  return PYTHON_BACKEND_URL;
-};
+// Routes that should go to Python FastAPI backend (directly or via Cloud Run proxy)
+const PYTHON_BACKEND_ROUTES = [
+  "/api/v1/video-ai",
+  "/api/v1/audio-ai",
+  "/api/v1/trends",
+  "/api/v1/alerts",
+  "/api/v1/guided-audio-exam",
+  "/api/v1/guided-exam",
+  "/api/v1/gait-analysis",
+  "/api/v1/tremor",
+  "/api/v1/automation",
+  "/api/v1/webhooks",
+  "/api/v1/devices",
+  "/api/v1/health-analytics",
+  "/api/v1/epidemiology",
+  "/api/v1/occupational",
+  "/api/v1/genetic",
+  "/api/v1/pharmaco",
+  "/api/v1/infectious",
+  "/api/v1/vaccine",
+];
 
-// Helper to determine if URL should go to Python backend
-function getPythonBackendUrl(url: string): string {
-  // If it's already an absolute URL (starts with http:// or https://), return unchanged
+function isPythonBackendRoute(url: string): boolean {
+  return PYTHON_BACKEND_ROUTES.some((route) => url.startsWith(route));
+}
+
+// Helper to determine the final URL for a request
+function getApiUrl(url: string): string {
   if (url.startsWith("http://") || url.startsWith("https://")) {
     return url;
   }
 
-  // Normalize URL (ensure leading slash for relative paths)
   const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
   
-  // If GCP API URL is configured, route all API calls to GCP
-  if (GCP_API_URL && normalizedUrl.startsWith("/api/")) {
-    return `${GCP_API_URL}${normalizedUrl}`;
-  }
-
-  // Routes that should go to Python FastAPI backend
-  // NOTE: mental-health routes go through Express proxy for authentication/CORS handling
-  if (
-    normalizedUrl.startsWith("/api/v1/video-ai") ||
-    normalizedUrl.startsWith("/api/v1/audio-ai") ||
-    normalizedUrl.startsWith("/api/v1/trends") ||
-    normalizedUrl.startsWith("/api/v1/alerts") ||
-    normalizedUrl.startsWith("/api/v1/guided-audio-exam") ||
-    normalizedUrl.startsWith("/api/v1/guided-exam") ||
-    normalizedUrl.startsWith("/api/v1/gait-analysis") ||
-    normalizedUrl.startsWith("/api/v1/tremor") ||
-    normalizedUrl.startsWith("/api/v1/automation") ||
-    normalizedUrl.startsWith("/api/v1/webhooks") ||
-    normalizedUrl.startsWith("/api/v1/devices") ||
-    normalizedUrl.startsWith("/api/v1/health-analytics") ||
-    normalizedUrl.startsWith("/api/v1/epidemiology") ||
-    normalizedUrl.startsWith("/api/v1/occupational") ||
-    normalizedUrl.startsWith("/api/v1/genetic") ||
-    normalizedUrl.startsWith("/api/v1/pharmaco") ||
-    normalizedUrl.startsWith("/api/v1/infectious") ||
-    normalizedUrl.startsWith("/api/v1/vaccine")
-  ) {
-    return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
-  }
-  
-  // Handle /api/py/ prefix - strip 'py' and route to Python backend
+  // Handle /api/py/ prefix - strip 'py' for Python backend routing
   if (normalizedUrl.startsWith("/api/py/")) {
     const strippedUrl = normalizedUrl.replace("/api/py/", "/api/");
+    if (USE_CLOUD_RUN_PROXY) {
+      return `/api/cloud${strippedUrl.replace("/api", "")}`;
+    }
     return `${PYTHON_BACKEND_URL}${strippedUrl}`;
+  }
+
+  // Route Python backend calls through Cloud Run proxy when enabled
+  if (isPythonBackendRoute(normalizedUrl)) {
+    if (USE_CLOUD_RUN_PROXY) {
+      return `/api/cloud${normalizedUrl.replace("/api", "")}`;
+    }
+    return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
   }
 
   return normalizedUrl;
@@ -80,8 +74,8 @@ export async function apiRequest(
 ): Promise<Response> {
   const { json, ...fetchOptions } = options || {};
   
-  // Route to Python backend if needed
-  const finalUrl = getPythonBackendUrl(url);
+  // Route to appropriate backend (Express, Python, or Cloud Run proxy)
+  const finalUrl = getApiUrl(url);
   
   // Prepare headers and body
   const headers = { ...((fetchOptions.headers as Record<string, string>) || {}) };
@@ -107,19 +101,6 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-
-// Check if URL requires Python backend authentication
-function requiresPythonAuth(url: string): boolean {
-  const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
-  return (
-    normalizedUrl.startsWith("/api/v1/epidemiology") ||
-    normalizedUrl.startsWith("/api/v1/occupational") ||
-    normalizedUrl.startsWith("/api/v1/genetic") ||
-    normalizedUrl.startsWith("/api/v1/pharmaco") ||
-    normalizedUrl.startsWith("/api/v1/infectious") ||
-    normalizedUrl.startsWith("/api/v1/vaccine")
-  );
-}
 
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
@@ -156,25 +137,10 @@ export const getQueryFn: <T>(options: {
     const queryString = params.toString();
     const urlWithParams = queryString ? `${url}?${queryString}` : url;
     
-    const finalUrl = getPythonBackendUrl(urlWithParams);
-    
-    // Add Authorization header for Python backend epidemiology endpoints
-    const headers: Record<string, string> = {};
-    if (requiresPythonAuth(url)) {
-      // SECURITY: Token must come from environment variable in production
-      // Development mode uses VITE_EPIDEMIOLOGY_AUTH_TOKEN env var
-      // Production deployments MUST set this environment variable
-      const authToken = import.meta.env.VITE_EPIDEMIOLOGY_AUTH_TOKEN;
-      if (!authToken && import.meta.env.PROD) {
-        console.error('SECURITY: VITE_EPIDEMIOLOGY_AUTH_TOKEN not set in production');
-        throw new Error('Authentication configuration missing');
-      }
-      headers['Authorization'] = `Bearer ${authToken || 'dev-token'}`;
-    }
+    const finalUrl = getApiUrl(urlWithParams);
     
     const res = await fetch(finalUrl, {
       credentials: "include",
-      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

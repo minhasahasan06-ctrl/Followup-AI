@@ -23,9 +23,20 @@ interface ProxyRequestOptions {
   body?: string;
 }
 
+const PROXY_AUTH_SECRET = process.env.PROXY_AUTH_SECRET;
+
+if (!PROXY_AUTH_SECRET) {
+  console.warn("[CloudRunProxy] PROXY_AUTH_SECRET not configured - proxy will reject all requests");
+}
+
 function buildProxyHeaders(req: Request): Record<string, string> {
+  if (!PROXY_AUTH_SECRET) {
+    throw new Error("PROXY_AUTH_SECRET not configured");
+  }
+  
   const headers: Record<string, string> = {
     "Content-Type": req.get("Content-Type") || "application/json",
+    "X-Proxy-Auth": PROXY_AUTH_SECRET,
   };
 
   if (req.stytchUser) {

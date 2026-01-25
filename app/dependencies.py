@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status, WebSocket
+from fastapi import Depends, HTTPException, status, WebSocket, Header, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -6,8 +6,52 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.utils.security import verify_token
 from app.models.user import User
+import os
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
+
+# Proxy authentication secret - must match Express server
+# SECURITY: No default value - must be explicitly set in environment
+PROXY_AUTH_SECRET = os.environ.get("PROXY_AUTH_SECRET")
+
+
+# ============================================================================
+# PROXY AUTHENTICATION SUPPORT
+# ============================================================================
+
+async def get_proxy_user(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Extract authenticated user from trusted proxy headers.
+    Used when requests come through Express proxy with Stytch validation.
+    Returns None if proxy headers not present or invalid.
+    
+    SECURITY: Only returns existing users - does not auto-create to prevent spoofing.
+    """
+    if not PROXY_AUTH_SECRET:
+        return None
+    
+    x_proxy_auth = request.headers.get("X-Proxy-Auth")
+    x_user_id = request.headers.get("X-User-Id")
+    x_user_email = request.headers.get("X-User-Email")
+    x_stytch_user_id = request.headers.get("X-Stytch-User-Id")
+    
+    if not x_proxy_auth or x_proxy_auth != PROXY_AUTH_SECRET:
+        return None
+    
+    if not x_user_email and not x_stytch_user_id:
+        return None
+    
+    user = None
+    if x_user_email:
+        user = db.query(User).filter(User.email == x_user_email).first()
+    
+    if not user:
+        return None
+    
+    return user
 
 
 # ============================================================================
@@ -167,14 +211,27 @@ oauth2_scheme_required = OAuth2PasswordBearer(tokenUrl="token")
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
+    """
+    Get authenticated user from either:
+    1. Proxy headers (X-Proxy-Auth + X-User-* from Express proxy)
+    2. Bearer token (direct API access)
+    """
+    proxy_user = await get_proxy_user(request, db)
+    if proxy_user:
+        return proxy_user
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    if not token:
+        raise credentials_exception
     
     payload = verify_token(token)
     if payload is None:

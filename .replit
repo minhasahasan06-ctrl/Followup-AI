@@ -56,6 +56,10 @@ PHI_DETECTION_ENABLED = "true"
 PHI_BLOCK_ON_DETECT = "true"
 USE_RESEARCH_EMBEDDINGS = "false"
 VITE_API_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
+VITE_USE_CLOUD_RUN_PROXY = "true"
+CLOUD_RUN_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
+PYTHON_BACKEND_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
+PROXY_AUTH_SECRET = "bcd4a082e6d9da326804f6a1d4bfa7bf22bf65d7e46f17cd608068e6978e9a94"
 
 [userenv.development]
 LEGACY_SESSION_ENABLED = "true"
