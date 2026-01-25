@@ -78,6 +78,32 @@ The development environment includes HIPAA compliance guardrails to prevent PHI 
 - **Key Environment Variables**: `REPLIT_DEV_ONLY=true` (required for dev mode), `NODE_ENV=development` (enforced).
 - **Documentation**: `DEV_README.md` (no-PHI rules), `AUDIT_SUMMARY.md` (compliance controls).
 
+## Cloud Run Deployment (Production)
+
+The FastAPI backend can be deployed to GCP Cloud Run for production:
+
+### Key Files
+- `cloud-run/Dockerfile.production` - Multi-stage Docker build with Python 3.12, medical imaging deps
+- `cloud-run/cloudbuild.yaml` - Cloud Build config with scale-to-zero, Secret Manager integration
+- `cloud-run/.env.template` - Environment variables reference with Stytch setup instructions
+- `cloud-run/DEPLOYMENT.md` - Complete deployment guide
+- `app/services/gcp_secrets.py` - GCP Secret Manager integration with local fallback
+
+### Deployment Features
+- **Scale-to-Zero**: min-instances=0 for zero cost when idle
+- **Cold Start Optimization**: CPU boost + gen2 execution environment
+- **Secret Management**: All credentials in GCP Secret Manager (not env vars)
+- **LangGraph Persistence**: PostgresSaver survives container scaling
+- **HIPAA Compliance**: BAA-signed OpenAI, audit logging, PHI protection
+
+### Quick Deploy
+```bash
+gcloud builds submit --config cloud-run/cloudbuild.yaml .
+```
+
+### Frontend Configuration
+Set `VITE_API_URL` in Replit Secrets to point to the Cloud Run service URL.
+
 ## External Dependencies
 
 - **Authentication**: Stytch (Magic Links, SMS OTP, M2M) - Auth0 has been removed

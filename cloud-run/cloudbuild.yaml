@@ -1,40 +1,162 @@
+# =============================================================================
+# Followup AI - Cloud Build Configuration
+# =============================================================================
+# Builds and deploys FastAPI backend to Cloud Run with:
+# - GCP Secret Manager integration
+# - Scale-to-zero cost optimization (min-instances: 0)
+# - Cold start optimization (cpu-boost, gen2)
+# - HIPAA-compliant configuration
+#
+# Deploy manually:
+#   gcloud builds submit --config cloud-run/cloudbuild.yaml .
+#
+# Set up trigger:
+#   gcloud builds triggers create github \
+#     --repo-name=followup-ai \
+#     --branch-pattern="^main$" \
+#     --build-config=cloud-run/cloudbuild.yaml
+# =============================================================================
+
+substitutions:
+  _SERVICE_NAME: followupai-backend
+  _REGION: us-central1
+  _REGISTRY: us-central1-docker.pkg.dev
+  _MIN_INSTANCES: "0"
+  _MAX_INSTANCES: "10"
+  _MEMORY: "2Gi"
+  _CPU: "2"
+  _CONCURRENCY: "80"
+  _TIMEOUT: "300s"
+
 steps:
+  # Step 1: Build Docker image with production Dockerfile
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-backend/api:$COMMIT_SHA', '-f', 'cloud-run/Dockerfile', '.']
+    id: 'build'
+    args:
+      - 'build'
+      - '-f'
+      - 'cloud-run/Dockerfile.production'
+      - '-t'
+      - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:$COMMIT_SHA'
+      - '-t'
+      - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:latest'
+      - '--cache-from'
+      - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:latest'
+      - '.'
 
+  # Step 2: Push image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-backend/api:$COMMIT_SHA']
+    id: 'push'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api'
 
+  # Step 3: Deploy to Cloud Run with scale-to-zero and Secret Manager
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
+    id: 'deploy'
+    entrypoint: 'gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'followupai-backend'
+      - '${_SERVICE_NAME}'
       - '--image'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-backend/api:$COMMIT_SHA'
+      - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:$COMMIT_SHA'
       - '--region'
-      - 'us-central1'
+      - '${_REGION}'
       - '--platform'
       - 'managed'
-      - '--allow-unauthenticated'
-      - '--memory'
-      - '1Gi'
-      - '--cpu'
-      - '1'
-      - '--timeout'
-      - '300s'
-      - '--concurrency'
-      - '40'
+      # =====================================================================
+      # SCALE-TO-ZERO: Zero cost when idle
+      # =====================================================================
       - '--min-instances'
-      - '0'
+      - '${_MIN_INSTANCES}'
       - '--max-instances'
-      - '2'
+      - '${_MAX_INSTANCES}'
+      # =====================================================================
+      # RESOURCE ALLOCATION
+      # =====================================================================
+      - '--memory'
+      - '${_MEMORY}'
+      - '--cpu'
+      - '${_CPU}'
+      # =====================================================================
+      # CONCURRENCY & TIMEOUT
+      # =====================================================================
+      - '--concurrency'
+      - '${_CONCURRENCY}'
+      - '--timeout'
+      - '${_TIMEOUT}'
+      # =====================================================================
+      # COLD START OPTIMIZATION
+      # =====================================================================
+      - '--cpu-boost'
+      - '--execution-environment'
+      - 'gen2'
+      # =====================================================================
+      # ACCESS CONTROL
+      # =====================================================================
+      - '--allow-unauthenticated'
+      # =====================================================================
+      # HEALTH CHECK
+      # =====================================================================
+      - '--port'
+      - '8080'
+      # =====================================================================
+      # SECRET MANAGER INTEGRATION
+      # Mount secrets as environment variables (no hardcoded values)
+      # =====================================================================
+      - '--set-secrets'
+      - |
+        DATABASE_URL=DATABASE_URL:latest,
+        STYTCH_PROJECT_ID=STYTCH_PROJECT_ID:latest,
+        STYTCH_SECRET=STYTCH_SECRET:latest,
+        STYTCH_PUBLIC_TOKEN=STYTCH_PUBLIC_TOKEN:latest,
+        OPENAI_API_KEY=OPENAI_API_KEY:latest,
+        SESSION_SECRET=SESSION_SECRET:latest,
+        DEV_MODE_SECRET=DEV_MODE_SECRET:latest,
+        STRIPE_API_KEY=STRIPE_API_KEY:latest,
+        STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest
+      # =====================================================================
+      # ENVIRONMENT VARIABLES (non-secret)
+      # =====================================================================
       - '--set-env-vars'
-      - 'PYTHON_ENV=production'
+      - |
+        GCP_PROJECT_ID=$PROJECT_ID,
+        NODE_ENV=production,
+        LOG_LEVEL=info,
+        WORKERS=2,
+        OPENAI_BAA_SIGNED=true,
+        OPENAI_ZDR_ENABLED=true
+
+  # Step 4: Output service URL for frontend configuration
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'get-url'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo ""
+        echo "========================================"
+        echo "  DEPLOYMENT COMPLETE"
+        echo "========================================"
+        SERVICE_URL=$(gcloud run services describe ${_SERVICE_NAME} --region ${_REGION} --format 'value(status.url)')
+        echo ""
+        echo "Service URL: $SERVICE_URL"
+        echo ""
+        echo "NEXT STEPS:"
+        echo "1. Set frontend env var: VITE_API_URL=$SERVICE_URL"
+        echo "2. Add to Stytch Dashboard Redirect URLs: $SERVICE_URL/api/auth/callback"
+        echo "3. Add to Stytch Authorized Domains for reCAPTCHA"
+        echo "4. Update CORS_ALLOWED_ORIGINS in Cloud Run env vars"
+        echo "========================================"
 
 images:
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-backend/api:$COMMIT_SHA'
+  - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:$COMMIT_SHA'
+  - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+timeout: '1200s'

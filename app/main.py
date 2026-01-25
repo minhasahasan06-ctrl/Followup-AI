@@ -26,6 +26,7 @@ logging.getLogger('mediapipe').setLevel(logging.ERROR)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from contextlib import asynccontextmanager
 from app.config import settings, check_openai_baa_compliance
 from app.database import Base, engine
@@ -326,6 +327,20 @@ async def lifespan(app: FastAPI):
     Prevents blocking uvicorn startup by deferring heavy library loads to startup event.
     """
     logger.info("🚀 Starting Followup AI Backend...")
+    
+    # Step 0: Initialize GCP Secret Manager (production only)
+    if os.getenv("NODE_ENV") == "production" or os.getenv("GCP_PROJECT_ID"):
+        logger.info("🔐 Initializing GCP Secret Manager...")
+        try:
+            from app.services.gcp_secrets import init_secrets
+            secrets = init_secrets()
+            if secrets.is_stytch_configured():
+                logger.info("✅ Stytch credentials loaded from Secret Manager")
+            else:
+                logger.warning("⚠️  Stytch credentials not found in Secret Manager")
+            logger.info("✅ GCP Secret Manager initialized")
+        except Exception as e:
+            logger.warning(f"⚠️  GCP Secret Manager init skipped: {e}")
     
     # Step 1: Create database tables
     logger.info("📊 Creating database tables...")
@@ -706,9 +721,27 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    """
+    Health check endpoint for Cloud Run and load balancers.
+    Returns detailed status for debugging while keeping response fast.
+    """
+    db_status = "unknown"
+    try:
+        from app.database import engine
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_status = "connected"
+    except Exception:
+        db_status = "disconnected"
+    
+    stytch_status = "configured" if settings.STYTCH_PROJECT_ID else "not_configured"
+    
     return {
         "status": "healthy",
-        "database": "connected"
+        "database": db_status,
+        "stytch": stytch_status,
+        "environment": settings.ENVIRONMENT,
+        "version": "2.0.0"
     }
 
 
