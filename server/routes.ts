@@ -61,6 +61,7 @@ import {
   initDoctorIntegrationService 
 } from "./doctorIntegrationService";
 import { fetchFromCloudRun, getPythonBackendUrl } from "./cloudRunAuth";
+import { cloudRunProxyRouter } from "./cloudRunProxy";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sentiment = new Sentiment();
@@ -1018,6 +1019,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============== SESSION CONFIGURATION ==============
   // Configure session middleware for cookie-based authentication (legacy - keeping for backward compatibility)
   app.use(getSession());
+  
+  // ============== CLOUD RUN PROXY ==============
+  // Authenticated proxy to Cloud Run backend
+  // Routes /api/cloud/* -> Cloud Run with Stytch auth + Google ID token
+  app.use("/api/cloud", cloudRunProxyRouter);
   
   // ============== PUBLIC CONTACT FORM ENDPOINT ==============
   app.post('/api/contact', async (req: any, res) => {
