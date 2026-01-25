@@ -4,7 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["abseil-cpp", "ffmpeg-full", "freetype", "glibcLocales", "gtest", "lcms2", "libGL", "libGLU", "libimagequant", "libjpeg", "libjpeg_turbo", "libpng", "libsndfile", "libtiff", "libwebp", "libxcrypt", "oneDNN", "openjpeg", "pkg-config", "postgresql", "re2", "tcl", "tk", "which", "xsimd", "zlib"]
+packages = ["abseil-cpp", "ffmpeg-full", "freetype", "glibcLocales", "gtest", "lcms2", "libGL", "libGLU", "libimagequant", "libjpeg", "libjpeg_turbo", "libpng", "libsndfile", "libtiff", "libwebp", "libxcrypt", "oneDNN", "openjpeg", "pkg-config", "postgresql", "re2", "tcl", "tk", "which", "xsimd", "zlib", "google-cloud-sdk"]
 
 [deployment]
 deploymentTarget = "autoscale"
@@ -55,6 +55,7 @@ ENV = "production"
 PHI_DETECTION_ENABLED = "true"
 PHI_BLOCK_ON_DETECT = "true"
 USE_RESEARCH_EMBEDDINGS = "false"
+VITE_API_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
 
 [userenv.development]
 LEGACY_SESSION_ENABLED = "true"
