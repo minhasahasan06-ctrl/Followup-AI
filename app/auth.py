@@ -49,7 +49,10 @@ async def get_current_user(
     
     try:
         token = credentials.credentials
-        secret = DEV_MODE_SECRET or SESSION_SECRET or "dev-secret-key-for-testing"
+        secret = DEV_MODE_SECRET or SESSION_SECRET
+        
+        if not secret:
+            raise credentials_exception
         
         payload = jwt.decode(token, secret, algorithms=["HS256"])
         

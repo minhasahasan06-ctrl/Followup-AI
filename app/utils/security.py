@@ -42,8 +42,8 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
         if not secret:
             secret = settings.SESSION_SECRET
         if not secret:
-            # Use same fallback as Express for dev mode
-            secret = "dev-secret-key-for-testing"
+            print("[SECURITY] No DEV_MODE_SECRET or SESSION_SECRET configured")
+            return None
         
         payload = jwt.decode(token, secret, algorithms=["HS256"])
         return payload

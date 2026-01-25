@@ -301,7 +301,8 @@ from pydantic import BaseModel
 
 STYTCH_PROJECT_ID = os.getenv("STYTCH_PROJECT_ID")
 STYTCH_SECRET = os.getenv("STYTCH_SECRET")
-DEV_MODE_SECRET = os.getenv("DEV_MODE_SECRET", "dev-secret-key")
+# SECURITY: No default value - must be explicitly set in environment
+DEV_MODE_SECRET = os.getenv("DEV_MODE_SECRET")
 
 
 class M2MTokenPayload(BaseModel):

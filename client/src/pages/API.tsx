@@ -282,7 +282,7 @@ export default function API() {
                 <div className="bg-muted/50 p-4 rounded-lg">
                   <code className="text-xs block whitespace-pre-wrap font-mono">
 {`GET /v1/patients/12345/vitals?days=7
-Authorization: Bearer sk_live_abc123...
+Authorization: Bearer YOUR_API_KEY_HERE
 Content-Type: application/json`}
                   </code>
                 </div>

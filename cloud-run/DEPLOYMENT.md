@@ -118,10 +118,10 @@ echo -n "sk-your-openai-api-key" | \
 openssl rand -hex 32 | gcloud secrets create SESSION_SECRET --data-file=-
 openssl rand -hex 32 | gcloud secrets create DEV_MODE_SECRET --data-file=-
 
-# Stripe (optional)
-echo -n "sk_live_your-stripe-key" | \
+# Stripe (optional) - replace with your actual keys
+echo -n "YOUR_STRIPE_SECRET_KEY" | \
   gcloud secrets create STRIPE_API_KEY --data-file=-
-echo -n "whsec_your-webhook-secret" | \
+echo -n "YOUR_STRIPE_WEBHOOK_SECRET" | \
   gcloud secrets create STRIPE_WEBHOOK_SECRET --data-file=-
 ```
 

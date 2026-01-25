@@ -1285,7 +1285,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      const secret = process.env.DEV_MODE_SECRET || 'dev-secret-key';
+      const secret = process.env.DEV_MODE_SECRET;
+      if (!secret) {
+        return res.status(500).json({ message: "DEV_MODE_SECRET not configured" });
+      }
       
       // Generate short-lived token (5 minutes) for WebSocket authentication
       const token = jwt.sign(
@@ -20954,9 +20957,13 @@ Provide:
   const proxyEpidemiologyToPython = async (req: any, res: any, pythonPath: string) => {
     try {
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const secret = process.env.DEV_MODE_SECRET;
+      if (!secret) {
+        return res.status(500).json({ error: "DEV_MODE_SECRET not configured" });
+      }
       const token = jwt.sign(
         { sub: req.user.id, role: req.user.role },
-        process.env.DEV_MODE_SECRET || 'dev-secret-key-for-testing',
+        secret,
         { expiresIn: '1h' }
       );
       
