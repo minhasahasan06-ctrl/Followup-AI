@@ -201,28 +201,4 @@ export const optionalAuth: RequestHandler = async (req, res, next) => {
   next();
 };
 
-export const devBypassAuth: RequestHandler = async (req, res, next) => {
-  if (process.env.NODE_ENV === "production") {
-    return requireAuth(req, res, next);
-  }
-
-  const sessionToken = req.cookies?.[SESSION_COOKIE_NAME];
-  
-  if (sessionToken && isStytchConfigured()) {
-    return requireAuth(req, res, next);
-  }
-
-  const patientId = req.params.patientId || req.query.patientId;
-  if (patientId && String(patientId).startsWith("dev-")) {
-    req.stytchUser = {
-      id: String(patientId),
-      email: "dev@followup.ai",
-      role: "patient",
-      stytchUserId: String(patientId),
-    };
-    console.log(`[STYTCH] Dev bypass for: ${patientId}`);
-    return next();
-  }
-
-  return res.status(401).json({ error: "Authentication required" });
-};
+// Note: devBypassAuth removed for production security - use requireAuth instead

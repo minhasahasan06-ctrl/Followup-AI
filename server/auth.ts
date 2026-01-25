@@ -231,34 +231,4 @@ export const isDoctor = requireRole("doctor");
 export const isPatient = requireRole("patient");
 export const isAdmin = requireRole("admin");
 
-export const isAuthenticatedOrDevBypass: RequestHandler = async (req, res, next) => {
-  if (await authenticateWithStytch(req, res)) {
-    return next();
-  }
-
-  if (await authenticateWithLegacySession(req)) {
-    return next();
-  }
-  
-  const isProduction = process.env.NODE_ENV === 'production';
-  if (!isProduction) {
-    const patientId = req.params.patientId || req.query.patientId;
-    if (patientId && String(patientId).startsWith('dev-')) {
-      req.user = {
-        id: String(patientId),
-        email: 'dev@followup.ai',
-        role: 'patient',
-      };
-      console.log(`[AUTH] Dev bypass for: ${patientId}`);
-      return next();
-    }
-  }
-  
-  logAuthEvent("AUTH_FAILED_WITH_BYPASS_CHECK", { 
-    path: req.path, 
-    ip: req.ip,
-    isProduction
-  });
-  
-  return res.status(401).json({ message: "Unauthorized" });
-};
+// Note: isAuthenticatedOrDevBypass removed for production - use isAuthenticated instead

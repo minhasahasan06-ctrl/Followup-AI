@@ -2,14 +2,13 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { isAuthenticated, isDoctor, isPatient, isAdmin, getSession, isAuthenticatedOrDevBypass } from "./auth";
+import { isAuthenticated, isDoctor, isPatient, isAdmin, getSession } from "./auth";
 import { 
   stytchAuthRoutes,
   requireAuth as stytchRequireAuth,
   requireDoctor as stytchRequireDoctor,
   requirePatient as stytchRequirePatient,
   optionalAuth as stytchOptionalAuth,
-  devBypassAuth as stytchDevBypass,
 } from "./stytch";
 import { db } from "./db";
 import { eq, and, desc, gte, sql as drizzleSql, isNull } from "drizzle-orm";
@@ -1084,775 +1083,169 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/auth", stytchAuthRoutes);
   console.log('[AUTH] Stytch authentication routes registered at /api/auth/*');
 
-  // ============== DEV-ONLY: AUTHENTICATION BYPASS ==============
-  // ⚠️ SECURITY WARNING: This bypass is ONLY for development testing!
-  // It MUST NOT be accessible in production environments.
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[DEV-ONLY] 🔓 Authentication bypass routes enabled for testing');
-
-    // Create test users in database if they don't exist
-    const ensureTestUsers = async () => {
-      try {
-        // Test patient user
-        const testPatientId = 'dev-patient-00000000-0000-0000-0000-000000000001';
-        const existingPatient = await storage.getUser(testPatientId);
-        if (!existingPatient) {
-          await storage.createUser({
-            id: testPatientId,
-            email: 'patient@test.com',
-            firstName: 'Test',
-            lastName: 'Patient',
-            role: 'patient',
-            phoneNumber: '+15551234567',
-            phoneVerified: true,
-            emailVerified: true,
-            termsAccepted: true,
-            termsAcceptedAt: new Date(),
-          });
-          console.log('[DEV-ONLY] ✅ Created test patient user');
-        }
-
-        // Test doctor user
-        const testDoctorId = 'dev-doctor-00000000-0000-0000-0000-000000000002';
-        const existingDoctor = await storage.getUser(testDoctorId);
-        if (!existingDoctor) {
-          await storage.createUser({
-            id: testDoctorId,
-            email: 'doctor@test.com',
-            firstName: 'Dr. Test',
-            lastName: 'Doctor',
-            role: 'doctor',
-            phoneNumber: '+15551234568',
-            phoneVerified: true,
-            emailVerified: true,
-            medicalLicenseNumber: 'TEST-LICENSE-12345',
-            organization: 'Test Hospital',
-            licenseVerified: true,
-            adminVerified: true,
-            adminVerifiedAt: new Date(),
-            termsAccepted: true,
-            termsAcceptedAt: new Date(),
-          });
-          console.log('[DEV-ONLY] ✅ Created test doctor user');
-        }
-
-        // Test admin user
-        const testAdminId = 'dev-admin-00000000-0000-0000-0000-000000000003';
-        const existingAdmin = await storage.getUser(testAdminId);
-        if (!existingAdmin) {
-          await storage.createUser({
-            id: testAdminId,
-            email: 'admin@test.com',
-            firstName: 'Admin',
-            lastName: 'User',
-            role: 'admin',
-            phoneNumber: '+15551234569',
-            phoneVerified: true,
-            emailVerified: true,
-            adminVerified: true,
-            adminVerifiedAt: new Date(),
-            termsAccepted: true,
-            termsAcceptedAt: new Date(),
-          });
-          console.log('[DEV-ONLY] ✅ Created test admin user');
-        }
-      } catch (error) {
-        console.error('[DEV-ONLY] Error creating test users:', error);
-      }
-    };
-
-    // Initialize test users
-    await ensureTestUsers();
-
-    // Dev-only quick login endpoints
-    app.post('/api/dev/login-as-patient', async (req: any, res) => {
-      try {
-        const testPatientId = 'dev-patient-00000000-0000-0000-0000-000000000001';
-        
-        // Get user from database
-        const user = await storage.getUser(testPatientId);
-        if (!user) {
-          return res.status(404).json({ message: 'Test patient user not found. Please restart the server.' });
-        }
-        
-        // Set session
-        req.session.userId = testPatientId;
-        await new Promise<void>((resolve, reject) => {
-          req.session.save((err: any) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        console.log('[DEV-ONLY] 👤 Logged in as test patient');
-        res.json({ 
-          message: 'Logged in as test patient', 
-          user: user
-        });
-      } catch (error: any) {
-        console.error('[DEV-ONLY] Error in dev patient login:', error);
-        res.status(500).json({ message: 'Failed to login as test patient', error: error.message });
-      }
-    });
-
-    app.post('/api/dev/login-as-doctor', async (req: any, res) => {
-      try {
-        const testDoctorId = 'dev-doctor-00000000-0000-0000-0000-000000000002';
-        
-        // Get user from database
-        const user = await storage.getUser(testDoctorId);
-        if (!user) {
-          return res.status(404).json({ message: 'Test doctor user not found. Please restart the server.' });
-        }
-        
-        // Set session
-        req.session.userId = testDoctorId;
-        await new Promise<void>((resolve, reject) => {
-          req.session.save((err: any) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        console.log('[DEV-ONLY] 👨‍⚕️ Logged in as test doctor');
-        res.json({ 
-          message: 'Logged in as test doctor', 
-          user: user
-        });
-      } catch (error: any) {
-        console.error('[DEV-ONLY] Error in dev doctor login:', error);
-        res.status(500).json({ message: 'Failed to login as test doctor', error: error.message });
-      }
-    });
-
-    app.post('/api/dev/login-as-admin', async (req: any, res) => {
-      try {
-        const testAdminId = 'dev-admin-00000000-0000-0000-0000-000000000003';
-        
-        // Get user from database
-        const user = await storage.getUser(testAdminId);
-        if (!user) {
-          return res.status(404).json({ message: 'Test admin user not found. Please restart the server.' });
-        }
-        
-        // Set session
-        req.session.userId = testAdminId;
-        await new Promise<void>((resolve, reject) => {
-          req.session.save((err: any) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        console.log('[DEV-ONLY] 👑 Logged in as test admin');
-        res.json({ 
-          message: 'Logged in as test admin', 
-          user: user
-        });
-      } catch (error: any) {
-        console.error('[DEV-ONLY] Error in dev admin login:', error);
-        res.status(500).json({ message: 'Failed to login as test admin', error: error.message });
-      }
-    });
-
-    app.get('/api/dev/test-users', async (req, res) => {
-      res.json({
-        patient: {
-          endpoint: 'POST /api/dev/login-as-patient',
-          email: 'patient@test.com',
-          userId: 'dev-patient-00000000-0000-0000-0000-000000000001'
-        },
-        doctor: {
-          endpoint: 'POST /api/dev/login-as-doctor',
-          email: 'doctor@test.com',
-          userId: 'dev-doctor-00000000-0000-0000-0000-000000000002'
-        },
-        admin: {
-          endpoint: 'POST /api/dev/login-as-admin',
-          email: 'admin@test.com',
-          userId: 'dev-admin-00000000-0000-0000-0000-000000000003'
-        },
-        note: 'These endpoints only work in development mode'
-      });
-    });
-  }
-  // ============== END DEV-ONLY BYPASS ==============
+  // Note: DEV-ONLY authentication bypass routes removed for production security
 
   // ============== AUTHENTICATION ROUTES (Stytch - Primary Auth) ==============
-  // Note: Cognito removed in favor of Stytch for all authentication
+  // Note: All authentication now handled by Stytch via Magic Links and SMS OTP
+  // Legacy Cognito signup routes removed - use /api/auth/magic-link/send for signup
   const { metadataStorage } = await import('./metadataStorage');
 
-  // Patient Signup
+  // Patient Signup - Redirect to Stytch Magic Link flow
   app.post('/api/auth/signup/patient', async (req, res) => {
-    try {
-      const { email, password, firstName, lastName, phoneNumber, ehrImportMethod, ehrPlatform } = req.body;
-      
-      if (!email || !password || !firstName || !lastName || !phoneNumber) {
-        return res.status(400).json({ message: "All fields are required" });
-      }
-      
-      // DEV-ONLY: Skip Cognito in development mode
-      if (process.env.NODE_ENV === 'development') {
-        const devUserId = `dev-patient-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-        
-        // Check if user already exists
-        const existingUser = await storage.getUserByEmail(email);
-        if (existingUser) {
-          return res.status(400).json({ message: "An account with this email already exists" });
-        }
-        
-        // Create user directly in database
-        await storage.createUser({
-          id: devUserId,
-          email,
-          firstName,
-          lastName,
-          role: 'patient',
-          phoneNumber,
-          phoneVerified: true,
-          emailVerified: true,
-          termsAccepted: true,
-          termsAcceptedAt: new Date(),
-        });
-        
-        console.log(`[DEV-ONLY] ✅ Created patient user: ${email} (id: ${devUserId})`);
-        return res.json({ 
-          message: "Signup successful. You can now login.", 
-          devMode: true,
-          userId: devUserId 
-        });
-      }
-      
-      // Sign up in Cognito
-      const signUpResponse = await signUp(email, password, firstName, lastName, 'patient', phoneNumber);
-      const cognitoSub = signUpResponse.UserSub!;
-      const cognitoUsername = signUpResponse.username!;
-      
-      // Generate verification code (6 digits)
-      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-      
-      // Store phone number temporarily (will be verified after email)
+    const { email, firstName, lastName, phoneNumber } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+    
+    // Store additional profile data for later use after Stytch authentication
+    if (firstName || lastName || phoneNumber) {
       metadataStorage.setUserMetadata(email, {
-        cognitoSub,
-        cognitoUsername,
         firstName,
         lastName,
         phoneNumber,
         role: 'patient',
-        ehrImportMethod,
-        ehrPlatform,
-        verificationCode, // Store our generated code
-        verificationCodeExpires: expiresAt.getTime(),
       });
-      
-      // Send verification email via AWS SES (primary method)
-      try {
-        await sendVerificationEmail(email, verificationCode);
-        console.log(`[AUTH] Verification email sent via SES for patient signup: ${email}`);
-      } catch (sesError: any) {
-        console.error(`[AUTH] Failed to send verification email via SES for ${email}:`, sesError);
-        // Fallback to Cognito email
-        try {
-          await resendConfirmationCode(email, cognitoUsername);
-          console.log(`[AUTH] Fallback: Confirmation code resent via Cognito for patient signup: ${email}`);
-        } catch (resendError: any) {
-          console.error(`[AUTH] Failed to resend confirmation code via Cognito for ${email}:`, resendError);
-          // Still return success - user can request resend
-        }
-      }
-      
-      res.json({ message: "Signup successful. Please check your email for verification code." });
-    } catch (error: any) {
-      console.error("Patient signup error:", error);
-      if (error.name === 'UsernameExistsException') {
-        return res.status(400).json({ message: "An account with this email already exists" });
-      }
-      res.status(500).json({ message: error.message || "Signup failed" });
     }
+    
+    // Redirect to use Stytch Magic Link
+    res.json({ 
+      message: "Please use Magic Link authentication. A link will be sent to your email.",
+      useEndpoint: "/api/auth/magic-link/send",
+      role: "patient"
+    });
   });
   
-  // Doctor Signup
+  // Doctor Signup - Redirect to Stytch Magic Link flow with additional data collection
   app.post('/api/auth/signup/doctor', upload.single('kycPhoto'), async (req, res) => {
-    try {
-      const { email, password, firstName, lastName, phoneNumber, organization, medicalLicenseNumber, licenseCountry } = req.body;
-      const kycPhoto = req.file;
-      
-      if (!email || !password || !firstName || !lastName || !phoneNumber || !organization || !medicalLicenseNumber || !licenseCountry) {
-        return res.status(400).json({ message: "All fields are required" });
-      }
-      
-      // DEV-ONLY: Skip Cognito in development mode
-      if (process.env.NODE_ENV === 'development') {
-        const devUserId = `dev-doctor-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-        
-        // Check if user already exists
-        const existingUser = await storage.getUserByEmail(email);
-        if (existingUser) {
-          return res.status(400).json({ message: "An account with this email already exists" });
-        }
-        
-        // Create user directly in database
-        await storage.createUser({
-          id: devUserId,
-          email,
-          firstName,
-          lastName,
-          role: 'doctor',
-          phoneNumber,
-          phoneVerified: true,
-          emailVerified: true,
-          organization,
-          medicalLicenseNumber,
-          licenseVerified: false,
-          adminVerified: false,
-          termsAccepted: true,
-          termsAcceptedAt: new Date(),
-        });
-        
-        console.log(`[DEV-ONLY] ✅ Created doctor user: ${email} (id: ${devUserId})`);
-        return res.json({ 
-          message: "Application submitted successfully. You can now login. Your application will be reviewed by our team.",
-          devMode: true,
-          userId: devUserId 
-        });
-      }
-      
-      // Sign up in Cognito
-      const signUpResponse = await signUp(email, password, firstName, lastName, 'doctor', phoneNumber);
-      const cognitoSub = signUpResponse.UserSub!;
-      const cognitoUsername = signUpResponse.username!;
-      
-      // Upload KYC photo if provided
-      let kycPhotoUrl: string | undefined;
-      if (kycPhoto) {
-        const { uploadToS3 } = await import('./awsS3');
-        kycPhotoUrl = await uploadToS3(kycPhoto.buffer, `kyc/${email}_${Date.now()}.${kycPhoto.originalname.split('.').pop()}`, kycPhoto.mimetype);
-      }
-      
-      // Generate PDF for doctor application
-      const { generateDoctorApplicationPDF, uploadDoctorApplicationToGoogleDrive } = await import('./googleDrive');
-      const pdfBuffer = await generateDoctorApplicationPDF({
-        email,
-        firstName,
-        lastName,
-        organization,
-        medicalLicenseNumber,
-        licenseCountry,
-        submittedAt: new Date(),
-      });
-      
-      // Upload to Google Drive
-      const googleDriveUrl = await uploadDoctorApplicationToGoogleDrive({
-        email,
-        firstName,
-        lastName,
-        organization,
-        medicalLicenseNumber,
-        licenseCountry,
-        submittedAt: new Date(),
-      }, pdfBuffer);
-      
-      // Generate verification code (6 digits)
-      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-      
-      // Store doctor data temporarily
-      metadataStorage.setUserMetadata(email, {
-        cognitoSub,
-        cognitoUsername,
-        firstName,
-        lastName,
-        phoneNumber,
-        role: 'doctor',
-        organization,
-        medicalLicenseNumber,
-        licenseCountry,
-        kycPhotoUrl,
-        googleDriveApplicationUrl: googleDriveUrl,
-        verificationCode, // Store our generated code
-        verificationCodeExpires: expiresAt.getTime(),
-      });
-      
-      // Send verification email via AWS SES (primary method)
-      try {
-        await sendVerificationEmail(email, verificationCode);
-        console.log(`[AUTH] Verification email sent via SES for doctor signup: ${email}`);
-      } catch (sesError: any) {
-        console.error(`[AUTH] Failed to send verification email via SES for ${email}:`, sesError);
-        // Fallback to Cognito email
-        try {
-          await resendConfirmationCode(email, cognitoUsername);
-          console.log(`[AUTH] Fallback: Confirmation code resent via Cognito for doctor signup: ${email}`);
-        } catch (resendError: any) {
-          console.error(`[AUTH] Failed to resend confirmation code via Cognito for ${email}:`, resendError);
-          // Still return success - user can request resend
-        }
-      }
-      
-      res.json({ message: "Application submitted successfully. Please check your email for verification code. Your application will be reviewed by our team." });
-    } catch (error: any) {
-      console.error("Doctor signup error:", error);
-      if (error.name === 'UsernameExistsException') {
-        return res.status(400).json({ message: "An account with this email already exists" });
-      }
-      res.status(500).json({ message: error.message || "Signup failed" });
+    const { email, firstName, lastName, phoneNumber, organization, medicalLicenseNumber, licenseCountry } = req.body;
+    const kycPhoto = req.file;
+    
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
     }
+    
+    // Store doctor profile data for later use after Stytch authentication
+    const doctorData: Record<string, any> = {
+      firstName,
+      lastName,
+      phoneNumber,
+      role: 'doctor',
+      organization,
+      medicalLicenseNumber,
+      licenseCountry,
+      licenseVerified: false,
+      adminVerified: false,
+    };
+    
+    // Upload KYC photo to GCS if provided
+    if (kycPhoto) {
+      try {
+        const kycPhotoUrl = await uploadFile(
+          kycPhoto.buffer,
+          `kyc/${email}_${Date.now()}.${kycPhoto.originalname.split('.').pop()}`,
+          kycPhoto.mimetype
+        );
+        doctorData.kycPhotoUrl = kycPhotoUrl;
+      } catch (uploadError) {
+        console.error('[AUTH] Failed to upload KYC photo:', uploadError);
+      }
+    }
+    
+    metadataStorage.setUserMetadata(email, doctorData);
+    
+    // Redirect to use Stytch Magic Link
+    res.json({ 
+      message: "Please use Magic Link authentication. A link will be sent to your email. Your application will be reviewed by our team.",
+      useEndpoint: "/api/auth/magic-link/send",
+      role: "doctor"
+    });
   });
   
-  // Verify email with code (Step 1)
+  // Legacy verification routes - now handled by Stytch Magic Link/SMS OTP
+  // These endpoints are kept for backwards compatibility but redirect to Stytch flow
+  
   app.post('/api/auth/verify-email', async (req, res) => {
-    try {
-      const { email, code } = req.body;
-      
-      if (!email || !code) {
-        return res.status(400).json({ message: "Email and verification code are required" });
-      }
-      
-      // Get user metadata to retrieve the Cognito username
-      const metadata = metadataStorage.getUserMetadata(email);
-      if (!metadata) {
-        return res.status(400).json({ message: "No signup data found. Please sign up again." });
-      }
-      
-      const cognitoUsername = metadata.cognitoUsername;
-      
-      // First, try to verify with our generated code (from SES email)
-      let codeVerified = false;
-      if (metadata.verificationCode && metadata.verificationCodeExpires) {
-        if (Date.now() < metadata.verificationCodeExpires) {
-          if (metadata.verificationCode === code) {
-            codeVerified = true;
-            console.log(`[AUTH] Verification code verified via SES code for ${email}`);
-          }
-        } else {
-          return res.status(400).json({ message: "Verification code has expired. Please request a new code." });
-        }
-      }
-      
-      // If our code didn't match, try Cognito's code
-      if (!codeVerified) {
-        try {
-          await confirmSignUp(email, code, cognitoUsername);
-          codeVerified = true;
-          console.log(`[AUTH] Verification code verified via Cognito for ${email}`);
-        } catch (cognitoError: any) {
-          // If Cognito verification fails, check if it's because code is wrong or user already verified
-          if (cognitoError.name === 'CodeMismatchException' || cognitoError.name === 'ExpiredCodeException') {
-            return res.status(400).json({ message: "Invalid or expired verification code. Please try again or request a new code." });
-          } else if (cognitoError.name === 'NotAuthorizedException' && cognitoError.message?.includes('already confirmed')) {
-            // User already verified, continue
-            codeVerified = true;
-            console.log(`[AUTH] User already verified in Cognito for ${email}`);
-          } else {
-            throw cognitoError;
-          }
-        }
-      }
-      
-      if (!codeVerified) {
-        return res.status(400).json({ message: "Invalid verification code. Please try again." });
-      }
-      
-      // Code verified successfully - using Stytch for all auth now
-      if (codeVerified && metadata.verificationCode === code) {
-        console.log(`[AUTH] User email verified for ${email}`);
-      }
-      
-      // Get phone number from metadata
-      if (!metadata.phoneNumber) {
-        return res.status(400).json({ message: "No phone number found. Please sign up again." });
-      }
-      
-      // Send SMS verification code (Step 2) - Twilio stubbed
-      const sendVerificationCode = async (opts: { to: string; channel: string }) => {
-        console.warn('[TWILIO] SMS verification disabled - Twilio removed from dependencies');
-        const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
-        console.log('[TWILIO] Would send verification code to:', opts.to, 'Mock code:', mockCode);
-        return { success: true, code: mockCode };
-      };
-      const result = await sendVerificationCode({ to: metadata.phoneNumber, channel: 'sms' });
-      
-      if (!result.success || !result.code) {
-        return res.status(500).json({ message: "Failed to send SMS verification code" });
-      }
-      
-      // Store phone verification code (hashed)
-      await metadataStorage.setPhoneVerification(email, metadata.phoneNumber, result.code);
-      
-      res.json({ 
-        message: "Email verified successfully. Please verify your phone number with the SMS code sent to " + metadata.phoneNumber,
-        phoneNumber: metadata.phoneNumber,
-        requiresPhoneVerification: true,
-      });
-    } catch (error: any) {
-      console.error("Email verification error:", error);
-      res.status(500).json({ message: error.message || "Verification failed" });
-    }
+    res.json({ 
+      message: "Email verification is now handled via Magic Link. Please use the Magic Link sent to your email.",
+      useEndpoint: "/api/auth/magic-link/send"
+    });
   });
   
-  // Verify phone with SMS code (Step 2)
   app.post('/api/auth/verify-phone', async (req, res) => {
-    try {
-      const { email, code } = req.body;
-      
-      if (!email || !code) {
-        return res.status(400).json({ message: "Email and verification code are required" });
-      }
-      
-      // Verify phone code
-      const phoneVerification = await metadataStorage.verifyPhoneCode(email, code);
-      if (!phoneVerification.valid) {
-        return res.status(400).json({ message: "Invalid or expired verification code" });
-      }
-      
-      // Get user metadata
-      const metadata = metadataStorage.getUserMetadata(email);
-      if (!metadata) {
-        return res.status(400).json({ message: "No signup data found. Please sign up again." });
-      }
-      
-      // Create user in database with verified phone
-      const userData: any = {
-        id: metadata.cognitoSub,
-        email: metadata.email,
-        firstName: metadata.firstName,
-        lastName: metadata.lastName,
-        role: metadata.role,
-        phoneNumber: metadata.phoneNumber,
-        phoneVerified: true,
-        emailVerified: true,
-        termsAccepted: true,
-        termsAcceptedAt: new Date(),
-      };
-      
-      // Add patient-specific data
-      if (metadata.role === 'patient') {
-        userData.ehrImportMethod = metadata.ehrImportMethod;
-        userData.ehrPlatform = metadata.ehrPlatform;
-        userData.subscriptionStatus = 'trialing';
-        userData.trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        userData.creditBalance = 20;
-      }
-      
-      // Add doctor-specific data
-      if (metadata.role === 'doctor') {
-        userData.organization = metadata.organization;
-        userData.medicalLicenseNumber = metadata.medicalLicenseNumber;
-        userData.licenseCountry = metadata.licenseCountry;
-        userData.kycPhotoUrl = metadata.kycPhotoUrl;
-        userData.googleDriveApplicationUrl = metadata.googleDriveApplicationUrl;
-        userData.adminVerified = false;
-        userData.creditBalance = 0;
-      }
-      
-      // Create user in database
-      await storage.upsertUser(userData);
-      
-      // Clean up metadata
-      metadataStorage.deleteUserMetadata(email);
-      metadataStorage.clearEmailVerification(email);
-      
-      // Send welcome SMS - Twilio stubbed
-      const sendWelcomeSMS = async (phone: string, name: string) => {
-        console.warn('[TWILIO] Welcome SMS disabled - Twilio removed from dependencies');
-        console.log('[TWILIO] Would send welcome SMS to:', phone, 'for:', name);
-        return true;
-      };
-      await sendWelcomeSMS(metadata.phoneNumber, userData.firstName).catch(console.error);
-      
-      const message = metadata.role === 'doctor' 
-        ? "Verification complete! Your application is under review. You'll receive an email when your account is activated."
-        : "Verification complete! You can now log in to your account.";
-      
-      res.json({ 
-        message,
-        requiresAdminApproval: metadata.role === 'doctor',
-      });
-    } catch (error: any) {
-      console.error("Phone verification error:", error);
-      res.status(500).json({ message: error.message || "Verification failed" });
-    }
+    res.json({ 
+      message: "Phone verification is now handled via SMS OTP. Please use the Stytch SMS authentication.",
+      useEndpoint: "/api/auth/sms/send"
+    });
   });
   
-  // Resend verification code
   app.post('/api/auth/resend-code', async (req, res) => {
-    try {
-      const { email } = req.body;
-      
-      if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-      }
-      
-      // Validate metadata exists for this email
-      const metadata = metadataStorage.getUserMetadata(email);
-      if (!metadata) {
-        return res.status(400).json({ message: "No signup data found. Please sign up again." });
-      }
-      
-      const cognitoUsername = metadata.cognitoUsername;
-      
-      // Generate new verification code (6 digits)
-      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-      
-      // Update metadata with new code
-      metadataStorage.setUserMetadata(email, {
-        ...metadata,
-        verificationCode,
-        verificationCodeExpires: expiresAt.getTime(),
-      });
-      
-      // Send verification email via AWS SES (primary method)
-      try {
-        await sendVerificationEmail(email, verificationCode);
-        console.log(`[AUTH] Verification code resent via SES for ${email}`);
-        res.json({ message: "Verification code resent. Please check your email." });
-      } catch (sesError: any) {
-        console.error(`[AUTH] Failed to send verification email via SES for ${email}:`, sesError);
-        // Fallback to Cognito email
-        try {
-          await resendConfirmationCode(email, cognitoUsername);
-          console.log(`[AUTH] Fallback: Confirmation code resent via Cognito for ${email}`);
-          res.json({ message: "Verification code resent. Please check your email." });
-        } catch (resendError: any) {
-          console.error(`[AUTH] Failed to resend confirmation code via Cognito for ${email}:`, resendError);
-          res.status(500).json({ message: "Failed to resend verification code. Please try again later." });
-        }
-      }
-    } catch (error: any) {
-      console.error("Resend code error:", error);
-      res.status(500).json({ message: error.message || "Failed to resend code" });
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
     }
+    
+    res.json({ 
+      message: "Please request a new Magic Link to verify your email.",
+      useEndpoint: "/api/auth/magic-link/send"
+    });
   });
   
-  // Login
+  // Login - Now handled by Stytch Magic Link/SMS OTP
+  // This legacy endpoint redirects to the Stytch authentication flow
   app.post('/api/auth/login', async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-      
-      const authResult = await signIn(email, password);
-      
-      if (!authResult || !authResult.IdToken || !authResult.AccessToken) {
-        return res.status(401).json({ message: "Login failed" });
-      }
-      
-      // Get user info from Cognito
-      const userInfo = await getUserInfo(authResult.AccessToken);
-      const cognitoSub = userInfo.UserAttributes?.find(attr => attr.Name === 'sub')?.Value!;
-      const cognitoEmail = userInfo.UserAttributes?.find(attr => attr.Name === 'email')?.Value!;
-      const firstName = userInfo.UserAttributes?.find(attr => attr.Name === 'given_name')?.Value!;
-      const lastName = userInfo.UserAttributes?.find(attr => attr.Name === 'family_name')?.Value!;
-      const emailVerified = userInfo.UserAttributes?.find(attr => attr.Name === 'email_verified')?.Value === 'true';
-      
-      // Check if user exists in our database (must have completed phone verification)
-      let user = await storage.getUser(cognitoSub);
-      
-      if (!user) {
-        // User hasn't completed phone verification yet
-        return res.status(403).json({ 
-          message: "Please complete phone verification to access your account",
-          requiresPhoneVerification: true,
-        });
-      }
-      
-      // Role is stored in local database only (Cognito User Pool has no custom attributes)
-      const effectiveRole = user.role as 'patient' | 'doctor' | undefined;
-
-      // Block doctors until admin approval
-      if (effectiveRole === 'doctor' && !user.adminVerified) {
-        return res.status(403).json({ 
-          message: "Your application is under review. You'll receive an email when your account is activated.",
-          requiresAdminApproval: true,
-        });
-      }
-      
-      // Update email verification status from Cognito if needed
-      if (emailVerified && !user.emailVerified) {
-        user = await storage.upsertUser({
-          id: cognitoSub,
-          emailVerified,
-        });
-      }
-      
-      // Establish session for cookie-based authentication
-      // This allows the client to use credentials: "include" for subsequent requests
-      (req.session as any).userId = user.id;
-      
-      // Save session to ensure cookie is set
-      await new Promise<void>((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) {
-            console.error("Error saving session:", err);
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-      });
-      
-      res.json({
-        message: "Login successful",
-        tokens: {
-          idToken: authResult.IdToken,
-          accessToken: authResult.AccessToken,
-          refreshToken: authResult.RefreshToken,
-        },
-        user: {
-          ...user,
-          role: effectiveRole ?? user.role,
-        },
-      });
-    } catch (error: any) {
-      console.error("Login error:", error);
-      if (error.name === 'NotAuthorizedException') {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-      if (error.name === 'UserNotConfirmedException') {
-        return res.status(400).json({ message: "Please verify your email before logging in" });
-      }
-      res.status(500).json({ message: error.message || "Login failed" });
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
     }
+    
+    // Check if user exists in database
+    const user = await storage.getUserByEmail(email);
+    
+    if (!user) {
+      return res.status(404).json({ 
+        message: "No account found with this email. Please sign up first.",
+        useEndpoint: "/api/auth/magic-link/send"
+      });
+    }
+    
+    // Block doctors until admin approval
+    if (user.role === 'doctor' && !user.adminVerified) {
+      return res.status(403).json({ 
+        message: "Your application is under review. You'll receive an email when your account is activated.",
+        requiresAdminApproval: true,
+      });
+    }
+    
+    res.json({ 
+      message: "Please use Magic Link or SMS OTP to login. Password-based login is no longer supported.",
+      useEndpoint: "/api/auth/magic-link/send",
+      user: { email: user.email, role: user.role }
+    });
   });
   
-  // Forgot password - send reset code
+  // Forgot password - Now uses Stytch Magic Link (passwordless)
   app.post('/api/auth/forgot-password', async (req, res) => {
-    try {
-      const { email } = req.body;
-      
-      if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-      }
-      
-      await forgotPassword(email);
-      
-      res.json({ message: "Password reset code sent. Please check your email." });
-    } catch (error: any) {
-      console.error("Forgot password error:", error);
-      res.status(500).json({ message: error.message || "Failed to send reset code" });
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
     }
+    
+    res.json({ 
+      message: "Password reset is no longer needed. Please use Magic Link to login securely without a password.",
+      useEndpoint: "/api/auth/magic-link/send"
+    });
   });
   
-  // Reset password with code
+  // Reset password - Now uses Stytch Magic Link (passwordless)
   app.post('/api/auth/reset-password', async (req, res) => {
-    try {
-      const { email, code, newPassword } = req.body;
-      
-      if (!email || !code || !newPassword) {
-        return res.status(400).json({ message: "Email, code, and new password are required" });
-      }
-      
-      await confirmForgotPassword(email, code, newPassword);
-      
-      res.json({ message: "Password reset successful. You can now log in with your new password." });
-    } catch (error: any) {
-      console.error("Reset password error:", error);
-      res.status(500).json({ message: error.message || "Password reset failed" });
-    }
+    res.json({ 
+      message: "Password reset is no longer needed. Please use Magic Link to login securely without a password.",
+      useEndpoint: "/api/auth/magic-link/send"
+    });
   });
   
   // Get current user (protected route)
@@ -22098,46 +21491,46 @@ Provide:
 
   // =============================================================================
   // FOLLOWUP AUTOPILOT PROXY ROUTES
-  // Uses isAuthenticatedOrDevBypass to support dev-patient-* pattern IDs in development
+  // All routes require proper authentication
   // =============================================================================
 
   // Ingest signal
-  app.post('/api/v1/followup-autopilot/patients/:patientId/signals', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/signals', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/signals`, 'POST');
   });
 
   // Batch ingest signals
-  app.post('/api/v1/followup-autopilot/patients/:patientId/signals/batch', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/signals/batch', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/signals/batch`, 'POST');
   });
 
   // Get autopilot status
-  app.get('/api/v1/followup-autopilot/patients/:patientId/autopilot', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/autopilot', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/autopilot`, 'GET');
   });
 
   // Get patient tasks
-  app.get('/api/v1/followup-autopilot/patients/:patientId/tasks', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/tasks', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/tasks`, 'GET');
   });
 
   // Complete task
-  app.post('/api/v1/followup-autopilot/patients/:patientId/tasks/:taskId/complete', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/tasks/:taskId/complete', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/tasks/${req.params.taskId}/complete`, 'POST');
   });
 
   // Get notifications
-  app.get('/api/v1/followup-autopilot/patients/:patientId/notifications', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/notifications', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/notifications`, 'GET');
   });
 
   // Mark notification read
-  app.post('/api/v1/followup-autopilot/patients/:patientId/notifications/:notificationId/read', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/notifications/:notificationId/read', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/notifications/${req.params.notificationId}/read`, 'POST');
   });
 
   // Get risk history
-  app.get('/api/v1/followup-autopilot/patients/:patientId/history', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/history', isAuthenticated, async (req: any, res) => {
     // Validate and sanitize days parameter (1-90)
     const rawDays = parseInt(req.query.days as string, 10);
     const days = (!isNaN(rawDays) && rawDays >= 1 && rawDays <= 90) ? rawDays : 30;
@@ -22147,7 +21540,7 @@ Provide:
   });
 
   // Get trigger events
-  app.get('/api/v1/followup-autopilot/patients/:patientId/triggers', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/triggers', isAuthenticated, async (req: any, res) => {
     // Validate and sanitize days parameter (1-90)
     const rawDays = parseInt(req.query.days as string, 10);
     const days = (!isNaN(rawDays) && rawDays >= 1 && rawDays <= 90) ? rawDays : 14;
@@ -22164,12 +21557,12 @@ Provide:
   });
 
   // Set training labels
-  app.post('/api/v1/followup-autopilot/patients/:patientId/labels', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/labels', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/labels`, 'POST');
   });
 
   // Manual trigger
-  app.post('/api/v1/followup-autopilot/patients/:patientId/trigger', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/trigger', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/trigger`, 'POST');
   });
 
@@ -22184,21 +21577,21 @@ Provide:
   });
 
   // Med events tracking
-  app.post('/api/v1/followup-autopilot/patients/:patientId/med-events', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.post('/api/v1/followup-autopilot/patients/:patientId/med-events', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/med-events`, 'POST');
   });
 
   // Notification preferences
-  app.get('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/preferences`, 'GET');
   });
 
-  app.patch('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.patch('/api/v1/followup-autopilot/patients/:patientId/preferences', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/preferences`, 'PATCH');
   });
 
   // Patient dashboard summary (comprehensive view)
-  app.get('/api/v1/followup-autopilot/patients/:patientId/summary', isAuthenticatedOrDevBypass, async (req: any, res) => {
+  app.get('/api/v1/followup-autopilot/patients/:patientId/summary', isAuthenticated, async (req: any, res) => {
     await automationProxy(req, res, `/api/v1/followup-autopilot/patients/${req.params.patientId}/summary`, 'GET');
   });
 

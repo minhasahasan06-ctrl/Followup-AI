@@ -51,11 +51,10 @@ integrations = ["javascript_database:1.0.0", "javascript_websocket:1.0.0", "java
 [userenv.shared]
 TINKER_ENABLED = "true"
 TINKER_API_URL = "https://api.thinkingmachines.ai"
-ENV = "dev"
+ENV = "production"
 PHI_DETECTION_ENABLED = "true"
 PHI_BLOCK_ON_DETECT = "true"
 USE_RESEARCH_EMBEDDINGS = "false"
-REPLIT_DEV_ONLY = "true"
 
 [userenv.development]
 LEGACY_SESSION_ENABLED = "true"

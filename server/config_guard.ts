@@ -215,15 +215,12 @@ export function runConfigGuard(exitOnFailure: boolean = true): GuardResult {
     addCheck('STORAGE_BUCKET', true);
   }
 
-  // Check 9: Ensure REPLIT_DEV_ONLY flag is set for extra safety
-  const replitDevOnly = process.env.REPLIT_DEV_ONLY;
-  if (replitDevOnly === 'true' || replitDevOnly === '1') {
-    addCheck('REPLIT_DEV_ONLY', true);
-  } else {
-    // Warn but don't fail - this is an additional safety measure
-    console.warn('[CONFIG_GUARD] Warning: REPLIT_DEV_ONLY env var not set to true');
-    addCheck('REPLIT_DEV_ONLY', true); // Still pass, just warn
+  // Check 9: Environment mode validation
+  const envMode = process.env.ENV || 'development';
+  if (envMode === 'production') {
+    console.log('[CONFIG_GUARD] Running in production mode');
   }
+  addCheck('ENV_MODE', true);
 
   // Final decision
   if (!results.passed) {
@@ -232,7 +229,8 @@ export function runConfigGuard(exitOnFailure: boolean = true): GuardResult {
       process.exit(1);
     }
   } else {
-    console.log('[CONFIG_GUARD] All environment checks passed - safe for development');
+    const envMode = process.env.ENV || 'development';
+    console.log(`[CONFIG_GUARD] All environment checks passed - running in ${envMode} mode`);
   }
 
   return results;

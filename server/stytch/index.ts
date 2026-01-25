@@ -14,7 +14,6 @@ export {
   requireAdmin,
   requireM2MAuth,
   optionalAuth,
-  devBypassAuth,
   getSessionCookieOptions,
   type StytchUser,
 } from "./authMiddleware";
