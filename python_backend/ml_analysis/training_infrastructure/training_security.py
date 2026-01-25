@@ -111,7 +111,10 @@ def verify_admin_token(token: str) -> Optional[AdminUser]:
     """
     try:
         # Get secret from environment (matches app/utils/security.py)
-        secret = os.environ.get('DEV_MODE_SECRET') or os.environ.get('SESSION_SECRET', 'dev-secret')
+        secret = os.environ.get('DEV_MODE_SECRET') or os.environ.get('SESSION_SECRET')
+        if not secret:
+            logger.error("No DEV_MODE_SECRET or SESSION_SECRET configured")
+            return None
         
         payload = jwt.decode(token, secret, algorithms=['HS256'])
         

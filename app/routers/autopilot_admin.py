@@ -61,7 +61,9 @@ def get_admin_user(
     
     token = authorization[7:]
     try:
-        secret = os.environ.get('DEV_MODE_SECRET') or os.environ.get('SESSION_SECRET', 'dev-secret')
+        secret = os.environ.get('DEV_MODE_SECRET') or os.environ.get('SESSION_SECRET')
+        if not secret:
+            raise HTTPException(status_code=500, detail="Authentication not configured")
         payload = jwt.decode(token, secret, algorithms=['HS256'])
         if not payload or not payload.get('sub'):
             raise HTTPException(status_code=401, detail="Invalid authentication token")
