@@ -41,6 +41,23 @@ The development environment includes HIPAA compliance guardrails such as a Confi
 ### Cloud Run Deployment
 The FastAPI backend supports deployment to GCP Cloud Run with features like scale-to-zero, cold start optimization, Secret Manager integration, and LangGraph persistence for HIPAA-compliant production environments.
 
+**Cloud Run Proxy Architecture**:
+- **Service URL**: https://followupai-backend-ujttoo34lq-uc.a.run.app
+- **Authentication Flow**: Frontend → Express Proxy (/api/cloud/*) → Cloud Run
+  - Express validates Stytch session tokens
+  - Express adds X-Proxy-Auth header with shared secret
+  - Express forwards X-User-* headers with authenticated user info
+  - Cloud Run receives Google ID token for IAM authentication
+- **Key Files**:
+  - `server/cloudRunProxy.ts` - Express proxy router
+  - `server/cloudRunAuth.ts` - Google ID token generation
+  - `app/dependencies.py` - Python proxy authentication (get_proxy_user)
+- **Environment Variables**:
+  - `PROXY_AUTH_SECRET` - Shared secret between Express and Python (required, no default)
+  - `VITE_USE_CLOUD_RUN_PROXY=true` - Enables frontend routing through proxy
+  - `GOOGLE_CLOUD_RUN_URL` - Cloud Run service URL
+- **Security**: No auto-user-creation, fail-safe when misconfigured, existing users only
+
 ## External Dependencies
 
 - **Authentication**: Stytch (Magic Links, SMS OTP, M2M)
