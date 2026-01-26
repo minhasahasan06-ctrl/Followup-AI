@@ -4,7 +4,35 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["abseil-cpp", "ffmpeg-full", "freetype", "glibcLocales", "gtest", "lcms2", "libGL", "libGLU", "libimagequant", "libjpeg", "libjpeg_turbo", "libpng", "libsndfile", "libtiff", "libwebp", "libxcrypt", "oneDNN", "openjpeg", "pkg-config", "postgresql", "re2", "tcl", "tk", "which", "xsimd", "zlib", "google-cloud-sdk"]
+packages = [
+  "abseil-cpp",
+  "ffmpeg-full",
+  "freetype",
+  "glibcLocales",
+  "gtest",
+  "lcms2",
+  "libGL",
+  "libGLU",
+  "libimagequant",
+  "libjpeg",
+  "libjpeg_turbo",
+  "libpng",
+  "libsndfile",
+  "libtiff",
+  "libwebp",
+  "libxcrypt",
+  "oneDNN",
+  "openjpeg",
+  "pkg-config",
+  "postgresql",
+  "re2",
+  "tcl",
+  "tk",
+  "which",
+  "xsimd",
+  "zlib",
+  "google-cloud-sdk",
+]
 
 [deployment]
 deploymentTarget = "autoscale"
@@ -44,7 +72,15 @@ args = "npm run dev"
 waitForPort = 5000
 
 [agent]
-integrations = ["javascript_database:1.0.0", "javascript_websocket:1.0.0", "javascript_openai:1.0.0", "javascript_log_in_with_replit:1.0.0", "javascript_stripe:1.0.0", "resend:1.0.0", "google-drive:1.0.0"]
+integrations = [
+  "javascript_database:1.0.0",
+  "javascript_websocket:1.0.0",
+  "javascript_openai:1.0.0",
+  "javascript_log_in_with_replit:1.0.0",
+  "javascript_stripe:1.0.0",
+  "resend:1.0.0",
+  "google-drive:1.0.0",
+]
 
 [userenv]
 
@@ -59,7 +95,6 @@ VITE_API_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
 VITE_USE_CLOUD_RUN_PROXY = "true"
 CLOUD_RUN_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
 PYTHON_BACKEND_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
-PROXY_AUTH_SECRET = "bcd4a082e6d9da326804f6a1d4bfa7bf22bf65d7e46f17cd608068e6978e9a94"
 
 [userenv.development]
 LEGACY_SESSION_ENABLED = "true"

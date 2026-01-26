@@ -56,11 +56,12 @@ paths = [
 # Using precise patterns to avoid accidentally suppressing real secrets.
 # =============================================================================
 
-# .env.template - Exact placeholder strings (not real keys)
+# .env.template - Safe placeholder strings (no real key prefixes)
+# File uses YOUR_*_HERE format to avoid false positives with real key patterns
 [[rules]]
-id = "env-template-stripe-placeholders"
-description = "Allow exact Stripe placeholder strings in env template"
-regex = '''your-stripe-secret-key|your-webhook-secret|your-connect-client-id'''
+id = "env-template-placeholders"
+description = "Allow YOUR_*_HERE placeholder strings in env template"
+regex = '''YOUR_STRIPE_SECRET_KEY_HERE|YOUR_STRIPE_WEBHOOK_SECRET_HERE|YOUR_STRIPE_CONNECT_CLIENT_ID_HERE|YOUR_OPENAI_API_KEY_HERE'''
 allowlist = { paths = ['''cloud-run/\.env\.template$'''] }
 
 # DEPLOYMENT.md - Exact placeholder text in documentation
@@ -84,14 +85,21 @@ description = "Allow secret detection patterns in pre-commit script SECRET_PATTE
 regex = '''-----BEGIN PRIVATE KEY-----|-----BEGIN RSA PRIVATE KEY-----|-----BEGIN CERTIFICATE-----'''
 allowlist = { paths = ['''scripts/pre-commit-hook\.sh$'''] }
 
-# skin_analysis_service.py - False positive from variable naming pattern
-# The code at line 359 is: slope_3day = covariance / variance
-# Gitleaks may flag this due to variable naming patterns matching generic-api-key rule
+# skin_analysis_service.py - False positive at line 359: slope_3day = covariance / variance
+# This mathematical calculation triggers generic-api-key due to underscore + number pattern
 [[rules]]
-id = "skin-analysis-math-vars"
-description = "Allow mathematical variable names in skin analysis perfusion calculations"
-regex = '''slope_3day|rolling_24hr|perfusion'''
+id = "skin-analysis-slope-var"
+description = "Allow slope_3day variable in skin perfusion calculations"
+regex = '''slope_3day\s*='''
 allowlist = { paths = ['''app/services/skin_analysis_service\.py$'''] }
+
+# video_ai_engine.py - Medical analysis variables that trigger false positives
+# These are used in health monitoring calculations (pallor detection, respiratory rate, etc.)
+[[rules]]
+id = "video-ai-medical-vars"
+description = "Allow medical analysis variable assignments in video AI engine"
+regex = '''(avg_saturation|pallor_score|respiratory_rate)\s*='''
+allowlist = { paths = ['''app/services/video_ai_engine\.py$'''] }
 
 # =============================================================================
 # Custom Rules - Stricter Detection

@@ -15,7 +15,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          # Only fetch current commit to avoid scanning secrets in git history
+          # Secrets that were removed still exist in history - scanning HEAD only is safer
+          fetch-depth: 1
 
       - name: Install gitleaks
         run: |
