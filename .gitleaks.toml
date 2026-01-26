@@ -49,46 +49,48 @@ paths = [
 # not actual secrets. Each entry is scoped to a specific file/line.
 # =============================================================================
 
-# .env.template - Contains placeholder values showing expected format
+# =============================================================================
+# Path-Scoped Allowlists for Documentation and Template Files
+# =============================================================================
+# Each allowlist targets EXACT placeholder strings in specific files.
+# Using precise patterns to avoid accidentally suppressing real secrets.
+# =============================================================================
+
+# .env.template - Exact placeholder strings (not real keys)
 [[rules]]
-id = "env-template-placeholders"
-description = "Allow placeholder values in .env.template files"
-regex = '''sk_live_your-stripe-secret-key|whsec_your-webhook-secret|ca_your-connect-client-id'''
+id = "env-template-stripe-placeholders"
+description = "Allow exact Stripe placeholder strings in env template"
+regex = '''your-stripe-secret-key|your-webhook-secret|your-connect-client-id'''
 allowlist = { paths = ['''cloud-run/\.env\.template$'''] }
 
-# DEPLOYMENT.md - Documentation showing secret creation commands
+# DEPLOYMENT.md - Exact placeholder text in documentation
 [[rules]]
-id = "deployment-docs-examples"
-description = "Allow example commands in deployment documentation"
+id = "deployment-docs-placeholders"
+description = "Allow exact YOUR_ placeholder strings in deployment docs"
 regex = '''YOUR_STRIPE_SECRET_KEY|YOUR_STRIPE_WEBHOOK_SECRET'''
 allowlist = { paths = ['''cloud-run/DEPLOYMENT\.md$'''] }
 
-# DEV_README.md - Documentation showing example key formats
+# DEV_README.md - Exact truncated example patterns (ending in ...)
 [[rules]]
-id = "dev-readme-examples"
-description = "Allow example key formats in developer documentation"
-regex = '''sk_test_\.\.\.|sk-\.\.\.'''
+id = "dev-readme-truncated-examples"
+description = "Allow truncated example patterns (sk_test_..., sk-...) in dev docs"
+regex = '''sk_test_\.{3}|sk-\.{3}'''
 allowlist = { paths = ['''DEV_README\.md$'''] }
 
-# CI workflow files - Pattern detection code, not actual secrets
-[[rules]]
-id = "ci-workflow-patterns"
-description = "Allow pattern references in CI workflow files"
-regex = '''RuleID|StartLine|gitleaks'''
-allowlist = { paths = ['''\.github/workflows/ci_checks\.yml$'''] }
-
-# Pre-commit hook - Regex patterns for secret detection
+# Pre-commit hook - Pattern strings in SECRET_PATTERNS array for detection
 [[rules]]
 id = "pre-commit-detection-patterns"
-description = "Allow regex patterns in pre-commit hooks for detection"
-regex = '''BEGIN (RSA |EC )?PRIVATE KEY|BEGIN CERTIFICATE|client_secret'''
+description = "Allow secret detection patterns in pre-commit script SECRET_PATTERNS array"
+regex = '''-----BEGIN PRIVATE KEY-----|-----BEGIN RSA PRIVATE KEY-----|-----BEGIN CERTIFICATE-----'''
 allowlist = { paths = ['''scripts/pre-commit-hook\.sh$'''] }
 
-# skin_analysis_service.py - False positive on variable names
+# skin_analysis_service.py - False positive from variable naming pattern
+# The code at line 359 is: slope_3day = covariance / variance
+# Gitleaks may flag this due to variable naming patterns matching generic-api-key rule
 [[rules]]
-id = "skin-analysis-variables"
-description = "Allow mathematical variable names in skin analysis service"
-regex = '''slope_3day|covariance|variance'''
+id = "skin-analysis-math-vars"
+description = "Allow mathematical variable names in skin analysis perfusion calculations"
+regex = '''slope_3day|rolling_24hr|perfusion'''
 allowlist = { paths = ['''app/services/skin_analysis_service\.py$'''] }
 
 # =============================================================================
