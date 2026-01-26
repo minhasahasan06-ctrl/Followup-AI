@@ -112,9 +112,7 @@ steps:
         STYTCH_PUBLIC_TOKEN=STYTCH_PUBLIC_TOKEN:latest,
         OPENAI_API_KEY=OPENAI_API_KEY:latest,
         SESSION_SECRET=SESSION_SECRET:latest,
-        DEV_MODE_SECRET=DEV_MODE_SECRET:latest,
-        STRIPE_API_KEY=STRIPE_API_KEY:latest,
-        STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest
+        DEV_MODE_SECRET=DEV_MODE_SECRET:latest
       # =====================================================================
       # ENVIRONMENT VARIABLES (non-secret)
       # =====================================================================
