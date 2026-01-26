@@ -74,22 +74,9 @@ steps:
       - '--port'
       - '8080'
       - '--set-secrets'
-      - |
-        DATABASE_URL=DATABASE_URL:latest,
-        STYTCH_PROJECT_ID=STYTCH_PROJECT_ID:latest,
-        STYTCH_SECRET=STYTCH_SECRET:latest,
-        STYTCH_PUBLIC_TOKEN=STYTCH_PUBLIC_TOKEN:latest,
-        OPENAI_API_KEY=OPENAI_API_KEY:latest,
-        SESSION_SECRET=SESSION_SECRET:latest,
-        DEV_MODE_SECRET=DEV_MODE_SECRET:latest
+      - 'DATABASE_URL=DATABASE_URL:latest,STYTCH_PROJECT_ID=STYTCH_PROJECT_ID:latest,STYTCH_SECRET=STYTCH_SECRET:latest,STYTCH_PUBLIC_TOKEN=STYTCH_PUBLIC_TOKEN:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,SESSION_SECRET=SESSION_SECRET:latest,DEV_MODE_SECRET=DEV_MODE_SECRET:latest'
       - '--set-env-vars'
-      - |
-        GCP_PROJECT_ID=$PROJECT_ID,
-        NODE_ENV=production,
-        LOG_LEVEL=info,
-        WORKERS=2,
-        OPENAI_BAA_SIGNED=true,
-        OPENAI_ZDR_ENABLED=true
+      - 'GCP_PROJECT_ID=$PROJECT_ID,NODE_ENV=production,LOG_LEVEL=info,WORKERS=2,OPENAI_BAA_SIGNED=true,OPENAI_ZDR_ENABLED=true'
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'get-url'
