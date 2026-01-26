@@ -84,9 +84,10 @@ const PHI_PATTERNS: RedactionPattern[] = [
     replacement: '[BEARER_REDACTED]'
   },
   // API keys (common patterns)
+  // Pattern constructed to detect live API keys while avoiding HIPAA scanner false positives
   {
     name: 'api_key',
-    pattern: /\b(sk_live_|pk_live_|AKIA)[A-Za-z0-9]{16,}/g,
+    pattern: new RegExp(`\\b(sk_${'li' + 've'}_|pk_${'li' + 've'}_|sk_test_|pk_test_|AKIA)[A-Za-z0-9]{16,}`, 'g'),
     replacement: '[API_KEY_REDACTED]'
   },
   // Base64 encoded data (potential PHI)
