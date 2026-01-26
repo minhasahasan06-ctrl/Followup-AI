@@ -42,9 +42,54 @@ paths = [
 # Specific commits to ignore (if needed)
 # commits = []
 
-# Specific paths to always exclude from scanning (scoped to test/doc files only)
-# NOTE: Global regexes removed to prevent suppressing real findings.
-# All allowlists are now path-scoped for maximum security.
+# =============================================================================
+# Path-Scoped Allowlists for Documentation and Template Files
+# =============================================================================
+# These files contain example patterns for documentation purposes,
+# not actual secrets. Each entry is scoped to a specific file/line.
+# =============================================================================
+
+# .env.template - Contains placeholder values showing expected format
+[[rules]]
+id = "env-template-placeholders"
+description = "Allow placeholder values in .env.template files"
+regex = '''sk_live_your-stripe-secret-key|whsec_your-webhook-secret|ca_your-connect-client-id'''
+allowlist = { paths = ['''cloud-run/\.env\.template$'''] }
+
+# DEPLOYMENT.md - Documentation showing secret creation commands
+[[rules]]
+id = "deployment-docs-examples"
+description = "Allow example commands in deployment documentation"
+regex = '''YOUR_STRIPE_SECRET_KEY|YOUR_STRIPE_WEBHOOK_SECRET'''
+allowlist = { paths = ['''cloud-run/DEPLOYMENT\.md$'''] }
+
+# DEV_README.md - Documentation showing example key formats
+[[rules]]
+id = "dev-readme-examples"
+description = "Allow example key formats in developer documentation"
+regex = '''sk_test_\.\.\.|sk-\.\.\.'''
+allowlist = { paths = ['''DEV_README\.md$'''] }
+
+# CI workflow files - Pattern detection code, not actual secrets
+[[rules]]
+id = "ci-workflow-patterns"
+description = "Allow pattern references in CI workflow files"
+regex = '''RuleID|StartLine|gitleaks'''
+allowlist = { paths = ['''\.github/workflows/ci_checks\.yml$'''] }
+
+# Pre-commit hook - Regex patterns for secret detection
+[[rules]]
+id = "pre-commit-detection-patterns"
+description = "Allow regex patterns in pre-commit hooks for detection"
+regex = '''BEGIN (RSA |EC )?PRIVATE KEY|BEGIN CERTIFICATE|client_secret'''
+allowlist = { paths = ['''scripts/pre-commit-hook\.sh$'''] }
+
+# skin_analysis_service.py - False positive on variable names
+[[rules]]
+id = "skin-analysis-variables"
+description = "Allow mathematical variable names in skin analysis service"
+regex = '''slope_3day|covariance|variance'''
+allowlist = { paths = ['''app/services/skin_analysis_service\.py$'''] }
 
 # =============================================================================
 # Custom Rules - Stricter Detection
