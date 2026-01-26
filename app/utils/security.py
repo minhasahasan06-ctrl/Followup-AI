@@ -26,7 +26,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     
-    secret = settings.DEV_MODE_SECRET or settings.SESSION_SECRET or "fallback-secret-key"
+    secret = settings.DEV_MODE_SECRET or settings.SESSION_SECRET
+    if not secret:
+        raise ValueError("DEV_MODE_SECRET or SESSION_SECRET must be configured for token creation")
     encoded_jwt = jwt.encode(to_encode, secret, algorithm="HS256")
     return encoded_jwt
 

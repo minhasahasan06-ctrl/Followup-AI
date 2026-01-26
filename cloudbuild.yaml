@@ -1,0 +1,124 @@
+# =============================================================================
+# Followup AI - Root Cloud Build Configuration
+# =============================================================================
+# Full build/deploy pipeline placed at repository root for Cloud Build trigger
+# auto-detection. This configuration mirrors cloud-run/cloudbuild.yaml to
+# maintain compatibility with both manual and automated deployments.
+#
+# NOTE: For updates, sync changes with cloud-run/cloudbuild.yaml to prevent drift.
+#
+# For manual deployment:
+#   gcloud builds submit --config cloudbuild.yaml .
+# =============================================================================
+
+substitutions:
+  _SERVICE_NAME: followupai-backend
+  _REGION: us-central1
+  _REGISTRY: us-central1-docker.pkg.dev
+  _MIN_INSTANCES: "0"
+  _MAX_INSTANCES: "10"
+  _MEMORY: "2Gi"
+  _CPU: "2"
+  _CONCURRENCY: "80"
+  _TIMEOUT: "300s"
+  _IMAGE_TAG: latest
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build'
+    args:
+      - 'build'
+      - '-f'
+      - 'cloud-run/Dockerfile.production'
+      - '-t'
+      - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:${_IMAGE_TAG}'
+      - '--cache-from'
+      - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:latest'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push'
+    args:
+      - 'push'
+      - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:${_IMAGE_TAG}'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image'
+      - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:${_IMAGE_TAG}'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--min-instances'
+      - '${_MIN_INSTANCES}'
+      - '--max-instances'
+      - '${_MAX_INSTANCES}'
+      - '--memory'
+      - '${_MEMORY}'
+      - '--cpu'
+      - '${_CPU}'
+      - '--concurrency'
+      - '${_CONCURRENCY}'
+      - '--timeout'
+      - '${_TIMEOUT}'
+      - '--cpu-boost'
+      - '--execution-environment'
+      - 'gen2'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '8080'
+      - '--set-secrets'
+      - |
+        DATABASE_URL=DATABASE_URL:latest,
+        STYTCH_PROJECT_ID=STYTCH_PROJECT_ID:latest,
+        STYTCH_SECRET=STYTCH_SECRET:latest,
+        STYTCH_PUBLIC_TOKEN=STYTCH_PUBLIC_TOKEN:latest,
+        OPENAI_API_KEY=OPENAI_API_KEY:latest,
+        SESSION_SECRET=SESSION_SECRET:latest,
+        DEV_MODE_SECRET=DEV_MODE_SECRET:latest,
+        STRIPE_API_KEY=STRIPE_API_KEY:latest,
+        STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest
+      - '--set-env-vars'
+      - |
+        GCP_PROJECT_ID=$PROJECT_ID,
+        NODE_ENV=production,
+        LOG_LEVEL=info,
+        WORKERS=2,
+        OPENAI_BAA_SIGNED=true,
+        OPENAI_ZDR_ENABLED=true
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'get-url'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo ""
+        echo "========================================"
+        echo "  DEPLOYMENT COMPLETE"
+        echo "========================================"
+        URL=$$(gcloud run services describe ${_SERVICE_NAME} --region ${_REGION} --format 'value(status.url)')
+        echo ""
+        echo "Service URL: $$URL"
+        echo ""
+        echo "NEXT STEPS:"
+        echo "1. Set frontend env var: VITE_API_URL=$$URL"
+        echo "2. Add to Stytch Dashboard Redirect URLs: $$URL/api/auth/callback"
+        echo "3. Add to Stytch Authorized Domains for reCAPTCHA"
+        echo "4. Update CORS_ALLOWED_ORIGINS in Cloud Run env vars"
+        echo "========================================"
+
+images:
+  - '${_REGISTRY}/$PROJECT_ID/${_SERVICE_NAME}/api:${_IMAGE_TAG}'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+timeout: '1200s'

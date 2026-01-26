@@ -25,7 +25,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 
-HMAC_SECRET = os.getenv('PHI_HMAC_SECRET', 'followup-ai-training-secret-key')
+HMAC_SECRET = os.getenv('PHI_HMAC_SECRET')
+if not HMAC_SECRET:
+    raise EnvironmentError("PHI_HMAC_SECRET environment variable is required for HIPAA-compliant training")
 MODEL_REGISTRY_PATH = Path(__file__).parent.parent / 'models'
 LOG_DIR = Path('/tmp/ml_training_logs')
 LOG_DIR.mkdir(exist_ok=True)

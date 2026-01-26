@@ -58,7 +58,10 @@ const AUTH_TAG_LENGTH = 16;
 const SALT_LENGTH = 32;
 
 function getEncryptionKey(): Buffer {
-  const secret = process.env.SESSION_SECRET || 'followup-ai-default-secret-key';
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    throw new Error('SESSION_SECRET environment variable is required for credential encryption');
+  }
   return crypto.scryptSync(secret, 'oauth-credential-salt', 32);
 }
 
@@ -112,7 +115,13 @@ function decryptCredential(encryptedText: string): string {
 }
 
 // JWT-Signed OAuth State Token for CSRF Protection
-const STATE_TOKEN_SECRET = process.env.SESSION_SECRET || 'oauth-state-secret';
+function getStateTokenSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    throw new Error('SESSION_SECRET environment variable is required for OAuth state tokens');
+  }
+  return secret;
+}
 const STATE_TOKEN_EXPIRY = '10m';
 
 interface OAuthStatePayload {
@@ -126,12 +135,12 @@ interface OAuthStatePayload {
 function createSignedStateToken(doctorId: string, type: string): string {
   const nonce = crypto.randomBytes(16).toString('hex');
   const payload: OAuthStatePayload = { doctorId, type, nonce };
-  return jwt.sign(payload, STATE_TOKEN_SECRET, { expiresIn: STATE_TOKEN_EXPIRY });
+  return jwt.sign(payload, getStateTokenSecret(), { expiresIn: STATE_TOKEN_EXPIRY });
 }
 
 function verifyStateToken(token: string): OAuthStatePayload | null {
   try {
-    return jwt.verify(token, STATE_TOKEN_SECRET) as OAuthStatePayload;
+    return jwt.verify(token, getStateTokenSecret()) as OAuthStatePayload;
   } catch (error) {
     console.error('OAuth state token verification failed:', error);
     return null;

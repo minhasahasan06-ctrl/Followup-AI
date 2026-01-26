@@ -5,16 +5,18 @@ on:
     branches: [main, develop]
     paths:
       - 'app/**'
+      - 'python_backend/**'
       - 'tests/python/**'
       - 'scripts/**'
-      - 'requirements.txt'
+      - 'python_backend/requirements.txt'
   pull_request:
     branches: [main]
     paths:
       - 'app/**'
+      - 'python_backend/**'
       - 'tests/python/**'
       - 'scripts/**'
-      - 'requirements.txt'
+      - 'python_backend/requirements.txt'
 
 env:
   PYTHON_VERSION: '3.11'

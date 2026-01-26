@@ -1,0 +1,67 @@
+# =============================================================================
+# Gitleaks Configuration - Followup AI
+# =============================================================================
+# This file configures gitleaks to ignore known false positives while
+# maintaining strict secret detection for real credentials.
+#
+# IMPORTANT: Only add allowlist entries for verified false positives.
+# Never allowlist real secrets - rotate them instead.
+# =============================================================================
+
+[extend]
+useDefault = true
+
+# =============================================================================
+# Allowlist - Known False Positives
+# =============================================================================
+# These patterns are intentionally in the codebase for testing/documentation
+# and do not represent actual secrets.
+# =============================================================================
+
+[[rules]]
+id = "test-stripe-keys"
+description = "Allow test Stripe keys in test files (sk_test_*, whsec_*)"
+regex = '''(sk_test_[a-zA-Z0-9]{0,10}|whsec_[a-zA-Z0-9]{0,10})'''
+allowlist = { paths = [
+  '''tests/''',
+  '''.*\.test\.(ts|tsx|js|jsx)$''',
+  '''.*\.spec\.(ts|tsx|js|jsx)$'''
+]}
+
+[allowlist]
+description = "Global allowlist for false positives"
+
+# Test files that contain mock/fake secrets for testing
+paths = [
+  '''tests/python/test_payments\.py$''',
+  '''tests/safe_logger\.test\.ts$''',
+  '''tests/config_guard\.test\.ts$''',
+  '''server/seed\.ts$''',
+]
+
+# Specific commits to ignore (if needed)
+# commits = []
+
+# Specific paths to always exclude from scanning (scoped to test/doc files only)
+# NOTE: Global regexes removed to prevent suppressing real findings.
+# All allowlists are now path-scoped for maximum security.
+
+# =============================================================================
+# Custom Rules - Stricter Detection
+# =============================================================================
+# Additional rules to catch patterns that might be missed by defaults.
+# =============================================================================
+
+[[rules]]
+id = "generic-api-key-header"
+description = "Detect hardcoded API keys in headers"
+regex = '''(?i)(x-api-key|api-key|apikey)\s*[:=]\s*['"][a-zA-Z0-9_-]{20,}['"]'''
+secretGroup = 0
+entropy = 3.5
+
+[[rules]]
+id = "hardcoded-jwt-secret"
+description = "Detect hardcoded JWT secrets"
+regex = '''(?i)(jwt[_-]?secret|signing[_-]?key)\s*[:=]\s*['"][a-zA-Z0-9_/-]{16,}['"]'''
+secretGroup = 0
+entropy = 3.0
