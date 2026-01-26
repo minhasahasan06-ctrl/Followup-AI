@@ -1,13 +1,25 @@
-name: Unit Tests
+name: ML/AI Stack Tests
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'add-security-*' ]
   pull_request:
     branches: [ main, master, develop ]
 
+env:
+  # Set environment variables at workflow level for all steps
+  DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test_key
+  AWS_SECRET_ACCESS_KEY: test_secret
+  AWS_S3_BUCKET_NAME: test-bucket
+  OPENAI_API_KEY: test_openai_key
+  DEV_MODE_SECRET: test_dev_mode_secret_min_32_characters_long
+  SESSION_SECRET: test_session_secret
+
 jobs:
-  test:
+  python-unit-tests:
+    name: Python Unit Tests
     runs-on: ubuntu-latest
     
     services:
@@ -46,17 +58,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Set up test environment variables
-        run: |
-          echo "DATABASE_URL=postgresql://test_user:test_password@localhost:5432/test_db" >> $GITHUB_ENV
-          echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
-          echo "AWS_ACCESS_KEY_ID=test_key" >> $GITHUB_ENV
-          echo "AWS_SECRET_ACCESS_KEY=test_secret" >> $GITHUB_ENV
-          echo "AWS_S3_BUCKET_NAME=test-bucket" >> $GITHUB_ENV
-          echo "OPENAI_API_KEY=test_openai_key" >> $GITHUB_ENV
-          echo "DEV_MODE_SECRET=test_dev_mode_secret_min_32_characters_long" >> $GITHUB_ENV
-          echo "SESSION_SECRET=test_session_secret" >> $GITHUB_ENV
+          pip install pytest-cov
 
       - name: Run tests
         run: |
@@ -69,3 +71,18 @@ jobs:
           file: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
+        continue-on-error: true
+
+  all-tests-passed:
+    name: All Tests Passed
+    runs-on: ubuntu-latest
+    needs: [python-unit-tests]
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [ "${{ needs.python-unit-tests.result }}" != "success" ]; then
+            echo "Python unit tests failed"
+            exit 1
+          fi
+          echo "All tests passed!"

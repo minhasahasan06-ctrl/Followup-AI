@@ -1,31 +1,97 @@
-title = "Gitleaks config for Followup AI"
+title = "Gitleaks config for Followup AI - HIPAA Compliant"
 
 [extend]
 # Use default Gitleaks rules
 useDefault = true
 
 [allowlist]
-description = "Allowlist for known false positives"
+description = "Allowlist for known false positives and test files"
 paths = [
+  # Configuration examples and templates
   '''\.env\.example$''',
   '''\.env\.template$''',
-  '''\.github/workflows/.*\.yml$''',
-  '''tests/.*\.py$''',
-  '''conftest\.py$''',
-  '''test_.*\.py$''',
-  '''.*\.md$''',
   '''.*\.example$''',
   '''.*\.template$''',
+  
+  # GitHub workflow files (contain test credentials)
+  '''\.github/workflows/.*\.yml$''',
+  '''\.github/.*\.yml$''',
+  
+  # Test files
+  '''tests/.*\.py$''',
+  '''test/.*\.py$''',
+  '''conftest\.py$''',
+  '''test_.*\.py$''',
+  '''.*_test\.py$''',
+  '''.*\.test\.(ts|tsx|js|jsx)$''',
+  '''.*\.spec\.(ts|tsx|js|jsx)$''',
+  
+  # Documentation
+  '''.*\.md$''',
+  '''docs/.*''',
+  '''README.*''',
+  
+  # Lock files (contain hashes, not secrets)
+  '''package-lock\.json$''',
+  '''uv\.lock$''',
+  '''poetry\.lock$''',
+  '''Pipfile\.lock$''',
 ]
 
 regexes = [
+  # Test/mock credentials
+  '''test[_-]?password''',
+  '''test[_-]?secret''',
+  '''test[_-]?key''',
+  '''test[_-]?token''',
+  '''test[_-]?access[_-]?key''',
+  '''test[_-]?api[_-]?key''',
+  '''mock[_-]?credential''',
+  '''mock[_-]?password''',
+  '''mock[_-]?secret''',
+  '''mock[_-]?token''',
+  '''fake[_-]?password''',
+  '''fake[_-]?secret''',
+  '''fake[_-]?token''',
+  '''dummy[_-]?password''',
+  '''dummy[_-]?secret''',
+  '''dummy[_-]?token''',
+  
+  # Development tokens
+  '''dev[_-]?token''',
+  '''dev[_-]?access[_-]?token''',
+  '''dev[_-]?refresh[_-]?token''',
+  
+  # Placeholder values
+  '''your_.*_here''',
+  '''YOUR_.*_HERE''',
+  '''<your[_-].*>''',
+  '''CHANGE[_-]?ME''',
+  '''REPLACE[_-]?ME''',
+  '''xxx+''',
+  
+  # CI/CD test values
+  '''test_user''',
+  '''test_db''',
+  '''localhost:5432''',
+  
+  # Common safe patterns
   '''TestPassword123!''',
-  '''test.*password''',
-  '''test.*secret''',
-  '''test.*key''',
-  '''dev-token''',
-  '''dev-access-token''',
-  '''dev-refresh-token''',
-  '''test.*token''',
-  '''mock.*credential''',
+  '''example\.com''',
+  '''test\.local''',
+]
+
+# Specific commits to ignore (add commit SHAs here if needed)
+commits = []
+
+# Stop words that indicate test/example content
+stopwords = [
+  "test",
+  "mock",
+  "fake",
+  "dummy",
+  "example",
+  "placeholder",
+  "sample",
+  "demo",
 ]

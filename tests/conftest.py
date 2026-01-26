@@ -16,7 +16,13 @@ os.environ["AWS_S3_BUCKET_NAME"] = "test-bucket"
 
 # Set test DATABASE_URL to prevent validation errors during import
 # Individual tests will override this with their own test databases
+# Use SQLite for testing - simpler and doesn't require PostgreSQL
 os.environ["DATABASE_URL"] = "sqlite:///./test_import.db"
+
+# Set other required environment variables for test imports
+os.environ.setdefault("OPENAI_API_KEY", "test_openai_key")
+os.environ.setdefault("DEV_MODE_SECRET", "test_dev_mode_secret_min_32_characters_long")
+os.environ.setdefault("SESSION_SECRET", "test_session_secret")
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

@@ -9,8 +9,9 @@ Tests verify that:
 """
 
 import pytest
+import uuid
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.database import Base, get_db
@@ -19,6 +20,11 @@ from app.models.user import User
 from app.dependencies import get_current_user
 from datetime import datetime
 import base64
+
+
+def generate_uuid():
+    """Generate a UUID string for SQLite compatibility"""
+    return str(uuid.uuid4())
 
 # Test database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -100,6 +106,7 @@ def mock_user_patient_c(db_session):
 def patient_a_session(db_session):
     """Create exam session for Patient A"""
     session = VideoExamSession(
+        id=generate_uuid(),  # Explicitly set ID for SQLite compatibility
         patient_id="patient_a_123",
         status="in_progress",
         current_stage="eyes",
@@ -124,6 +131,7 @@ def patient_a_session(db_session):
 def patient_b_session(db_session):
     """Create exam session for Patient B"""
     session = VideoExamSession(
+        id=generate_uuid(),  # Explicitly set ID for SQLite compatibility
         patient_id="patient_b_456",
         status="in_progress",
         current_stage="palm",
