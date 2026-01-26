@@ -6,32 +6,26 @@
 #
 # IMPORTANT: Only add allowlist entries for verified false positives.
 # Never allowlist real secrets - rotate them instead.
+#
+# Structure:
+# - [extend] - Use default gitleaks rules
+# - [allowlist] - Global allowlist (applies to all rules)
+# - [[allowlist]] - Additional allowlists for specific files/patterns
+# - [[rules]] - Custom detection rules (NOT for allowlisting)
 # =============================================================================
 
 [extend]
 useDefault = true
 
 # =============================================================================
-# Allowlist - Known False Positives
+# Global Allowlist - Known False Positives
 # =============================================================================
-# These patterns are intentionally in the codebase for testing/documentation
-# and do not represent actual secrets.
+# Files that contain intentional test/mock data that should be excluded
+# from ALL detection rules.
 # =============================================================================
-
-[[rules]]
-id = "test-stripe-keys"
-description = "Allow test Stripe keys in test files (sk_test_*, whsec_*)"
-regex = '''(sk_test_[a-zA-Z0-9]{0,10}|whsec_[a-zA-Z0-9]{0,10})'''
-allowlist = { paths = [
-  '''tests/''',
-  '''.*\.test\.(ts|tsx|js|jsx)$''',
-  '''.*\.spec\.(ts|tsx|js|jsx)$'''
-]}
 
 [allowlist]
-description = "Global allowlist for false positives"
-
-# Test files that contain mock/fake secrets for testing
+description = "Global allowlist for test files with mock secrets"
 paths = [
   '''tests/python/test_payments\.py$''',
   '''tests/safe_logger\.test\.ts$''',
@@ -39,74 +33,87 @@ paths = [
   '''server/seed\.ts$''',
 ]
 
-# Specific commits to ignore (if needed)
-# commits = []
-
 # =============================================================================
-# Path-Scoped Allowlists for Documentation and Template Files
+# File-Specific Allowlists
 # =============================================================================
-# These files contain example patterns for documentation purposes,
-# not actual secrets. Each entry is scoped to a specific file/line.
+# Each [[allowlist]] entry targets a specific file with specific patterns.
+# Using narrow scopes to avoid accidentally suppressing real secrets.
+# gitleaks v8 uses: regex (single pattern) + regexTarget (optional)
 # =============================================================================
 
-# =============================================================================
-# Path-Scoped Allowlists for Documentation and Template Files
-# =============================================================================
-# Each allowlist targets EXACT placeholder strings in specific files.
-# Using precise patterns to avoid accidentally suppressing real secrets.
-# =============================================================================
+# CI Workflow - Contains PEM header patterns for secret detection examples
+# Line 71 flagged by private-key rule - these are detection patterns, not secrets
+[[allowlist]]
+description = "CI workflow contains secret detection pattern examples (not real secrets)"
+paths = ['''^\.github/workflows/ci_checks\.yml$''']
+regex = '''-----BEGIN (RSA )?PRIVATE KEY-----|-----BEGIN CERTIFICATE-----'''
 
-# .env.template - Safe placeholder strings (no real key prefixes)
-# File uses YOUR_*_HERE format to avoid false positives with real key patterns
-[[rules]]
-id = "env-template-placeholders"
-description = "Allow YOUR_*_HERE placeholder strings in env template"
-regex = '''YOUR_STRIPE_SECRET_KEY_HERE|YOUR_STRIPE_WEBHOOK_SECRET_HERE|YOUR_STRIPE_CONNECT_CLIENT_ID_HERE|YOUR_OPENAI_API_KEY_HERE'''
-allowlist = { paths = ['''cloud-run/\.env\.template$'''] }
+# Pre-commit Hook - Contains PEM header patterns in SECRET_PATTERNS array
+# Line 50 flagged by private-key rule - these are detection patterns, not secrets
+[[allowlist]]
+description = "Pre-commit hook contains secret detection patterns (not real secrets)"
+paths = ['''^scripts/pre-commit-hook\.sh$''']
+regex = '''-----BEGIN (RSA )?PRIVATE KEY-----|-----BEGIN CERTIFICATE-----'''
 
-# DEPLOYMENT.md - Exact placeholder text in documentation
-[[rules]]
-id = "deployment-docs-placeholders"
-description = "Allow exact YOUR_ placeholder strings in deployment docs"
+# Environment Template - Contains placeholder values for documentation
+# Line 70 flagged - uses YOUR_*_HERE format placeholders, not actual credentials
+[[allowlist]]
+description = "Env template contains placeholder values (not real secrets)"
+paths = ['''^cloud-run/\.env\.template$''']
+regex = '''YOUR_STRIPE_SECRET_KEY_HERE|YOUR_STRIPE_WEBHOOK_SECRET_HERE|YOUR_STRIPE_CONNECT_CLIENT_ID_HERE|YOUR_OPENAI_API_KEY_HERE|postgresql://user:password@your-neon-host|generate-32-char-random-string'''
+
+# Guided Exam API Tests - Contains medical metric field names
+# Lines 158, 198 flagged by video-ai-medical-vars - skin_pallor_score is a medical measurement
+[[allowlist]]
+description = "Test fixtures contain medical metric field names (not secrets)"
+paths = ['''^tests/test_guided_exam_api\.py$''']
+regex = '''skin_pallor_score'''
+
+# Skin Analysis Service - Mathematical variable names trigger false positives
+# slope_3day is a calculation variable for perfusion trend analysis
+[[allowlist]]
+description = "Skin analysis contains mathematical variable names (not secrets)"
+paths = ['''^app/services/skin_analysis_service\.py$''']
+regex = '''slope_3day'''
+
+# Video AI Engine - Medical analysis variable names
+# These are health monitoring calculations, not secrets
+[[allowlist]]
+description = "Video AI engine contains medical variable names (not secrets)"
+paths = ['''^app/services/video_ai_engine\.py$''']
+regex = '''avg_saturation|pallor_score|respiratory_rate'''
+
+# Deployment Documentation - Contains placeholder examples
+[[allowlist]]
+description = "Deployment docs contain placeholder examples (not secrets)"
+paths = ['''^cloud-run/DEPLOYMENT\.md$''']
 regex = '''YOUR_STRIPE_SECRET_KEY|YOUR_STRIPE_WEBHOOK_SECRET'''
-allowlist = { paths = ['''cloud-run/DEPLOYMENT\.md$'''] }
 
-# DEV_README.md - Exact truncated example patterns (ending in ...)
-[[rules]]
-id = "dev-readme-truncated-examples"
-description = "Allow truncated example patterns (sk_test_..., sk-...) in dev docs"
-regex = '''sk_test_\.{3}|sk-\.{3}'''
-allowlist = { paths = ['''DEV_README\.md$'''] }
-
-# Pre-commit hook - Pattern strings in SECRET_PATTERNS array for detection
-[[rules]]
-id = "pre-commit-detection-patterns"
-description = "Allow secret detection patterns in pre-commit script SECRET_PATTERNS array"
-regex = '''-----BEGIN PRIVATE KEY-----|-----BEGIN RSA PRIVATE KEY-----|-----BEGIN CERTIFICATE-----'''
-allowlist = { paths = ['''scripts/pre-commit-hook\.sh$'''] }
-
-# skin_analysis_service.py - False positive at line 359: slope_3day = covariance / variance
-# This mathematical calculation triggers generic-api-key due to underscore + number pattern
-[[rules]]
-id = "skin-analysis-slope-var"
-description = "Allow slope_3day variable in skin perfusion calculations"
-regex = '''slope_3day\s*='''
-allowlist = { paths = ['''app/services/skin_analysis_service\.py$'''] }
-
-# video_ai_engine.py - Medical analysis variables that trigger false positives
-# These are used in health monitoring calculations (pallor detection, respiratory rate, etc.)
-[[rules]]
-id = "video-ai-medical-vars"
-description = "Allow medical analysis variable assignments in video AI engine"
-regex = '''(avg_saturation|pallor_score|respiratory_rate)\s*='''
-allowlist = { paths = ['''app/services/video_ai_engine\.py$'''] }
+# Dev README - Contains truncated example patterns
+[[allowlist]]
+description = "Dev README contains truncated examples (not secrets)"
+paths = ['''^DEV_README\.md$''']
+regex = '''sk_test_\.\.\.|sk-\.\.\.'''
 
 # =============================================================================
-# Custom Rules - Stricter Detection
+# Custom Detection Rules
 # =============================================================================
 # Additional rules to catch patterns that might be missed by defaults.
+# Note: [[rules]] creates DETECTION rules, not allowlists.
 # =============================================================================
 
+# Allow test Stripe keys (sk_test_*) in test files - these are safe
+[[rules]]
+id = "test-stripe-keys"
+description = "Allow test Stripe keys in test files (sk_test_*, whsec_test_*)"
+regex = '''(sk_test_[a-zA-Z0-9]{0,10}|whsec_test_[a-zA-Z0-9]{0,10})'''
+allowlist = { paths = [
+  '''tests/''',
+  '''.*\.test\.(ts|tsx|js|jsx)$''',
+  '''.*\.spec\.(ts|tsx|js|jsx)$'''
+]}
+
+# Detect hardcoded API keys in request headers
 [[rules]]
 id = "generic-api-key-header"
 description = "Detect hardcoded API keys in headers"
@@ -114,6 +121,7 @@ regex = '''(?i)(x-api-key|api-key|apikey)\s*[:=]\s*['"][a-zA-Z0-9_-]{20,}['"]'''
 secretGroup = 0
 entropy = 3.5
 
+# Detect hardcoded JWT secrets
 [[rules]]
 id = "hardcoded-jwt-secret"
 description = "Detect hardcoded JWT secrets"
