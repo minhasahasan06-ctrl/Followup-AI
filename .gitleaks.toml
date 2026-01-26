@@ -1,0 +1,31 @@
+title = "Gitleaks config for Followup AI"
+
+[extend]
+# Use default Gitleaks rules
+useDefault = true
+
+[allowlist]
+description = "Allowlist for known false positives"
+paths = [
+  '''\.env\.example$''',
+  '''\.env\.template$''',
+  '''\.github/workflows/.*\.yml$''',
+  '''tests/.*\.py$''',
+  '''conftest\.py$''',
+  '''test_.*\.py$''',
+  '''.*\.md$''',
+  '''.*\.example$''',
+  '''.*\.template$''',
+]
+
+regexes = [
+  '''TestPassword123!''',
+  '''test.*password''',
+  '''test.*secret''',
+  '''test.*key''',
+  '''dev-token''',
+  '''dev-access-token''',
+  '''dev-refresh-token''',
+  '''test.*token''',
+  '''mock.*credential''',
+]

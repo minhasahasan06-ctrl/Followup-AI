@@ -14,6 +14,10 @@ os.environ["AWS_ACCESS_KEY_ID"] = "test_access_key"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "test_secret_key"
 os.environ["AWS_S3_BUCKET_NAME"] = "test-bucket"
 
+# Set test DATABASE_URL to prevent validation errors during import
+# Individual tests will override this with their own test databases
+os.environ["DATABASE_URL"] = "sqlite:///./test_import.db"
+
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 

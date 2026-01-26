@@ -239,7 +239,6 @@ class TestPHIIsolation:
         )
         
         app.dependency_overrides.clear()
-        app.dependency_overrides[get_db] = lambda: client
         
         assert response.status_code == 200
         data = response.json()
