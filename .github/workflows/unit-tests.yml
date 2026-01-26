@@ -9,10 +9,9 @@ on:
 env:
   # Set environment variables at workflow level for all steps
   DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
-  AWS_REGION: us-east-1
-  AWS_ACCESS_KEY_ID: test_key
-  AWS_SECRET_ACCESS_KEY: test_secret
-  AWS_S3_BUCKET_NAME: test-bucket
+  GCP_PROJECT_ID: test-project
+  GCP_REGION: us-central1
+  GCP_STORAGE_BUCKET: test-bucket
   OPENAI_API_KEY: test_openai_key
   DEV_MODE_SECRET: test_dev_mode_secret_min_32_characters_long
   SESSION_SECRET: test_session_secret

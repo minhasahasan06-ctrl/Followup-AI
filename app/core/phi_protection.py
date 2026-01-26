@@ -15,7 +15,7 @@ from functools import wraps
 from fastapi import Request, HTTPException, status
 
 from app.services.audit_logger import AuditLogger, AuditEvent
-from app.services.kms_encryption_service import get_kms_service
+from app.services.gcp_kms_service import get_kms_service
 from app.models import User
 
 logger = logging.getLogger(__name__)

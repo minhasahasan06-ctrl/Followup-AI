@@ -7,10 +7,13 @@ from openai import OpenAI
 class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
     
-    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
-    AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
-    AWS_SECRET_ACCESS_KEY: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY")
-    AWS_S3_BUCKET_NAME: Optional[str] = os.getenv("AWS_S3_BUCKET_NAME")
+    # Google Cloud Platform (storage, KMS, logging)
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    GCP_PROJECT_ID: Optional[str] = os.getenv("GCP_PROJECT_ID")
+    GCP_REGION: str = os.getenv("GCP_REGION", "us-central1")
+    GCP_STORAGE_BUCKET: Optional[str] = os.getenv("GCP_STORAGE_BUCKET")
+    GCP_KMS_KEY_RING_ID: Optional[str] = os.getenv("GCP_KMS_KEY_RING_ID")
+    GCP_KMS_CRYPTO_KEY_ID: Optional[str] = os.getenv("GCP_KMS_CRYPTO_KEY_ID")
     
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
     OPENAI_BAA_SIGNED: bool = os.getenv("OPENAI_BAA_SIGNED", "false").lower() == "true"
@@ -29,13 +32,6 @@ class Settings(BaseSettings):
     STRIPE_CONNECT_CLIENT_ID: Optional[str] = os.getenv("STRIPE_CONNECT_CLIENT_ID")
     PAYMENTS_WEBHOOK_SECRET: Optional[str] = os.getenv("PAYMENTS_WEBHOOK_SECRET")
     PAYMENT_PROVIDER: str = os.getenv("PAYMENT_PROVIDER", "stripe")
-    
-    # Google Cloud Platform (for KMS, Logging)
-    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    GCP_PROJECT_ID: Optional[str] = os.getenv("GCP_PROJECT_ID")
-    GCP_REGION: str = os.getenv("GCP_REGION", "us-central1")
-    GCP_KMS_KEY_RING_ID: Optional[str] = os.getenv("GCP_KMS_KEY_RING_ID")
-    GCP_KMS_CRYPTO_KEY_ID: Optional[str] = os.getenv("GCP_KMS_CRYPTO_KEY_ID")
     
     # Monitoring and Logging
     SENTRY_DSN: Optional[str] = os.getenv("SENTRY_DSN")

@@ -6,13 +6,10 @@ import pytest
 import sys
 import os
 
-# Set mock AWS credentials BEFORE importing any app modules
-# This prevents InvalidRegionError during import
-# Override any existing malformed AWS_REGION
-os.environ["AWS_REGION"] = "us-east-1"
-os.environ["AWS_ACCESS_KEY_ID"] = "test_access_key"
-os.environ["AWS_SECRET_ACCESS_KEY"] = "test_secret_key"
-os.environ["AWS_S3_BUCKET_NAME"] = "test-bucket"
+# Set mock GCP credentials BEFORE importing any app modules
+os.environ["GCP_PROJECT_ID"] = "test-project"
+os.environ["GCP_REGION"] = "us-central1"
+os.environ["GCP_STORAGE_BUCKET"] = "test-bucket"
 
 # Set test DATABASE_URL to prevent validation errors during import
 # Individual tests will override this with their own test databases

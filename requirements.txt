@@ -16,8 +16,10 @@ alembic>=1.17.1
 python-jose[cryptography]>=3.5.0
 passlib[bcrypt]>=1.7.4
 
-# AWS Services
-boto3>=1.40.71
+# Google Cloud Platform
+google-cloud-storage>=2.14.0
+google-cloud-kms>=2.19.0
+google-cloud-logging>=3.9.0
 
 # Google APIs
 google-api-python-client>=2.187.0
