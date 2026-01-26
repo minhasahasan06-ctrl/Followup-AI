@@ -31,26 +31,27 @@ import FAQ from "@/pages/FAQ";
 import Documentation from "@/pages/Documentation";
 import API from "@/pages/API";
 import Blog from "@/pages/Blog";
+import Contact from "@/pages/Contact";
 import Dashboard from "@/pages/Dashboard";
-import Chat from "@/pages/Chat";
+import AgentHub from "@/pages/AgentHub";
+import DemoFlow from "@/pages/DemoFlow";
 import Wellness from "@/pages/Wellness";
 import Files from "@/pages/Files";
 import Profile from "@/pages/Profile";
-import DoctorWellness from "@/pages/DoctorWellness";
 import ReceptionistDashboard from "@/pages/ReceptionistDashboard";
 import CalendarSync from "@/pages/CalendarSync";
 import PatientReview from "@/pages/PatientReview";
 import ResearchCenter from "@/pages/ResearchCenter";
-import Counseling from "@/pages/Counseling";
 import ConsentManagement from "@/pages/ConsentManagement";
+import ResearchConsentSettings from "@/pages/ResearchConsentSettings";
 import WearableDevices from "@/pages/WearableDevices";
+import DeviceConnect from "@/pages/DeviceConnect";
 import Referrals from "@/pages/Referrals";
 import Wallet from "@/pages/Wallet";
 import AdminVerification from "@/pages/AdminVerification";
 import TwoFactorAuth from "@/pages/TwoFactorAuth";
-import MedicalFiles from "@/pages/MedicalFiles";
-import ImmuneMonitoring from "@/pages/ImmuneMonitoring";
-import EnvironmentalRiskMap from "@/pages/EnvironmentalRiskMap";
+import PatientRecords from "@/pages/PatientRecords";
+import RiskExposures from "@/pages/RiskExposures";
 import CorrelationInsights from "@/pages/CorrelationInsights";
 import NutritionInsights from "@/pages/NutritionInsights";
 import HealthCompanion from "@/pages/HealthCompanion";
@@ -60,6 +61,7 @@ import DoctorSearch from "@/pages/DoctorSearch";
 import DoctorProfile from "@/pages/DoctorProfile";
 import MyDoctors from "@/pages/MyDoctors";
 import ConsultationRequests from "@/pages/ConsultationRequests";
+import VideoConsultation from "@/pages/VideoConsultation";
 import PainDetection from "@/pages/PainDetection";
 import Medications from "@/pages/Medications";
 import DoctorMedicationReport from "@/pages/DoctorMedicationReport";
@@ -74,25 +76,33 @@ import DailyFollowup from "@/pages/DailyFollowup";
 import DailyFollowupHistory from "@/pages/DailyFollowupHistory";
 import MentalHealth from "@/pages/MentalHealth";
 import Prescriptions from "@/pages/Prescriptions";
-import DrugInteractions from "@/pages/DrugInteractions";
 import MLMonitoring from "@/pages/MLMonitoring";
+import MLInsightsPage from "@/pages/MLInsightsPage";
+import AdminMLTrainingHub from "@/pages/AdminMLTrainingHub";
+import MedicalNLPDashboard from "@/pages/MedicalNLPDashboard";
+import TinkerDashboard from "@/pages/TinkerDashboard";
+import PatientPrivacyResearch from "@/pages/PatientPrivacyResearch";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/daily-followup" component={DailyFollowupHistory} />
       <Route path="/daily-followup/video-exam" component={DailyFollowup} />
-      <Route path="/chat" component={Chat} />
+      <Route path="/agent-hub" component={AgentHub} />
       <Route path="/medications" component={Medications} />
-      <Route path="/prescriptions" component={Prescriptions} />
-      <Route path="/drug-interactions" component={DrugInteractions} />
+      <Route path="/patient-records" component={PatientRecords} />
+      <Route path="/prescriptions" component={PatientRecords} />
+      <Route path="/medical-files" component={PatientRecords} />
       <Route path="/deterioration" component={DeteriorationDashboard} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
+      <Route path="/ml-insights" component={MLInsightsPage} />
       <Route path="/ai-video" component={AIVideoDashboard} />
       <Route path="/ai-audio" component={AIAudioDashboard} />
       <Route path="/guided-exam" component={GuidedVideoExam} />
+      <Route path="/guided-video-exam" component={GuidedVideoExam} />
       <Route path="/guided-audio-exam" component={GuidedAudioExam} />
       <Route path="/behavioral-ai-insights" component={BehavioralAIInsights} />
       <Route path="/mental-health" component={MentalHealth} />
@@ -101,17 +111,19 @@ function PatientRouter() {
       <Route path="/doctor/:doctorId" component={DoctorProfile} />
       <Route path="/my-doctors" component={MyDoctors} />
       <Route path="/consultation-requests" component={ConsultationRequests} />
+      <Route path="/video-consultation/:consultationId" component={VideoConsultation} />
       <Route path="/wellness/:type?" component={Wellness} />
-      <Route path="/counseling" component={Counseling} />
       <Route path="/consents" component={ConsentManagement} />
-      <Route path="/medical-files" component={MedicalFiles} />
+      <Route path="/research-consent" component={ResearchConsentSettings} />
+      <Route path="/privacy-research" component={PatientPrivacyResearch} />
       <Route path="/wearables" component={WearableDevices} />
-      <Route path="/immune-monitoring" component={ImmuneMonitoring} />
-      <Route path="/environmental-risk" component={EnvironmentalRiskMap} />
+      <Route path="/device-connect" component={DeviceConnect} />
+      <Route path="/risk-exposures" component={RiskExposures} />
       <Route path="/correlation-insights" component={CorrelationInsights} />
       <Route path="/nutrition-insights" component={NutritionInsights} />
       <Route path="/health-companion" component={HealthCompanion} />
       <Route path="/voice-followups" component={VoiceFollowups} />
+      <Route path="/demo-flow" component={DemoFlow} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/security/2fa" component={TwoFactorAuth} />
@@ -125,20 +137,40 @@ function DoctorRouter() {
   return (
     <Switch>
       <Route path="/" component={ReceptionistDashboard} />
+      <Route path="/dashboard" component={ReceptionistDashboard} />
+      <Route path="/daily-followup" component={DailyFollowupHistory} />
       <Route path="/ai-alerts" component={AIAlertsDashboard} />
       <Route path="/prescriptions" component={Prescriptions} />
-      <Route path="/drug-interactions" component={DrugInteractions} />
       <Route path="/calendar-sync" component={CalendarSync} />
-      <Route path="/doctor-wellness" component={DoctorWellness} />
+      <Route path="/video-consultation/:consultationId" component={VideoConsultation} />
       <Route path="/doctor/patient/:id" component={PatientReview} />
+      <Route path="/doctor/patient/:patientId/ml-insights" component={MLInsightsPage} />
       <Route path="/doctor/medication-report/:id" component={DoctorMedicationReport} />
       <Route path="/research" component={ResearchCenter} />
       <Route path="/ml-monitoring" component={MLMonitoring} />
-      <Route path="/chat" component={Chat} />
-      <Route path="/counseling" component={Counseling} />
+      <Route path="/medical-nlp" component={MedicalNLPDashboard} />
+      <Route path="/agent-hub" component={AgentHub} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/wallet" component={Wallet} />
       <Route path="/admin/verify-doctors" component={AdminVerification} />
+      <Route path="/security/2fa" component={TwoFactorAuth} />
+      <Route path="/profile" component={Profile} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function AdminRouter() {
+  return (
+    <Switch>
+      <Route path="/" component={AdminMLTrainingHub} />
+      <Route path="/ml-training" component={AdminMLTrainingHub} />
+      <Route path="/ml-monitoring" component={MLMonitoring} />
+      <Route path="/medical-nlp" component={MedicalNLPDashboard} />
+      <Route path="/tinker" component={TinkerDashboard} />
+      <Route path="/research" component={ResearchCenter} />
+      <Route path="/admin/verify-doctors" component={AdminVerification} />
+      <Route path="/agent-hub" component={AgentHub} />
       <Route path="/security/2fa" component={TwoFactorAuth} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />
@@ -155,7 +187,7 @@ function AuthenticatedApp() {
   };
 
   // Public routes that don't require auth
-  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/verify-phone", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog"];
+  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/verify-phone", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/contact"];
   const isPublicRoute = publicRoutes.includes(location) || (!user && location === "/");
 
   // Show loading while checking auth
@@ -194,6 +226,7 @@ function AuthenticatedApp() {
         <Route path="/documentation" component={Documentation} />
         <Route path="/api" component={API} />
         <Route path="/blog" component={Blog} />
+        <Route path="/contact" component={Contact} />
         <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>
@@ -212,6 +245,13 @@ function AuthenticatedApp() {
   }
 
   const isDoctor = user.role === "doctor";
+  const isAdmin = user.role === "admin";
+
+  const getRouter = () => {
+    if (isAdmin) return <AdminRouter />;
+    if (isDoctor) return <DoctorRouter />;
+    return <PatientRouter />;
+  };
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
@@ -223,7 +263,7 @@ function AuthenticatedApp() {
             <ThemeToggle />
           </header>
           <main className="flex-1 overflow-auto p-6">
-            {isDoctor ? <DoctorRouter /> : <PatientRouter />}
+            {getRouter()}
           </main>
         </div>
       </div>

@@ -1,13 +1,19 @@
-import twilio from 'twilio';
 import type { Storage } from './storage';
 import OpenAI from 'openai';
 import { format, addDays, parseISO, startOfDay, endOfDay } from 'date-fns';
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
-const twilioClient = accountSid && authToken ? twilio(accountSid, authToken) : null;
+// Twilio integration disabled - using stub
+const twilioClient = {
+  messages: {
+    create: async (opts: any) => {
+      console.warn('[TWILIO] WhatsApp messaging disabled - Twilio removed from dependencies');
+      console.log('[TWILIO] Would send WhatsApp message:', { to: opts.to, body: opts.body?.substring(0, 50) + '...' });
+      return { sid: 'mock-sid-' + Date.now(), status: 'stub' };
+    }
+  }
+};
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,

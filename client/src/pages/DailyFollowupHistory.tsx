@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Link } from 'wouter';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Link, useLocation } from 'wouter';
+import { queryClient, apiRequest } from '@/lib/queryClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useToast } from '@/hooks/use-toast';
+import { DeviceDataManager } from '@/components/DeviceDataManager';
+import { AutopilotInsightsTab, NotificationsBell } from '@/components/autopilot/AutopilotInsightsTab';
+import { useAutopilotSignal } from '@/hooks/useAutopilotSignal';
 import {
   LineChart,
   Line,
@@ -55,6 +62,14 @@ import {
   Footprints,
   MessageSquare,
   AlertTriangle,
+  Target,
+  ChevronDown,
+  ChevronUp,
+  Shield,
+  Bell,
+  ListChecks,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { format, subDays, subMonths, subYears, isWithinInterval, startOfDay, endOfDay, parseISO } from 'date-fns';
@@ -150,10 +165,427 @@ function StatCard({ label, value, unit, icon: Icon, trend, color = "text-primary
   );
 }
 
+interface AutopilotState {
+  patient_id: string;
+  risk_score: number;
+  risk_state: string;
+  risk_components: Record<string, number>;
+  top_risk_components: Array<{ name: string; value: number }>;
+  next_followup_at: string | null;
+  last_updated: string | null;
+  last_checkin_at: string | null;
+  model_version: string;
+  confidence: number;
+}
+
+interface AutopilotTask {
+  id: string;
+  task_description: string;
+  priority: string;
+  trigger_type: string;
+  completed: boolean;
+  created_at: string;
+}
+
+interface AutopilotData {
+  patient_state: AutopilotState;
+  today_tasks: AutopilotTask[];
+  pending_task_count: number;
+  has_urgent_tasks: boolean;
+  wellness_disclaimer: string;
+}
+
+function getRiskColor(score: number): string {
+  if (score <= 3) return 'text-chart-2';
+  if (score <= 6) return 'text-yellow-500';
+  if (score <= 9) return 'text-orange-500';
+  return 'text-destructive';
+}
+
+function getRiskBgColor(score: number): string {
+  if (score <= 3) return 'bg-chart-2/10 border-chart-2/30';
+  if (score <= 6) return 'bg-yellow-500/10 border-yellow-500/30';
+  if (score <= 9) return 'bg-orange-500/10 border-orange-500/30';
+  return 'bg-destructive/10 border-destructive/30';
+}
+
+function getPriorityBadge(priority: string) {
+  switch (priority?.toLowerCase()) {
+    case 'critical':
+    case 'high':
+      return <Badge variant="destructive" className="text-xs">Urgent</Badge>;
+    case 'medium':
+      return <Badge className="bg-yellow-500/20 text-yellow-600 text-xs">Medium</Badge>;
+    default:
+      return <Badge variant="secondary" className="text-xs">Normal</Badge>;
+  }
+}
+
+function AutopilotSection({ 
+  data, 
+  isLoading,
+  isError, 
+  onRefresh, 
+  onTaskComplete,
+  isRefreshing,
+  isBackendStarting,
+  retryCount
+}: { 
+  data: AutopilotData | undefined;
+  isLoading: boolean;
+  isError?: boolean;
+  onRefresh: () => void;
+  onTaskComplete: (taskId: string) => void;
+  isRefreshing: boolean;
+  isBackendStarting?: boolean;
+  retryCount?: number;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  if (isLoading || isBackendStarting) {
+    return (
+      <Card className="border-primary/30 bg-primary/5">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-primary/10">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              </div>
+              <div>
+                <p className="font-medium">
+                  {isBackendStarting ? 'Starting Secure Services' : 'Loading Autopilot'}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {isBackendStarting 
+                    ? 'Initializing HIPAA-compliant AI models. This may take up to 45 seconds on first load.'
+                    : 'Loading your personalized follow-up status...'}
+                </p>
+                {retryCount && retryCount > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Connection attempt {retryCount}/5...
+                  </p>
+                )}
+              </div>
+            </div>
+            <Shield className="h-6 w-6 text-primary/50" />
+          </div>
+          {isBackendStarting && (
+            <Progress value={(retryCount || 1) * 20} className="mt-4 h-1" />
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError && !isBackendStarting) {
+    return (
+      <Card className="border-destructive/50">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-destructive/10">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <p className="font-medium">Autopilot Unavailable</p>
+                <p className="text-sm text-muted-foreground">
+                  Unable to load your personalized follow-up data. Please try again.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={onRefresh} data-testid="button-retry-autopilot">
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Retry
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-full bg-muted">
+              <Target className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="font-medium">Autopilot Initializing</p>
+              <p className="text-sm text-muted-foreground">
+                Your personalized follow-up system is learning from your health data.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { patient_state, today_tasks, pending_task_count, has_urgent_tasks } = data;
+  const riskScore = patient_state?.risk_score || 0;
+  const riskState = patient_state?.risk_state || 'Stable';
+
+  return (
+    <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+      <Card className={`${getRiskBgColor(riskScore)} transition-colors`}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-full ${riskScore <= 3 ? 'bg-chart-2/20' : riskScore <= 6 ? 'bg-yellow-500/20' : 'bg-destructive/20'}`}>
+                <Sparkles className={`h-5 w-5 ${getRiskColor(riskScore)}`} />
+              </div>
+              <div>
+                <CardTitle className="flex items-center gap-2" data-testid="text-autopilot-title">
+                  Followup Autopilot
+                  {has_urgent_tasks && (
+                    <Badge variant="destructive" className="text-xs animate-pulse">
+                      <Bell className="h-3 w-3 mr-1" />
+                      Urgent
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  ML-powered adaptive follow-up system
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+                disabled={isRefreshing}
+                data-testid="button-refresh-autopilot"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </Button>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="icon" data-testid="button-expand-autopilot">
+                  {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+          </div>
+        </CardHeader>
+        
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="flex items-center gap-2 mb-1">
+                <Target className={`h-4 w-4 ${getRiskColor(riskScore)}`} />
+                <span className="text-xs text-muted-foreground">Risk Score</span>
+              </div>
+              <div className={`text-2xl font-bold ${getRiskColor(riskScore)}`} data-testid="text-risk-score">
+                {riskScore.toFixed(1)}
+                <span className="text-sm font-normal text-muted-foreground">/15</span>
+              </div>
+            </div>
+            
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="flex items-center gap-2 mb-1">
+                <Shield className="h-4 w-4 text-primary" />
+                <span className="text-xs text-muted-foreground">Status</span>
+              </div>
+              <div className="text-lg font-semibold" data-testid="text-risk-state">{riskState}</div>
+            </div>
+            
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="flex items-center gap-2 mb-1">
+                <ListChecks className="h-4 w-4 text-primary" />
+                <span className="text-xs text-muted-foreground">Pending Tasks</span>
+              </div>
+              <div className="text-lg font-semibold" data-testid="text-pending-tasks">{pending_task_count}</div>
+            </div>
+            
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="flex items-center gap-2 mb-1">
+                <Clock className="h-4 w-4 text-primary" />
+                <span className="text-xs text-muted-foreground">Next Follow-up</span>
+              </div>
+              <div className="text-sm font-medium" data-testid="text-next-followup">
+                {patient_state?.next_followup_at 
+                  ? format(new Date(patient_state.next_followup_at), 'MMM d, h:mm a')
+                  : 'Not scheduled'}
+              </div>
+            </div>
+          </div>
+
+          {patient_state?.top_risk_components?.length > 0 && (
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <p className="text-xs text-muted-foreground mb-2">Top Contributing Factors</p>
+              <div className="flex flex-wrap gap-2">
+                {patient_state.top_risk_components.map((component, idx) => (
+                  <Badge key={idx} variant="outline" className="text-xs">
+                    {component.name}: {component.value.toFixed(0)}%
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {today_tasks?.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium flex items-center gap-2">
+                <ListChecks className="h-4 w-4" />
+                Today's Adaptive Tasks
+              </p>
+              <div className="space-y-2">
+                {today_tasks.slice(0, isExpanded ? undefined : 3).map((task) => (
+                  <div 
+                    key={task.id} 
+                    className={`flex items-start gap-3 p-3 rounded-lg border bg-background/50 ${
+                      task.completed ? 'opacity-60' : ''
+                    }`}
+                    data-testid={`task-item-${task.id}`}
+                  >
+                    <Checkbox
+                      checked={task.completed}
+                      onCheckedChange={() => !task.completed && onTaskComplete(task.id)}
+                      disabled={task.completed}
+                      data-testid={`checkbox-task-${task.id}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm ${task.completed ? 'line-through text-muted-foreground' : ''}`}>
+                        {task.task_description}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {getPriorityBadge(task.priority)}
+                        <span className="text-xs text-muted-foreground">
+                          {task.trigger_type?.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    </div>
+                    {task.completed && (
+                      <CheckCircle2 className="h-4 w-4 text-chart-2 shrink-0" />
+                    )}
+                  </div>
+                ))}
+              </div>
+              {today_tasks.length > 3 && !isExpanded && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="w-full text-xs"
+                  onClick={() => setIsExpanded(true)}
+                  data-testid="button-show-more-tasks"
+                >
+                  Show {today_tasks.length - 3} more tasks
+                </Button>
+              )}
+            </div>
+          )}
+
+          <CollapsibleContent className="space-y-4 pt-2">
+            {patient_state?.risk_components && Object.keys(patient_state.risk_components).length > 0 && (
+              <div className="p-4 rounded-lg bg-background/50 border">
+                <p className="text-sm font-medium mb-3">Risk Breakdown by Category</p>
+                <div className="space-y-3">
+                  {Object.entries(patient_state.risk_components)
+                    .sort(([,a], [,b]) => b - a)
+                    .map(([category, value]) => (
+                      <div key={category} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="capitalize">{category.replace(/_/g, ' ')}</span>
+                          <span className={getRiskColor(value / 6.67)}>{value.toFixed(0)}%</span>
+                        </div>
+                        <Progress value={value} className="h-2" />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="p-3 rounded-lg bg-background/50 border">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Model Version:</span>
+                  <span className="ml-2 font-mono">{patient_state?.model_version || '1.0.0'}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Confidence:</span>
+                  <span className="ml-2">{((patient_state?.confidence || 0.5) * 100).toFixed(0)}%</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Last Updated:</span>
+                  <span className="ml-2">
+                    {patient_state?.last_updated 
+                      ? format(new Date(patient_state.last_updated), 'MMM d, h:mm a')
+                      : 'N/A'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Last Check-in:</span>
+                  <span className="ml-2">
+                    {patient_state?.last_checkin_at 
+                      ? format(new Date(patient_state.last_checkin_at), 'MMM d, h:mm a')
+                      : 'N/A'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CollapsibleContent>
+        </CardContent>
+      </Card>
+    </Collapsible>
+  );
+}
+
+const TAB_MAP: Record<string, string> = {
+  device: 'device',
+  symptoms: 'symptoms',
+  video: 'video-ai',
+  video_ai: 'video-ai',
+  audio: 'audio-ai',
+  audio_ai: 'audio-ai',
+  pain: 'paintrack',
+  paintrack: 'paintrack',
+  mental_health: 'mental-health',
+  mental: 'mental-health',
+  'mental-health': 'mental-health',
+  autopilot: 'autopilot',
+  insights: 'autopilot',
+  medications: 'device',
+  risk_exposures: 'device',
+};
+
+function useQueryParam(key: string): string | null {
+  const [location] = useLocation();
+  const [value, setValue] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get(key);
+  });
+  
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setValue(new URLSearchParams(window.location.search).get(key));
+  }, [location, key]);
+  
+  return value;
+}
+
 export default function DailyFollowupHistory() {
   const { user } = useAuth();
   const [timeRange, setTimeRange] = useState('30');
-  const [activeTab, setActiveTab] = useState('device');
+  
+  const tabParam = useQueryParam('tab');
+  const [activeTab, setActiveTab] = useState(() => {
+    return tabParam ? (TAB_MAP[tabParam] || 'device') : 'device';
+  });
+  
+  useEffect(() => {
+    if (tabParam) {
+      const mappedTab = TAB_MAP[tabParam] || 'device';
+      if (mappedTab !== activeTab) {
+        setActiveTab(mappedTab);
+      }
+    }
+  }, [tabParam]);
+  
+  const { sendDeviceSignal, sendSymptomSignal, sendPainSignal, sendMentalHealthSignal, sendVideoSignal, sendAudioSignal } = useAutopilotSignal();
+  
+  const lastSentDataRef = useRef<Record<string, string>>({});
 
   const selectedRange = TIME_RANGES.find(r => r.value === timeRange) || TIME_RANGES[2];
   const daysLimit = selectedRange.days === Infinity ? 3650 : selectedRange.days;
@@ -194,6 +626,57 @@ export default function DailyFollowupHistory() {
   });
 
   const videoLoading = videoMetricsLoading || videoSessionsLoading;
+
+  const patientId = user?.id || user?.sub || 'demo-patient';
+  const { toast } = useToast();
+  const [isRefreshingAutopilot, setIsRefreshingAutopilot] = useState(false);
+
+  const { data: autopilotData, isLoading: autopilotLoading, isError: autopilotError, refetch: refetchAutopilot, isFetching, status, fetchStatus } = useQuery<AutopilotData>({
+    queryKey: [`/api/v1/followup-autopilot/patients/${patientId}/autopilot`],
+    enabled: !!user && !!patientId && patientId !== 'demo-patient',
+    retry: 5,
+    retryDelay: (attemptIndex) => Math.min(2000 * Math.pow(1.5, attemptIndex), 15000),
+    staleTime: 30000,
+    gcTime: 60000,
+  });
+
+  const isAutopilotStarting = status === 'pending' && fetchStatus === 'fetching' && !autopilotData;
+  const autopilotRetryCount = 0;
+
+  const completeTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const url = `/api/v1/followup-autopilot/patients/${patientId}/tasks/${taskId}/complete`;
+      const res = await apiRequest(url, { method: 'POST', json: {} });
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/v1/followup-autopilot/patients/${patientId}/autopilot`] });
+      toast({
+        title: "Task Completed",
+        description: "Great job completing your follow-up task!",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to complete task. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleRefreshAutopilot = async () => {
+    setIsRefreshingAutopilot(true);
+    try {
+      await refetchAutopilot();
+    } finally {
+      setIsRefreshingAutopilot(false);
+    }
+  };
+
+  const handleTaskComplete = (taskId: string) => {
+    completeTaskMutation.mutate(taskId);
+  };
 
   const filterByTimeRange = (data: any[], dateField: string = 'createdAt') => {
     if (!data || selectedRange.days === Infinity) return data || [];
@@ -366,6 +849,101 @@ export default function DailyFollowupHistory() {
     return { avg: avg.toFixed(1), min, max, trend: trend as 'up' | 'down' | 'stable' };
   };
 
+  useEffect(() => {
+    if (!deviceHistory?.length) return;
+    const latest = deviceHistory[0];
+    if (!latest) return;
+    const dataKey = `device_${latest.createdAt || latest.id}`;
+    if (lastSentDataRef.current.device === dataKey) return;
+    
+    sendDeviceSignal({
+      heartRate: latest.heartRate,
+      oxygenSaturation: latest.oxygenSaturation,
+      temperature: latest.temperature,
+      steps: latest.steps,
+      source: 'history_sync'
+    });
+    lastSentDataRef.current.device = dataKey;
+  }, [deviceHistory, sendDeviceSignal]);
+
+  useEffect(() => {
+    if (!filteredSymptoms?.length) return;
+    const latest = filteredSymptoms[0];
+    if (!latest) return;
+    const dataKey = `symptom_${latest.timestamp || latest.id}`;
+    if (lastSentDataRef.current.symptom === dataKey) return;
+    
+    sendSymptomSignal({
+      painLevel: latest.painLevel,
+      fatigueLevel: latest.fatigueLevel,
+      symptoms: latest.symptoms || [],
+    });
+    lastSentDataRef.current.symptom = dataKey;
+  }, [filteredSymptoms, sendSymptomSignal]);
+
+  useEffect(() => {
+    if (!filteredPaintrack?.length) return;
+    const latest = filteredPaintrack[0];
+    if (!latest) return;
+    const dataKey = `pain_${latest.createdAt || latest.id}`;
+    if (lastSentDataRef.current.pain === dataKey) return;
+    
+    sendPainSignal({
+      vasScore: latest.patientVas || 0,
+      joint: latest.joint,
+      duration: latest.duration,
+    });
+    lastSentDataRef.current.pain = dataKey;
+  }, [filteredPaintrack, sendPainSignal]);
+
+  useEffect(() => {
+    if (!filteredMentalHealth?.length) return;
+    const latest = filteredMentalHealth[0];
+    if (!latest) return;
+    const dataKey = `mental_${latest.completed_at || latest.id}`;
+    if (lastSentDataRef.current.mental === dataKey) return;
+    
+    sendMentalHealthSignal({
+      questionnaireType: latest.questionnaire_type,
+      totalScore: latest.total_score,
+      maxScore: latest.max_score || 27,
+      severityLevel: latest.severity_level,
+    });
+    lastSentDataRef.current.mental = dataKey;
+  }, [filteredMentalHealth, sendMentalHealthSignal]);
+
+  useEffect(() => {
+    if (!filteredVideoSessions?.length) return;
+    const latest = filteredVideoSessions[0];
+    if (!latest) return;
+    const dataKey = `video_${latest.started_at || latest.id}`;
+    if (lastSentDataRef.current.video === dataKey) return;
+    
+    sendVideoSignal({
+      sessionId: latest.id,
+      respiratoryRisk: latest.respiratory_risk || 0,
+      tremorIndex: latest.tremor_index,
+      gaitScore: latest.gait_score,
+    });
+    lastSentDataRef.current.video = dataKey;
+  }, [filteredVideoSessions, sendVideoSignal]);
+
+  useEffect(() => {
+    if (!filteredVoice?.length) return;
+    const latest = filteredVoice[0];
+    if (!latest) return;
+    const dataKey = `audio_${latest.createdAt || latest.id}`;
+    if (lastSentDataRef.current.audio === dataKey) return;
+    
+    sendAudioSignal({
+      sessionId: latest.id,
+      emotionScore: latest.empathyLevel,
+      stressLevel: latest.stressLevel,
+      extractedSymptoms: latest.extractedSymptoms || [],
+    });
+    lastSentDataRef.current.audio = dataKey;
+  }, [filteredVoice, sendAudioSignal]);
+
   if (!user) {
     return (
       <div className="container mx-auto p-6 max-w-7xl">
@@ -396,6 +974,9 @@ export default function DailyFollowupHistory() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {patientId && patientId !== 'demo-patient' && (
+            <NotificationsBell patientId={patientId} />
+          )}
           <Select value={timeRange} onValueChange={setTimeRange}>
             <SelectTrigger className="w-[140px]" data-testid="select-time-range">
               <Calendar className="h-4 w-4 mr-2" />
@@ -413,6 +994,17 @@ export default function DailyFollowupHistory() {
       </div>
 
       <LegalDisclaimer />
+
+      <AutopilotSection
+        data={autopilotData}
+        isLoading={autopilotLoading}
+        isError={autopilotError}
+        onRefresh={handleRefreshAutopilot}
+        onTaskComplete={handleTaskComplete}
+        isRefreshing={isRefreshingAutopilot || completeTaskMutation.isPending}
+        isBackendStarting={isAutopilotStarting}
+        retryCount={autopilotRetryCount}
+      />
 
       {isNewPatient && (
         <Card className="border-primary/20 bg-primary/5">
@@ -461,113 +1053,136 @@ export default function DailyFollowupHistory() {
             <Brain className="h-3 w-3 mr-1" />
             Mental Health
           </TabsTrigger>
+          <TabsTrigger value="autopilot" data-testid="tab-autopilot-insights" className="flex-1 min-w-[100px]">
+            <Sparkles className="h-3 w-3 mr-1" />
+            Insights
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="device" className="space-y-4">
-          {deviceLoading ? (
-            <Card><CardContent className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" /></CardContent></Card>
-          ) : filteredDeviceHistory?.length > 0 ? (
-            <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard 
-                  label="Avg Heart Rate" 
-                  value={calculateStats(filteredDeviceHistory, 'heartRate').avg} 
-                  unit="bpm"
-                  icon={Heart}
-                  trend={calculateStats(filteredDeviceHistory, 'heartRate').trend}
-                  color="text-rose-500"
-                />
-                <StatCard 
-                  label="Avg SpO2" 
-                  value={calculateStats(filteredDeviceHistory, 'oxygenSaturation').avg} 
-                  unit="%"
-                  icon={Wind}
-                  trend={calculateStats(filteredDeviceHistory, 'oxygenSaturation').trend}
-                  color="text-blue-500"
-                />
-                <StatCard 
-                  label="Avg Temperature" 
-                  value={calculateStats(filteredDeviceHistory, 'temperature').avg} 
-                  unit="°F"
-                  icon={Thermometer}
-                  trend={calculateStats(filteredDeviceHistory, 'temperature').trend}
-                  color="text-orange-500"
-                />
-                <StatCard 
-                  label="Total Steps" 
-                  value={filteredDeviceHistory.reduce((sum, d) => sum + (d.steps || 0), 0).toLocaleString()} 
-                  icon={Footprints}
-                  color="text-chart-2"
-                />
-              </div>
+          <Tabs defaultValue="medical-devices" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 max-w-md">
+              <TabsTrigger value="medical-devices" data-testid="subtab-medical-devices">
+                <Heart className="h-3 w-3 mr-1" />
+                Medical Devices
+              </TabsTrigger>
+              <TabsTrigger value="wearable-trends" data-testid="subtab-wearable-trends">
+                <BarChart3 className="h-3 w-3 mr-1" />
+                Wearable Trends
+              </TabsTrigger>
+            </TabsList>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5" />
-                    Device Data Trends
-                  </CardTitle>
-                  <CardDescription>
-                    {filteredDeviceHistory.length} data points over {selectedRange.label.toLowerCase()}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={deviceChartData}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis dataKey="date" className="text-xs" />
-                        <YAxis className="text-xs" />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'hsl(var(--card))', 
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '8px'
-                          }} 
-                        />
-                        <Legend />
-                        <Line type="monotone" dataKey="heartRate" name="Heart Rate (bpm)" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="spo2" name="SpO2 (%)" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
+            <TabsContent value="medical-devices" className="mt-4">
+              <DeviceDataManager />
+            </TabsContent>
+
+            <TabsContent value="wearable-trends" className="mt-4 space-y-4">
+              {deviceLoading ? (
+                <Card><CardContent className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" /></CardContent></Card>
+              ) : filteredDeviceHistory?.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <StatCard 
+                      label="Avg Heart Rate" 
+                      value={calculateStats(filteredDeviceHistory, 'heartRate').avg} 
+                      unit="bpm"
+                      icon={Heart}
+                      trend={calculateStats(filteredDeviceHistory, 'heartRate').trend}
+                      color="text-rose-500"
+                    />
+                    <StatCard 
+                      label="Avg SpO2" 
+                      value={calculateStats(filteredDeviceHistory, 'oxygenSaturation').avg} 
+                      unit="%"
+                      icon={Wind}
+                      trend={calculateStats(filteredDeviceHistory, 'oxygenSaturation').trend}
+                      color="text-blue-500"
+                    />
+                    <StatCard 
+                      label="Avg Temperature" 
+                      value={calculateStats(filteredDeviceHistory, 'temperature').avg} 
+                      unit="°F"
+                      icon={Thermometer}
+                      trend={calculateStats(filteredDeviceHistory, 'temperature').trend}
+                      color="text-orange-500"
+                    />
+                    <StatCard 
+                      label="Total Steps" 
+                      value={filteredDeviceHistory.reduce((sum, d) => sum + (d.steps || 0), 0).toLocaleString()} 
+                      icon={Footprints}
+                      color="text-chart-2"
+                    />
                   </div>
-                </CardContent>
-              </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Entries</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[200px]">
-                    <div className="space-y-2">
-                      {filteredDeviceHistory.slice(0, 10).map((entry: any, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                          <div className="flex items-center gap-3">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm">{format(new Date(entry.createdAt || entry.date), 'MMM d, yyyy h:mm a')}</span>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            {entry.heartRate && <span><Heart className="h-3 w-3 inline mr-1 text-rose-500" />{entry.heartRate} bpm</span>}
-                            {entry.oxygenSaturation && <span><Wind className="h-3 w-3 inline mr-1 text-blue-500" />{entry.oxygenSaturation}%</span>}
-                            {entry.steps && <span><Footprints className="h-3 w-3 inline mr-1 text-chart-2" />{entry.steps.toLocaleString()}</span>}
-                          </div>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <BarChart3 className="h-5 w-5" />
+                        Device Data Trends
+                      </CardTitle>
+                      <CardDescription>
+                        {filteredDeviceHistory.length} data points over {selectedRange.label.toLowerCase()}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={deviceChartData}>
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                            <XAxis dataKey="date" className="text-xs" />
+                            <YAxis className="text-xs" />
+                            <Tooltip 
+                              contentStyle={{ 
+                                backgroundColor: 'hsl(var(--card))', 
+                                border: '1px solid hsl(var(--border))',
+                                borderRadius: '8px'
+                              }} 
+                            />
+                            <Legend />
+                            <Line type="monotone" dataKey="heartRate" name="Heart Rate (bpm)" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={false} />
+                            <Line type="monotone" dataKey="spo2" name="SpO2 (%)" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Recent Entries</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-[200px]">
+                        <div className="space-y-2">
+                          {filteredDeviceHistory.slice(0, 10).map((entry: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                              <div className="flex items-center gap-3">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm">{format(new Date(entry.createdAt || entry.date), 'MMM d, yyyy h:mm a')}</span>
+                              </div>
+                              <div className="flex items-center gap-4 text-sm">
+                                {entry.heartRate && <span><Heart className="h-3 w-3 inline mr-1 text-rose-500" />{entry.heartRate} bpm</span>}
+                                {entry.oxygenSaturation && <span><Wind className="h-3 w-3 inline mr-1 text-blue-500" />{entry.oxygenSaturation}%</span>}
+                                {entry.steps && <span><Footprints className="h-3 w-3 inline mr-1 text-chart-2" />{entry.steps.toLocaleString()}</span>}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </>
-          ) : (
-            <EmptyStatePrompt
-              icon={Heart}
-              title="No Device Data Yet"
-              description="Sync your wearable device to start tracking heart rate, SpO2, temperature, and activity levels."
-              actionLabel="Connect Wearable"
-              actionHref="/wearables"
-            />
-          )}
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </>
+              ) : (
+                <EmptyStatePrompt
+                  icon={Heart}
+                  title="No Wearable Data Yet"
+                  description="Sync your wearable device to start tracking heart rate, SpO2, temperature, and activity levels."
+                  actionLabel="Connect Wearable"
+                  actionHref="/wearables"
+                />
+              )}
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent value="symptoms" className="space-y-4">
@@ -1292,6 +1907,25 @@ export default function DailyFollowupHistory() {
             />
           )}
         </TabsContent>
+
+        <TabsContent value="autopilot" className="space-y-4">
+          <LegalDisclaimer />
+          {patientId && patientId !== 'demo-patient' ? (
+            <AutopilotInsightsTab patientId={patientId} />
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Sparkles className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <h3 className="font-semibold text-lg mb-2">Autopilot Insights</h3>
+                <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                  Log in to view your personalized wellness insights, risk history, and trigger events.
+                  The Autopilot system monitors your wellness patterns to help you stay on track.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
       </Tabs>
     </div>
   );

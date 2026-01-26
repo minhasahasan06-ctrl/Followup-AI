@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,63 +7,51 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Shield, Bell, Heart } from "lucide-react";
+import { User, Shield, Bell, Heart, Lock, Video, Clock, Stethoscope, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { PatientProfile, DoctorProfile } from "@shared/schema";
 import PhoneVerification from "@/components/PhoneVerification";
+import TrainingConsentSettings from "@/components/TrainingConsentSettings";
+import { PersonalizationToggle } from "@/components/PersonalizationToggle";
+import VideoSettingsPanel from "@/components/VideoSettingsPanel";
+import EnvironmentalAutoCreate from "@/components/EnvironmentalAutoCreate";
+import { AssignedDoctorCard } from "@/components/AssignedDoctorCard";
+import { AuditLogViewer } from "@/components/AuditLogViewer";
+import PatientMedicalInfoForm from "@/components/PatientMedicalInfoForm";
+import DoctorProfessionalInfoForm from "@/components/DoctorProfessionalInfoForm";
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, refetch: refetchUser } = useAuth();
   const { toast } = useToast();
   const isPatient = user?.role === "patient";
 
-  const { data: patientProfile } = useQuery<PatientProfile>({
-    queryKey: ["/api/patient/profile"],
-    enabled: isPatient,
-  });
+  const [firstName, setFirstName] = useState(user?.firstName || "");
+  const [lastName, setLastName] = useState(user?.lastName || "");
 
-  const { data: doctorProfile } = useQuery<DoctorProfile>({
-    queryKey: ["/api/doctor/profile"],
-    enabled: !isPatient,
-  });
+  useEffect(() => {
+    setFirstName(user?.firstName || "");
+    setLastName(user?.lastName || "");
+  }, [user?.firstName, user?.lastName]);
 
-  const updatePatientProfileMutation = useMutation({
-    mutationFn: async (data: Partial<PatientProfile>) => {
-      return await apiRequest("POST", "/api/patient/profile", data);
+  const updateAccountMutation = useMutation({
+    mutationFn: async (data: { first_name?: string; last_name?: string }) => {
+      const res = await apiRequest("/api/auth/me/update", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/patient/profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      if (refetchUser) refetchUser();
       toast({
-        title: "Profile updated",
-        description: "Your profile has been updated successfully",
+        title: "Account updated",
+        description: "Your name has been saved",
       });
     },
     onError: (error: Error) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to update profile",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const updateDoctorProfileMutation = useMutation({
-    mutationFn: async (data: Partial<DoctorProfile>) => {
-      return await apiRequest("POST", "/api/doctor/profile", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/doctor/profile"] });
-      toast({
-        title: "Profile updated",
-        description: "Your profile has been updated successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update profile",
+        description: error.message || "Failed to update account",
         variant: "destructive",
       });
     },
@@ -123,6 +111,32 @@ export default function Profile() {
             <Bell className="h-4 w-4 mr-2" />
             Notifications
           </TabsTrigger>
+          <TabsTrigger value="personalization" data-testid="tab-personalization">
+            <Shield className="h-4 w-4 mr-2" />
+            Personalization
+          </TabsTrigger>
+          {isPatient && (
+            <TabsTrigger value="privacy" data-testid="tab-privacy">
+              <Lock className="h-4 w-4 mr-2" />
+              Privacy & ML
+            </TabsTrigger>
+          )}
+          {isPatient && (
+            <TabsTrigger value="doctor" data-testid="tab-doctor">
+              <Stethoscope className="h-4 w-4 mr-2" />
+              My Doctor
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="activity" data-testid="tab-activity">
+            <Clock className="h-4 w-4 mr-2" />
+            Activity
+          </TabsTrigger>
+          {!isPatient && (
+            <TabsTrigger value="video" data-testid="tab-video">
+              <Video className="h-4 w-4 mr-2" />
+              Video Visits
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="account">
@@ -137,7 +151,8 @@ export default function Profile() {
                   <Label htmlFor="firstName">First Name</Label>
                   <Input
                     id="firstName"
-                    defaultValue={user?.firstName || ""}
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
                     data-testid="input-first-name"
                   />
                 </div>
@@ -145,7 +160,8 @@ export default function Profile() {
                   <Label htmlFor="lastName">Last Name</Label>
                   <Input
                     id="lastName"
-                    defaultValue={user?.lastName || ""}
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
                     data-testid="input-last-name"
                   />
                 </div>
@@ -155,94 +171,23 @@ export default function Profile() {
                 <Input id="email" type="email" defaultValue={user?.email || ""} disabled />
                 <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>
-              <Button data-testid="button-save-account">Save Changes</Button>
+              <Button 
+                onClick={() => updateAccountMutation.mutate({ first_name: firstName, last_name: lastName })}
+                disabled={updateAccountMutation.isPending}
+                data-testid="button-save-account"
+              >
+                {updateAccountMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save Account
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="medical">
           {isPatient ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Medical Information</CardTitle>
-                <CardDescription>Manage your health profile and medical history</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="condition">Immunocompromised Condition</Label>
-                  <Input
-                    id="condition"
-                    placeholder="e.g., Primary immunodeficiency"
-                    defaultValue={patientProfile?.immunocompromisedCondition || ""}
-                    data-testid="input-condition"
-                  />
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="city">City</Label>
-                    <Input
-                      id="city"
-                      placeholder="Your city"
-                      defaultValue={patientProfile?.city || ""}
-                      data-testid="input-city"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="state">State</Label>
-                    <Input
-                      id="state"
-                      placeholder="State"
-                      defaultValue={patientProfile?.state || ""}
-                      data-testid="input-state"
-                    />
-                  </div>
-                </div>
-                <Button data-testid="button-save-medical">Save Medical Information</Button>
-              </CardContent>
-            </Card>
+            <PatientMedicalInfoForm />
           ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Professional Information</CardTitle>
-                <CardDescription>Manage your medical credentials and specialties</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="license">Medical License Number</Label>
-                  <Input
-                    id="license"
-                    defaultValue={user?.medicalLicenseNumber || ""}
-                    disabled
-                    data-testid="input-license"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    License number cannot be changed. Contact support for updates.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bio">Bio</Label>
-                  <Input
-                    id="bio"
-                    placeholder="Brief professional bio"
-                    defaultValue={doctorProfile?.bio || ""}
-                    data-testid="input-bio"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="linkedin">LinkedIn Profile</Label>
-                  <Input
-                    id="linkedin"
-                    placeholder="https://www.linkedin.com/in/yourprofile"
-                    defaultValue={doctorProfile?.linkedinUrl || ""}
-                    data-testid="input-linkedin"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Add your LinkedIn profile URL to help patients learn more about you
-                  </p>
-                </div>
-                <Button data-testid="button-save-professional">Save Professional Information</Button>
-              </CardContent>
-            </Card>
+            <DoctorProfessionalInfoForm />
           )}
         </TabsContent>
 
@@ -287,6 +232,55 @@ export default function Profile() {
             </Card>
           </div>
         </TabsContent>
+
+        <TabsContent value="personalization">
+          <div className="space-y-4">
+            <PersonalizationToggle />
+            {isPatient ? (
+              <div className="mt-4">
+                <EnvironmentalAutoCreate patientId={user?.id} />
+              </div>
+            ) : (
+              <div className="mt-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Environment Auto-Create</CardTitle>
+                    <CardDescription>
+                      Clinicians can auto-create an environmental profile for patients from the patient management panel.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      To create or update an environmental profile for a patient, open the patient in the Doctor Patient Management Panel and use the "Auto-create Environmental Profile" action.
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {isPatient && (
+          <TabsContent value="privacy">
+            <TrainingConsentSettings />
+          </TabsContent>
+        )}
+
+        {isPatient && (
+          <TabsContent value="doctor">
+            <AssignedDoctorCard />
+          </TabsContent>
+        )}
+
+        <TabsContent value="activity">
+          <AuditLogViewer />
+        </TabsContent>
+
+        {!isPatient && (
+          <TabsContent value="video">
+            <VideoSettingsPanel />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

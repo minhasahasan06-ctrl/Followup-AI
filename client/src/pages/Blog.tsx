@@ -7,8 +7,8 @@ import { ArrowRight, Calendar, Clock, User, Stethoscope, Shield, Activity, Heart
 const blogPosts = [
   {
     id: "early-infection-detection",
-    title: "Early Infection Detection in Immunocompromised Patients: Why Every Hour Matters",
-    excerpt: "For immunocompromised patients, early detection of infections can be the difference between a minor illness and a life-threatening emergency. Learn how AI-powered daily monitoring catches subtle warning signs before they escalate.",
+    title: "Early Infection Detection in Chronic Care Patients: Why Every Hour Matters",
+    excerpt: "For chronic care patients, early detection of infections can be the difference between a minor illness and a life-threatening emergency. Learn how AI-powered daily monitoring catches subtle warning signs before they escalate.",
     author: "Dr. Sarah Chen, MD",
     authorRole: "Infectious Disease Specialist",
     date: "March 15, 2025",
@@ -18,7 +18,7 @@ const blogPosts = [
     content: [
       {
         heading: "The Critical Window",
-        text: "When your immune system is compromised—whether from transplant medications, chemotherapy, or autoimmune treatments—your body's ability to fight infections is significantly reduced. What might be a mild cold for others can quickly progress to pneumonia or sepsis for immunocompromised patients."
+        text: "When you're managing complex health conditions—whether from transplant medications, chemotherapy, or autoimmune treatments—your body may be more susceptible to infections. What might be a mild cold for others can quickly progress to pneumonia or sepsis for chronic care patients."
       },
       {
         heading: "Traditional Monitoring Falls Short",
@@ -34,11 +34,11 @@ const blogPosts = [
       },
       {
         heading: "What This Means for You",
-        text: "Daily check-ins aren't just about tracking—they're about protecting your health through early action. When Agent Clona detects concerning patterns, you and your healthcare team are alerted immediately, allowing for:\n\n• Early antibiotic intervention before infections spread\n• Adjustment of immunosuppressant doses when needed\n• Preventive measures before symptoms worsen\n• Peace of mind knowing you're being monitored every single day"
+        text: "Daily check-ins aren't just about tracking—they're about protecting your health through early action. When Agent Clona detects concerning patterns, you and your healthcare team are alerted immediately, allowing for:\n\n• Early antibiotic intervention before infections spread\n• Adjustment of medication doses when needed\n• Preventive measures before symptoms worsen\n• Peace of mind knowing you're being monitored every single day"
       },
       {
         heading: "The Science Behind the System",
-        text: "Followup AI uses advanced machine learning models trained on thousands of immunocompromised patient cases. The system learns your individual baseline and can detect deviations that might indicate infection—often before you even feel seriously ill. This personalized approach means the AI gets smarter about your health with every check-in."
+        text: "Followup AI uses advanced machine learning models trained on thousands of chronic care patient cases. The system learns your individual baseline and can detect deviations that might indicate infection—often before you even feel seriously ill. This personalized approach means the AI gets smarter about your health with every check-in."
       }
     ]
   },
@@ -84,9 +84,9 @@ const blogPosts = [
     ]
   },
   {
-    id: "mental-health-immunocompromised",
-    title: "Mental Health and Chronic Illness: Supporting Emotional Wellbeing in Immunocompromised Patients",
-    excerpt: "Living with a compromised immune system takes an emotional toll. Explore the connection between mental health and physical health outcomes, plus evidence-based strategies for psychological resilience.",
+    id: "mental-health-chronic-care",
+    title: "Mental Health and Chronic Illness: Supporting Emotional Wellbeing in Chronic Care Patients",
+    excerpt: "Living with complex health conditions takes an emotional toll. Explore the connection between mental health and physical health outcomes, plus evidence-based strategies for psychological resilience.",
     author: "Dr. Jennifer Park, PsyD",
     authorRole: "Clinical Psychologist, Chronic Illness Program",
     date: "March 5, 2025",
@@ -96,7 +96,7 @@ const blogPosts = [
     content: [
       {
         heading: "The Hidden Burden",
-        text: "When we think about immunocompromised health, we often focus on physical symptoms—infections, medications, lab values. But there's an equally important aspect that often goes unaddressed: mental health. Studies show that up to 60% of transplant recipients experience depression or anxiety, and rates are similarly high among cancer patients and those with autoimmune conditions."
+        text: "When we think about chronic care health, we often focus on physical symptoms—infections, medications, lab values. But there's an equally important aspect that often goes unaddressed: mental health. Studies show that up to 60% of transplant recipients experience depression or anxiety, and rates are similarly high among cancer patients and those with autoimmune conditions."
       },
       {
         heading: "Why Mental Health Matters for Physical Health",
@@ -104,7 +104,7 @@ const blogPosts = [
       },
       {
         heading: "Common Psychological Challenges",
-        text: "**Fear and Hypervigilance**: Many immunocompromised patients develop heightened anxiety about infections, leading to social isolation and constant worry about every symptom.\n\n**Loss of Identity**: Chronic illness can feel like it's taken over your life, leaving you wondering who you are beyond 'the patient.'\n\n**Social Isolation**: Avoiding crowds and sick people is medically necessary, but it can lead to profound loneliness.\n\n**Grief**: Grieving the loss of your pre-illness life, capabilities, and plans for the future is normal and valid.\n\n**Caregiver Burden**: For family members, the stress of caring for an immunocompromised loved one can lead to burnout."
+        text: "**Fear and Hypervigilance**: Many chronic care patients develop heightened anxiety about infections, leading to social isolation and constant worry about every symptom.\n\n**Loss of Identity**: Chronic illness can feel like it's taken over your life, leaving you wondering who you are beyond 'the patient.'\n\n**Social Isolation**: Avoiding crowds and sick people is sometimes medically necessary, but it can lead to profound loneliness.\n\n**Grief**: Grieving the loss of your pre-illness life, capabilities, and plans for the future is normal and valid.\n\n**Caregiver Burden**: For family members, the stress of caring for a chronically ill loved one can lead to burnout."
       },
       {
         heading: "Evidence-Based Coping Strategies",
@@ -120,11 +120,11 @@ const blogPosts = [
       },
       {
         heading: "Building Resilience",
-        text: "Living with a compromised immune system requires tremendous strength. Resilience isn't about being strong all the time—it's about having strategies to cope when things are hard. It's about acknowledging your struggles while also recognizing your capacity to adapt and thrive.\n\nRemember: taking care of your mental health isn't a luxury—it's an essential part of managing your physical health. You deserve support, compassion, and comprehensive care that addresses all aspects of your wellbeing."
+        text: "Living with complex health conditions requires tremendous strength. Resilience isn't about being strong all the time—it's about having strategies to cope when things are hard. It's about acknowledging your struggles while also recognizing your capacity to adapt and thrive.\n\nRemember: taking care of your mental health isn't a luxury—it's an essential part of managing your physical health. You deserve support, compassion, and comprehensive care that addresses all aspects of your wellbeing."
       },
       {
         heading: "Resources and Support",
-        text: "Followup AI connects you with:\n\n• Licensed mental health professionals\n• Peer support groups for immunocompromised patients\n• Educational resources about illness-related mental health\n• Crisis intervention services when needed\n• Family counseling for caregivers\n\nYou don't have to face this alone. Help is available, and seeking it is a sign of strength, not weakness."
+        text: "Followup AI connects you with:\n\n• Licensed mental health professionals\n• Peer support groups for chronic care patients\n• Educational resources about illness-related mental health\n• Crisis intervention services when needed\n• Family counseling for caregivers\n\nYou don't have to face this alone. Help is available, and seeking it is a sign of strength, not weakness."
       }
     ]
   }
@@ -163,9 +163,9 @@ export default function Blog() {
               <BookOpen className="h-4 w-4" />
               <span className="text-sm font-medium">Health Research & Insights</span>
             </div>
-            <h1 className="text-5xl font-bold mb-4" data-testid="text-blog-title">Immunocompromised Patient Care</h1>
+            <h1 className="text-5xl font-bold mb-4" data-testid="text-blog-title">Chronic Care Patient Resources</h1>
             <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-              Evidence-based insights, clinical research, and practical strategies for managing immunocompromised health. 
+              Evidence-based insights, clinical research, and practical strategies for managing chronic health conditions. 
               Written by healthcare professionals and backed by the latest medical research.
             </p>
           </div>
@@ -229,25 +229,27 @@ export default function Blog() {
           </div>
 
           {/* CTA Section */}
-          <div className="mt-16 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-lg p-8 border-2 border-primary/20 text-center">
-            <h3 className="text-2xl font-bold mb-4">Ready to Transform Your Health Management?</h3>
-            <p className="text-muted-foreground mb-6 max-w-2xl mx-auto">
-              Join thousands of immunocompromised patients using Followup AI for daily monitoring, early infection detection, 
-              and personalized health insights powered by advanced AI.
-            </p>
-            <div className="flex gap-4 justify-center flex-wrap">
-              <Link href="/">
-                <Button size="lg" className="gap-2" data-testid="button-get-started">
-                  Get Started Free
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Link href="/doctor-portal">
-                <Button size="lg" variant="outline" data-testid="button-for-doctors">
-                  For Healthcare Providers
-                </Button>
-              </Link>
-            </div>
+          <div className="mt-16 text-center">
+            <Card className="p-8 bg-primary/5 border-primary/20">
+              <h2 className="text-2xl font-bold mb-4">Ready to Take Control of Your Health?</h2>
+              <p className="text-muted-foreground mb-6 max-w-2xl mx-auto">
+                Join thousands of chronic care patients using Followup AI for daily monitoring, early infection detection,
+                and personalized health insights.
+              </p>
+              <div className="flex gap-4 justify-center flex-wrap">
+                <Link href="/signup/patient">
+                  <Button size="lg" data-testid="button-blog-signup">
+                    Start Free Trial
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+                <Link href="/">
+                  <Button variant="outline" size="lg" data-testid="button-blog-learn-more">
+                    Learn More
+                  </Button>
+                </Link>
+              </div>
+            </Card>
           </div>
         </div>
       </main>

@@ -28,7 +28,7 @@ export const users = pgTable("users", {
   resetTokenExpires: timestamp("reset_token_expires"),
   
   // Application-specific fields
-  role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient' or 'doctor'
+  role: varchar("role", { length: 10 }).notNull().default("patient"), // 'patient', 'doctor', or 'admin'
   
   // Doctor-specific fields
   organization: varchar("organization"), // Hospital/clinic name for doctors
@@ -90,7 +90,7 @@ export type UpsertUser = typeof users.$inferInsert;
 // Patient profiles
 export const patientProfiles = pgTable("patient_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
+  userId: varchar("user_id").notNull().unique().references(() => users.id),
   
   // Unique Followup AI Patient ID (e.g., FAI-ABC123) - generated on profile creation
   followupPatientId: varchar("followup_patient_id").unique(),
@@ -123,7 +123,7 @@ export type PatientProfile = typeof patientProfiles.$inferSelect;
 // Doctor profiles
 export const doctorProfiles = pgTable("doctor_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
+  userId: varchar("user_id").notNull().unique().references(() => users.id),
   linkedinProfileUrl: varchar("linkedin_profile_url"),
   specialties: jsonb("specialties").$type<string[]>(),
   education: jsonb("education").$type<Array<{ institution: string; degree: string; year: number }>>(),
@@ -297,7 +297,7 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 
-// Medications - Extended for complete lifecycle management
+// Medications - Extended for complete lifecycle management with chronic care support
 export const medications = pgTable("medications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   patientId: varchar("patient_id").notNull().references(() => users.id),
@@ -319,18 +319,58 @@ export const medications = pgTable("medications", {
   sourceDocumentId: varchar("source_document_id"), // Link to medical document if from upload
   sourcePrescriptionId: varchar("source_prescription_id"), // Link to prescription if from doctor
   
-  // Status and confirmation tracking
-  status: varchar("status").notNull().default("active"), // 'active', 'pending_confirmation', 'inactive'
+  // Status and confirmation tracking - Extended for chronic care
+  status: varchar("status").notNull().default("active"), // 'draft', 'scheduled', 'active', 'completed', 'expired', 'superseded', 'conflict_hold', 'discontinued'
   confirmedAt: timestamp("confirmed_at"),
   confirmedBy: varchar("confirmed_by"), // User ID who confirmed
   addedBy: varchar("added_by").notNull().default("patient"), // 'patient', 'doctor', 'system'
   autoDetected: boolean("auto_detected").default(false), // True if extracted from document
+  
+  // Chronic care - Duration and continuous medication tracking
+  isContinuous: boolean("is_continuous").default(false), // True for ongoing/indefinite medications
+  intendedStartDate: timestamp("intended_start_date"), // When patient plans to start
+  actualStartDate: timestamp("actual_start_date"), // When patient confirmed they started
+  durationDays: integer("duration_days"), // Null for continuous medications
+  computedEndDate: timestamp("computed_end_date"), // Auto-calculated: actualStartDate + durationDays
+  
+  // Multi-specialty tracking
+  specialty: varchar("specialty"), // 'cardiology', 'oncology', 'neurology', etc.
+  prescribingDoctorId: varchar("prescribing_doctor_id").references(() => users.id),
+  
+  // Supersession tracking - same specialty replacement
+  supersededBy: varchar("superseded_by"), // ID of the new medication that replaced this one
+  supersededAt: timestamp("superseded_at"),
+  supersessionReason: text("supersession_reason"),
+  
+  // Cross-specialty conflict tracking
+  conflictGroupId: varchar("conflict_group_id"), // Links medications in same conflict
+  conflictStatus: varchar("conflict_status"), // 'pending', 'resolved', 'escalated'
+  conflictDetectedAt: timestamp("conflict_detected_at"),
+  conflictResolvedAt: timestamp("conflict_resolved_at"),
+  conflictResolution: text("conflict_resolution"), // JSON with resolution details
+  
+  // Reminder settings
+  remindersEnabled: boolean("reminders_enabled").default(true),
+  reminderOffsets: jsonb("reminder_offsets").$type<number[]>(), // Hours before end to remind, e.g., [24, 48, 168]
+  lastReminderSentAt: timestamp("last_reminder_sent_at"),
+  
+  // Adherence tracking
+  adherenceLog: jsonb("adherence_log").$type<Array<{ date: string; taken: boolean; time?: string; notes?: string }>>(),
   
   // Discontinuation tracking
   discontinuedAt: timestamp("discontinued_at"),
   discontinuedBy: varchar("discontinued_by"), // User ID who discontinued
   discontinuationReason: text("discontinuation_reason"),
   replacementMedicationId: varchar("replacement_medication_id"), // If switched to different medication
+  
+  // Archive tracking - links to medical document record when archived
+  archivedAt: timestamp("archived_at"),
+  archiveDocumentId: varchar("archive_document_id"), // Link to medical_documents record when archived
+  archiveReason: varchar("archive_reason"), // 'completed', 'superseded', 'expired', 'discontinued', 'conflict_resolved'
+  
+  // Lifecycle metadata for patient records integration
+  lifecycleStage: varchar("lifecycle_stage").default("active"), // 'pending', 'active', 'ending_soon', 'completed', 'archived'
+  lastLifecycleUpdate: timestamp("last_lifecycle_update"),
   
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -345,7 +385,7 @@ export const insertMedicationSchema = createInsertSchema(medications).omit({
 export type InsertMedication = z.infer<typeof insertMedicationSchema>;
 export type Medication = typeof medications.$inferSelect;
 
-// Prescriptions - Doctor-created prescriptions for patients
+// Prescriptions - Doctor-created prescriptions for patients with chronic care support
 export const prescriptions = pgTable("prescriptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   patientId: varchar("patient_id").notNull().references(() => users.id),
@@ -365,8 +405,27 @@ export const prescriptions = pgTable("prescriptions", {
   startDate: timestamp("start_date").defaultNow(),
   expirationDate: timestamp("expiration_date"), // When prescription expires
   
+  // Chronic care - Duration and continuous tracking
+  isContinuous: boolean("is_continuous").default(false), // True for ongoing medications
+  durationDays: integer("duration_days"), // Null for continuous medications
+  intendedStartDate: timestamp("intended_start_date"), // When patient should start
+  
+  // Multi-specialty tracking
+  specialty: varchar("specialty"), // 'cardiology', 'oncology', 'neurology', etc.
+  
+  // Supersession tracking - same specialty replaces previous
+  supersedes: varchar("supersedes"), // ID of the prescription this one replaces
+  supersededBy: varchar("superseded_by"), // ID of prescription that replaced this
+  supersededAt: timestamp("superseded_at"),
+  
+  // Cross-specialty conflict tracking
+  conflictGroupId: varchar("conflict_group_id"), // Links prescriptions in same conflict
+  hasConflict: boolean("has_conflict").default(false),
+  conflictDetectedAt: timestamp("conflict_detected_at"),
+  conflictResolvedAt: timestamp("conflict_resolved_at"),
+  
   // Status and tracking
-  status: varchar("status").notNull().default("sent"), // 'sent', 'acknowledged', 'filled', 'expired'
+  status: varchar("status").notNull().default("sent"), // 'sent', 'acknowledged', 'filled', 'active', 'completed', 'expired', 'superseded', 'conflict_hold'
   acknowledgedAt: timestamp("acknowledged_at"),
   acknowledgedBy: varchar("acknowledged_by"), // Patient who acknowledged
   
@@ -381,6 +440,65 @@ export const prescriptions = pgTable("prescriptions", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Cross-Specialty Medication Conflicts - Tracks conflicts between different specialists
+export const medicationConflicts = pgTable("medication_conflicts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  conflictGroupId: varchar("conflict_group_id").notNull(), // Groups related medications
+  
+  // Conflicting medications/prescriptions
+  medication1Id: varchar("medication1_id").references(() => medications.id),
+  medication2Id: varchar("medication2_id").references(() => medications.id),
+  prescription1Id: varchar("prescription1_id"),
+  prescription2Id: varchar("prescription2_id"),
+  
+  // Doctors involved
+  doctor1Id: varchar("doctor1_id").notNull().references(() => users.id),
+  doctor2Id: varchar("doctor2_id").notNull().references(() => users.id),
+  specialty1: varchar("specialty1").notNull(),
+  specialty2: varchar("specialty2").notNull(),
+  
+  // Conflict details
+  conflictType: varchar("conflict_type").notNull(), // 'drug_interaction', 'duplicate_therapy', 'dosage_overlap', 'contraindication'
+  severity: varchar("severity").notNull(), // 'low', 'moderate', 'high', 'critical'
+  description: text("description").notNull(),
+  detectedReason: text("detected_reason"), // Why conflict was flagged
+  
+  // Status tracking
+  status: varchar("status").notNull().default("pending"), // 'pending', 'doctor1_reviewed', 'doctor2_reviewed', 'resolved', 'escalated'
+  
+  // Doctor responses
+  doctor1Response: text("doctor1_response"),
+  doctor1RespondedAt: timestamp("doctor1_responded_at"),
+  doctor1Action: varchar("doctor1_action"), // 'keep', 'modify', 'cancel', 'defer'
+  doctor2Response: text("doctor2_response"),
+  doctor2RespondedAt: timestamp("doctor2_responded_at"),
+  doctor2Action: varchar("doctor2_action"), // 'keep', 'modify', 'cancel', 'defer'
+  
+  // Resolution
+  resolution: varchar("resolution"), // 'keep_both', 'modify_one', 'cancel_one', 'cancel_both', 'escalated'
+  resolutionDetails: text("resolution_details"),
+  resolvedBy: varchar("resolved_by"), // User ID who resolved
+  resolvedAt: timestamp("resolved_at"),
+  
+  // Notifications
+  doctor1NotifiedAt: timestamp("doctor1_notified_at"),
+  doctor2NotifiedAt: timestamp("doctor2_notified_at"),
+  patientNotifiedAt: timestamp("patient_notified_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertMedicationConflictSchema = createInsertSchema(medicationConflicts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMedicationConflict = z.infer<typeof insertMedicationConflictSchema>;
+export type MedicationConflict = typeof medicationConflicts.$inferSelect;
 
 export const insertPrescriptionSchema = createInsertSchema(prescriptions).omit({
   id: true,
@@ -1703,6 +1821,43 @@ export const insertTwoFactorAuthSchema = createInsertSchema(twoFactorAuth).omit(
 export type InsertTwoFactorAuth = z.infer<typeof insertTwoFactorAuthSchema>;
 export type TwoFactorAuth = typeof twoFactorAuth.$inferSelect;
 
+// Admin ML Training Hub TOTP Access Control
+export const adminTotpSecrets = pgTable("admin_totp_secrets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Secret name/identifier (e.g., "ml-training-hub")
+  secretName: varchar("secret_name").unique().notNull(),
+  
+  // TOTP settings
+  totpSecret: varchar("totp_secret").notNull(),
+  enabled: boolean("enabled").default(false),
+  
+  // Setup tracking
+  setupCompletedAt: timestamp("setup_completed_at"),
+  setupCompletedBy: varchar("setup_completed_by"),
+  
+  // Usage tracking
+  lastVerifiedAt: timestamp("last_verified_at"),
+  lastVerifiedBy: varchar("last_verified_by"),
+  verificationCount: integer("verification_count").default(0),
+  
+  // Security
+  failedAttempts: integer("failed_attempts").default(0),
+  lockedUntil: timestamp("locked_until"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAdminTotpSecretSchema = createInsertSchema(adminTotpSecrets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAdminTotpSecret = z.infer<typeof insertAdminTotpSecretSchema>;
+export type AdminTotpSecret = typeof adminTotpSecrets.$inferSelect;
+
 // Medical Documents (OCR extraction from uploaded files)
 export const medicalDocuments = pgTable("medical_documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1851,7 +2006,8 @@ export const userSettings = pgTable("user_settings", {
   shareDataWithDoctors: boolean("share_data_with_doctors").default(true),
   allowThirdPartyIntegrations: boolean("allow_third_party_integrations").default(false),
   allowAIAnalysis: boolean("allow_ai_analysis").default(true),
-  
+  personalizationEnabled: boolean("personalization_enabled").default(false),
+
   // Notification preferences
   emailNotifications: boolean("email_notifications").default(true),
   pushNotifications: boolean("push_notifications").default(true),
@@ -3182,6 +3338,9 @@ export const appointments = pgTable("appointments", {
   // AI booking (if booked through Assistant Lysa)
   bookedByAI: boolean("booked_by_ai").default(false),
   aiBookingContext: jsonb("ai_booking_context").$type<{ intent: string; confidence: number; extractedInfo: any }>(),
+  
+  // Booking method tracking - how the appointment was booked
+  bookedByMethod: varchar("booked_by_method").default("online"), // 'whatsapp', 'email', 'phone', 'online', 'walk-in'
   
   // Symptom triage (AI-powered urgency assessment)
   symptoms: text("symptoms"),
@@ -5160,6 +5319,87 @@ export type InsertPatientConsentRequest = z.infer<typeof insertPatientConsentReq
 export type PatientConsentRequest = typeof patientConsentRequests.$inferSelect;
 
 // =========================================================================
+// DOCTOR-PATIENT CONSENT PERMISSIONS - Granular access control
+// =========================================================================
+
+export const doctorPatientConsentPermissions = pgTable("doctor_patient_consent_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Link to assignment
+  assignmentId: varchar("assignment_id").notNull().references(() => doctorPatientAssignments.id),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // ===== MANDATORY PERMISSIONS (Required for consent) =====
+  // Health Data Sharing
+  shareHealthData: boolean("share_health_data").notNull().default(false),
+  
+  // Doctor-Patient Confidentiality Agreement
+  confidentialityAgreed: boolean("confidentiality_agreed").notNull().default(false),
+  
+  // ===== GRANULAR DATA ACCESS PERMISSIONS =====
+  // Medical Files (lab results, imaging, reports)
+  shareMedicalFiles: boolean("share_medical_files").notNull().default(false),
+  
+  // Medication Records
+  shareMedications: boolean("share_medications").notNull().default(true),
+  
+  // AI Agent Messages (Clona/Lysa conversations)
+  shareAIMessages: boolean("share_ai_messages").notNull().default(false),
+  
+  // Doctor-Patient Messages
+  shareDoctorMessages: boolean("share_doctor_messages").notNull().default(true),
+  
+  // Daily Followup Insights
+  shareDailyFollowups: boolean("share_daily_followups").notNull().default(true),
+  
+  // AI Health Alerts (disease predictions, deterioration)
+  shareHealthAlerts: boolean("share_health_alerts").notNull().default(true),
+  
+  // Behavioral Insights (habits, mental health scores)
+  shareBehavioralInsights: boolean("share_behavioral_insights").notNull().default(false),
+  
+  // Pain Tracking Data
+  sharePainTracking: boolean("share_pain_tracking").notNull().default(true),
+  
+  // Vital Signs History
+  shareVitalSigns: boolean("share_vital_signs").notNull().default(true),
+  
+  // ===== RESEARCH CONSENT =====
+  // Consent to anonymized data for epidemiological research
+  consentEpidemiologicalResearch: boolean("consent_epidemiological_research").notNull().default(false),
+  
+  // ===== TERMS AGREEMENT =====
+  termsVersion: varchar("terms_version").notNull().default("1.0"),
+  termsAgreedAt: timestamp("terms_agreed_at"),
+  
+  // Digital signature (for legal compliance)
+  digitalSignature: text("digital_signature"), // Base64 encoded signature or typed name
+  signatureMethod: varchar("signature_method"), // 'typed', 'drawn', 'biometric'
+  
+  // IP address and device info for audit
+  consentIpAddress: varchar("consent_ip_address"),
+  consentUserAgent: text("consent_user_agent"),
+  
+  // Audit trail
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  modifiedBy: varchar("modified_by").references(() => users.id),
+}, (table) => ({
+  assignmentIdx: index("consent_permissions_assignment_idx").on(table.assignmentId),
+  doctorPatientIdx: index("consent_permissions_doctor_patient_idx").on(table.doctorId, table.patientId),
+}));
+
+export const insertDoctorPatientConsentPermissionsSchema = createInsertSchema(doctorPatientConsentPermissions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorPatientConsentPermissions = z.infer<typeof insertDoctorPatientConsentPermissionsSchema>;
+export type DoctorPatientConsentPermissions = typeof doctorPatientConsentPermissions.$inferSelect;
+
+// =========================================================================
 // LYSA PATIENT MONITORING SYSTEM
 // =========================================================================
 
@@ -5459,3 +5699,4291 @@ export const insertLysaClinicalInsightSchema = createInsertSchema(lysaClinicalIn
 
 export type InsertLysaClinicalInsight = z.infer<typeof insertLysaClinicalInsightSchema>;
 export type LysaClinicalInsight = typeof lysaClinicalInsights.$inferSelect;
+
+// Doctor Integrations - Per-doctor OAuth tokens and connection settings for personal accounts
+export const doctorIntegrations = pgTable("doctor_integrations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Integration type
+  integrationType: varchar("integration_type").notNull(), // 'gmail', 'outlook', 'twilio', 'whatsapp_business'
+  
+  // Connection status
+  status: varchar("status").notNull().default("disconnected"), // 'disconnected', 'connecting', 'connected', 'error', 'expired'
+  lastSyncAt: timestamp("last_sync_at"),
+  lastErrorAt: timestamp("last_error_at"),
+  lastErrorMessage: text("last_error_message"),
+  
+  // OAuth tokens (encrypted at rest)
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  tokenScope: text("token_scope"),
+  
+  // Provider-specific identifiers
+  providerAccountId: varchar("provider_account_id"), // Gmail email, Twilio account SID, etc.
+  providerAccountEmail: varchar("provider_account_email"),
+  
+  // Twilio-specific fields
+  twilioPhoneNumber: varchar("twilio_phone_number"),
+  twilioAccountSid: varchar("twilio_account_sid"),
+  twilioApiKey: varchar("twilio_api_key"),
+  twilioApiSecret: text("twilio_api_secret"),
+  
+  // WhatsApp Business specific
+  whatsappBusinessId: varchar("whatsapp_business_id"),
+  whatsappPhoneNumberId: varchar("whatsapp_phone_number_id"),
+  whatsappDisplayNumber: varchar("whatsapp_display_number"),
+  
+  // Sync settings
+  syncEnabled: boolean("sync_enabled").default(true),
+  syncFrequencyMinutes: integer("sync_frequency_minutes").default(5),
+  autoReplyEnabled: boolean("auto_reply_enabled").default(false),
+  
+  // Email-specific settings
+  emailLabelsToSync: jsonb("email_labels_to_sync").$type<string[]>(), // ['INBOX', 'SENT', etc.]
+  emailAutoCategorizationEnabled: boolean("email_auto_categorization_enabled").default(true),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorIntegrationIdx: index("doctor_integrations_doctor_idx").on(table.doctorId),
+  typeIdx: index("doctor_integrations_type_idx").on(table.integrationType),
+  statusIdx: index("doctor_integrations_status_idx").on(table.status),
+  uniqueDoctorType: index("doctor_integrations_unique_idx").on(table.doctorId, table.integrationType),
+}));
+
+export const insertDoctorIntegrationSchema = createInsertSchema(doctorIntegrations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorIntegration = z.infer<typeof insertDoctorIntegrationSchema>;
+export type DoctorIntegration = typeof doctorIntegrations.$inferSelect;
+
+// Doctor Email Sync - Cached synced emails from doctor's personal account
+export const doctorEmails = pgTable("doctor_emails", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  integrationId: varchar("integration_id").notNull().references(() => doctorIntegrations.id),
+  
+  // Original email identifiers
+  providerMessageId: varchar("provider_message_id").notNull(), // Gmail message ID
+  threadId: varchar("thread_id"),
+  
+  // Email metadata
+  subject: varchar("subject"),
+  fromEmail: varchar("from_email").notNull(),
+  fromName: varchar("from_name"),
+  toEmails: jsonb("to_emails").$type<string[]>(),
+  ccEmails: jsonb("cc_emails").$type<string[]>(),
+  
+  // Email content
+  snippet: text("snippet"),
+  bodyPlain: text("body_plain"),
+  bodyHtml: text("body_html"),
+  
+  // Email state
+  isRead: boolean("is_read").default(false),
+  isStarred: boolean("is_starred").default(false),
+  labels: jsonb("labels").$type<string[]>(),
+  
+  // Patient linking
+  linkedPatientId: varchar("linked_patient_id").references(() => users.id),
+  patientLinkConfidence: decimal("patient_link_confidence", { precision: 3, scale: 2 }),
+  
+  // AI analysis
+  aiCategory: varchar("ai_category"), // 'appointment_request', 'medical_question', 'prescription_refill', 'test_results', 'general', 'spam'
+  aiPriority: varchar("ai_priority"), // 'urgent', 'high', 'normal', 'low'
+  aiSummary: text("ai_summary"),
+  aiSuggestedReply: text("ai_suggested_reply"),
+  aiExtractedInfo: jsonb("ai_extracted_info").$type<{
+    appointmentRequest?: { date?: string; time?: string; reason?: string };
+    symptoms?: string[];
+    medications?: string[];
+    urgencyIndicators?: string[];
+  }>(),
+  
+  // Reply tracking
+  hasBeenReplied: boolean("has_been_replied").default(false),
+  repliedAt: timestamp("replied_at"),
+  
+  // Timestamps
+  receivedAt: timestamp("received_at").notNull(),
+  syncedAt: timestamp("synced_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  doctorEmailIdx: index("doctor_emails_doctor_idx").on(table.doctorId),
+  threadIdx: index("doctor_emails_thread_idx").on(table.threadId),
+  categoryIdx: index("doctor_emails_category_idx").on(table.aiCategory),
+  patientIdx: index("doctor_emails_patient_idx").on(table.linkedPatientId),
+  receivedIdx: index("doctor_emails_received_idx").on(table.receivedAt),
+}));
+
+export const insertDoctorEmailSchema = createInsertSchema(doctorEmails).omit({
+  id: true,
+  createdAt: true,
+  syncedAt: true,
+});
+
+export type InsertDoctorEmail = z.infer<typeof insertDoctorEmailSchema>;
+export type DoctorEmail = typeof doctorEmails.$inferSelect;
+
+// Doctor WhatsApp Messages - Synced messages from doctor's WhatsApp Business
+export const doctorWhatsappMessages = pgTable("doctor_whatsapp_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  integrationId: varchar("integration_id").notNull().references(() => doctorIntegrations.id),
+  
+  // WhatsApp identifiers
+  waMessageId: varchar("wa_message_id").notNull(),
+  waConversationId: varchar("wa_conversation_id"),
+  
+  // Message details
+  direction: varchar("direction").notNull(), // 'inbound', 'outbound'
+  fromNumber: varchar("from_number").notNull(),
+  toNumber: varchar("to_number").notNull(),
+  contactName: varchar("contact_name"),
+  
+  // Content
+  messageType: varchar("message_type").notNull(), // 'text', 'image', 'document', 'audio', 'video', 'location'
+  textContent: text("text_content"),
+  mediaUrl: varchar("media_url"),
+  mediaMimeType: varchar("media_mime_type"),
+  
+  // Patient linking
+  linkedPatientId: varchar("linked_patient_id").references(() => users.id),
+  
+  // AI analysis
+  aiCategory: varchar("ai_category"), // 'appointment_request', 'question', 'confirmation', 'general'
+  aiPriority: varchar("ai_priority"),
+  aiSuggestedReply: text("ai_suggested_reply"),
+  aiExtractedInfo: jsonb("ai_extracted_info").$type<{
+    appointmentRequest?: { date?: string; time?: string };
+    intent?: string;
+    urgency?: string;
+  }>(),
+  
+  // Status
+  status: varchar("status").notNull().default("received"), // 'received', 'read', 'replied', 'archived'
+  repliedAt: timestamp("replied_at"),
+  
+  // Timestamps
+  receivedAt: timestamp("received_at").notNull(),
+  syncedAt: timestamp("synced_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  doctorWaIdx: index("doctor_wa_doctor_idx").on(table.doctorId),
+  conversationIdx: index("doctor_wa_conversation_idx").on(table.waConversationId),
+  patientIdx: index("doctor_wa_patient_idx").on(table.linkedPatientId),
+  receivedIdx: index("doctor_wa_received_idx").on(table.receivedAt),
+}));
+
+export const insertDoctorWhatsappMessageSchema = createInsertSchema(doctorWhatsappMessages).omit({
+  id: true,
+  createdAt: true,
+  syncedAt: true,
+});
+
+export type InsertDoctorWhatsappMessage = z.infer<typeof insertDoctorWhatsappMessageSchema>;
+export type DoctorWhatsappMessage = typeof doctorWhatsappMessages.$inferSelect;
+
+// ============================================================================
+// MULTI-AGENT COMMUNICATION SYSTEM
+// ============================================================================
+
+// Agent definitions (Lysa for doctors, Clona for patients)
+export const agents = pgTable("agents", {
+  id: varchar("id").primaryKey(), // 'lysa', 'clona', or custom agent IDs
+  name: varchar("name").notNull(),
+  description: text("description"),
+  agentType: varchar("agent_type").notNull(), // 'assistant' (Lysa), 'companion' (Clona), 'system'
+  targetRole: varchar("target_role").notNull(), // 'doctor', 'patient', 'all'
+  
+  // Agent persona and behavior
+  personaJson: jsonb("persona_json").$type<{
+    systemPrompt: string;
+    personality: string;
+    tone: string;
+    specializations: string[];
+    constraints: string[];
+  }>(),
+  
+  // Memory policy configuration
+  memoryPolicyJson: jsonb("memory_policy_json").$type<{
+    shortTermTtlHours: number;
+    longTermEnabled: boolean;
+    vectorizationEnabled: boolean;
+    maxMemoryPerPatient: number;
+    summarizationThreshold: number;
+  }>(),
+  
+  // OpenAI Assistants API integration
+  openaiAssistantId: varchar("openai_assistant_id"),
+  openaiModel: varchar("openai_model").default("gpt-4o"),
+  
+  // Status and versioning
+  isActive: boolean("is_active").default(true),
+  version: integer("version").default(1),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAgentSchema = createInsertSchema(agents).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgent = z.infer<typeof insertAgentSchema>;
+export type Agent = typeof agents.$inferSelect;
+
+// Agent tools registry
+export const agentTools = pgTable("agent_tools", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull().unique(),
+  displayName: varchar("display_name").notNull(),
+  description: text("description"),
+  
+  // Tool configuration
+  toolType: varchar("tool_type").notNull(), // 'calendar', 'messaging', 'ehr_fetch', 'prescription_draft', 'lab_fetch', 'imaging_linker'
+  configJson: jsonb("config_json").$type<{
+    endpoint?: string;
+    method?: string;
+    parametersSchema?: Record<string, unknown>;
+    responseSchema?: Record<string, unknown>;
+    timeout?: number;
+  }>(),
+  
+  // Parameters schema (JSON Schema format for OpenAI function calling)
+  parametersSchema: jsonb("parameters_schema").$type<Record<string, unknown>>(),
+  
+  // Permissions and access control
+  requiredPermissions: jsonb("required_permissions").$type<string[]>(),
+  allowedRoles: jsonb("allowed_roles").$type<string[]>(), // ['doctor', 'patient']
+  requiresApproval: boolean("requires_approval").default(false), // Human-in-the-loop
+  approvalRole: varchar("approval_role"), // Role that must approve (e.g., 'doctor' for prescriptions)
+  
+  // Status and versioning
+  isEnabled: boolean("is_enabled").default(true),
+  version: integer("version").default(1),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAgentToolSchema = createInsertSchema(agentTools).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentTool = z.infer<typeof insertAgentToolSchema>;
+export type AgentTool = typeof agentTools.$inferSelect;
+
+// Agent-tool assignments (which agents can use which tools)
+export const agentToolAssignments = pgTable("agent_tool_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull().references(() => agents.id),
+  toolId: varchar("tool_id").notNull().references(() => agentTools.id),
+  
+  // Override settings for this agent-tool combination
+  customConfig: jsonb("custom_config").$type<Record<string, unknown>>(),
+  isEnabled: boolean("is_enabled").default(true),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  agentToolIdx: index("agent_tool_idx").on(table.agentId, table.toolId),
+}));
+
+export const insertAgentToolAssignmentSchema = createInsertSchema(agentToolAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAgentToolAssignment = z.infer<typeof insertAgentToolAssignmentSchema>;
+export type AgentToolAssignment = typeof agentToolAssignments.$inferSelect;
+
+// Agent conversations (threads between users and agents, or agent-to-agent)
+// CRITICAL: Patient↔Doctor direct messages share the SAME conversation thread
+export const agentConversations = pgTable("agent_conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Conversation type determines routing rules
+  // 'patient_clona' - Patient talks to their Clona agent
+  // 'doctor_lysa' - Doctor talks to their Lysa assistant
+  // 'patient_doctor' - Direct messaging between connected patient and doctor (SAME THREAD)
+  // 'patient_lysa' - Patient talks to connected doctor's Lysa
+  // 'doctor_clona' - Doctor talks to connected patient's Clona
+  // 'clona_lysa' - Inter-agent communication between Clona and Lysa
+  conversationType: varchar("conversation_type").notNull().default("patient_clona"),
+  
+  // Participants (supports multi-party in same thread)
+  participant1Type: varchar("participant1_type").notNull(), // 'user', 'agent'
+  participant1Id: varchar("participant1_id").notNull(),
+  participant2Type: varchar("participant2_type").notNull(), // 'user', 'agent'
+  participant2Id: varchar("participant2_id").notNull(),
+  
+  // Additional participants for multi-party (e.g., patient, doctor, and agents in same thread)
+  additionalParticipants: jsonb("additional_participants").$type<Array<{ type: string; id: string; role: string }>>(),
+  
+  // Context - REQUIRED for cross-party communication (consent verification)
+  patientId: varchar("patient_id").references(() => users.id), // Patient in this conversation
+  doctorId: varchar("doctor_id").references(() => users.id), // Doctor in this conversation
+  
+  // Doctor-Patient connection reference (for consent verification)
+  assignmentId: varchar("assignment_id"), // Reference to doctor_patient_assignments.id
+  
+  // Conversation metadata
+  title: varchar("title"),
+  status: varchar("status").notNull().default("active"), // 'active', 'archived', 'closed'
+  
+  // Message counts per participant (using JSON for flexibility)
+  messageCount: integer("message_count").default(0),
+  unreadCounts: jsonb("unread_counts").$type<Record<string, number>>().default({}), // {participantId: unreadCount}
+  
+  // Last activity
+  lastMessageAt: timestamp("last_message_at"),
+  lastMessagePreview: text("last_message_preview"),
+  lastMessageSenderId: varchar("last_message_sender_id"), // Who sent the last message
+  lastMessageSenderRole: varchar("last_message_sender_role"), // 'patient', 'doctor', 'clona', 'lysa'
+  
+  // OpenAI thread (if using Assistants API)
+  openaiThreadId: varchar("openai_thread_id"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  conversationTypeIdx: index("conv_type_idx").on(table.conversationType),
+  participant1Idx: index("conv_participant1_idx").on(table.participant1Type, table.participant1Id),
+  participant2Idx: index("conv_participant2_idx").on(table.participant2Type, table.participant2Id),
+  patientIdx: index("conv_patient_idx").on(table.patientId),
+  doctorIdx: index("conv_doctor_idx").on(table.doctorId),
+  assignmentIdx: index("conv_assignment_idx").on(table.assignmentId),
+  lastMessageIdx: index("conv_last_message_idx").on(table.lastMessageAt),
+}));
+
+export const insertAgentConversationSchema = createInsertSchema(agentConversations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentConversation = z.infer<typeof insertAgentConversationSchema>;
+export type AgentConversation = typeof agentConversations.$inferSelect;
+
+// Agent messages with full envelope protocol
+// CRITICAL: Patient↔Doctor messages tagged with senderRole for proper display
+export const agentMessages = pgTable("agent_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  msgId: varchar("msg_id").notNull().unique(), // UUID for message tracking
+  conversationId: varchar("conversation_id").notNull().references(() => agentConversations.id),
+  
+  // Message envelope - From
+  fromType: varchar("from_type").notNull(), // 'agent', 'user', 'system'
+  fromId: varchar("from_id").notNull(),
+  
+  // Sender role for proper tagging (CRITICAL for Patient↔Doctor conversations)
+  // 'patient' - Message from patient user
+  // 'doctor' - Message from doctor user
+  // 'clona' - Message from Agent Clona (patient's AI)
+  // 'lysa' - Message from Assistant Lysa (doctor's AI)
+  // 'system' - System-generated message
+  senderRole: varchar("sender_role").notNull().default("patient"),
+  
+  // Sender display info (cached for UI performance)
+  senderName: varchar("sender_name"), // e.g., "Dr. Smith" or "John Doe"
+  senderAvatar: varchar("sender_avatar"), // Profile image URL
+  
+  // Message envelope - To (JSON array for multi-recipient)
+  toJson: jsonb("to_json").$type<Array<{ type: string; id: string }>>().notNull(),
+  
+  // Message type and content
+  messageType: varchar("message_type").notNull(), // 'chat', 'command', 'event', 'tool_call', 'ack'
+  content: text("content"),
+  payloadJson: jsonb("payload_json").$type<Record<string, unknown>>(),
+  
+  // Tool call specific fields
+  toolCallId: varchar("tool_call_id"),
+  toolName: varchar("tool_name"),
+  toolInput: jsonb("tool_input").$type<Record<string, unknown>>(),
+  toolOutput: jsonb("tool_output").$type<Record<string, unknown>>(),
+  toolStatus: varchar("tool_status"), // 'pending', 'running', 'completed', 'failed', 'pending_approval'
+  
+  // Human-in-the-loop approval
+  requiresApproval: boolean("requires_approval").default(false),
+  approvalStatus: varchar("approval_status"), // 'pending', 'approved', 'rejected'
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  approvalNotes: text("approval_notes"),
+  
+  // Delivery tracking
+  delivered: boolean("delivered").default(false),
+  deliveredAt: timestamp("delivered_at"),
+  readAt: timestamp("read_at"),
+  
+  // PHI and HIPAA tracking
+  containsPhi: boolean("contains_phi").default(false),
+  phiRedacted: boolean("phi_redacted").default(false),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    clientInfo?: { platform?: string; version?: string };
+    processingTime?: number;
+    modelUsed?: string;
+    tokensUsed?: number;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  conversationIdx: index("msg_conversation_idx").on(table.conversationId),
+  fromIdx: index("msg_from_idx").on(table.fromType, table.fromId),
+  senderRoleIdx: index("msg_sender_role_idx").on(table.senderRole),
+  msgIdIdx: index("msg_id_idx").on(table.msgId),
+  createdIdx: index("msg_created_idx").on(table.createdAt),
+  toolCallIdx: index("msg_tool_call_idx").on(table.toolCallId),
+  approvalIdx: index("msg_approval_idx").on(table.requiresApproval, table.approvalStatus),
+}));
+
+export const insertAgentMessageSchema = createInsertSchema(agentMessages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAgentMessage = z.infer<typeof insertAgentMessageSchema>;
+export type AgentMessage = typeof agentMessages.$inferSelect;
+
+// Agent tasks (background jobs, scheduled workflows)
+export const agentTasks = pgTable("agent_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Task ownership
+  agentId: varchar("agent_id").notNull().references(() => agents.id),
+  userId: varchar("user_id").references(() => users.id), // User context if applicable
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  messageId: varchar("message_id").references(() => agentMessages.id),
+  
+  // Task definition
+  taskType: varchar("task_type").notNull(), // 'tool_execution', 'scheduled_checkin', 'medication_reminder', 'workflow', 'inference'
+  taskName: varchar("task_name"),
+  
+  // Scheduling
+  scheduledAt: timestamp("scheduled_at"),
+  recurringPattern: varchar("recurring_pattern"), // Cron expression for recurring tasks
+  timezone: varchar("timezone").default("UTC"),
+  
+  // Execution
+  status: varchar("status").notNull().default("pending"), // 'pending', 'queued', 'running', 'completed', 'failed', 'cancelled'
+  priority: integer("priority").default(5), // 1-10, higher is more important
+  
+  // Payload and results
+  inputPayload: jsonb("input_payload").$type<Record<string, unknown>>(),
+  outputResult: jsonb("output_result").$type<Record<string, unknown>>(),
+  errorMessage: text("error_message"),
+  
+  // Retry logic
+  attempts: integer("attempts").default(0),
+  maxAttempts: integer("max_attempts").default(3),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  nextRetryAt: timestamp("next_retry_at"),
+  
+  // Worker info
+  workerId: varchar("worker_id"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  agentIdx: index("task_agent_idx").on(table.agentId),
+  userIdx: index("task_user_idx").on(table.userId),
+  statusIdx: index("task_status_idx").on(table.status),
+  scheduledIdx: index("task_scheduled_idx").on(table.scheduledAt),
+  typeIdx: index("task_type_idx").on(table.taskType),
+}));
+
+export const insertAgentTaskSchema = createInsertSchema(agentTasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentTask = z.infer<typeof insertAgentTaskSchema>;
+export type AgentTask = typeof agentTasks.$inferSelect;
+
+// Agent memory (short-term and long-term with vector embeddings)
+export const agentMemory = pgTable("agent_memory", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Memory ownership
+  agentId: varchar("agent_id").notNull().references(() => agents.id),
+  patientId: varchar("patient_id").references(() => users.id),
+  userId: varchar("user_id").references(() => users.id),
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  
+  // Memory type and storage
+  memoryType: varchar("memory_type").notNull(), // 'short_term', 'long_term', 'episodic', 'semantic'
+  storageType: varchar("storage_type").notNull(), // 'redis', 'postgres', 'vector'
+  
+  // Content
+  content: text("content").notNull(),
+  summary: text("summary"), // LLM-generated summary for long-term storage
+  
+  // Vector embedding for semantic search (stored as JSON array, to be used with pgvector)
+  embedding: jsonb("embedding").$type<number[]>(),
+  embeddingModel: varchar("embedding_model"),
+  
+  // Source tracking
+  sourceType: varchar("source_type"), // 'message', 'tool_result', 'observation', 'inference'
+  sourceId: varchar("source_id"),
+  
+  // Salience and importance
+  importance: decimal("importance", { precision: 3, scale: 2 }).default("0.5"), // 0-1 scale
+  accessCount: integer("access_count").default(0),
+  lastAccessedAt: timestamp("last_accessed_at"),
+  
+  // TTL for short-term memory
+  expiresAt: timestamp("expires_at"),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    topics?: string[];
+    entities?: string[];
+    sentiment?: string;
+    keywords?: string[];
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  agentIdx: index("memory_agent_idx").on(table.agentId),
+  patientIdx: index("memory_patient_idx").on(table.patientId),
+  typeIdx: index("memory_type_idx").on(table.memoryType),
+  expiresIdx: index("memory_expires_idx").on(table.expiresAt),
+  importanceIdx: index("memory_importance_idx").on(table.importance),
+}));
+
+export const insertAgentMemorySchema = createInsertSchema(agentMemory).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentMemory = z.infer<typeof insertAgentMemorySchema>;
+export type AgentMemory = typeof agentMemory.$inferSelect;
+
+// Agent audit logs (HIPAA-compliant comprehensive logging)
+export const agentAuditLogs = pgTable("agent_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Actor (who performed the action)
+  actorType: varchar("actor_type").notNull(), // 'user', 'agent', 'system', 'worker'
+  actorId: varchar("actor_id").notNull(),
+  actorRole: varchar("actor_role"), // 'doctor', 'patient', 'admin'
+  
+  // Action details
+  action: varchar("action").notNull(), // 'message_sent', 'message_read', 'tool_called', 'phi_accessed', 'approval_granted', etc.
+  actionCategory: varchar("action_category").notNull(), // 'communication', 'data_access', 'clinical_action', 'system'
+  
+  // Object (what was acted upon)
+  objectType: varchar("object_type").notNull(), // 'message', 'conversation', 'patient_record', 'prescription', 'tool'
+  objectId: varchar("object_id").notNull(),
+  
+  // Context
+  patientId: varchar("patient_id").references(() => users.id), // If action involves a patient
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  messageId: varchar("message_id").references(() => agentMessages.id),
+  
+  // PHI access tracking (HIPAA requirement)
+  phiAccessed: boolean("phi_accessed").default(false),
+  phiCategories: jsonb("phi_categories").$type<string[]>(), // Types of PHI accessed
+  accessReason: varchar("access_reason"), // Reason for PHI access
+  
+  // Details
+  details: jsonb("details").$type<Record<string, unknown>>(),
+  previousState: jsonb("previous_state").$type<Record<string, unknown>>(),
+  newState: jsonb("new_state").$type<Record<string, unknown>>(),
+  
+  // Request context
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  sessionId: varchar("session_id"),
+  
+  // Outcome
+  success: boolean("success").default(true),
+  errorCode: varchar("error_code"),
+  errorMessage: text("error_message"),
+  
+  // Timestamps
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  actorIdx: index("audit_actor_idx").on(table.actorType, table.actorId),
+  actionIdx: index("audit_action_idx").on(table.action),
+  objectIdx: index("audit_object_idx").on(table.objectType, table.objectId),
+  patientIdx: index("audit_patient_idx").on(table.patientId),
+  timestampIdx: index("audit_timestamp_idx").on(table.timestamp),
+  phiIdx: index("audit_phi_idx").on(table.phiAccessed),
+}));
+
+export const insertAgentAuditLogSchema = createInsertSchema(agentAuditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAgentAuditLog = z.infer<typeof insertAgentAuditLogSchema>;
+export type AgentAuditLog = typeof agentAuditLogs.$inferSelect;
+
+// User presence tracking for real-time status
+export const userPresence = pgTable("user_presence", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id).unique(),
+  
+  // Connection status
+  isOnline: boolean("is_online").default(false),
+  lastSeenAt: timestamp("last_seen_at"),
+  
+  // Active connections
+  activeConnections: integer("active_connections").default(0),
+  connectionIds: jsonb("connection_ids").$type<string[]>(),
+  
+  // Activity
+  currentActivity: varchar("current_activity"), // 'typing', 'viewing', 'idle'
+  currentConversationId: varchar("current_conversation_id"),
+  
+  // Device info
+  lastDeviceInfo: jsonb("last_device_info").$type<{
+    platform?: string;
+    browser?: string;
+    isMobile?: boolean;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("presence_user_idx").on(table.userId),
+  onlineIdx: index("presence_online_idx").on(table.isOnline),
+}));
+
+export const insertUserPresenceSchema = createInsertSchema(userPresence).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertUserPresence = z.infer<typeof insertUserPresenceSchema>;
+export type UserPresence = typeof userPresence.$inferSelect;
+
+// Tool execution tracking
+export const toolExecutions = pgTable("tool_executions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Execution context
+  agentId: varchar("agent_id").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  messageId: varchar("message_id").references(() => agentMessages.id),
+  
+  // Tool info
+  toolName: varchar("tool_name").notNull(),
+  toolVersion: integer("tool_version").default(1),
+  
+  // Input/Output
+  inputParameters: jsonb("input_parameters").$type<Record<string, unknown>>().notNull(),
+  outputResult: jsonb("output_result").$type<Record<string, unknown>>(),
+  
+  // Status tracking
+  status: varchar("status").notNull().default("pending"), // 'pending', 'running', 'completed', 'failed', 'pending_approval', 'approved', 'rejected'
+  errorMessage: text("error_message"),
+  errorCode: varchar("error_code"),
+  
+  // Performance metrics
+  executionTimeMs: integer("execution_time_ms"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Patient context (for consent verification)
+  patientId: varchar("patient_id").references(() => users.id),
+  doctorId: varchar("doctor_id").references(() => users.id),
+  
+  // PHI tracking
+  phiAccessed: boolean("phi_accessed").default(false),
+  phiCategories: jsonb("phi_categories").$type<string[]>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  agentIdx: index("tool_exec_agent_idx").on(table.agentId),
+  userIdx: index("tool_exec_user_idx").on(table.userId),
+  toolIdx: index("tool_exec_tool_idx").on(table.toolName),
+  statusIdx: index("tool_exec_status_idx").on(table.status),
+  patientIdx: index("tool_exec_patient_idx").on(table.patientId),
+  createdIdx: index("tool_exec_created_idx").on(table.createdAt),
+}));
+
+export const insertToolExecutionSchema = createInsertSchema(toolExecutions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertToolExecution = z.infer<typeof insertToolExecutionSchema>;
+export type ToolExecution = typeof toolExecutions.$inferSelect;
+
+// Approval queue for human-in-the-loop workflows
+export const approvalQueue = pgTable("approval_queue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Request details
+  requestType: varchar("request_type").notNull(), // 'prescription_draft', 'treatment_change', 'data_export', 'patient_discharge'
+  requesterId: varchar("requester_id").notNull(), // User or agent who initiated
+  requesterType: varchar("requester_type").notNull(), // 'agent', 'user', 'system'
+  
+  // Approval target
+  approverId: varchar("approver_id").references(() => users.id), // Specific approver if assigned
+  approverRole: varchar("approver_role").notNull().default("doctor"), // Role that can approve
+  
+  // Context
+  patientId: varchar("patient_id").references(() => users.id),
+  conversationId: varchar("conversation_id").references(() => agentConversations.id),
+  messageId: varchar("message_id").references(() => agentMessages.id),
+  toolExecutionId: varchar("tool_execution_id").references(() => toolExecutions.id),
+  
+  // Request payload
+  toolName: varchar("tool_name"),
+  requestPayload: jsonb("request_payload").$type<Record<string, unknown>>().notNull(),
+  requestSummary: text("request_summary"), // Human-readable summary
+  
+  // Risk assessment
+  urgency: varchar("urgency").notNull().default("normal"), // 'low', 'normal', 'high', 'urgent'
+  riskLevel: varchar("risk_level"), // 'low', 'medium', 'high'
+  riskFactors: jsonb("risk_factors").$type<string[]>(),
+  
+  // Status tracking
+  status: varchar("status").notNull().default("pending"), // 'pending', 'approved', 'rejected', 'expired', 'cancelled'
+  
+  // Decision
+  decision: varchar("decision"), // 'approved', 'rejected', 'modified'
+  decisionBy: varchar("decision_by").references(() => users.id),
+  decisionAt: timestamp("decision_at"),
+  decisionNotes: text("decision_notes"),
+  modifiedPayload: jsonb("modified_payload").$type<Record<string, unknown>>(), // If modified before approval
+  
+  // Timeout
+  expiresAt: timestamp("expires_at"),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  escalatedAt: timestamp("escalated_at"),
+  escalatedTo: varchar("escalated_to").references(() => users.id),
+  
+  // Execution result
+  executionResult: jsonb("execution_result").$type<Record<string, unknown>>(),
+  executedAt: timestamp("executed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  requesterIdx: index("approval_requester_idx").on(table.requesterId, table.requesterType),
+  approverIdx: index("approval_approver_idx").on(table.approverId),
+  roleIdx: index("approval_role_idx").on(table.approverRole),
+  patientIdx: index("approval_patient_idx").on(table.patientId),
+  statusIdx: index("approval_status_idx").on(table.status),
+  urgencyIdx: index("approval_urgency_idx").on(table.urgency),
+  expiresIdx: index("approval_expires_idx").on(table.expiresAt),
+  createdIdx: index("approval_created_idx").on(table.createdAt),
+}));
+
+export const insertApprovalQueueSchema = createInsertSchema(approvalQueue).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertApprovalQueue = z.infer<typeof insertApprovalQueueSchema>;
+export type ApprovalQueue = typeof approvalQueue.$inferSelect;
+
+// ============================================================================
+// ML Training System Tables
+// ============================================================================
+
+// ML Training Consent - Patient's consent for using their data in ML training
+export const mlTrainingConsent = pgTable("ml_training_consent", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Overall consent status
+  consentEnabled: boolean("consent_enabled").notNull().default(false),
+  
+  // Granular data type permissions
+  dataTypes: jsonb("data_types").$type<{
+    vitals: boolean;
+    symptoms: boolean;
+    medications: boolean;
+    mentalHealth: boolean;
+    behavioralData: boolean;
+    wearableData: boolean;
+    labResults: boolean;
+    imagingData: boolean;
+  }>().default({
+    vitals: true,
+    symptoms: true,
+    medications: false,
+    mentalHealth: false,
+    behavioralData: true,
+    wearableData: true,
+    labResults: false,
+    imagingData: false,
+  }),
+  
+  // Data anonymization preferences
+  anonymizationLevel: varchar("anonymization_level").default("full"), // 'full', 'partial', 'minimal'
+  
+  // Consent tracking
+  consentVersion: varchar("consent_version").default("1.0"),
+  consentSignedAt: timestamp("consent_signed_at"),
+  consentWithdrawnAt: timestamp("consent_withdrawn_at"),
+  withdrawalReason: text("withdrawal_reason"),
+  
+  // Data deletion request
+  requestedDataDeletion: boolean("requested_data_deletion").default(false),
+  dataDeletionRequestedAt: timestamp("data_deletion_requested_at"),
+  dataDeletionCompletedAt: timestamp("data_deletion_completed_at"),
+  
+  // Audit trail
+  lastModifiedBy: varchar("last_modified_by"),
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("ml_consent_patient_idx").on(table.patientId),
+  enabledIdx: index("ml_consent_enabled_idx").on(table.consentEnabled),
+}));
+
+export const insertMlTrainingConsentSchema = createInsertSchema(mlTrainingConsent).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMlTrainingConsent = z.infer<typeof insertMlTrainingConsentSchema>;
+export type MlTrainingConsent = typeof mlTrainingConsent.$inferSelect;
+
+// ML Models Registry - Track all trained models with versioning
+export const mlModels = pgTable("ml_models", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Model identification
+  modelName: varchar("model_name").notNull(), // 'vital_lstm', 'patient_segmentation', 'deterioration_ensemble', 'disease_risk'
+  modelType: varchar("model_type").notNull(), // 'lstm', 'kmeans', 'random_forest', 'gradient_boosting', 'ensemble'
+  version: varchar("version").notNull(), // Semantic versioning: '1.0.0'
+  
+  // Model status
+  status: varchar("status").notNull().default("training"), // 'training', 'evaluating', 'active', 'deprecated', 'failed'
+  isActive: boolean("is_active").default(false),
+  
+  // Training configuration
+  trainingConfig: jsonb("training_config").$type<{
+    epochs?: number;
+    batchSize?: number;
+    learningRate?: number;
+    layers?: number[];
+    dropout?: number;
+    optimizer?: string;
+    lossFunction?: string;
+    earlyStopping?: boolean;
+    nClusters?: number; // For K-Means
+    maxIterations?: number;
+    nEstimators?: number; // For ensemble
+    maxDepth?: number;
+  }>(),
+  
+  // Training data info
+  trainingDataSources: jsonb("training_data_sources").$type<{
+    publicDatasets: string[];
+    patientDataCount: number;
+    totalRecords: number;
+    dateRange: { start: string; end: string };
+  }>(),
+  
+  // Performance metrics
+  metrics: jsonb("metrics").$type<{
+    accuracy?: number;
+    precision?: number;
+    recall?: number;
+    f1Score?: number;
+    auc?: number;
+    rmse?: number;
+    mae?: number;
+    silhouetteScore?: number;
+    inertia?: number;
+    r2Score?: number;
+    calibrationError?: number;
+  }>(),
+  
+  // Model artifacts
+  modelPath: varchar("model_path"), // Path to saved model file
+  modelFormat: varchar("model_format").default("onnx"), // 'onnx', 'pytorch', 'joblib', 'tensorflow'
+  modelSizeBytes: integer("model_size_bytes"),
+  
+  // Feature information
+  featureNames: jsonb("feature_names").$type<string[]>(),
+  featureImportance: jsonb("feature_importance").$type<Record<string, number>>(),
+  
+  // Training metadata
+  trainedBy: varchar("trained_by"), // 'system', 'admin', user_id
+  trainingStartedAt: timestamp("training_started_at"),
+  trainingCompletedAt: timestamp("training_completed_at"),
+  trainingDurationSeconds: integer("training_duration_seconds"),
+  
+  // Deployment info
+  deployedAt: timestamp("deployed_at"),
+  deprecatedAt: timestamp("deprecated_at"),
+  deprecationReason: text("deprecation_reason"),
+  
+  // Comparison with previous version
+  previousVersionId: varchar("previous_version_id"),
+  improvementOverPrevious: jsonb("improvement_over_previous").$type<Record<string, number>>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  modelNameIdx: index("ml_models_name_idx").on(table.modelName),
+  versionIdx: index("ml_models_version_idx").on(table.modelName, table.version),
+  statusIdx: index("ml_models_status_idx").on(table.status),
+  activeIdx: index("ml_models_active_idx").on(table.isActive),
+}));
+
+export const insertMlModelSchema = createInsertSchema(mlModels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMlModel = z.infer<typeof insertMlModelSchema>;
+export type MlModel = typeof mlModels.$inferSelect;
+
+// ML Training Jobs - Track training job execution
+export const mlTrainingJobs = pgTable("ml_training_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Job identification
+  jobName: varchar("job_name").notNull(),
+  modelName: varchar("model_name").notNull(),
+  targetVersion: varchar("target_version").notNull(),
+  
+  // Job status
+  status: varchar("status").notNull().default("queued"), // 'queued', 'preparing', 'training', 'evaluating', 'completed', 'failed', 'cancelled'
+  priority: integer("priority").default(5), // 1-10, higher = more priority
+  
+  // Data sources
+  dataSources: jsonb("data_sources").$type<{
+    publicDatasets: Array<{
+      id: string;
+      name: string;
+      source: string;
+      recordCount: number;
+    }>;
+    patientData: {
+      enabled: boolean;
+      patientCount: number;
+      recordCount: number;
+      dataTypes: string[];
+    };
+  }>(),
+  
+  // Training configuration
+  trainingConfig: jsonb("training_config").$type<Record<string, unknown>>(),
+  
+  // Progress tracking
+  currentPhase: varchar("current_phase"), // 'data_loading', 'preprocessing', 'feature_engineering', 'training', 'evaluation', 'saving'
+  progressPercent: integer("progress_percent").default(0),
+  progressMessage: text("progress_message"),
+  
+  // Resource usage
+  resourceUsage: jsonb("resource_usage").$type<{
+    cpuPercent?: number;
+    memoryMb?: number;
+    gpuPercent?: number;
+    gpuMemoryMb?: number;
+  }>(),
+  
+  // Timing
+  queuedAt: timestamp("queued_at").defaultNow(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  estimatedCompletionAt: timestamp("estimated_completion_at"),
+  
+  // Results
+  resultModelId: varchar("result_model_id").references(() => mlModels.id),
+  errorMessage: text("error_message"),
+  errorDetails: jsonb("error_details").$type<{
+    phase: string;
+    stackTrace?: string;
+    recoverable: boolean;
+  }>(),
+  
+  // Notifications
+  notifyOnCompletion: boolean("notify_on_completion").default(true),
+  notificationEmail: varchar("notification_email"),
+  
+  // Initiated by
+  initiatedBy: varchar("initiated_by"), // 'system', 'scheduler', user_id
+  
+  // Logs path
+  logsPath: varchar("logs_path"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusIdx: index("ml_jobs_status_idx").on(table.status),
+  modelIdx: index("ml_jobs_model_idx").on(table.modelName),
+  priorityIdx: index("ml_jobs_priority_idx").on(table.priority, table.queuedAt),
+}));
+
+export const insertMlTrainingJobSchema = createInsertSchema(mlTrainingJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMlTrainingJob = z.infer<typeof insertMlTrainingJobSchema>;
+export type MlTrainingJob = typeof mlTrainingJobs.$inferSelect;
+
+// ML Training Contributions - Track patient data contributions (anonymized)
+export const mlTrainingContributions = pgTable("ml_training_contributions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Patient reference (hashed for privacy)
+  patientIdHash: varchar("patient_id_hash").notNull(), // SHA-256 hash of patient ID
+  consentId: varchar("consent_id").notNull().references(() => mlTrainingConsent.id),
+  
+  // Contribution details
+  trainingJobId: varchar("training_job_id").references(() => mlTrainingJobs.id),
+  modelId: varchar("model_id").references(() => mlModels.id),
+  
+  // Data contributed (counts only, no actual data)
+  dataTypesContributed: jsonb("data_types_contributed").$type<string[]>(),
+  recordCount: integer("record_count").notNull(),
+  dateRangeStart: timestamp("date_range_start"),
+  dateRangeEnd: timestamp("date_range_end"),
+  
+  // Anonymization applied
+  anonymizationLevel: varchar("anonymization_level").notNull(),
+  
+  // Contribution status
+  status: varchar("status").default("included"), // 'included', 'excluded', 'withdrawn'
+  
+  // Timestamp
+  contributedAt: timestamp("contributed_at").defaultNow(),
+  withdrawnAt: timestamp("withdrawn_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientHashIdx: index("ml_contrib_patient_idx").on(table.patientIdHash),
+  jobIdx: index("ml_contrib_job_idx").on(table.trainingJobId),
+  modelIdx: index("ml_contrib_model_idx").on(table.modelId),
+}));
+
+export const insertMlTrainingContributionSchema = createInsertSchema(mlTrainingContributions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMlTrainingContribution = z.infer<typeof insertMlTrainingContributionSchema>;
+export type MlTrainingContribution = typeof mlTrainingContributions.$inferSelect;
+
+// Public Dataset Registry - Enhanced tracking for MIMIC-III, PhysioNet, etc.
+export const publicDatasetRegistry = pgTable("public_dataset_registry", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Dataset identification
+  datasetName: varchar("dataset_name").notNull().unique(),
+  source: varchar("source").notNull(), // 'mimic_iii', 'mimic_iv', 'physionet', 'eicu', 'kaggle'
+  version: varchar("version"),
+  
+  // Access information
+  requiresCredentials: boolean("requires_credentials").default(true),
+  credentialsConfigured: boolean("credentials_configured").default(false),
+  accessUrl: varchar("access_url"),
+  documentationUrl: varchar("documentation_url"),
+  
+  // Dataset metadata
+  description: text("description"),
+  recordCount: integer("record_count"),
+  patientCount: integer("patient_count"),
+  dateRange: jsonb("date_range").$type<{ start: string; end: string }>(),
+  
+  // Data types available
+  dataTypes: jsonb("data_types").$type<string[]>(), // ['vitals', 'lab_results', 'medications', 'diagnoses', 'procedures']
+  
+  // File information
+  totalSizeGb: decimal("total_size_gb", { precision: 10, scale: 2 }),
+  fileFormats: jsonb("file_formats").$type<string[]>(), // ['csv', 'parquet', 'json']
+  
+  // Download/processing status
+  downloadStatus: varchar("download_status").default("not_started"), // 'not_started', 'downloading', 'downloaded', 'processing', 'ready', 'failed'
+  downloadProgress: integer("download_progress").default(0),
+  localPath: varchar("local_path"),
+  
+  // Processing metadata
+  preprocessedAt: timestamp("preprocessed_at"),
+  preprocessingConfig: jsonb("preprocessing_config").$type<Record<string, unknown>>(),
+  
+  // Usage tracking
+  usedInModels: jsonb("used_in_models").$type<string[]>(),
+  lastUsedAt: timestamp("last_used_at"),
+  
+  // License information
+  license: varchar("license"),
+  citationRequired: boolean("citation_required").default(true),
+  citation: text("citation"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  sourceIdx: index("public_dataset_source_idx").on(table.source),
+  statusIdx: index("public_dataset_status_idx").on(table.downloadStatus),
+}));
+
+export const insertPublicDatasetRegistrySchema = createInsertSchema(publicDatasetRegistry).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPublicDatasetRegistry = z.infer<typeof insertPublicDatasetRegistrySchema>;
+export type PublicDatasetRegistry = typeof publicDatasetRegistry.$inferSelect;
+
+// ML Training Audit Log - HIPAA-compliant audit trail for all ML operations
+export const mlTrainingAuditLog = pgTable("ml_training_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Event identification
+  eventType: varchar("event_type").notNull(), // 'consent_granted', 'consent_withdrawn', 'data_extracted', 'training_started', 'model_deployed', 'data_deleted'
+  eventCategory: varchar("event_category").notNull(), // 'consent', 'training', 'model', 'data_access'
+  
+  // Actor
+  actorId: varchar("actor_id"), // User ID or 'system'
+  actorType: varchar("actor_type").notNull(), // 'patient', 'admin', 'system', 'scheduler'
+  
+  // Resource affected
+  resourceType: varchar("resource_type").notNull(), // 'consent', 'training_job', 'model', 'patient_data'
+  resourceId: varchar("resource_id"),
+  
+  // Patient data involvement (PHI tracking)
+  patientIdHash: varchar("patient_id_hash"), // Hashed patient ID if patient data involved
+  phiAccessed: boolean("phi_accessed").default(false),
+  phiCategories: jsonb("phi_categories").$type<string[]>(),
+  
+  // Event details
+  eventDetails: jsonb("event_details").$type<Record<string, unknown>>(),
+  previousState: jsonb("previous_state").$type<Record<string, unknown>>(),
+  newState: jsonb("new_state").$type<Record<string, unknown>>(),
+  
+  // Request metadata
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  sessionId: varchar("session_id"),
+  
+  // Status
+  success: boolean("success").default(true),
+  errorMessage: text("error_message"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  eventTypeIdx: index("ml_audit_event_idx").on(table.eventType),
+  actorIdx: index("ml_audit_actor_idx").on(table.actorId),
+  resourceIdx: index("ml_audit_resource_idx").on(table.resourceType, table.resourceId),
+  patientIdx: index("ml_audit_patient_idx").on(table.patientIdHash),
+  createdIdx: index("ml_audit_created_idx").on(table.createdAt),
+}));
+
+export const insertMlTrainingAuditLogSchema = createInsertSchema(mlTrainingAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMlTrainingAuditLog = z.infer<typeof insertMlTrainingAuditLogSchema>;
+export type MlTrainingAuditLog = typeof mlTrainingAuditLog.$inferSelect;
+
+// ============================================
+// UNIVERSAL DEVICE DATA COLLECTION SYSTEM
+// Supports: BP Monitor, Glucose Meter, Smart Scale, Thermometer, Stethoscope, Smartwatch (Whoop/Garmin/Apple/Oura/Samsung/Google)
+// ============================================
+
+// Device Readings - Universal table for all medical device data
+export const deviceReadings = pgTable("device_readings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Device identification
+  deviceType: varchar("device_type").notNull(), // 'bp_monitor', 'glucose_meter', 'smart_scale', 'thermometer', 'stethoscope', 'smartwatch'
+  deviceBrand: varchar("device_brand"), // 'whoop', 'garmin', 'apple_watch', 'oura', 'samsung', 'google', 'fitbit', 'omron', 'freestyle', 'withings', 'manual'
+  deviceModel: varchar("device_model"), // Specific model name
+  
+  // Data source
+  source: varchar("source").notNull().default("manual"), // 'manual', 'auto_sync', 'api_import'
+  wearableIntegrationId: varchar("wearable_integration_id").references(() => wearableIntegrations.id),
+  
+  // Timestamp
+  recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+  
+  // Blood Pressure Monitor Metrics
+  bpSystolic: integer("bp_systolic"), // mmHg
+  bpDiastolic: integer("bp_diastolic"), // mmHg
+  bpPulse: integer("bp_pulse"), // bpm
+  bpIrregularHeartbeat: boolean("bp_irregular_heartbeat"),
+  bpBodyPosition: varchar("bp_body_position"), // 'sitting', 'standing', 'lying'
+  bpArmUsed: varchar("bp_arm_used"), // 'left', 'right'
+  
+  // Glucose Meter Metrics
+  glucoseValue: decimal("glucose_value", { precision: 5, scale: 1 }), // mg/dL
+  glucoseContext: varchar("glucose_context"), // 'fasting', 'before_meal', 'after_meal', 'bedtime', 'random'
+  glucoseUnit: varchar("glucose_unit").default("mg/dL"), // 'mg/dL', 'mmol/L'
+  
+  // Smart Scale Metrics
+  weight: decimal("weight", { precision: 5, scale: 2 }), // kg or lbs
+  weightUnit: varchar("weight_unit").default("kg"), // 'kg', 'lbs'
+  bmi: decimal("bmi", { precision: 4, scale: 1 }),
+  bodyFatPercentage: decimal("body_fat_percentage", { precision: 4, scale: 1 }),
+  muscleMass: decimal("muscle_mass", { precision: 5, scale: 2 }),
+  boneMass: decimal("bone_mass", { precision: 4, scale: 2 }),
+  waterPercentage: decimal("water_percentage", { precision: 4, scale: 1 }),
+  visceralFat: integer("visceral_fat"), // 1-59 scale
+  metabolicAge: integer("metabolic_age"),
+  
+  // Thermometer Metrics
+  temperature: decimal("temperature", { precision: 4, scale: 1 }), // Celsius or Fahrenheit
+  temperatureUnit: varchar("temperature_unit").default("F"), // 'C', 'F'
+  temperatureLocation: varchar("temperature_location"), // 'oral', 'ear', 'forehead', 'armpit', 'rectal'
+  
+  // Stethoscope Metrics (Digital)
+  stethoscopeAudioUrl: varchar("stethoscope_audio_url"), // S3 URL for audio recording
+  stethoscopeLocation: varchar("stethoscope_location"), // 'heart', 'lungs_left', 'lungs_right', 'abdomen'
+  heartSoundsAnalysis: jsonb("heart_sounds_analysis").$type<{
+    murmurs?: boolean;
+    abnormalRhythm?: boolean;
+    s3Sound?: boolean;
+    s4Sound?: boolean;
+    notes?: string;
+  }>(),
+  lungSoundsAnalysis: jsonb("lung_sounds_analysis").$type<{
+    wheezing?: boolean;
+    crackles?: boolean;
+    rhonchi?: boolean;
+    diminished?: boolean;
+    notes?: string;
+  }>(),
+  
+  // Smartwatch - Heart/Cardiovascular Metrics
+  heartRate: integer("heart_rate"), // bpm
+  restingHeartRate: integer("resting_heart_rate"), // bpm
+  hrv: integer("hrv"), // Heart Rate Variability (ms RMSSD)
+  hrvSdnn: integer("hrv_sdnn"), // SDNN in ms
+  ecgData: jsonb("ecg_data").$type<{
+    classification?: string; // 'sinus_rhythm', 'afib', 'inconclusive'
+    heartRateDuringEcg?: number;
+    recordingUrl?: string;
+  }>(),
+  afibDetected: boolean("afib_detected"),
+  irregularRhythmAlert: boolean("irregular_rhythm_alert"),
+  heartRateZones: jsonb("heart_rate_zones").$type<{
+    resting?: number;
+    fatBurn?: number;
+    cardio?: number;
+    peak?: number;
+  }>(),
+  
+  // Smartwatch - Blood Oxygen / Respiratory
+  spo2: integer("spo2"), // Blood oxygen percentage
+  spo2Min: integer("spo2_min"),
+  respiratoryRate: integer("respiratory_rate"), // Breaths per minute
+  
+  // Smartwatch - Sleep Metrics
+  sleepDuration: integer("sleep_duration"), // Total minutes
+  sleepDeepMinutes: integer("sleep_deep_minutes"),
+  sleepRemMinutes: integer("sleep_rem_minutes"),
+  sleepLightMinutes: integer("sleep_light_minutes"),
+  sleepAwakeMinutes: integer("sleep_awake_minutes"),
+  sleepScore: integer("sleep_score"), // 0-100
+  sleepEfficiency: decimal("sleep_efficiency", { precision: 4, scale: 1 }), // Percentage
+  sleepConsistency: integer("sleep_consistency"), // 0-100
+  sleepDebt: integer("sleep_debt"), // Minutes of sleep debt
+  sleepNeed: integer("sleep_need"), // Predicted sleep need in minutes
+  
+  // Smartwatch - Recovery/Readiness Metrics (Whoop, Oura, Garmin)
+  recoveryScore: integer("recovery_score"), // 0-100 (Whoop Recovery, Oura Readiness)
+  readinessScore: integer("readiness_score"), // 0-100
+  bodyBattery: integer("body_battery"), // 0-100 (Garmin)
+  strainScore: decimal("strain_score", { precision: 3, scale: 1 }), // 0-21 (Whoop Strain)
+  stressScore: integer("stress_score"), // 0-100
+  
+  // Smartwatch - Temperature
+  skinTemperature: decimal("skin_temperature", { precision: 4, scale: 2 }), // Deviation from baseline
+  skinTempUnit: varchar("skin_temp_unit").default("C"),
+  
+  // Smartwatch - Activity/Fitness Metrics
+  steps: integer("steps"),
+  activeMinutes: integer("active_minutes"),
+  caloriesBurned: integer("calories_burned"),
+  distanceMeters: integer("distance_meters"),
+  floorsClimbed: integer("floors_climbed"),
+  standingHours: integer("standing_hours"),
+  vo2Max: decimal("vo2_max", { precision: 4, scale: 1 }), // mL/kg/min
+  trainingLoad: integer("training_load"), // Garmin Training Load
+  trainingStatus: varchar("training_status"), // 'productive', 'peaking', 'unproductive', 'recovery', 'detraining'
+  trainingReadiness: integer("training_readiness"), // 0-100
+  fitnessAge: integer("fitness_age"),
+  
+  // Smartwatch - Running/Sport Specific (Garmin)
+  runningDynamics: jsonb("running_dynamics").$type<{
+    cadence?: number;
+    strideLength?: number;
+    groundContactTime?: number;
+    verticalOscillation?: number;
+    groundContactBalance?: number;
+  }>(),
+  lactateThreshold: integer("lactate_threshold"), // bpm
+  performanceCondition: integer("performance_condition"), // -20 to +20
+  
+  // Smartwatch - Women's Health
+  cycleDay: integer("cycle_day"),
+  cyclePhase: varchar("cycle_phase"), // 'menstrual', 'follicular', 'ovulation', 'luteal'
+  predictedOvulation: timestamp("predicted_ovulation"),
+  periodLogged: boolean("period_logged"),
+  
+  // Smartwatch - Safety/Emergency
+  fallDetected: boolean("fall_detected"),
+  fallTimestamp: timestamp("fall_timestamp"),
+  emergencySOSTriggered: boolean("emergency_sos_triggered"),
+  
+  // Data routing flags (which health section this data should appear in)
+  routeToHypertension: boolean("route_to_hypertension").default(false),
+  routeToDiabetes: boolean("route_to_diabetes").default(false),
+  routeToCardiovascular: boolean("route_to_cardiovascular").default(false),
+  routeToRespiratory: boolean("route_to_respiratory").default(false),
+  routeToSleep: boolean("route_to_sleep").default(false),
+  routeToMentalHealth: boolean("route_to_mental_health").default(false),
+  routeToFitness: boolean("route_to_fitness").default(false),
+  
+  // ML/Health Alert integration
+  processedForAlerts: boolean("processed_for_alerts").default(false),
+  alertsGenerated: jsonb("alerts_generated").$type<string[]>(), // Array of alert IDs
+  contributedToMlTraining: boolean("contributed_to_ml_training").default(false),
+  
+  // Notes and metadata
+  notes: text("notes"),
+  metadata: jsonb("metadata").$type<{
+    syncBatchId?: string;
+    firmwareVersion?: string;
+    batteryLevel?: number;
+    signalQuality?: string;
+    rawData?: Record<string, unknown>;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientDateIdx: index("device_readings_patient_date_idx").on(table.patientId, table.recordedAt),
+  deviceTypeIdx: index("device_readings_device_type_idx").on(table.deviceType),
+  sourceIdx: index("device_readings_source_idx").on(table.source),
+}));
+
+export const insertDeviceReadingSchema = createInsertSchema(deviceReadings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeviceReading = z.infer<typeof insertDeviceReadingSchema>;
+export type DeviceReading = typeof deviceReadings.$inferSelect;
+
+// Device reading validation schemas for manual entry forms
+export const bpReadingSchema = z.object({
+  bpSystolic: z.number().min(60).max(250),
+  bpDiastolic: z.number().min(30).max(150),
+  bpPulse: z.number().min(30).max(220).optional(),
+  bpBodyPosition: z.enum(['sitting', 'standing', 'lying']).optional(),
+  bpArmUsed: z.enum(['left', 'right']).optional(),
+  notes: z.string().optional(),
+});
+
+export const glucoseReadingSchema = z.object({
+  glucoseValue: z.number().min(20).max(600),
+  glucoseContext: z.enum(['fasting', 'before_meal', 'after_meal', 'bedtime', 'random']),
+  glucoseUnit: z.enum(['mg/dL', 'mmol/L']).default('mg/dL'),
+  notes: z.string().optional(),
+});
+
+export const weightReadingSchema = z.object({
+  weight: z.number().min(20).max(500),
+  weightUnit: z.enum(['kg', 'lbs']).default('kg'),
+  bodyFatPercentage: z.number().min(1).max(70).optional(),
+  notes: z.string().optional(),
+});
+
+export const temperatureReadingSchema = z.object({
+  temperature: z.number().min(90).max(110), // Fahrenheit range
+  temperatureUnit: z.enum(['C', 'F']).default('F'),
+  temperatureLocation: z.enum(['oral', 'ear', 'forehead', 'armpit', 'rectal']).optional(),
+  notes: z.string().optional(),
+});
+
+export const stethoscopeReadingSchema = z.object({
+  stethoscopeLocation: z.enum(['heart', 'lungs_left', 'lungs_right', 'abdomen']),
+  stethoscopeAudioUrl: z.string().optional(),
+  heartSoundsAnalysis: z.object({
+    murmurs: z.boolean().optional(),
+    abnormalRhythm: z.boolean().optional(),
+    s3Sound: z.boolean().optional(),
+    s4Sound: z.boolean().optional(),
+    notes: z.string().optional(),
+  }).optional(),
+  lungSoundsAnalysis: z.object({
+    wheezing: z.boolean().optional(),
+    crackles: z.boolean().optional(),
+    rhonchi: z.boolean().optional(),
+    diminished: z.boolean().optional(),
+    notes: z.string().optional(),
+  }).optional(),
+  notes: z.string().optional(),
+});
+
+export const smartwatchReadingSchema = z.object({
+  heartRate: z.number().min(30).max(220).optional(),
+  restingHeartRate: z.number().min(30).max(120).optional(),
+  hrv: z.number().min(0).max(300).optional(),
+  spo2: z.number().min(70).max(100).optional(),
+  respiratoryRate: z.number().min(6).max(40).optional(),
+  sleepDuration: z.number().min(0).max(1440).optional(),
+  sleepScore: z.number().min(0).max(100).optional(),
+  recoveryScore: z.number().min(0).max(100).optional(),
+  stressScore: z.number().min(0).max(100).optional(),
+  steps: z.number().min(0).max(100000).optional(),
+  caloriesBurned: z.number().min(0).max(10000).optional(),
+  notes: z.string().optional(),
+});
+
+// Message envelope types for TypeScript
+export const messageEnvelopeSchema = z.object({
+  msgId: z.string().uuid(),
+  from: z.object({
+    type: z.enum(["agent", "user", "system"]),
+    id: z.string(),
+  }),
+  to: z.array(z.object({
+    type: z.enum(["agent", "user"]),
+    id: z.string(),
+  })),
+  type: z.enum(["chat", "command", "event", "tool_call", "ack"]),
+  timestamp: z.string().datetime(),
+  payload: z.record(z.unknown()).optional(),
+});
+
+export type MessageEnvelope = z.infer<typeof messageEnvelopeSchema>;
+
+// ============================================
+// DEVICE CONNECT SYSTEM - Production Grade
+// Supports: Smart BP, Glucose, Scale, Thermometer, Stethoscope, Smartwatch, Pulse Oximeter, Activity Trackers
+// Vendors: Fitbit, Withings, Oura, Google Fit, iHealth (public), Dexcom, Garmin, Whoop, Samsung, Eko, Abbott (private)
+// ============================================
+
+// Device Models Catalog - Registry of all supported device types and capabilities
+export const deviceModels = pgTable("device_models", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Device identification
+  vendorId: varchar("vendor_id").notNull(), // 'fitbit', 'withings', 'garmin', 'whoop', 'oura', 'dexcom', 'omron', 'ihealth', 'eko', 'abbott', 'apple', 'google', 'samsung', 'generic_ble'
+  vendorName: varchar("vendor_name").notNull(), // Display name
+  modelName: varchar("model_name").notNull(), // e.g., "Charge 5", "BPM Connect", "G7"
+  modelNumber: varchar("model_number"), // Manufacturer model number
+  
+  // Device type and category
+  deviceType: varchar("device_type").notNull(), // 'smartwatch', 'bp_monitor', 'glucose_meter', 'scale', 'thermometer', 'stethoscope', 'pulse_oximeter', 'activity_tracker', 'cgm'
+  deviceCategory: varchar("device_category").notNull(), // 'wearable', 'medical_device', 'home_health'
+  
+  // Capabilities - what metrics this device can provide
+  capabilities: jsonb("capabilities").$type<{
+    metrics: string[]; // ['heart_rate', 'hrv', 'spo2', 'sleep', 'steps', 'bp', 'glucose', 'weight', 'temperature', 'ecg', 'afib', 'respiratory_rate', 'stress', 'recovery', 'skin_temp']
+    features: string[]; // ['continuous_monitoring', 'on_demand', 'auto_sync', 'manual_entry', 'audio_recording', 'ecg_recording']
+    syncMethods: string[]; // ['oauth', 'ble', 'healthkit', 'google_fit', 'manual', 'webhook']
+  }>().notNull(),
+  
+  // Pairing methods supported
+  pairingMethods: jsonb("pairing_methods").$type<{
+    oauth?: { authUrl: string; scopes: string[]; };
+    ble?: { serviceUuids: string[]; characteristicUuids: string[]; };
+    healthkit?: { dataTypes: string[]; };
+    googleFit?: { dataTypes: string[]; };
+    webhook?: { endpoint: string; };
+    manual?: boolean;
+  }>().notNull(),
+  
+  // Vendor API configuration (PHI: contains API endpoints)
+  apiConfig: jsonb("api_config").$type<{
+    baseUrl?: string;
+    authEndpoint?: string;
+    tokenEndpoint?: string;
+    dataEndpoints?: Record<string, string>;
+    webhookSecret?: string;
+    rateLimit?: { requests: number; period: string; };
+  }>(),
+  
+  // BAA and compliance
+  baaRequired: boolean("baa_required").default(false),
+  baaStatus: varchar("baa_status"), // 'not_required', 'pending', 'active', 'expired'
+  hipaaCompliant: boolean("hipaa_compliant").default(false),
+  fdaCleared: boolean("fda_cleared").default(false),
+  fdaClearanceNumber: varchar("fda_clearance_number"),
+  
+  // Documentation
+  setupInstructions: text("setup_instructions"),
+  troubleshootingGuide: text("troubleshooting_guide"),
+  docsUrl: varchar("docs_url"),
+  supportUrl: varchar("support_url"),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  isPublicApi: boolean("is_public_api").default(false), // true for Fitbit, Withings, Oura, etc.
+  requiresPartnership: boolean("requires_partnership").default(false), // true for Dexcom, Garmin, Whoop, etc.
+  
+  // Metadata
+  imageUrl: varchar("image_url"),
+  metadata: jsonb("metadata").$type<{
+    releaseDate?: string;
+    discontinuedDate?: string;
+    batteryType?: string;
+    waterResistance?: string;
+    connectivity?: string[];
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  vendorIdx: index("device_models_vendor_idx").on(table.vendorId),
+  typeIdx: index("device_models_type_idx").on(table.deviceType),
+  activeIdx: index("device_models_active_idx").on(table.isActive),
+}));
+
+export const insertDeviceModelSchema = createInsertSchema(deviceModels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeviceModel = z.infer<typeof insertDeviceModelSchema>;
+export type DeviceModel = typeof deviceModels.$inferSelect;
+
+// Vendor Accounts - OAuth tokens and credentials for vendor APIs (PHI: encrypted tokens)
+export const vendorAccounts = pgTable("vendor_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Vendor identification
+  vendorId: varchar("vendor_id").notNull(), // 'fitbit', 'withings', 'garmin', etc.
+  vendorName: varchar("vendor_name").notNull(),
+  
+  // OAuth tokens (PHI: must be encrypted at rest)
+  accessToken: text("access_token"), // Encrypted
+  refreshToken: text("refresh_token"), // Encrypted
+  tokenType: varchar("token_type").default("Bearer"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  tokenScope: text("token_scope"), // Granted scopes
+  
+  // Vendor user ID
+  vendorUserId: varchar("vendor_user_id"), // User ID in vendor's system
+  vendorUsername: varchar("vendor_username"), // Display name from vendor
+  
+  // Connection status
+  connectionStatus: varchar("connection_status").default("pending"), // 'pending', 'connected', 'disconnected', 'expired', 'revoked', 'error'
+  lastAuthAt: timestamp("last_auth_at"),
+  lastRefreshAt: timestamp("last_refresh_at"),
+  lastRefreshError: text("last_refresh_error"),
+  refreshAttempts: integer("refresh_attempts").default(0),
+  
+  // Sync settings
+  autoSync: boolean("auto_sync").default(true),
+  syncFrequency: varchar("sync_frequency").default("hourly"), // 'real_time', 'hourly', 'daily', 'manual'
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: varchar("last_sync_status"), // 'success', 'partial', 'failed'
+  lastSyncError: text("last_sync_error"),
+  syncedDataTypes: jsonb("synced_data_types").$type<string[]>(), // What data types are being synced
+  
+  // Webhook configuration
+  webhookId: varchar("webhook_id"), // Vendor's webhook subscription ID
+  webhookSecret: text("webhook_secret"), // Encrypted
+  webhookActive: boolean("webhook_active").default(false),
+  
+  // Consent tracking
+  consentGrantedAt: timestamp("consent_granted_at"),
+  consentVersion: varchar("consent_version"),
+  consentDataTypes: jsonb("consent_data_types").$type<string[]>(), // What data user consented to share
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    profileData?: Record<string, unknown>;
+    subscriptionId?: string;
+    apiVersion?: string;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userVendorIdx: index("vendor_accounts_user_vendor_idx").on(table.userId, table.vendorId),
+  statusIdx: index("vendor_accounts_status_idx").on(table.connectionStatus),
+  expiryIdx: index("vendor_accounts_expiry_idx").on(table.tokenExpiresAt),
+}));
+
+export const insertVendorAccountSchema = createInsertSchema(vendorAccounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertVendorAccount = z.infer<typeof insertVendorAccountSchema>;
+export type VendorAccount = typeof vendorAccounts.$inferSelect;
+
+// Device Health - Real-time device status and health metrics
+export const deviceHealth = pgTable("device_health", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceConnectionId: varchar("device_connection_id").notNull().references(() => wearableIntegrations.id),
+  
+  // Device status
+  status: varchar("status").notNull().default("unknown"), // 'online', 'offline', 'pairing', 'syncing', 'error', 'low_battery', 'unknown'
+  statusMessage: text("status_message"),
+  lastSeenAt: timestamp("last_seen_at"),
+  
+  // Battery
+  batteryLevel: integer("battery_level"), // 0-100%
+  batteryStatus: varchar("battery_status"), // 'charging', 'discharging', 'full', 'low', 'critical'
+  estimatedBatteryLife: varchar("estimated_battery_life"), // e.g., "2 days"
+  
+  // Connectivity
+  signalStrength: integer("signal_strength"), // RSSI or signal quality 0-100
+  connectionType: varchar("connection_type"), // 'ble', 'wifi', 'cellular', 'usb'
+  lastConnectionAt: timestamp("last_connection_at"),
+  connectionErrors: integer("connection_errors").default(0),
+  
+  // Firmware
+  firmwareVersion: varchar("firmware_version"),
+  firmwareUpdateAvailable: boolean("firmware_update_available").default(false),
+  latestFirmwareVersion: varchar("latest_firmware_version"),
+  
+  // Sync health
+  syncSuccessRate: decimal("sync_success_rate", { precision: 5, scale: 2 }), // Last 30 days
+  avgSyncLatency: integer("avg_sync_latency"), // Milliseconds
+  lastSuccessfulSync: timestamp("last_successful_sync"),
+  consecutiveFailures: integer("consecutive_failures").default(0),
+  
+  // Data quality
+  dataQualityScore: integer("data_quality_score"), // 0-100
+  missingDataTypes: jsonb("missing_data_types").$type<string[]>(),
+  dataGaps: jsonb("data_gaps").$type<{ start: string; end: string; reason?: string; }[]>(),
+  
+  // Alerts
+  healthAlerts: jsonb("health_alerts").$type<{
+    type: string; // 'low_battery', 'sync_failed', 'firmware_update', 'connection_lost', 'data_quality'
+    severity: string; // 'info', 'warning', 'critical'
+    message: string;
+    timestamp: string;
+    acknowledged: boolean;
+  }[]>(),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    wearPosition?: string;
+    calibrationDate?: string;
+    sensorHealth?: Record<string, unknown>;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  deviceIdx: index("device_health_device_idx").on(table.deviceConnectionId),
+  statusIdx: index("device_health_status_idx").on(table.status),
+  lastSeenIdx: index("device_health_last_seen_idx").on(table.lastSeenAt),
+}));
+
+export const insertDeviceHealthSchema = createInsertSchema(deviceHealth).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeviceHealth = z.infer<typeof insertDeviceHealthSchema>;
+export type DeviceHealth = typeof deviceHealth.$inferSelect;
+
+// Device Pairing Sessions - Track pairing flows with audit trail
+export const devicePairingSessions = pgTable("device_pairing_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Device being paired
+  deviceModelId: varchar("device_model_id").references(() => deviceModels.id),
+  deviceType: varchar("device_type").notNull(),
+  vendorId: varchar("vendor_id").notNull(),
+  
+  // Pairing method
+  pairingMethod: varchar("pairing_method").notNull(), // 'oauth', 'ble', 'healthkit', 'google_fit', 'manual', 'qr_code'
+  
+  // Session state
+  sessionStatus: varchar("session_status").notNull().default("initiated"), // 'initiated', 'pending_auth', 'pending_ble', 'pending_consent', 'completed', 'failed', 'expired', 'cancelled'
+  
+  // OAuth flow data
+  oauthState: varchar("oauth_state"), // CSRF protection
+  oauthCodeVerifier: text("oauth_code_verifier"), // PKCE
+  oauthRedirectUri: varchar("oauth_redirect_uri"),
+  
+  // BLE pairing data
+  bleDeviceId: varchar("ble_device_id"),
+  bleServiceUuid: varchar("ble_service_uuid"),
+  blePairingCode: varchar("ble_pairing_code"),
+  
+  // QR code pairing
+  qrCodeToken: varchar("qr_code_token"),
+  qrCodeExpiresAt: timestamp("qr_code_expires_at"),
+  
+  // Result
+  resultDeviceConnectionId: varchar("result_device_connection_id").references(() => wearableIntegrations.id),
+  resultVendorAccountId: varchar("result_vendor_account_id").references(() => vendorAccounts.id),
+  
+  // Error tracking
+  errorCode: varchar("error_code"),
+  errorMessage: text("error_message"),
+  errorDetails: jsonb("error_details"),
+  
+  // Consent
+  consentCaptured: boolean("consent_captured").default(false),
+  consentTimestamp: timestamp("consent_timestamp"),
+  consentVersion: varchar("consent_version"),
+  consentedDataTypes: jsonb("consented_data_types").$type<string[]>(),
+  
+  // Session timing
+  startedAt: timestamp("started_at").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Audit trail
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    stepHistory?: { step: string; timestamp: string; success: boolean; }[];
+    deviceInfo?: Record<string, unknown>;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("device_pairing_user_idx").on(table.userId),
+  statusIdx: index("device_pairing_status_idx").on(table.sessionStatus),
+  oauthStateIdx: index("device_pairing_oauth_state_idx").on(table.oauthState),
+  expiryIdx: index("device_pairing_expiry_idx").on(table.expiresAt),
+}));
+
+export const insertDevicePairingSessionSchema = createInsertSchema(devicePairingSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDevicePairingSession = z.infer<typeof insertDevicePairingSessionSchema>;
+export type DevicePairingSession = typeof devicePairingSessions.$inferSelect;
+
+// Device Sync Jobs - Track background sync operations
+export const deviceSyncJobs = pgTable("device_sync_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Job identification
+  jobType: varchar("job_type").notNull(), // 'scheduled_sync', 'on_demand_sync', 'webhook_process', 'token_refresh', 'health_check'
+  
+  // Target
+  vendorAccountId: varchar("vendor_account_id").references(() => vendorAccounts.id),
+  deviceConnectionId: varchar("device_connection_id").references(() => wearableIntegrations.id),
+  userId: varchar("user_id").references(() => users.id),
+  
+  // Job state
+  status: varchar("status").notNull().default("pending"), // 'pending', 'running', 'completed', 'failed', 'retrying', 'cancelled'
+  priority: integer("priority").default(5), // 1-10, higher = more urgent
+  
+  // Execution
+  scheduledFor: timestamp("scheduled_for"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Retry logic
+  attempts: integer("attempts").default(0),
+  maxAttempts: integer("max_attempts").default(3),
+  nextRetryAt: timestamp("next_retry_at"),
+  
+  // Results
+  recordsProcessed: integer("records_processed").default(0),
+  recordsFailed: integer("records_failed").default(0),
+  dataTypes: jsonb("data_types").$type<string[]>(), // What data types were synced
+  dateRange: jsonb("date_range").$type<{ start: string; end: string; }>(),
+  
+  // Error tracking
+  errorCode: varchar("error_code"),
+  errorMessage: text("error_message"),
+  errorStack: text("error_stack"),
+  
+  // Worker info
+  workerId: varchar("worker_id"),
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    triggerSource?: string; // 'schedule', 'user', 'webhook', 'system'
+    webhookPayload?: Record<string, unknown>;
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusIdx: index("device_sync_jobs_status_idx").on(table.status),
+  scheduledIdx: index("device_sync_jobs_scheduled_idx").on(table.scheduledFor),
+  vendorIdx: index("device_sync_jobs_vendor_idx").on(table.vendorAccountId),
+}));
+
+export const insertDeviceSyncJobSchema = createInsertSchema(deviceSyncJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDeviceSyncJob = z.infer<typeof insertDeviceSyncJobSchema>;
+export type DeviceSyncJob = typeof deviceSyncJobs.$inferSelect;
+
+// Device Data Audit Log - HIPAA-compliant audit trail for all device data access
+export const deviceDataAuditLog = pgTable("device_data_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Actor
+  actorId: varchar("actor_id").notNull(), // User or system ID
+  actorType: varchar("actor_type").notNull(), // 'patient', 'clinician', 'system', 'vendor_webhook'
+  actorRole: varchar("actor_role"), // 'patient', 'doctor', 'nurse', 'admin'
+  
+  // Action
+  action: varchar("action").notNull(), // 'device_paired', 'device_unpaired', 'data_synced', 'data_viewed', 'data_exported', 'consent_granted', 'consent_revoked', 'token_refreshed'
+  actionCategory: varchar("action_category").notNull(), // 'device_management', 'data_access', 'consent', 'sync'
+  
+  // Resource
+  resourceType: varchar("resource_type").notNull(), // 'device_connection', 'vendor_account', 'device_reading', 'device_health'
+  resourceId: varchar("resource_id"),
+  patientId: varchar("patient_id"), // PHI: patient whose data was accessed
+  
+  // Details
+  eventDetails: jsonb("event_details").$type<{
+    deviceType?: string;
+    vendorId?: string;
+    dataTypes?: string[];
+    recordCount?: number;
+    dateRange?: { start: string; end: string; };
+    previousValue?: Record<string, unknown>;
+    newValue?: Record<string, unknown>;
+  }>(),
+  
+  // Request context
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  sessionId: varchar("session_id"),
+  requestId: varchar("request_id"),
+  
+  // Result
+  success: boolean("success").default(true),
+  errorMessage: text("error_message"),
+  
+  // PHI flag
+  phiAccessed: boolean("phi_accessed").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  actorIdx: index("device_audit_actor_idx").on(table.actorId),
+  actionIdx: index("device_audit_action_idx").on(table.action),
+  resourceIdx: index("device_audit_resource_idx").on(table.resourceType, table.resourceId),
+  patientIdx: index("device_audit_patient_idx").on(table.patientId),
+  createdIdx: index("device_audit_created_idx").on(table.createdAt),
+}));
+
+export const insertDeviceDataAuditLogSchema = createInsertSchema(deviceDataAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDeviceDataAuditLog = z.infer<typeof insertDeviceDataAuditLogSchema>;
+export type DeviceDataAuditLog = typeof deviceDataAuditLog.$inferSelect;
+
+// Health Section Analytics - Per-section health metrics derived from device data
+export const healthSectionAnalytics = pgTable("health_section_analytics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Section identification
+  healthSection: varchar("health_section").notNull(), // 'hypertension', 'diabetes', 'cardiovascular', 'respiratory', 'sleep', 'mental_health', 'fitness'
+  
+  // Time window
+  analysisDate: timestamp("analysis_date").notNull(),
+  windowStart: timestamp("window_start").notNull(),
+  windowEnd: timestamp("window_end").notNull(),
+  windowDays: integer("window_days").default(7),
+  
+  // Data sources used
+  deviceTypes: jsonb("device_types").$type<string[]>(), // Which device types contributed
+  readingCount: integer("reading_count").default(0),
+  
+  // ML Predictions
+  mlPrediction: jsonb("ml_prediction").$type<{
+    predictedOutcome: string; // 'stable', 'improving', 'declining', 'at_risk', 'critical'
+    confidence: number; // 0-1
+    modelVersion: string;
+    features: Record<string, number>;
+  }>(),
+  
+  // Deterioration Index (0-100, higher = worse)
+  deteriorationIndex: decimal("deterioration_index", { precision: 5, scale: 2 }),
+  deteriorationTrend: varchar("deterioration_trend"), // 'improving', 'stable', 'worsening'
+  deteriorationChangeRate: decimal("deterioration_change_rate", { precision: 5, scale: 2 }), // % change from previous
+  
+  // Risk Score (0-100)
+  riskScore: decimal("risk_score", { precision: 5, scale: 2 }),
+  riskLevel: varchar("risk_level"), // 'low', 'moderate', 'high', 'critical'
+  riskFactors: jsonb("risk_factors").$type<{ factor: string; contribution: number; value: number; }[]>(),
+  
+  // Trend Analysis
+  trendDirection: varchar("trend_direction"), // 'improving', 'stable', 'declining'
+  trendStrength: decimal("trend_strength", { precision: 5, scale: 2 }), // 0-1
+  trendMetrics: jsonb("trend_metrics").$type<{
+    metric: string;
+    values: number[];
+    slope: number;
+    r_squared: number;
+    forecast: number[];
+  }[]>(),
+  
+  // Stability Score (0-100, higher = more stable)
+  stabilityScore: decimal("stability_score", { precision: 5, scale: 2 }),
+  variabilityIndex: decimal("variability_index", { precision: 5, scale: 2 }),
+  stabilityMetrics: jsonb("stability_metrics").$type<{
+    metric: string;
+    mean: number;
+    std: number;
+    cv: number; // Coefficient of variation
+    range: { min: number; max: number; };
+  }[]>(),
+  
+  // Alerts generated
+  alertsGenerated: jsonb("alerts_generated").$type<{
+    alertId: string;
+    alertType: string;
+    severity: string;
+    message: string;
+    triggeredAt: string;
+    acknowledged: boolean;
+  }[]>(),
+  activeAlertCount: integer("active_alert_count").default(0),
+  
+  // Section-specific metrics (JSON for flexibility)
+  sectionMetrics: jsonb("section_metrics").$type<Record<string, unknown>>(),
+  
+  // Baseline comparison
+  baselineDeviation: decimal("baseline_deviation", { precision: 5, scale: 2 }), // % deviation from personal baseline
+  baselineStatus: varchar("baseline_status"), // 'within_normal', 'elevated', 'concerning', 'critical'
+  
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    processingTime?: number;
+    dataQuality?: number;
+    missingDataTypes?: string[];
+  }>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientSectionIdx: index("health_analytics_patient_section_idx").on(table.patientId, table.healthSection),
+  dateIdx: index("health_analytics_date_idx").on(table.analysisDate),
+  riskIdx: index("health_analytics_risk_idx").on(table.riskLevel),
+}));
+
+export const insertHealthSectionAnalyticsSchema = createInsertSchema(healthSectionAnalytics).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHealthSectionAnalytics = z.infer<typeof insertHealthSectionAnalyticsSchema>;
+export type HealthSectionAnalytics = typeof healthSectionAnalytics.$inferSelect;
+
+// ============================================================================
+// ENVIRONMENTAL RISK MAP SYSTEM - Advanced Environmental Health Intelligence
+// ============================================================================
+
+// Patient Environment Profile - Links patients to their location and condition triggers
+export const patientEnvironmentProfiles = pgTable("patient_environment_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Location (HIPAA compliant - ZIP only, no GPS)
+  zipCode: varchar("zip_code", { length: 10 }).notNull(),
+  city: varchar("city"),
+  state: varchar("state", { length: 2 }),
+  timezone: varchar("timezone").default("America/New_York"),
+  
+  // Patient conditions for personalized triggers
+  chronicConditions: jsonb("chronic_conditions").$type<string[]>(), // ['asthma', 'copd', 'heart_failure', 'arthritis', 'migraines', 'eczema']
+  allergies: jsonb("allergies").$type<string[]>(), // ['pollen', 'mold', 'dust', 'pet_dander']
+  
+  // Alert preferences
+  alertsEnabled: boolean("alerts_enabled").default(true),
+  alertThresholds: jsonb("alert_thresholds").$type<{
+    riskScore: number; // Notify when composite risk exceeds this (0-100)
+    aqiThreshold: number; // Notify when AQI exceeds this
+    pollenThreshold: number; // Notify when pollen exceeds this (0-12)
+    temperatureMin: number; // Notify when temp drops below (Celsius)
+    temperatureMax: number; // Notify when temp exceeds (Celsius)
+    humidityMin: number; // Notify when humidity drops below (%)
+    humidityMax: number; // Notify when humidity exceeds (%)
+  }>(),
+  
+  // Notification channels
+  pushNotifications: boolean("push_notifications").default(true),
+  smsNotifications: boolean("sms_notifications").default(false),
+  emailDigest: boolean("email_digest").default(true),
+  digestFrequency: varchar("digest_frequency").default("daily"), // 'daily', 'weekly', 'never'
+  
+  // Consent for ML correlation
+  correlationConsentGiven: boolean("correlation_consent_given").default(false),
+  correlationConsentAt: timestamp("correlation_consent_at"),
+  
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("env_profile_patient_idx").on(table.patientId),
+  zipIdx: index("env_profile_zip_idx").on(table.zipCode),
+}));
+
+export const insertPatientEnvironmentProfileSchema = createInsertSchema(patientEnvironmentProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientEnvironmentProfile = z.infer<typeof insertPatientEnvironmentProfileSchema>;
+export type PatientEnvironmentProfile = typeof patientEnvironmentProfiles.$inferSelect;
+
+// Condition Trigger Mapping - Maps conditions to environmental factors with weights
+export const conditionTriggerMappings = pgTable("condition_trigger_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Condition this mapping applies to
+  conditionCode: varchar("condition_code").notNull(), // 'asthma', 'copd', 'heart_failure', 'arthritis', 'migraines', 'eczema'
+  conditionName: varchar("condition_name").notNull(),
+  
+  // Environmental factor this condition is sensitive to
+  factorType: varchar("factor_type").notNull(), // 'pm25', 'pm10', 'ozone', 'humidity', 'temperature', 'pressure', 'pollen', 'mold', 'uv'
+  factorName: varchar("factor_name").notNull(),
+  
+  // Trigger thresholds
+  triggerThreshold: decimal("trigger_threshold", { precision: 10, scale: 4 }), // Value at which factor becomes concerning
+  criticalThreshold: decimal("critical_threshold", { precision: 10, scale: 4 }), // Value at which factor becomes critical
+  
+  // Weight in risk calculation (0.0 to 1.0)
+  baseWeight: decimal("base_weight", { precision: 5, scale: 4 }).default("0.5"),
+  
+  // Direction of impact
+  impactDirection: varchar("impact_direction").notNull(), // 'higher_is_worse', 'lower_is_worse', 'both_extremes'
+  
+  // Evidence and recommendations
+  clinicalEvidence: text("clinical_evidence"),
+  recommendations: jsonb("recommendations").$type<string[]>(),
+  
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  conditionIdx: index("trigger_condition_idx").on(table.conditionCode),
+  factorIdx: index("trigger_factor_idx").on(table.factorType),
+}));
+
+export const insertConditionTriggerMappingSchema = createInsertSchema(conditionTriggerMappings).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertConditionTriggerMapping = z.infer<typeof insertConditionTriggerMappingSchema>;
+export type ConditionTriggerMapping = typeof conditionTriggerMappings.$inferSelect;
+
+// Patient Trigger Weights - Personalized weights learned from patient-specific correlations
+export const patientTriggerWeights = pgTable("patient_trigger_weights", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Environmental factor
+  factorType: varchar("factor_type").notNull(),
+  
+  // Personalized weight (learned from correlation analysis)
+  personalizedWeight: decimal("personalized_weight", { precision: 5, scale: 4 }).notNull(),
+  
+  // Confidence in this weight (based on data volume)
+  confidenceScore: decimal("confidence_score", { precision: 5, scale: 4 }),
+  
+  // How the weight was determined
+  source: varchar("source").notNull(), // 'default', 'correlation', 'manual', 'ml_predicted'
+  
+  // Correlation statistics
+  correlationCoefficient: decimal("correlation_coefficient", { precision: 5, scale: 4 }),
+  pValue: decimal("p_value", { precision: 8, scale: 6 }),
+  sampleSize: integer("sample_size"),
+  
+  lastUpdatedAt: timestamp("last_updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientFactorIdx: index("patient_trigger_idx").on(table.patientId, table.factorType),
+}));
+
+export const insertPatientTriggerWeightSchema = createInsertSchema(patientTriggerWeights).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPatientTriggerWeight = z.infer<typeof insertPatientTriggerWeightSchema>;
+export type PatientTriggerWeight = typeof patientTriggerWeights.$inferSelect;
+
+// Environmental Data Snapshots - Time-series environmental readings by ZIP code
+export const environmentalDataSnapshots = pgTable("environmental_data_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  zipCode: varchar("zip_code", { length: 10 }).notNull(),
+  
+  // Timestamp of measurement
+  measuredAt: timestamp("measured_at").notNull(),
+  
+  // Weather data
+  temperature: decimal("temperature", { precision: 6, scale: 2 }), // Celsius
+  feelsLike: decimal("feels_like", { precision: 6, scale: 2 }),
+  humidity: decimal("humidity", { precision: 5, scale: 2 }), // Percentage
+  pressure: decimal("pressure", { precision: 7, scale: 2 }), // hPa
+  windSpeed: decimal("wind_speed", { precision: 6, scale: 2 }), // m/s
+  windDirection: integer("wind_direction"), // Degrees
+  precipitation: decimal("precipitation", { precision: 6, scale: 2 }), // mm
+  uvIndex: decimal("uv_index", { precision: 4, scale: 2 }),
+  cloudCover: integer("cloud_cover"), // Percentage
+  visibility: decimal("visibility", { precision: 8, scale: 2 }), // meters
+  
+  // Air Quality
+  aqi: integer("aqi"), // 0-500 EPA scale
+  aqiCategory: varchar("aqi_category"), // 'good', 'moderate', 'unhealthy_sensitive', 'unhealthy', 'very_unhealthy', 'hazardous'
+  pm25: decimal("pm25", { precision: 7, scale: 3 }), // µg/m³
+  pm10: decimal("pm10", { precision: 7, scale: 3 }),
+  ozone: decimal("ozone", { precision: 7, scale: 3 }), // ppb
+  no2: decimal("no2", { precision: 7, scale: 3 }), // ppb
+  so2: decimal("so2", { precision: 7, scale: 3 }), // ppb
+  co: decimal("co", { precision: 8, scale: 3 }), // ppm
+  
+  // Allergens
+  pollenTreeCount: integer("pollen_tree_count"), // grains/m³
+  pollenGrassCount: integer("pollen_grass_count"),
+  pollenWeedCount: integer("pollen_weed_count"),
+  pollenOverall: integer("pollen_overall"), // 0-12 scale
+  pollenCategory: varchar("pollen_category"), // 'low', 'moderate', 'high', 'very_high'
+  moldSporeCount: integer("mold_spore_count"),
+  moldCategory: varchar("mold_category"),
+  
+  // Environmental Hazards
+  activeHazards: jsonb("active_hazards").$type<{
+    type: string; // 'fire', 'smoke', 'flood', 'heat_wave', 'air_quality_alert', 'disease_outbreak'
+    severity: 'low' | 'moderate' | 'high' | 'extreme';
+    title: string;
+    description: string;
+    source: string;
+    startTime?: string;
+    endTime?: string;
+  }[]>(),
+  
+  // Data sources
+  weatherSource: varchar("weather_source"), // 'openweathermap', 'weatherapi', 'noaa'
+  aqiSource: varchar("aqi_source"), // 'airnow', 'iqair', 'breezometer'
+  pollenSource: varchar("pollen_source"), // 'pollen.com', 'breezometer', 'ambee'
+  hazardSource: varchar("hazard_source"), // 'epa', 'nasa_firms', 'nws'
+  
+  // Data quality
+  dataQualityScore: decimal("data_quality_score", { precision: 4, scale: 2 }), // 0-100
+  missingFields: jsonb("missing_fields").$type<string[]>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  zipTimeIdx: index("env_snapshot_zip_time_idx").on(table.zipCode, table.measuredAt),
+  measuredAtIdx: index("env_snapshot_measured_idx").on(table.measuredAt),
+}));
+
+export const insertEnvironmentalDataSnapshotSchema = createInsertSchema(environmentalDataSnapshots).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEnvironmentalDataSnapshot = z.infer<typeof insertEnvironmentalDataSnapshotSchema>;
+export type EnvironmentalDataSnapshot = typeof environmentalDataSnapshots.$inferSelect;
+
+// Patient Risk Scores - Computed personalized risk scores
+export const patientEnvironmentRiskScores = pgTable("patient_environment_risk_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  snapshotId: varchar("snapshot_id").references(() => environmentalDataSnapshots.id),
+  
+  // Timestamp
+  computedAt: timestamp("computed_at").notNull(),
+  
+  // Composite Risk Score (0-100)
+  compositeRiskScore: decimal("composite_risk_score", { precision: 5, scale: 2 }).notNull(),
+  riskLevel: varchar("risk_level").notNull(), // 'low', 'moderate', 'high', 'critical'
+  
+  // Component scores (each 0-100)
+  weatherRiskScore: decimal("weather_risk_score", { precision: 5, scale: 2 }),
+  airQualityRiskScore: decimal("air_quality_risk_score", { precision: 5, scale: 2 }),
+  allergenRiskScore: decimal("allergen_risk_score", { precision: 5, scale: 2 }),
+  hazardRiskScore: decimal("hazard_risk_score", { precision: 5, scale: 2 }),
+  
+  // Trend scores (normalized slopes)
+  trend24hr: decimal("trend_24hr", { precision: 6, scale: 3 }), // -1 to +1 (negative = improving)
+  trend48hr: decimal("trend_48hr", { precision: 6, scale: 3 }),
+  trend72hr: decimal("trend_72hr", { precision: 6, scale: 3 }),
+  
+  // Volatility score (7-day standard deviation normalized)
+  volatilityScore: decimal("volatility_score", { precision: 5, scale: 2 }),
+  
+  // Individual factor contributions
+  factorContributions: jsonb("factor_contributions").$type<{
+    factor: string;
+    rawValue: number;
+    normalizedValue: number;
+    weight: number;
+    contribution: number; // weight * normalizedValue
+  }[]>(),
+  
+  // Top risk factors
+  topRiskFactors: jsonb("top_risk_factors").$type<{
+    factor: string;
+    severity: 'low' | 'moderate' | 'high' | 'critical';
+    recommendation: string;
+  }[]>(),
+  
+  // Scoring metadata
+  scoringVersion: varchar("scoring_version").default("1.0"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientTimeIdx: index("risk_score_patient_time_idx").on(table.patientId, table.computedAt),
+  riskLevelIdx: index("risk_score_level_idx").on(table.riskLevel),
+}));
+
+export const insertPatientEnvironmentRiskScoreSchema = createInsertSchema(patientEnvironmentRiskScores).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPatientEnvironmentRiskScore = z.infer<typeof insertPatientEnvironmentRiskScoreSchema>;
+export type PatientEnvironmentRiskScore = typeof patientEnvironmentRiskScores.$inferSelect;
+
+// Environmental Forecasts - ML-predicted future risk
+export const environmentalForecasts = pgTable("environmental_forecasts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // When forecast was generated
+  generatedAt: timestamp("generated_at").notNull(),
+  
+  // Forecast horizon
+  forecastHorizon: varchar("forecast_horizon").notNull(), // '12hr', '24hr', '48hr', '72hr'
+  forecastTargetTime: timestamp("forecast_target_time").notNull(),
+  
+  // Predicted risk scores
+  predictedRiskScore: decimal("predicted_risk_score", { precision: 5, scale: 2 }).notNull(),
+  predictedRiskLevel: varchar("predicted_risk_level").notNull(),
+  confidenceInterval: jsonb("confidence_interval").$type<{
+    lower: number;
+    upper: number;
+    confidence: number; // 0.95 for 95% CI
+  }>(),
+  
+  // Component predictions
+  predictedWeatherRisk: decimal("predicted_weather_risk", { precision: 5, scale: 2 }),
+  predictedAirQualityRisk: decimal("predicted_air_quality_risk", { precision: 5, scale: 2 }),
+  predictedAllergenRisk: decimal("predicted_allergen_risk", { precision: 5, scale: 2 }),
+  
+  // Key predicted values
+  predictedValues: jsonb("predicted_values").$type<{
+    factor: string;
+    currentValue: number;
+    predictedValue: number;
+    changeDirection: 'increase' | 'decrease' | 'stable';
+    changePercent: number;
+  }[]>(),
+  
+  // Model metadata
+  modelName: varchar("model_name").notNull(), // 'lightgbm_risk_v1', 'lstm_risk_v2'
+  modelVersion: varchar("model_version").notNull(),
+  featureImportance: jsonb("feature_importance").$type<Record<string, number>>(),
+  
+  // Actual values (filled in after forecast period passes)
+  actualRiskScore: decimal("actual_risk_score", { precision: 5, scale: 2 }),
+  forecastError: decimal("forecast_error", { precision: 5, scale: 2 }), // Absolute error
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientTimeIdx: index("forecast_patient_time_idx").on(table.patientId, table.generatedAt),
+  horizonIdx: index("forecast_horizon_idx").on(table.forecastHorizon),
+}));
+
+export const insertEnvironmentalForecastSchema = createInsertSchema(environmentalForecasts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEnvironmentalForecast = z.infer<typeof insertEnvironmentalForecastSchema>;
+export type EnvironmentalForecast = typeof environmentalForecasts.$inferSelect;
+
+// Symptom-Environment Correlations - Learned correlations between symptoms and environment
+export const symptomEnvironmentCorrelations = pgTable("symptom_environment_correlations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Symptom being correlated
+  symptomType: varchar("symptom_type").notNull(), // 'pain', 'fatigue', 'breathing_difficulty', 'headache', 'joint_stiffness'
+  symptomSeverityMetric: varchar("symptom_severity_metric").notNull(), // 'vas_score', 'frequency', 'duration'
+  
+  // Environmental factor
+  environmentalFactor: varchar("environmental_factor").notNull(), // 'pm25', 'humidity', 'pressure', 'pollen', etc.
+  
+  // Correlation statistics
+  correlationType: varchar("correlation_type").notNull(), // 'spearman', 'pearson', 'cross_correlation'
+  correlationCoefficient: decimal("correlation_coefficient", { precision: 6, scale: 4 }).notNull(),
+  pValue: decimal("p_value", { precision: 10, scale: 8 }),
+  isStatisticallySignificant: boolean("is_statistically_significant").default(false),
+  
+  // Cross-correlation lag analysis
+  optimalLag: integer("optimal_lag"), // Hours of delay between env change and symptom change
+  lagCorrelation: decimal("lag_correlation", { precision: 6, scale: 4 }),
+  
+  // Sample data
+  sampleSize: integer("sample_size").notNull(),
+  dataWindowDays: integer("data_window_days"), // How many days of data used
+  
+  // Interpretation
+  relationshipStrength: varchar("relationship_strength"), // 'weak', 'moderate', 'strong', 'very_strong'
+  relationshipDirection: varchar("relationship_direction"), // 'positive', 'negative', 'non_linear'
+  interpretation: text("interpretation"), // AI-generated explanation
+  
+  // Confidence and quality
+  confidenceScore: decimal("confidence_score", { precision: 5, scale: 4 }),
+  dataQualityScore: decimal("data_quality_score", { precision: 5, scale: 4 }),
+  
+  lastAnalyzedAt: timestamp("last_analyzed_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientSymptomIdx: index("correlation_patient_symptom_idx").on(table.patientId, table.symptomType),
+  significantIdx: index("correlation_significant_idx").on(table.isStatisticallySignificant),
+}));
+
+export const insertSymptomEnvironmentCorrelationSchema = createInsertSchema(symptomEnvironmentCorrelations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSymptomEnvironmentCorrelation = z.infer<typeof insertSymptomEnvironmentCorrelationSchema>;
+export type SymptomEnvironmentCorrelation = typeof symptomEnvironmentCorrelations.$inferSelect;
+
+// Environmental Alerts - Alert history and active alerts
+export const environmentalAlerts = pgTable("environmental_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Alert type and trigger
+  alertType: varchar("alert_type").notNull(), // 'acute_spike', 'forecast_deterioration', 'threshold_exceeded', 'correlation_trigger', 'hazard_warning'
+  triggeredBy: varchar("triggered_by").notNull(), // The factor that triggered the alert (e.g., 'pm25', 'composite_risk')
+  
+  // Severity
+  severity: varchar("severity").notNull(), // 'info', 'warning', 'critical', 'emergency'
+  priority: integer("priority").notNull(), // 1-10 (10 = most urgent)
+  
+  // Alert content
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  recommendations: jsonb("recommendations").$type<{
+    action: string;
+    urgency: 'immediate' | 'today' | 'this_week';
+    category: 'medical' | 'lifestyle' | 'environmental' | 'medication';
+  }[]>(),
+  
+  // Trigger values
+  triggerValue: decimal("trigger_value", { precision: 10, scale: 4 }),
+  thresholdValue: decimal("threshold_value", { precision: 10, scale: 4 }),
+  percentOverThreshold: decimal("percent_over_threshold", { precision: 6, scale: 2 }),
+  
+  // Related data
+  riskScoreId: varchar("risk_score_id").references(() => patientEnvironmentRiskScores.id),
+  forecastId: varchar("forecast_id").references(() => environmentalForecasts.id),
+  snapshotId: varchar("snapshot_id").references(() => environmentalDataSnapshots.id),
+  
+  // Status
+  status: varchar("status").default("active"), // 'active', 'acknowledged', 'resolved', 'dismissed', 'expired'
+  acknowledgedAt: timestamp("acknowledged_at"),
+  resolvedAt: timestamp("resolved_at"),
+  expiresAt: timestamp("expires_at"),
+  
+  // Notification tracking
+  pushNotificationSent: boolean("push_notification_sent").default(false),
+  smsNotificationSent: boolean("sms_notification_sent").default(false),
+  emailNotificationSent: boolean("email_notification_sent").default(false),
+  notificationSentAt: timestamp("notification_sent_at"),
+  
+  // User feedback
+  wasHelpful: boolean("was_helpful"),
+  userFeedback: text("user_feedback"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientStatusIdx: index("env_alert_patient_status_idx").on(table.patientId, table.status),
+  severityIdx: index("env_alert_severity_idx").on(table.severity),
+  createdAtIdx: index("env_alert_created_idx").on(table.createdAt),
+}));
+
+export const insertEnvironmentalAlertSchema = createInsertSchema(environmentalAlerts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEnvironmentalAlert = z.infer<typeof insertEnvironmentalAlertSchema>;
+export type EnvironmentalAlert = typeof environmentalAlerts.$inferSelect;
+
+// Environmental Pipeline Jobs - Track background job execution
+export const environmentalPipelineJobs = pgTable("environmental_pipeline_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Job type
+  jobType: varchar("job_type").notNull(), // 'data_ingestion', 'risk_scoring', 'correlation_analysis', 'forecasting', 'alert_check', 'daily_summary'
+  
+  // Scope
+  targetZipCodes: jsonb("target_zip_codes").$type<string[]>(), // Which ZIP codes were processed
+  targetPatientIds: jsonb("target_patient_ids").$type<string[]>(), // Which patients were processed
+  
+  // Status
+  status: varchar("status").notNull(), // 'pending', 'running', 'completed', 'failed', 'cancelled'
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Results
+  recordsProcessed: integer("records_processed").default(0),
+  recordsCreated: integer("records_created").default(0),
+  recordsUpdated: integer("records_updated").default(0),
+  alertsGenerated: integer("alerts_generated").default(0),
+  
+  // Errors
+  errorMessage: text("error_message"),
+  errorStack: text("error_stack"),
+  retryCount: integer("retry_count").default(0),
+  maxRetries: integer("max_retries").default(3),
+  
+  // Performance
+  executionTimeMs: integer("execution_time_ms"),
+  
+  // Metadata
+  triggerSource: varchar("trigger_source"), // 'scheduled', 'manual', 'webhook', 'on_demand'
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  jobTypeStatusIdx: index("pipeline_job_type_status_idx").on(table.jobType, table.status),
+  createdAtIdx: index("pipeline_job_created_idx").on(table.createdAt),
+}));
+
+export const insertEnvironmentalPipelineJobSchema = createInsertSchema(environmentalPipelineJobs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEnvironmentalPipelineJob = z.infer<typeof insertEnvironmentalPipelineJobSchema>;
+export type EnvironmentalPipelineJob = typeof environmentalPipelineJobs.$inferSelect;
+
+// =========================================================================
+// ENHANCED RESEARCH CENTER SCHEMA
+// =========================================================================
+
+// Extended Research Consent - Granular data type permissions for epidemiological research
+export const researchDataConsent = pgTable("research_data_consent", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Overall consent status
+  consentEnabled: boolean("consent_enabled").notNull().default(false),
+  
+  // Granular data type permissions
+  dataTypePermissions: jsonb("data_type_permissions").$type<{
+    dailyFollowups: boolean;
+    healthAlerts: boolean;
+    deteriorationIndex: boolean;
+    mlPredictions: boolean;
+    environmentalRisk: boolean;
+    medications: boolean;
+    vitals: boolean;
+    immuneMarkers: boolean;
+    behavioralData: boolean;
+    mentalHealth: boolean;
+    wearableData: boolean;
+    labResults: boolean;
+    conditions: boolean;
+    demographics: boolean;
+    painTracking: boolean;
+    symptomJournal: boolean;
+  }>().default({
+    dailyFollowups: false,
+    healthAlerts: false,
+    deteriorationIndex: false,
+    mlPredictions: false,
+    environmentalRisk: false,
+    medications: false,
+    vitals: false,
+    immuneMarkers: false,
+    behavioralData: false,
+    mentalHealth: false,
+    wearableData: false,
+    labResults: false,
+    conditions: false,
+    demographics: false,
+    painTracking: false,
+    symptomJournal: false,
+  }),
+  
+  // Anonymization preferences
+  anonymizationLevel: varchar("anonymization_level").default("full"), // 'full', 'partial', 'minimal'
+  allowReidentification: boolean("allow_reidentification").default(false),
+  
+  // Data retention preferences
+  dataRetentionYears: integer("data_retention_years").default(10),
+  allowDataExport: boolean("allow_data_export").default(false),
+  
+  // Study participation preferences
+  allowStudyEnrollment: boolean("allow_study_enrollment").default(true),
+  allowContactForStudies: boolean("allow_contact_for_studies").default(false),
+  preferredContactMethod: varchar("preferred_contact_method").default("email"), // 'email', 'phone', 'app'
+  
+  // Consent tracking
+  consentVersion: varchar("consent_version").default("1.0"),
+  consentSignedAt: timestamp("consent_signed_at"),
+  consentUpdatedAt: timestamp("consent_updated_at"),
+  consentWithdrawnAt: timestamp("consent_withdrawn_at"),
+  withdrawalReason: text("withdrawal_reason"),
+  
+  // Legal
+  legalBasis: varchar("legal_basis").default("consent"), // 'consent', 'public_interest', 'research_exemption'
+  ethicsApprovalRef: varchar("ethics_approval_ref"),
+  
+  // Audit trail
+  lastModifiedBy: varchar("last_modified_by"),
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("research_consent_patient_idx").on(table.patientId),
+  enabledIdx: index("research_consent_enabled_idx").on(table.consentEnabled),
+}));
+
+export const insertResearchDataConsentSchema = createInsertSchema(researchDataConsent).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertResearchDataConsent = z.infer<typeof insertResearchDataConsentSchema>;
+export type ResearchDataConsent = typeof researchDataConsent.$inferSelect;
+
+// Research Projects - Personal research mode for doctors
+export const researchProjects = pgTable("research_projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ownerId: varchar("owner_id").notNull().references(() => users.id),
+  
+  name: varchar("name").notNull(),
+  description: text("description"),
+  
+  // Project type
+  projectType: varchar("project_type").default("personal"), // 'personal', 'institutional', 'collaborative'
+  
+  // Status
+  status: varchar("status").default("active"), // 'draft', 'active', 'paused', 'completed', 'archived'
+  
+  // Collaborators
+  collaboratorIds: jsonb("collaborator_ids").$type<string[]>().default([]),
+  
+  // Settings
+  isPublic: boolean("is_public").default(false),
+  allowDataSharing: boolean("allow_data_sharing").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  ownerIdx: index("research_project_owner_idx").on(table.ownerId),
+  statusIdx: index("research_project_status_idx").on(table.status),
+}));
+
+export const insertResearchProjectSchema = createInsertSchema(researchProjects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertResearchProject = z.infer<typeof insertResearchProjectSchema>;
+export type ResearchProject = typeof researchProjects.$inferSelect;
+
+// Research Studies - Full study lifecycle management
+export const researchStudies = pgTable("research_studies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").references(() => researchProjects.id),
+  
+  title: varchar("title").notNull(),
+  description: text("description"),
+  
+  // Study status
+  status: varchar("status").default("planning"), // 'planning', 'enrolling', 'follow_up', 'analysis', 'completed', 'terminated'
+  
+  // Timeline
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  plannedDuration: integer("planned_duration"), // in days
+  
+  // Sample size
+  targetSampleSize: integer("target_sample_size"),
+  currentEnrollment: integer("current_enrollment").default(0),
+  
+  // Eligibility criteria
+  inclusionCriteria: text("inclusion_criteria"),
+  exclusionCriteria: text("exclusion_criteria"),
+  inclusionCriteriaJson: jsonb("inclusion_criteria_json").$type<{
+    minAge?: number;
+    maxAge?: number;
+    sex?: string[];
+    conditions?: string[];
+    medications?: string[];
+    riskScoreMin?: number;
+    riskScoreMax?: number;
+    environmentalExposure?: Record<string, { min?: number; max?: number }>;
+    immuneMarkers?: Record<string, { min?: number; max?: number }>;
+  }>(),
+  exclusionCriteriaJson: jsonb("exclusion_criteria_json").$type<{
+    conditions?: string[];
+    medications?: string[];
+    excludeIfPregnant?: boolean;
+    excludeIfImmunosuppressed?: boolean;
+  }>(),
+  
+  // Study arms
+  armsJson: jsonb("arms_json").$type<{
+    armId: string;
+    name: string;
+    description: string;
+    targetSize: number;
+  }[]>().default([]),
+  
+  // Visit schedule
+  visitScheduleJson: jsonb("visit_schedule_json").$type<{
+    visitId: string;
+    visitType: string;
+    dayOffset: number;
+    windowDays: number;
+    required: boolean;
+    assessments: string[];
+  }[]>().default([]),
+  
+  // Auto-reanalysis configuration
+  autoReanalysis: boolean("auto_reanalysis").default(false),
+  reanalysisFrequency: varchar("reanalysis_frequency").default("weekly"), // 'daily', 'weekly', 'monthly'
+  lastReanalysisAt: timestamp("last_reanalysis_at"),
+  
+  // Analysis configuration
+  analysisSpecJson: jsonb("analysis_spec_json").$type<{
+    primaryOutcome: string;
+    secondaryOutcomes: string[];
+    analysisType: string;
+    modelType: string;
+    covariates: string[];
+    followupWindow: number;
+  }>(),
+  
+  // Principal investigator
+  ownerUserId: varchar("owner_user_id").notNull().references(() => users.id),
+  
+  // Linked cohort
+  cohortId: varchar("cohort_id"),
+  
+  // Ethics and compliance
+  ethicsApprovalNumber: varchar("ethics_approval_number"),
+  ethicsApprovalDate: timestamp("ethics_approval_date"),
+  dataProtectionAssessment: boolean("data_protection_assessment").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  projectIdx: index("research_study_project_idx").on(table.projectId),
+  statusIdx: index("research_study_status_idx").on(table.status),
+  ownerIdx: index("research_study_owner_idx").on(table.ownerUserId),
+}));
+
+export const insertResearchStudySchema = createInsertSchema(researchStudies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertResearchStudy = z.infer<typeof insertResearchStudySchema>;
+export type ResearchStudy = typeof researchStudies.$inferSelect;
+
+// Research Cohorts - Saved patient cohort definitions
+export const researchCohorts = pgTable("research_cohorts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").references(() => researchProjects.id),
+  
+  name: varchar("name").notNull(),
+  description: text("description"),
+  
+  // Cohort definition (filter conditions)
+  definitionJson: jsonb("definition_json").$type<{
+    demographics: {
+      minAge?: number;
+      maxAge?: number;
+      sex?: string[];
+      birthYearMin?: number;
+      birthYearMax?: number;
+    };
+    conditions: {
+      include?: string[];
+      exclude?: string[];
+      categories?: string[];
+    };
+    medications: {
+      include?: string[];
+      exclude?: string[];
+      classes?: string[];
+    };
+    riskScores: {
+      deteriorationMin?: number;
+      deteriorationMax?: number;
+      compositeMin?: number;
+      compositeMax?: number;
+    };
+    environmental: {
+      aqiMin?: number;
+      aqiMax?: number;
+      pm25Min?: number;
+      pm25Max?: number;
+      pollenLevel?: string[];
+    };
+    immuneMarkers: {
+      markerName?: string;
+      minValue?: number;
+      maxValue?: number;
+    }[];
+    followupPatterns: {
+      minResponseRate?: number;
+      avgSymptomScoreMin?: number;
+      avgSymptomScoreMax?: number;
+    };
+    studyParticipation: string[];
+    dateRanges: {
+      enrollmentAfter?: string;
+      enrollmentBefore?: string;
+      lastFollowupAfter?: string;
+    };
+  }>().notNull(),
+  
+  // Computed stats (cached)
+  cachedPatientCount: integer("cached_patient_count").default(0),
+  cachedStats: jsonb("cached_stats").$type<{
+    meanAge: number;
+    genderDistribution: Record<string, number>;
+    conditionDistribution: Record<string, number>;
+    lastUpdated: string;
+  }>(),
+  
+  // Status
+  status: varchar("status").default("active"), // 'draft', 'active', 'archived'
+  
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  projectIdx: index("research_cohort_project_idx").on(table.projectId),
+  createdByIdx: index("research_cohort_created_by_idx").on(table.createdBy),
+}));
+
+export const insertResearchCohortSchema = createInsertSchema(researchCohorts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertResearchCohort = z.infer<typeof insertResearchCohortSchema>;
+export type ResearchCohort = typeof researchCohorts.$inferSelect;
+
+// Study Enrollments - Patient enrollment in studies
+export const studyEnrollments = pgTable("study_enrollments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studyId: varchar("study_id").notNull().references(() => researchStudies.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Study arm assignment
+  arm: varchar("arm"),
+  
+  // Consent status
+  consentStatus: varchar("consent_status").default("pending"), // 'pending', 'consented', 'withdrawn', 'declined'
+  consentDate: timestamp("consent_date"),
+  withdrawalDate: timestamp("withdrawal_date"),
+  withdrawalReason: text("withdrawal_reason"),
+  
+  // Enrollment
+  enrollmentDate: timestamp("enrollment_date").defaultNow(),
+  screeningDate: timestamp("screening_date"),
+  
+  // Status
+  status: varchar("status").default("active"), // 'screening', 'active', 'completed', 'withdrawn', 'lost_to_followup'
+  
+  // Notes
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  studyIdx: index("study_enrollment_study_idx").on(table.studyId),
+  patientIdx: index("study_enrollment_patient_idx").on(table.patientId),
+  statusIdx: index("study_enrollment_status_idx").on(table.status),
+  uniqueEnrollment: index("study_enrollment_unique_idx").on(table.studyId, table.patientId),
+}));
+
+export const insertStudyEnrollmentSchema = createInsertSchema(studyEnrollments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertStudyEnrollment = z.infer<typeof insertStudyEnrollmentSchema>;
+export type StudyEnrollment = typeof studyEnrollments.$inferSelect;
+
+// Research Visits - Scheduled study visits
+export const researchVisits = pgTable("research_visits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enrollmentId: varchar("enrollment_id").notNull().references(() => studyEnrollments.id),
+  studyId: varchar("study_id").notNull().references(() => researchStudies.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Visit type
+  visitType: varchar("visit_type").notNull(), // 'screening', 'baseline', 'month_1', 'month_3', 'month_6', 'month_12', 'unscheduled'
+  visitNumber: integer("visit_number"),
+  
+  // Scheduling
+  scheduledDate: timestamp("scheduled_date"),
+  windowStartDate: timestamp("window_start_date"),
+  windowEndDate: timestamp("window_end_date"),
+  actualDate: timestamp("actual_date"),
+  
+  // Status
+  visitStatus: varchar("visit_status").default("scheduled"), // 'scheduled', 'completed', 'missed', 'cancelled', 'rescheduled'
+  
+  // Assessments completed
+  assessmentsCompleted: jsonb("assessments_completed").$type<string[]>().default([]),
+  
+  // Notes
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  enrollmentIdx: index("research_visit_enrollment_idx").on(table.enrollmentId),
+  studyIdx: index("research_visit_study_idx").on(table.studyId),
+  patientIdx: index("research_visit_patient_idx").on(table.patientId),
+  scheduledIdx: index("research_visit_scheduled_idx").on(table.scheduledDate),
+}));
+
+export const insertResearchVisitSchema = createInsertSchema(researchVisits).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertResearchVisit = z.infer<typeof insertResearchVisitSchema>;
+export type ResearchVisit = typeof researchVisits.$inferSelect;
+
+// Research Measurements - Study-specific measurements
+export const researchMeasurements = pgTable("research_measurements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  visitId: varchar("visit_id").references(() => researchVisits.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  studyId: varchar("study_id").references(() => researchStudies.id),
+  
+  // Measurement details
+  name: varchar("name").notNull(), // e.g., 'systolic_bp', 'creatinine', 'phq9_score'
+  value: varchar("value").notNull(), // stored as string, can be numeric or categorical
+  valueNumeric: decimal("value_numeric", { precision: 15, scale: 5 }), // parsed numeric value
+  units: varchar("units"),
+  
+  // Classification
+  category: varchar("category"), // 'vital', 'lab', 'questionnaire', 'imaging', 'physical_exam'
+  
+  // Recording details
+  recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+  recordedBy: varchar("recorded_by"),
+  source: varchar("source").default("manual"), // 'manual', 'device', 'ehr_import', 'lab_import'
+  
+  // Quality
+  isValid: boolean("is_valid").default(true),
+  validationNotes: text("validation_notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  visitIdx: index("research_measurement_visit_idx").on(table.visitId),
+  patientIdx: index("research_measurement_patient_idx").on(table.patientId),
+  nameIdx: index("research_measurement_name_idx").on(table.name),
+  recordedAtIdx: index("research_measurement_recorded_idx").on(table.recordedAt),
+}));
+
+export const insertResearchMeasurementSchema = createInsertSchema(researchMeasurements).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertResearchMeasurement = z.infer<typeof insertResearchMeasurementSchema>;
+export type ResearchMeasurement = typeof researchMeasurements.$inferSelect;
+
+// Immune Markers - Specialized immune monitoring for research
+export const researchImmuneMarkers = pgTable("research_immune_markers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  studyId: varchar("study_id").references(() => researchStudies.id),
+  visitId: varchar("visit_id").references(() => researchVisits.id),
+  
+  // Marker details
+  markerName: varchar("marker_name").notNull(), // e.g., 'CD4', 'CD8', 'IL6', 'TNF_alpha', 'CRP'
+  value: decimal("value", { precision: 15, scale: 5 }).notNull(),
+  units: varchar("units").notNull(),
+  
+  // Reference ranges
+  referenceRangeLow: decimal("reference_range_low", { precision: 15, scale: 5 }),
+  referenceRangeHigh: decimal("reference_range_high", { precision: 15, scale: 5 }),
+  
+  // Interpretation
+  interpretation: varchar("interpretation"), // 'normal', 'low', 'high', 'critical_low', 'critical_high'
+  
+  // Source
+  source: varchar("source").default("lab"), // 'lab', 'flow_cytometry', 'elisa', 'pcr'
+  labName: varchar("lab_name"),
+  specimenType: varchar("specimen_type"), // 'blood', 'serum', 'plasma', 'csf'
+  
+  // Timing
+  collectionTime: timestamp("collection_time").notNull(),
+  resultTime: timestamp("result_time"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("immune_marker_patient_idx").on(table.patientId),
+  markerIdx: index("immune_marker_name_idx").on(table.markerName),
+  collectionIdx: index("immune_marker_collection_idx").on(table.collectionTime),
+}));
+
+export const insertResearchImmuneMarkerSchema = createInsertSchema(researchImmuneMarkers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertResearchImmuneMarker = z.infer<typeof insertResearchImmuneMarkerSchema>;
+export type ResearchImmuneMarker = typeof researchImmuneMarkers.$inferSelect;
+
+// Research Locations - Geographic locations for environmental exposure tracking
+export const researchLocations = pgTable("research_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  name: varchar("name").notNull(),
+  region: varchar("region"),
+  city: varchar("city"),
+  state: varchar("state"),
+  country: varchar("country").default("USA"),
+  zipCode: varchar("zip_code"),
+  
+  // Coordinates
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
+  
+  // Population data
+  population: integer("population"),
+  urbanRuralClassification: varchar("urban_rural_classification"), // 'urban', 'suburban', 'rural'
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  zipCodeIdx: index("research_location_zipcode_idx").on(table.zipCode),
+  coordinatesIdx: index("research_location_coords_idx").on(table.latitude, table.longitude),
+}));
+
+export const insertResearchLocationSchema = createInsertSchema(researchLocations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertResearchLocation = z.infer<typeof insertResearchLocationSchema>;
+export type ResearchLocation = typeof researchLocations.$inferSelect;
+
+// Patient Locations - Track patient locations over time
+export const researchPatientLocations = pgTable("research_patient_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  locationId: varchar("location_id").notNull().references(() => researchLocations.id),
+  
+  // Date range
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  
+  // Location type
+  locationType: varchar("location_type").default("residence"), // 'residence', 'work', 'temporary'
+  isPrimary: boolean("is_primary").default(true),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("patient_location_patient_idx").on(table.patientId),
+  locationIdx: index("patient_location_location_idx").on(table.locationId),
+  dateIdx: index("patient_location_date_idx").on(table.startDate, table.endDate),
+}));
+
+export const insertResearchPatientLocationSchema = createInsertSchema(researchPatientLocations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertResearchPatientLocation = z.infer<typeof insertResearchPatientLocationSchema>;
+export type ResearchPatientLocation = typeof researchPatientLocations.$inferSelect;
+
+// Environmental Exposures - Daily environmental data per location
+export const researchEnvironmentalExposures = pgTable("research_environmental_exposures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  locationId: varchar("location_id").notNull().references(() => researchLocations.id),
+  
+  // Date
+  date: timestamp("date").notNull(),
+  
+  // Air quality
+  pm25: decimal("pm25", { precision: 8, scale: 3 }),
+  pm10: decimal("pm10", { precision: 8, scale: 3 }),
+  ozone: decimal("ozone", { precision: 8, scale: 3 }),
+  airQualityIndex: integer("air_quality_index"),
+  airQualityCategory: varchar("air_quality_category"), // 'good', 'moderate', 'unhealthy_sensitive', 'unhealthy', 'very_unhealthy', 'hazardous'
+  
+  // Weather
+  temperatureHigh: decimal("temperature_high", { precision: 5, scale: 2 }),
+  temperatureLow: decimal("temperature_low", { precision: 5, scale: 2 }),
+  temperatureAvg: decimal("temperature_avg", { precision: 5, scale: 2 }),
+  humidity: integer("humidity"),
+  barometricPressure: decimal("barometric_pressure", { precision: 7, scale: 2 }),
+  precipitation: decimal("precipitation", { precision: 6, scale: 2 }),
+  uvIndex: integer("uv_index"),
+  
+  // Allergens
+  pollenIndex: integer("pollen_index"),
+  pollenTree: integer("pollen_tree"),
+  pollenGrass: integer("pollen_grass"),
+  pollenRagweed: integer("pollen_ragweed"),
+  moldIndex: integer("mold_index"),
+  
+  // Other environmental factors
+  wildfiresNearby: boolean("wildfires_nearby").default(false),
+  dustStorm: boolean("dust_storm").default(false),
+  
+  // Data source
+  dataSource: varchar("data_source"), // 'api', 'manual', 'imported'
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  locationDateIdx: index("env_exposure_location_date_idx").on(table.locationId, table.date),
+  dateIdx: index("env_exposure_date_idx").on(table.date),
+}));
+
+export const insertResearchEnvironmentalExposureSchema = createInsertSchema(researchEnvironmentalExposures).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertResearchEnvironmentalExposure = z.infer<typeof insertResearchEnvironmentalExposureSchema>;
+export type ResearchEnvironmentalExposure = typeof researchEnvironmentalExposures.$inferSelect;
+
+// Data Snapshots - Version control for analyses
+export const researchDataSnapshots = pgTable("research_data_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  description: varchar("description"),
+  
+  // Scope
+  studyId: varchar("study_id").references(() => researchStudies.id),
+  cohortId: varchar("cohort_id").references(() => researchCohorts.id),
+  
+  // Counts at snapshot time
+  patientCount: integer("patient_count"),
+  measurementCount: integer("measurement_count"),
+  followupCount: integer("followup_count"),
+  
+  // Hash for data integrity
+  dataHash: varchar("data_hash"),
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  studyIdx: index("data_snapshot_study_idx").on(table.studyId),
+  createdAtIdx: index("data_snapshot_created_idx").on(table.createdAt),
+}));
+
+export const insertResearchDataSnapshotSchema = createInsertSchema(researchDataSnapshots).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertResearchDataSnapshot = z.infer<typeof insertResearchDataSnapshotSchema>;
+export type ResearchDataSnapshot = typeof researchDataSnapshots.$inferSelect;
+
+// Enhanced Research Analysis Reports - Detailed ML/statistical analysis reports
+export const researchAnalysisReports = pgTable("research_analysis_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  title: varchar("title").notNull(),
+  
+  // Links
+  studyId: varchar("study_id").references(() => researchStudies.id),
+  cohortId: varchar("cohort_id").references(() => researchCohorts.id),
+  snapshotId: varchar("snapshot_id").references(() => researchDataSnapshots.id),
+  
+  // Analysis configuration
+  analysisType: varchar("analysis_type").notNull(), // 'descriptive', 'risk_prediction', 'survival', 'causal', 'correlation'
+  analysisSpecJson: jsonb("analysis_spec_json").$type<{
+    outcome: string;
+    outcomeType: 'binary' | 'continuous' | 'time_to_event';
+    exposure?: string;
+    covariates: string[];
+    modelType: string;
+    followupWindow: number;
+    cvFolds?: number;
+    regularization?: string;
+  }>(),
+  
+  // Results
+  resultsJson: jsonb("results_json").$type<{
+    metrics: Record<string, number>;
+    coefficients?: Record<string, { estimate: number; ci_low: number; ci_high: number; pvalue: number }>;
+    featureImportance?: Record<string, number>;
+    baselineCharacteristics?: Record<string, { mean?: number; sd?: number; median?: number; count?: number; percent?: number }>;
+    survivalData?: { time: number; survival: number; ci_low: number; ci_high: number }[];
+    rocData?: { fpr: number; tpr: number }[];
+    calibrationData?: { predicted: number; observed: number }[];
+  }>(),
+  
+  // AI-generated narrative
+  generatedText: text("generated_text"),
+  
+  // Report sections
+  abstract: text("abstract"),
+  methods: text("methods"),
+  results: text("results"),
+  discussion: text("discussion"),
+  limitations: text("limitations"),
+  
+  // Status
+  status: varchar("status").default("draft"), // 'draft', 'generating', 'review', 'finalized', 'published'
+  
+  // Publish settings
+  publishReady: boolean("publish_ready").default(false),
+  publishedAt: timestamp("published_at"),
+  
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  studyIdx: index("analysis_report_study_idx").on(table.studyId),
+  cohortIdx: index("analysis_report_cohort_idx").on(table.cohortId),
+  typeIdx: index("analysis_report_type_idx").on(table.analysisType),
+  statusIdx: index("analysis_report_status_idx").on(table.status),
+}));
+
+export const insertResearchAnalysisReportSchema = createInsertSchema(researchAnalysisReports).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertResearchAnalysisReport = z.infer<typeof insertResearchAnalysisReportSchema>;
+export type ResearchAnalysisReport = typeof researchAnalysisReports.$inferSelect;
+
+// Research Alerts - Health and research alerts for studies
+export const researchAlerts = pgTable("research_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").references(() => users.id),
+  studyId: varchar("study_id").references(() => researchStudies.id),
+  
+  // Alert type
+  alertType: varchar("alert_type").notNull(), // 'deterioration_risk', 'immune_drop', 'environmental_risk', 'adherence_issue', 'data_quality', 'protocol_deviation', 'threshold_breach'
+  
+  // Severity
+  severity: varchar("severity").notNull(), // 'low', 'medium', 'high', 'critical'
+  riskScore: decimal("risk_score", { precision: 5, scale: 2 }),
+  
+  // Content
+  title: varchar("title").notNull(),
+  message: text("message"),
+  
+  // Details (SHAP values, top features, thresholds)
+  detailsJson: jsonb("details_json").$type<{
+    topFeatures: { feature: string; value: number; contribution: number }[];
+    threshold: number;
+    actualValue: number;
+    percentOverThreshold: number;
+    recommendations: string[];
+    trendData?: { date: string; value: number }[];
+  }>(),
+  
+  // Status
+  status: varchar("status").default("new"), // 'new', 'acknowledged', 'investigating', 'resolved', 'dismissed'
+  acknowledgedAt: timestamp("acknowledged_at"),
+  acknowledgedBy: varchar("acknowledged_by").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: varchar("resolved_by").references(() => users.id),
+  resolution: text("resolution"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("research_alert_patient_idx").on(table.patientId),
+  studyIdx: index("research_alert_study_idx").on(table.studyId),
+  typeIdx: index("research_alert_type_idx").on(table.alertType),
+  statusIdx: index("research_alert_status_idx").on(table.status),
+  severityIdx: index("research_alert_severity_idx").on(table.severity),
+}));
+
+export const insertResearchAlertSchema = createInsertSchema(researchAlerts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertResearchAlert = z.infer<typeof insertResearchAlertSchema>;
+export type ResearchAlert = typeof researchAlerts.$inferSelect;
+
+// Daily Followup Templates - Reusable questionnaire templates
+export const dailyFollowupTemplates = pgTable("daily_followup_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  name: varchar("name").notNull(),
+  description: text("description"),
+  
+  // Question definitions
+  questionsJson: jsonb("questions_json").$type<{
+    questionId: string;
+    questionText: string;
+    questionType: 'text' | 'numeric' | 'scale' | 'yes_no' | 'multiple_choice' | 'likert';
+    required: boolean;
+    options?: string[];
+    validation?: {
+      min?: number;
+      max?: number;
+      pattern?: string;
+    };
+    conditionalOn?: {
+      questionId: string;
+      value: string | number | boolean;
+    };
+  }[]>().notNull(),
+  
+  // Template settings
+  estimatedDuration: integer("estimated_duration"), // in minutes
+  category: varchar("category"), // 'symptoms', 'mood', 'medication', 'activity', 'general'
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  version: integer("version").default(1),
+  
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  categoryIdx: index("followup_template_category_idx").on(table.category),
+  activeIdx: index("followup_template_active_idx").on(table.isActive),
+}));
+
+export const insertDailyFollowupTemplateSchema = createInsertSchema(dailyFollowupTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDailyFollowupTemplate = z.infer<typeof insertDailyFollowupTemplateSchema>;
+export type DailyFollowupTemplate = typeof dailyFollowupTemplates.$inferSelect;
+
+// Daily Followup Assignments - Assign templates to patients
+export const dailyFollowupAssignments = pgTable("daily_followup_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => dailyFollowupTemplates.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  studyId: varchar("study_id").references(() => researchStudies.id),
+  
+  // Schedule
+  frequency: varchar("frequency").default("daily"), // 'daily', 'weekly', 'biweekly', 'monthly'
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  
+  // Notification settings
+  notifyAt: varchar("notify_at"), // time of day, e.g., "09:00"
+  reminderEnabled: boolean("reminder_enabled").default(true),
+  
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  templateIdx: index("followup_assignment_template_idx").on(table.templateId),
+  patientIdx: index("followup_assignment_patient_idx").on(table.patientId),
+  studyIdx: index("followup_assignment_study_idx").on(table.studyId),
+  activeIdx: index("followup_assignment_active_idx").on(table.isActive),
+}));
+
+export const insertDailyFollowupAssignmentSchema = createInsertSchema(dailyFollowupAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDailyFollowupAssignment = z.infer<typeof insertDailyFollowupAssignmentSchema>;
+export type DailyFollowupAssignment = typeof dailyFollowupAssignments.$inferSelect;
+
+// Daily Followup Responses - Patient responses to templates
+export const dailyFollowupResponses = pgTable("daily_followup_responses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  assignmentId: varchar("assignment_id").notNull().references(() => dailyFollowupAssignments.id),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Response date
+  responseDate: timestamp("response_date").notNull(),
+  
+  // Answers
+  responsesJson: jsonb("responses_json").$type<{
+    questionId: string;
+    answer: string | number | boolean | string[];
+  }[]>().notNull(),
+  
+  // Completion
+  completedAt: timestamp("completed_at"),
+  isComplete: boolean("is_complete").default(false),
+  
+  // Computed scores (for quick aggregation)
+  overallScore: decimal("overall_score", { precision: 5, scale: 2 }),
+  symptomScore: decimal("symptom_score", { precision: 5, scale: 2 }),
+  moodScore: decimal("mood_score", { precision: 5, scale: 2 }),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  assignmentIdx: index("followup_response_assignment_idx").on(table.assignmentId),
+  patientIdx: index("followup_response_patient_idx").on(table.patientId),
+  dateIdx: index("followup_response_date_idx").on(table.responseDate),
+}));
+
+export const insertDailyFollowupResponseSchema = createInsertSchema(dailyFollowupResponses).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDailyFollowupResponse = z.infer<typeof insertDailyFollowupResponseSchema>;
+export type DailyFollowupResponse = typeof dailyFollowupResponses.$inferSelect;
+
+// Research Audit Logs - HIPAA-compliant audit trail
+export const researchAuditLogs = pgTable("research_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  
+  // Action
+  actionType: varchar("action_type").notNull(), // 'VIEW_DATA', 'EXPORT_CSV', 'RUN_ANALYSIS', 'CREATE_REPORT', 'MODIFY_STUDY', 'ENROLL_PATIENT', 'ACCESS_PHI'
+  
+  // Object
+  objectType: varchar("object_type").notNull(), // 'study', 'cohort', 'report', 'patient', 'enrollment', 'measurement'
+  objectId: varchar("object_id").notNull(),
+  
+  // Details
+  metadataJson: jsonb("metadata_json").$type<{
+    description?: string;
+    patientIds?: string[];
+    dataTypes?: string[];
+    recordCount?: number;
+    exportFormat?: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }>(),
+  
+  // Outcome
+  success: boolean("success").default(true),
+  errorMessage: text("error_message"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("research_audit_user_idx").on(table.userId),
+  actionIdx: index("research_audit_action_idx").on(table.actionType),
+  objectIdx: index("research_audit_object_idx").on(table.objectType, table.objectId),
+  createdAtIdx: index("research_audit_created_idx").on(table.createdAt),
+}));
+
+export const insertResearchAuditLogSchema = createInsertSchema(researchAuditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertResearchAuditLog = z.infer<typeof insertResearchAuditLogSchema>;
+export type ResearchAuditLog = typeof researchAuditLogs.$inferSelect;
+
+// Analysis Jobs - Track background analysis executions
+export const analysisJobs = pgTable("analysis_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Job type
+  jobType: varchar("job_type").notNull(), // 'descriptive', 'risk_prediction', 'survival', 'causal', 'alert_check', 'reanalysis'
+  
+  // Links
+  studyId: varchar("study_id").references(() => researchStudies.id),
+  cohortId: varchar("cohort_id").references(() => researchCohorts.id),
+  reportId: varchar("report_id").references(() => aiResearchReports.id),
+  
+  // Configuration
+  configJson: jsonb("config_json").$type<Record<string, unknown>>(),
+  
+  // Status
+  status: varchar("status").notNull().default("pending"), // 'pending', 'running', 'completed', 'failed', 'cancelled'
+  progress: integer("progress").default(0), // 0-100
+  currentPhase: varchar("current_phase"),
+  
+  // Timing
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  executionTimeMs: integer("execution_time_ms"),
+  
+  // Results
+  resultSummary: jsonb("result_summary").$type<{
+    recordsProcessed: number;
+    metricsComputed: string[];
+    alertsGenerated: number;
+  }>(),
+  
+  // Errors
+  errorMessage: text("error_message"),
+  errorStack: text("error_stack"),
+  retryCount: integer("retry_count").default(0),
+  
+  // Trigger
+  triggerSource: varchar("trigger_source").default("manual"), // 'manual', 'scheduled', 'auto_reanalysis'
+  
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  statusIdx: index("analysis_job_status_idx").on(table.status),
+  studyIdx: index("analysis_job_study_idx").on(table.studyId),
+  typeIdx: index("analysis_job_type_idx").on(table.jobType),
+}));
+
+export const insertAnalysisJobSchema = createInsertSchema(analysisJobs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAnalysisJob = z.infer<typeof insertAnalysisJobSchema>;
+export type AnalysisJob = typeof analysisJobs.$inferSelect;
+
+// ============================================
+// RISK & EXPOSURES TABLES
+// ============================================
+
+// Healthcare Locations - For tracking where events occurred
+export const healthcareLocations = pgTable("healthcare_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(),
+  locationType: varchar("location_type").notNull(), // 'hospital', 'clinic', 'pharmacy', 'lab', 'home', 'other'
+  address: text("address"),
+  city: varchar("city"),
+  state: varchar("state"),
+  zipCode: varchar("zip_code"),
+  country: varchar("country").default("USA"),
+  latitude: decimal("latitude"),
+  longitude: decimal("longitude"),
+  phoneNumber: varchar("phone_number"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHealthcareLocationSchema = createInsertSchema(healthcareLocations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertHealthcareLocation = z.infer<typeof insertHealthcareLocationSchema>;
+export type HealthcareLocation = typeof healthcareLocations.$inferSelect;
+
+// Patient Conditions - Diagnosis codes and conditions
+export const patientConditions = pgTable("patient_conditions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Diagnosis information
+  conditionCode: varchar("condition_code").notNull(), // ICD-10 code
+  conditionName: varchar("condition_name").notNull(),
+  conditionCategory: varchar("condition_category"), // 'infectious', 'chronic', 'acute', 'genetic', 'other'
+  
+  // Status
+  status: varchar("status").default("active"), // 'active', 'resolved', 'chronic', 'in_remission'
+  severity: varchar("severity"), // 'mild', 'moderate', 'severe'
+  
+  // Dates
+  onsetDate: timestamp("onset_date"),
+  diagnosisDate: timestamp("diagnosis_date"),
+  resolutionDate: timestamp("resolution_date"),
+  
+  // Source
+  diagnosedBy: varchar("diagnosed_by").references(() => users.id),
+  sourceType: varchar("source_type").default("ehr"), // 'ehr', 'manual', 'import', 'self_reported'
+  sourceRecordId: varchar("source_record_id"),
+  
+  // Notes
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("patient_condition_patient_idx").on(table.patientId),
+  codeIdx: index("patient_condition_code_idx").on(table.conditionCode),
+  statusIdx: index("patient_condition_status_idx").on(table.status),
+  categoryIdx: index("patient_condition_category_idx").on(table.conditionCategory),
+}));
+
+export const insertPatientConditionSchema = createInsertSchema(patientConditions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientCondition = z.infer<typeof insertPatientConditionSchema>;
+export type PatientCondition = typeof patientConditions.$inferSelect;
+
+// Patient Visits - Hospitalizations and clinic visits
+export const patientVisits = pgTable("patient_visits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Visit type
+  visitType: varchar("visit_type").notNull(), // 'outpatient', 'inpatient', 'emergency', 'telehealth', 'home_visit'
+  
+  // Location
+  locationId: varchar("location_id").references(() => healthcareLocations.id),
+  facilityName: varchar("facility_name"),
+  
+  // Timing
+  admissionDate: timestamp("admission_date").notNull(),
+  dischargeDate: timestamp("discharge_date"),
+  lengthOfStay: integer("length_of_stay"), // in days
+  
+  // Severity indicators
+  isHospitalization: boolean("is_hospitalization").default(false),
+  icuAdmission: boolean("icu_admission").default(false),
+  icuDays: integer("icu_days"),
+  ventilatorRequired: boolean("ventilator_required").default(false),
+  
+  // Reason
+  chiefComplaint: text("chief_complaint"),
+  primaryDiagnosisCode: varchar("primary_diagnosis_code"),
+  secondaryDiagnosesCodes: jsonb("secondary_diagnoses_codes").$type<string[]>(),
+  
+  // Outcome
+  dischargeDisposition: varchar("discharge_disposition"), // 'home', 'skilled_nursing', 'rehab', 'deceased', 'other'
+  
+  // Source
+  sourceType: varchar("source_type").default("ehr"), // 'ehr', 'manual', 'import'
+  sourceRecordId: varchar("source_record_id"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("patient_visit_patient_idx").on(table.patientId),
+  dateIdx: index("patient_visit_date_idx").on(table.admissionDate),
+  typeIdx: index("patient_visit_type_idx").on(table.visitType),
+}));
+
+export const insertPatientVisitSchema = createInsertSchema(patientVisits).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientVisit = z.infer<typeof insertPatientVisitSchema>;
+export type PatientVisit = typeof patientVisits.$inferSelect;
+
+// Infectious Events - Auto-derived from conditions + visits
+export const infectiousEvents = pgTable("infectious_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Infection details
+  infectionType: varchar("infection_type").notNull(), // 'pneumonia', 'UTI', 'COVID-19', 'influenza', 'sepsis', etc.
+  pathogen: varchar("pathogen"), // 'Streptococcus pneumoniae', 'E. coli', 'SARS-CoV-2', etc.
+  pathogenCategory: varchar("pathogen_category"), // 'bacterial', 'viral', 'fungal', 'parasitic', 'unknown'
+  
+  // Severity
+  severity: varchar("severity").notNull().default("moderate"), // 'mild', 'moderate', 'severe', 'critical'
+  
+  // Timeline
+  onsetDate: timestamp("onset_date"),
+  resolutionDate: timestamp("resolution_date"),
+  durationDays: integer("duration_days"),
+  
+  // Hospitalization
+  hospitalization: boolean("hospitalization").default(false),
+  icuAdmission: boolean("icu_admission").default(false),
+  ventilatorRequired: boolean("ventilator_required").default(false),
+  
+  // Source tracking (for ETL)
+  relatedConditionId: varchar("related_condition_id").references(() => patientConditions.id),
+  relatedConditionCode: varchar("related_condition_code"),
+  relatedVisitId: varchar("related_visit_id").references(() => patientVisits.id),
+  locationId: varchar("location_id").references(() => healthcareLocations.id),
+  
+  // Override tracking
+  autoGenerated: boolean("auto_generated").default(true),
+  manualOverride: boolean("manual_override").default(false),
+  overriddenBy: varchar("overridden_by").references(() => users.id),
+  overriddenAt: timestamp("overridden_at"),
+  doctorNotes: text("doctor_notes"),
+  
+  // Processing metadata
+  lastEtlProcessedAt: timestamp("last_etl_processed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("infectious_event_patient_idx").on(table.patientId),
+  typeIdx: index("infectious_event_type_idx").on(table.infectionType),
+  onsetIdx: index("infectious_event_onset_idx").on(table.onsetDate),
+  severityIdx: index("infectious_event_severity_idx").on(table.severity),
+}));
+
+export const insertInfectiousEventSchema = createInsertSchema(infectiousEvents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertInfectiousEvent = z.infer<typeof insertInfectiousEventSchema>;
+export type InfectiousEvent = typeof infectiousEvents.$inferSelect;
+
+// Immunizations - Vaccine records
+export const patientImmunizations = pgTable("patient_immunizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Vaccine information
+  vaccineCode: varchar("vaccine_code"), // CVX code
+  vaccineName: varchar("vaccine_name").notNull(),
+  vaccineManufacturer: varchar("vaccine_manufacturer"),
+  lotNumber: varchar("lot_number"),
+  
+  // Dosing
+  doseNumber: integer("dose_number"),
+  seriesName: varchar("series_name"), // 'primary', 'booster', 'annual'
+  seriesComplete: boolean("series_complete").default(false),
+  
+  // Administration
+  administrationDate: timestamp("administration_date").notNull(),
+  administrationRoute: varchar("administration_route"), // 'intramuscular', 'subcutaneous', 'oral', 'intranasal'
+  administrationSite: varchar("administration_site"), // 'left_arm', 'right_arm', 'thigh', etc.
+  
+  // Location
+  locationId: varchar("location_id").references(() => healthcareLocations.id),
+  administeredBy: varchar("administered_by").references(() => users.id),
+  
+  // Status
+  status: varchar("status").default("completed"), // 'completed', 'not_done', 'entered_in_error'
+  
+  // Reactions
+  adverseReaction: boolean("adverse_reaction").default(false),
+  reactionDetails: text("reaction_details"),
+  
+  // Source tracking
+  sourceType: varchar("source_type").default("ehr"), // 'ehr', 'import', 'manual', 'prescription'
+  sourceRecordId: varchar("source_record_id"),
+  
+  // Override tracking
+  autoGenerated: boolean("auto_generated").default(false),
+  manualOverride: boolean("manual_override").default(false),
+  overriddenBy: varchar("overridden_by").references(() => users.id),
+  overriddenAt: timestamp("overridden_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("immunization_patient_idx").on(table.patientId),
+  vaccineIdx: index("immunization_vaccine_idx").on(table.vaccineCode),
+  dateIdx: index("immunization_date_idx").on(table.administrationDate),
+}));
+
+export const insertPatientImmunizationSchema = createInsertSchema(patientImmunizations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientImmunization = z.infer<typeof insertPatientImmunizationSchema>;
+export type PatientImmunization = typeof patientImmunizations.$inferSelect;
+
+// Occupations - Patient job history
+export const patientOccupations = pgTable("patient_occupations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Job details
+  jobTitle: varchar("job_title").notNull(),
+  industry: varchar("industry"), // 'healthcare', 'construction', 'manufacturing', 'office', etc.
+  employer: varchar("employer"),
+  
+  // Work characteristics
+  physicalDemandLevel: varchar("physical_demand_level"), // 'sedentary', 'light', 'moderate', 'heavy', 'very_heavy'
+  shiftWork: boolean("shift_work").default(false),
+  nightShift: boolean("night_shift").default(false),
+  hoursPerWeek: integer("hours_per_week"),
+  
+  // Duration
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  isCurrent: boolean("is_current").default(true),
+  
+  // Status
+  status: varchar("status").default("active"), // 'active', 'inactive', 'retired'
+  
+  // Auto-enrichment tracking
+  autoEnriched: boolean("auto_enriched").default(false),
+  enrichedAt: timestamp("enriched_at"),
+  
+  // Doctor modification tracking
+  createdBy: varchar("created_by").references(() => users.id),
+  modifiedBy: varchar("modified_by").references(() => users.id),
+  modifiedAt: timestamp("modified_at"),
+  doctorNotes: text("doctor_notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("occupation_patient_idx").on(table.patientId),
+  industryIdx: index("occupation_industry_idx").on(table.industry),
+  currentIdx: index("occupation_current_idx").on(table.isCurrent),
+}));
+
+export const insertPatientOccupationSchema = createInsertSchema(patientOccupations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPatientOccupation = z.infer<typeof insertPatientOccupationSchema>;
+export type PatientOccupation = typeof patientOccupations.$inferSelect;
+
+// Occupational Exposures - Hazards associated with jobs
+export const occupationalExposures = pgTable("occupational_exposures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  occupationId: varchar("occupation_id").notNull().references(() => patientOccupations.id, { onDelete: "cascade" }),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Exposure details
+  exposureType: varchar("exposure_type").notNull(), // 'dust', 'chemicals', 'noise', 'heat', 'radiation', 'biological', 'ergonomic'
+  exposureAgent: varchar("exposure_agent"), // Specific agent: 'silica', 'asbestos', 'lead', 'benzene', etc.
+  exposureLevel: varchar("exposure_level").notNull().default("medium"), // 'low', 'medium', 'high'
+  
+  // Duration and frequency
+  exposureFrequency: varchar("exposure_frequency"), // 'daily', 'weekly', 'occasional', 'rare'
+  exposureDurationYears: decimal("exposure_duration_years"),
+  
+  // Protection
+  protectiveEquipmentUsed: boolean("protective_equipment_used").default(false),
+  protectiveEquipmentDetails: text("protective_equipment_details"),
+  
+  // Health impact
+  healthImpactNotes: text("health_impact_notes"),
+  
+  // Auto-generation tracking
+  autoGenerated: boolean("auto_generated").default(true),
+  manualOverride: boolean("manual_override").default(false),
+  modifiedBy: varchar("modified_by").references(() => users.id),
+  modifiedAt: timestamp("modified_at"),
+  doctorNotes: text("doctor_notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  occupationIdx: index("exposure_occupation_idx").on(table.occupationId),
+  patientIdx: index("exposure_patient_idx").on(table.patientId),
+  typeIdx: index("exposure_type_idx").on(table.exposureType),
+}));
+
+export const insertOccupationalExposureSchema = createInsertSchema(occupationalExposures).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertOccupationalExposure = z.infer<typeof insertOccupationalExposureSchema>;
+export type OccupationalExposure = typeof occupationalExposures.$inferSelect;
+
+// Genetic Risk Flags - Auto-derived from lab/genetic results
+export const geneticRiskFlags = pgTable("genetic_risk_flags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => users.id),
+  
+  // Flag details
+  flagName: varchar("flag_name").notNull(), // 'HLA-B*57:01', 'Factor V Leiden', 'BRCA1', 'MTHFR C677T'
+  flagType: varchar("flag_type").notNull(), // 'monogenic', 'pharmacogenomic', 'polygenic_score', 'family_history'
+  
+  // Value and interpretation
+  value: varchar("value").notNull(), // 'present', 'absent', 'high', 'intermediate', 'low', 'carrier'
+  riskLevel: varchar("risk_level"), // 'low', 'moderate', 'high', 'critical'
+  
+  // Clinical significance
+  clinicalImplications: text("clinical_implications"),
+  affectedMedications: jsonb("affected_medications").$type<string[]>(),
+  affectedConditions: jsonb("affected_conditions").$type<string[]>(),
+  
+  // Source
+  source: varchar("source").notNull(), // 'genetic_panel', 'lab_result', 'external_report', 'self_reported'
+  sourceRecordId: varchar("source_record_id"),
+  testingProvider: varchar("testing_provider"),
+  recordedDate: timestamp("recorded_date"),
+  
+  // Override tracking
+  autoGenerated: boolean("auto_generated").default(true),
+  manualOverride: boolean("manual_override").default(false),
+  overriddenBy: varchar("overridden_by").references(() => users.id),
+  overriddenAt: timestamp("overridden_at"),
+  doctorNotes: text("doctor_notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  patientIdx: index("genetic_flag_patient_idx").on(table.patientId),
+  flagIdx: index("genetic_flag_name_idx").on(table.flagName),
+  typeIdx: index("genetic_flag_type_idx").on(table.flagType),
+}));
+
+export const insertGeneticRiskFlagSchema = createInsertSchema(geneticRiskFlags).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertGeneticRiskFlag = z.infer<typeof insertGeneticRiskFlagSchema>;
+export type GeneticRiskFlag = typeof geneticRiskFlags.$inferSelect;
+
+// Risk Exposures ETL Job Tracking - For background job management
+export const riskExposuresEtlJobs = pgTable("risk_exposures_etl_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Job type
+  jobType: varchar("job_type").notNull(), // 'infectious_events', 'immunizations', 'occupational_exposures', 'genetic_flags'
+  
+  // Status
+  status: varchar("status").notNull().default("pending"), // 'pending', 'running', 'completed', 'failed'
+  
+  // Progress
+  recordsProcessed: integer("records_processed").default(0),
+  recordsCreated: integer("records_created").default(0),
+  recordsUpdated: integer("records_updated").default(0),
+  recordsSkipped: integer("records_skipped").default(0),
+  
+  // Timing
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  executionTimeMs: integer("execution_time_ms"),
+  
+  // Error handling
+  errorMessage: text("error_message"),
+  errorStack: text("error_stack"),
+  
+  // Last processed marker (for incremental processing)
+  lastProcessedId: varchar("last_processed_id"),
+  lastProcessedAt: timestamp("last_processed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  jobTypeIdx: index("etl_job_type_idx").on(table.jobType),
+  statusIdx: index("etl_job_status_idx").on(table.status),
+  createdIdx: index("etl_job_created_idx").on(table.createdAt),
+}));
+
+export const insertRiskExposuresEtlJobSchema = createInsertSchema(riskExposuresEtlJobs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRiskExposuresEtlJob = z.infer<typeof insertRiskExposuresEtlJobSchema>;
+export type RiskExposuresEtlJob = typeof riskExposuresEtlJobs.$inferSelect;
+
+// ============================================
+// ADVANCED ML GOVERNANCE & REPRODUCIBILITY SYSTEM
+// ============================================
+
+// Research Protocols - Governance tracking for research studies
+export const researchProtocols = pgTable("research_protocols", {
+  id: varchar("id").primaryKey(),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  principalInvestigator: varchar("principal_investigator").notNull(),
+  status: varchar("status").notNull().default("draft"),
+  analysisSpec: jsonb("analysis_spec").$type<Record<string, unknown>>(),
+  dataSnapshotId: varchar("data_snapshot_id"),
+  version: varchar("version").default("1.0.0"),
+  irbNumber: varchar("irb_number"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusIdx: index("research_protocol_status_idx").on(table.status),
+  piIdx: index("research_protocol_pi_idx").on(table.principalInvestigator),
+}));
+
+export const insertResearchProtocolSchema = createInsertSchema(researchProtocols).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertResearchProtocol = z.infer<typeof insertResearchProtocolSchema>;
+export type ResearchProtocol = typeof researchProtocols.$inferSelect;
+
+// Data Snapshots - Version control for analysis data
+export const dataSnapshots = pgTable("data_snapshots", {
+  id: varchar("id").primaryKey(),
+  createdAt: timestamp("created_at").defaultNow(),
+  tableChecksums: jsonb("table_checksums").$type<Record<string, string>>(),
+  rowCounts: jsonb("row_counts").$type<Record<string, number>>(),
+  dateRange: jsonb("date_range").$type<string[]>(),
+  createdBy: varchar("created_by").notNull(),
+  description: text("description"),
+  contentHash: varchar("content_hash"),
+}, (table) => ({
+  createdByIdx: index("data_snapshot_created_by_idx").on(table.createdBy),
+}));
+
+export const insertDataSnapshotSchema = createInsertSchema(dataSnapshots).omit({
+  createdAt: true,
+});
+
+export type InsertDataSnapshot = z.infer<typeof insertDataSnapshotSchema>;
+export type DataSnapshot = typeof dataSnapshots.$inferSelect;
+
+// Protocol Version Audit Log - Track all governance version changes
+export const protocolVersionAuditLog = pgTable("protocol_version_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  protocolId: varchar("protocol_id").notNull(),
+  action: varchar("action").notNull(),
+  oldVersion: varchar("old_version"),
+  newVersion: varchar("new_version"),
+  userId: varchar("user_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  protocolIdx: index("protocol_version_audit_protocol_idx").on(table.protocolId),
+  actionIdx: index("protocol_version_audit_action_idx").on(table.action),
+}));
+
+export const insertProtocolVersionAuditLogSchema = createInsertSchema(protocolVersionAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertProtocolVersionAuditLog = z.infer<typeof insertProtocolVersionAuditLogSchema>;
+export type ProtocolVersionAuditLog = typeof protocolVersionAuditLog.$inferSelect;
+
+// Robustness Reports - Automated bias/robustness check results
+export const robustnessReports = pgTable("robustness_reports", {
+  id: varchar("id").primaryKey(),
+  protocolId: varchar("protocol_id"),
+  overallStatus: varchar("overall_status").notNull(),
+  reportJson: jsonb("report_json").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  protocolIdx: index("robustness_protocol_idx").on(table.protocolId),
+  statusIdx: index("robustness_status_idx").on(table.overallStatus),
+}));
+
+export const insertRobustnessReportSchema = createInsertSchema(robustnessReports).omit({
+  createdAt: true,
+});
+
+export type InsertRobustnessReport = z.infer<typeof insertRobustnessReportSchema>;
+export type RobustnessReport = typeof robustnessReports.$inferSelect;
+
+// Entity Embeddings - Learned embeddings for patients, drugs, locations
+export const entityEmbeddings = pgTable("entity_embeddings", {
+  id: varchar("id").primaryKey(),
+  entityType: varchar("entity_type").notNull(),
+  method: varchar("method").notNull(),
+  embeddingDim: integer("embedding_dim").notNull(),
+  nEntities: integer("n_entities").notNull(),
+  entityMapping: jsonb("entity_mapping").$type<Record<string, number>>(),
+  trainingLoss: decimal("training_loss", { precision: 10, scale: 6 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  entityTypeIdx: index("embedding_entity_type_idx").on(table.entityType),
+  methodIdx: index("embedding_method_idx").on(table.method),
+}));
+
+export const insertEntityEmbeddingSchema = createInsertSchema(entityEmbeddings).omit({
+  createdAt: true,
+});
+
+export type InsertEntityEmbedding = z.infer<typeof insertEntityEmbeddingSchema>;
+export type EntityEmbedding = typeof entityEmbeddings.$inferSelect;
+
+// ML Extraction Audit Log - Consent-aware data extraction tracking
+export const mlExtractionAuditLog = pgTable("ml_extraction_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  requestId: varchar("request_id").notNull(),
+  requesterId: varchar("requester_id").notNull(),
+  purpose: text("purpose").notNull(),
+  policyId: varchar("policy_id").notNull(),
+  nPatientsConsented: integer("n_patients_consented").notNull(),
+  nRecordsExtracted: integer("n_records_extracted").notNull(),
+  differentialPrivacyApplied: boolean("differential_privacy_applied").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  requesterIdx: index("ml_extraction_requester_idx").on(table.requesterId),
+  policyIdx: index("ml_extraction_policy_idx").on(table.policyId),
+}));
+
+export const insertMlExtractionAuditLogSchema = createInsertSchema(mlExtractionAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMlExtractionAuditLog = z.infer<typeof insertMlExtractionAuditLogSchema>;
+export type MlExtractionAuditLog = typeof mlExtractionAuditLog.$inferSelect;
+
+// ============================================================================
+// PHASE 12: VIDEO CONSULTATIONS & BILLING
+// Daily.co integration with per-doctor billing, external provider support
+// ============================================================================
+
+// Doctor Video Settings - Per-doctor video configuration
+export const doctorVideoSettings = pgTable("doctor_video_settings", {
+  doctorId: varchar("doctor_id").primaryKey().references(() => users.id),
+  
+  // External provider settings
+  allowExternalVideo: boolean("allow_external_video").default(false),
+  zoomJoinUrl: varchar("zoom_join_url"),
+  meetJoinUrl: varchar("meet_join_url"),
+  defaultVideoProvider: varchar("default_video_provider").default("daily"), // 'daily', 'zoom', 'meet'
+  
+  // HIPAA settings
+  enableRecording: boolean("enable_recording").default(false),
+  enableChat: boolean("enable_chat").default(true),
+  maxParticipants: integer("max_participants").default(2),
+  
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDoctorVideoSettingsSchema = createInsertSchema(doctorVideoSettings).omit({
+  updatedAt: true,
+});
+
+export type InsertDoctorVideoSettings = z.infer<typeof insertDoctorVideoSettingsSchema>;
+export type DoctorVideoSettings = typeof doctorVideoSettings.$inferSelect;
+
+// Appointment Video - Per-appointment video configuration
+export const appointmentVideo = pgTable("appointment_video", {
+  appointmentId: varchar("appointment_id").primaryKey().references(() => appointments.id),
+  
+  // Video provider for this appointment
+  videoProvider: varchar("video_provider").default("daily").notNull(), // 'daily', 'zoom', 'meet'
+  
+  // Daily.co room details
+  dailyRoomName: varchar("daily_room_name").unique(),
+  dailyRoomUrl: varchar("daily_room_url"),
+  
+  // External provider URL (Zoom/Meet)
+  externalJoinUrl: varchar("external_join_url"),
+  
+  // Room lifecycle
+  roomCreatedAt: timestamp("room_created_at"),
+  roomExpiresAt: timestamp("room_expires_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  providerIdx: index("appointment_video_provider_idx").on(table.videoProvider),
+  roomNameIdx: index("appointment_video_room_name_idx").on(table.dailyRoomName),
+}));
+
+export const insertAppointmentVideoSchema = createInsertSchema(appointmentVideo).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAppointmentVideo = z.infer<typeof insertAppointmentVideoSchema>;
+export type AppointmentVideo = typeof appointmentVideo.$inferSelect;
+
+// Video Usage Events - Raw webhook events from Daily.co
+export const videoUsageEvents = pgTable("video_usage_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  appointmentId: varchar("appointment_id").references(() => appointments.id),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Event details
+  provider: varchar("provider").notNull().default("daily"),
+  eventType: varchar("event_type").notNull(), // 'participant_joined', 'participant_left'
+  eventId: varchar("event_id").unique(), // Daily's event ID for idempotency
+  
+  // Participant info
+  participantId: varchar("participant_id").notNull(),
+  participantName: varchar("participant_name"),
+  participantRole: varchar("participant_role"), // 'doctor', 'patient'
+  
+  // Timestamps
+  eventTs: timestamp("event_ts").notNull(),
+  receivedTs: timestamp("received_ts").defaultNow(),
+  
+  // Raw payload for audit
+  payload: jsonb("payload").$type<Record<string, unknown>>(),
+}, (table) => ({
+  appointmentParticipantIdx: index("video_usage_events_appt_participant_idx").on(table.appointmentId, table.participantId, table.eventTs),
+  doctorEventIdx: index("video_usage_events_doctor_idx").on(table.doctorId, table.eventTs),
+  eventIdIdx: index("video_usage_events_event_id_idx").on(table.eventId),
+}));
+
+export const insertVideoUsageEventSchema = createInsertSchema(videoUsageEvents).omit({
+  id: true,
+  receivedTs: true,
+});
+
+export type InsertVideoUsageEvent = z.infer<typeof insertVideoUsageEventSchema>;
+export type VideoUsageEvent = typeof videoUsageEvents.$inferSelect;
+
+// Video Usage Sessions - Paired join/leave intervals per participant
+export const videoUsageSessions = pgTable("video_usage_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  appointmentId: varchar("appointment_id").notNull().references(() => appointments.id),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Participant tracking
+  participantId: varchar("participant_id").notNull(),
+  participantRole: varchar("participant_role"), // 'doctor', 'patient'
+  
+  // Session timing
+  joinedAt: timestamp("joined_at").notNull(),
+  leftAt: timestamp("left_at"),
+  durationSeconds: integer("duration_seconds"),
+  
+  // Derived from left_at for billing
+  billingMonth: varchar("billing_month"), // 'YYYY-MM'
+}, (table) => ({
+  appointmentParticipantIdx: index("video_usage_sessions_appt_participant_idx").on(table.appointmentId, table.participantId, table.joinedAt),
+  doctorJoinedIdx: index("video_usage_sessions_doctor_idx").on(table.doctorId, table.joinedAt),
+  billingMonthIdx: index("video_usage_sessions_billing_month_idx").on(table.doctorId, table.billingMonth),
+}));
+
+export const insertVideoUsageSessionSchema = createInsertSchema(videoUsageSessions).omit({
+  id: true,
+});
+
+export type InsertVideoUsageSession = z.infer<typeof insertVideoUsageSessionSchema>;
+export type VideoUsageSession = typeof videoUsageSessions.$inferSelect;
+
+// Video Usage Ledger - Per-appointment billing rollup
+export const videoUsageLedger = pgTable("video_usage_ledger", {
+  appointmentId: varchar("appointment_id").primaryKey().references(() => appointments.id),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  
+  // Billing period
+  billingMonth: varchar("billing_month").notNull(), // 'YYYY-MM'
+  
+  // Usage metrics
+  participantMinutes: integer("participant_minutes").default(0),
+  
+  // Cost calculation
+  costUsd: decimal("cost_usd", { precision: 12, scale: 4 }).default("0"),
+  overageBillableMinutes: integer("overage_billable_minutes").default(0),
+  billedToDoctorUsd: decimal("billed_to_doctor_usd", { precision: 12, scale: 4 }).default("0"),
+  
+  // Finalization
+  finalized: boolean("finalized").default(false),
+  finalizedAt: timestamp("finalized_at"),
+  
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorBillingIdx: index("video_usage_ledger_doctor_billing_idx").on(table.doctorId, table.billingMonth),
+  billingFinalizedIdx: index("video_usage_ledger_billing_finalized_idx").on(table.billingMonth, table.finalized),
+}));
+
+export const insertVideoUsageLedgerSchema = createInsertSchema(videoUsageLedger).omit({
+  updatedAt: true,
+});
+
+export type InsertVideoUsageLedger = z.infer<typeof insertVideoUsageLedgerSchema>;
+export type VideoUsageLedger = typeof videoUsageLedger.$inferSelect;
+
+// Doctor Subscription - Internal plan record for billing
+export const doctorSubscription = pgTable("doctor_subscription", {
+  doctorId: varchar("doctor_id").primaryKey().references(() => users.id),
+  
+  // Plan details
+  plan: varchar("plan").notNull().default("TRIAL"), // 'TRIAL', 'PRO', 'CLINIC'
+  status: varchar("status").notNull().default("active"), // 'active', 'past_due', 'canceled'
+  
+  // Included usage
+  includedParticipantMinutes: integer("included_participant_minutes").default(300),
+  overageRateUsdPerPm: decimal("overage_rate_usd_per_pm", { precision: 12, scale: 4 }).default("0.008"),
+  
+  // Billing period
+  periodStart: timestamp("period_start").defaultNow(),
+  periodEnd: timestamp("period_end"),
+  
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusPeriodIdx: index("doctor_subscription_status_period_idx").on(table.status, table.periodEnd),
+}));
+
+export const insertDoctorSubscriptionSchema = createInsertSchema(doctorSubscription).omit({
+  updatedAt: true,
+});
+
+export type InsertDoctorSubscription = z.infer<typeof insertDoctorSubscriptionSchema>;
+export type DoctorSubscription = typeof doctorSubscription.$inferSelect;
+
+// Doctor Monthly Invoice - Aggregated monthly totals
+export const doctorMonthlyInvoice = pgTable("doctor_monthly_invoice", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorId: varchar("doctor_id").notNull().references(() => users.id),
+  billingMonth: varchar("billing_month").notNull(), // 'YYYY-MM'
+  
+  // Usage summary
+  totalParticipantMinutes: integer("total_participant_minutes").default(0),
+  includedParticipantMinutes: integer("included_participant_minutes").default(0),
+  overageMinutes: integer("overage_minutes").default(0),
+  
+  // Invoice totals
+  amountDueUsd: decimal("amount_due_usd", { precision: 12, scale: 4 }).default("0"),
+  
+  // Status
+  status: varchar("status").default("pending"), // 'pending', 'paid', 'overdue'
+  paidAt: timestamp("paid_at"),
+  
+  generatedAt: timestamp("generated_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  doctorBillingIdx: index("doctor_monthly_invoice_doctor_billing_idx").on(table.doctorId, table.billingMonth),
+  statusIdx: index("doctor_monthly_invoice_status_idx").on(table.status),
+  // Unique constraint on doctor + month
+  uniqueDoctorMonth: index("doctor_monthly_invoice_unique_idx").on(table.doctorId, table.billingMonth),
+}));
+
+export const insertDoctorMonthlyInvoiceSchema = createInsertSchema(doctorMonthlyInvoice).omit({
+  id: true,
+  generatedAt: true,
+  updatedAt: true,
+});
+
+export type InsertDoctorMonthlyInvoice = z.infer<typeof insertDoctorMonthlyInvoiceSchema>;
+export type DoctorMonthlyInvoice = typeof doctorMonthlyInvoice.$inferSelect;

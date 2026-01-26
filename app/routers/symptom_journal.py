@@ -23,7 +23,7 @@ from app.models.user import User
 from app.models.patient_doctor_connection import PatientDoctorConnection
 from app.dependencies import require_role
 from app.services.openai_service import analyze_symptom_image, generate_weekly_summary
-from app.services.s3_service import upload_symptom_image, generate_presigned_url
+from app.services.gcs_service import upload_symptom_image, generate_presigned_url
 from app.services.respiratory_analysis import RespiratoryAnalysisService
 
 
@@ -1006,3 +1006,213 @@ async def analyze_respiratory_rate(
             status_code=500,
             detail=f"Failed to analyze respiratory rate: {str(e)}"
         )
+
+
+# ==================== Doctor Access Endpoints (Phase 8) ====================
+
+from app.services.access_control import (
+    AccessControlService, AccessScope, PHICategory, HIPAAAuditLogger
+)
+from app.dependencies import get_current_user, get_current_doctor
+from fastapi import Request
+
+
+@router.get("/doctor/patient/{patient_id}/measurements")
+async def doctor_get_patient_symptom_measurements(
+    patient_id: str,
+    request: Request,
+    body_area: Optional[str] = None,
+    days: int = 30,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_doctor)
+) -> dict:
+    """
+    Doctor endpoint to view patient symptom measurements.
+    
+    Phase 8 HIPAA Compliance:
+    - Requires active doctor-patient assignment with consent
+    - Enforces access scope (full or limited)
+    - Logs all PHI access to HIPAA audit trail
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    access_control = AccessControlService()
+    
+    decision = access_control.check_access(
+        db=db,
+        current_user=current_user,
+        patient_id=patient_id,
+        required_scope=AccessScope.LIMITED,
+        phi_categories=[PHICategory.SYMPTOMS.value, PHICategory.VIDEO_EXAMS.value],
+        request=request,
+        resource_type="symptom_measurements",
+        access_reason="clinical_review"
+    )
+    
+    if not decision.allowed:
+        logger.warning(f"[SJ-API] Access denied for doctor {current_user.id} to patient {patient_id}: {decision.reason}")
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: {decision.reason}"
+        )
+    
+    logger.info(f"[SJ-API] [AUDIT] Doctor {current_user.id} accessing symptom measurements for patient {patient_id}")
+    
+    try:
+        start_date = datetime.utcnow() - timedelta(days=days)
+        
+        query = db.query(SymptomMeasurement).filter(
+            SymptomMeasurement.patient_id == patient_id,
+            SymptomMeasurement.created_at >= start_date
+        )
+        
+        if body_area:
+            try:
+                body_area_enum = BodyArea(body_area)
+                query = query.filter(SymptomMeasurement.body_area == body_area_enum)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid body area: {body_area}")
+        
+        measurements = query.order_by(desc(SymptomMeasurement.created_at)).limit(100).all()
+        
+        measurement_items = []
+        for m in measurements:
+            item = {
+                "id": m.id,
+                "body_area": m.body_area.value if m.body_area else None,
+                "created_at": m.created_at,
+                "color_change_percent": m.color_change_percent,
+                "area_change_percent": m.area_change_percent,
+                "respiratory_rate_bpm": m.respiratory_rate_bpm,
+                "ai_observations": m.ai_observations
+            }
+            measurement_items.append(item)
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=str(current_user.id),
+            actor_role="doctor",
+            patient_id=patient_id,
+            action="view",
+            phi_categories=[PHICategory.SYMPTOMS.value],
+            resource_type="symptom_measurements",
+            access_scope=decision.access_scope.value,
+            access_reason="clinical_review",
+            consent_verified=True,
+            assignment_id=decision.assignment_id,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            request_path=str(request.url.path),
+            additional_context={"records_accessed": len(measurement_items)}
+        )
+        
+        return {
+            "measurements": measurement_items,
+            "total_count": len(measurement_items),
+            "access_scope": decision.access_scope.value,
+            "disclaimer": "Wellness monitoring data - Not a medical diagnosis"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SJ-API] Doctor measurement retrieval error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve patient measurements")
+
+
+@router.get("/doctor/patient/{patient_id}/alerts")
+async def doctor_get_patient_symptom_alerts(
+    patient_id: str,
+    request: Request,
+    days: int = 30,
+    severity: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_doctor)
+) -> dict:
+    """
+    Doctor endpoint to view patient symptom alerts.
+    
+    Phase 8 HIPAA Compliance:
+    - Requires active doctor-patient assignment with consent
+    - Full audit trail for PHI access
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    access_control = AccessControlService()
+    
+    decision = access_control.check_access(
+        db=db,
+        current_user=current_user,
+        patient_id=patient_id,
+        required_scope=AccessScope.LIMITED,
+        phi_categories=[PHICategory.SYMPTOMS.value],
+        request=request,
+        resource_type="symptom_alerts",
+        access_reason="clinical_review"
+    )
+    
+    if not decision.allowed:
+        raise HTTPException(status_code=403, detail=f"Access denied: {decision.reason}")
+    
+    try:
+        start_date = datetime.utcnow() - timedelta(days=days)
+        
+        query = db.query(SymptomAlert).filter(
+            SymptomAlert.patient_id == patient_id,
+            SymptomAlert.created_at >= start_date
+        )
+        
+        if severity:
+            try:
+                severity_enum = AlertSeverity(severity)
+                query = query.filter(SymptomAlert.severity == severity_enum)
+            except ValueError:
+                pass
+        
+        alerts = query.order_by(desc(SymptomAlert.created_at)).limit(50).all()
+        
+        alert_items = [
+            {
+                "id": a.id,
+                "severity": a.severity.value if a.severity else None,
+                "change_type": a.change_type.value if a.change_type else None,
+                "body_area": a.body_area.value if a.body_area else None,
+                "title": a.title,
+                "message": a.message,
+                "change_percent": a.change_percent,
+                "created_at": a.created_at,
+                "acknowledged": a.acknowledged
+            }
+            for a in alerts
+        ]
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=str(current_user.id),
+            actor_role="doctor",
+            patient_id=patient_id,
+            action="view",
+            phi_categories=[PHICategory.SYMPTOMS.value],
+            resource_type="symptom_alerts",
+            access_scope=decision.access_scope.value,
+            access_reason="clinical_review",
+            consent_verified=True,
+            assignment_id=decision.assignment_id,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            request_path=str(request.url.path),
+            additional_context={"alerts_accessed": len(alert_items)}
+        )
+        
+        return {
+            "alerts": alert_items,
+            "total_count": len(alert_items),
+            "access_scope": decision.access_scope.value,
+            "disclaimer": "Wellness monitoring data - Not a medical diagnosis"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SJ-API] Doctor alerts retrieval error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve patient alerts")

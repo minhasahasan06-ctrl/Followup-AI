@@ -29,9 +29,8 @@ from app.database import get_db
 from app.models.audio_ai_models import AudioExamSession, AudioMetrics
 from app.models.user import User
 from app.dependencies import get_current_user
-from app.services.s3_service import s3_service
+from app.services.gcs_service import gcs_service
 from app.services.condition_personalization_service import ConditionPersonalizationService
-from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -127,10 +126,10 @@ async def upload_audio_to_s3(patient_id: str, session_id: str, stage: str, audio
     s3_key = f"audio-exams/{patient_id}/{session_id}/{stage}_{timestamp}.wav"
     
     try:
-        # Use s3_service which handles both S3 and local storage
-        s3_uri = await s3_service.upload_file(
+        # Use gcs_service which handles both GCS and local storage
+        result = await gcs_service.upload_file(
             file_data=audio_bytes,
-            s3_key=s3_key,
+            key=s3_key,
             content_type='audio/wav',
             metadata={
                 'patient_id': patient_id,
@@ -139,8 +138,9 @@ async def upload_audio_to_s3(patient_id: str, session_id: str, stage: str, audio
                 'upload_timestamp': timestamp
             }
         )
-        logger.info(f"Audio uploaded: {s3_uri}")
-        return s3_uri
+        gcs_uri = result["uri"]
+        logger.info(f"Audio uploaded: {gcs_uri}")
+        return gcs_uri
         
     except Exception as e:
         logger.error(f"Audio upload failed: {e}")
@@ -494,7 +494,7 @@ async def complete_audio_exam_session(
             )
         
         # Download audio from S3 or local storage
-        audio_bytes = await s3_service.download_file(prioritized_uri)
+        audio_bytes = await gcs_service.download_file(prioritized_uri)
         
         # Save to temporary file for AudioAIEngine
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:

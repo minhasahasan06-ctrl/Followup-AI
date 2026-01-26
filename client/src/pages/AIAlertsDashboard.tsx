@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
+import { DetailedPredictionCard } from "@/components/DetailedPredictionCard";
 import {
   Bell,
   CheckCircle2,
@@ -38,7 +40,13 @@ import {
   Droplets,
   Footprints,
   Gauge,
-  History
+  History,
+  Moon,
+  Link2,
+  Pill,
+  ArrowUpRight,
+  ArrowDownRight,
+  CornerUpRight
 } from "lucide-react";
 import { LegalDisclaimer } from "@/components/LegalDisclaimer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -279,6 +287,205 @@ interface BaselineData {
   is_current: boolean;
   created_at: string;
 }
+
+interface DiseaseRiskPrediction {
+  disease: string;
+  probability: number;
+  risk_level: string;
+  confidence: number;
+  confidence_interval?: { lower: number; upper: number };
+  contributing_factors: Array<{
+    feature: string;
+    value: number;
+    contribution: number;
+    direction: string;
+    baseline?: number;
+    normal_range?: { min: number; max: number };
+  }>;
+  recommendations: string[];
+  time_projections?: {
+    "24h": number;
+    "48h": number;
+    "72h": number;
+  };
+}
+
+interface MLDiseaseRiskResponse {
+  patient_id: string;
+  predictions?: Record<string, DiseaseRiskPrediction>;
+  predicted_at: string;
+  model_version: string;
+}
+
+interface DeviceHealthSection {
+  deterioration_index: number;
+  risk_score: number;
+  risk_level: string;
+  trend: string;
+  stability_score: number;
+  data_coverage: number;
+  anomalies_detected: number;
+  alert_triggered: boolean;
+}
+
+interface DeviceAnalyticsData {
+  patient_id: string;
+  generated_at: string;
+  overall_risk_score: number;
+  overall_trend: string;
+  critical_alerts: string[];
+  recommendations: string[];
+  sections: Record<string, DeviceHealthSection>;
+}
+
+interface SectionAlertData {
+  section: string;
+  deterioration_index: number;
+  risk_score: number;
+  risk_level: string;
+  trend: string;
+  stability_score: number;
+  alert_triggered: boolean;
+  alert_reason: string | null;
+  data_coverage: number;
+  anomalies_detected: number;
+  recommendations: string[];
+}
+
+interface GeneratedAlertData {
+  id: string;
+  patient_id: string;
+  alert_type: string;
+  alert_category: string;
+  severity: string;
+  priority: number;
+  title: string;
+  message: string;
+  created_at: string;
+}
+
+interface DevicePipelineResponse {
+  patient_id: string;
+  generated_at: string;
+  overall_risk_score: number;
+  overall_trend: string;
+  sections: SectionAlertData[];
+  critical_alerts: Array<{ message: string; section: string; severity: string }>;
+  alerts_generated: number;
+  new_alerts: GeneratedAlertData[];
+}
+
+interface CorrelationPair {
+  metric_a: string;
+  metric_a_label: string;
+  metric_b: string;
+  metric_b_label: string;
+  correlation_coefficient: number;
+  p_value: number;
+  is_significant: boolean;
+  strength: string;
+  direction: string;
+  sample_size: number;
+  category: string;
+}
+
+interface CorrelationCategory {
+  category_name: string;
+  category_label: string;
+  category_description: string;
+  correlations: CorrelationPair[];
+  total_correlations: number;
+  significant_correlations: number;
+}
+
+interface CorrelationInsightsData {
+  patient_id: string;
+  generated_at: string;
+  categories: CorrelationCategory[];
+  summary: {
+    total_correlations: number;
+    significant_correlations: number;
+    categories_analyzed: number;
+    analysis_period_days: number;
+  };
+  recommendations: string[];
+}
+
+const CORRELATION_CATEGORY_CONFIG: Record<string, {
+  label: string;
+  icon: typeof Link2;
+  color: string;
+  bgColor: string;
+}> = {
+  symptom_medication: {
+    label: "Symptom-Medication",
+    icon: Pill,
+    color: "text-rose-500",
+    bgColor: "bg-rose-100 dark:bg-rose-900/30"
+  },
+  activity_sleep: {
+    label: "Activity-Sleep",
+    icon: Moon,
+    color: "text-purple-500",
+    bgColor: "bg-purple-100 dark:bg-purple-900/30"
+  },
+  environmental_health: {
+    label: "Environmental-Health",
+    icon: Wind,
+    color: "text-blue-500",
+    bgColor: "bg-blue-100 dark:bg-blue-900/30"
+  },
+  device_metrics: {
+    label: "Device Metrics",
+    icon: Activity,
+    color: "text-green-500",
+    bgColor: "bg-green-100 dark:bg-green-900/30"
+  }
+};
+
+const HEALTH_SECTION_CONFIG: Record<string, { 
+  label: string; 
+  icon: typeof Heart; 
+  color: string;
+  description: string;
+}> = {
+  cardiovascular: { 
+    label: "Cardiovascular", 
+    icon: Heart, 
+    color: "text-rose-500",
+    description: "Heart rate, blood pressure, HRV"
+  },
+  respiratory: { 
+    label: "Respiratory", 
+    icon: Wind, 
+    color: "text-blue-500",
+    description: "SpO2, respiratory rate, breathing patterns"
+  },
+  metabolic: { 
+    label: "Metabolic", 
+    icon: Droplets, 
+    color: "text-amber-500",
+    description: "Blood glucose, temperature, hydration"
+  },
+  activity: { 
+    label: "Activity", 
+    icon: Footprints, 
+    color: "text-green-500",
+    description: "Steps, active minutes, exercise"
+  },
+  sleep: { 
+    label: "Sleep", 
+    icon: Moon, 
+    color: "text-purple-500",
+    description: "Sleep quality, duration, stages"
+  },
+  body_composition: { 
+    label: "Body Composition", 
+    icon: Gauge, 
+    color: "text-cyan-500",
+    description: "Weight, BMI, body fat"
+  },
+};
 
 const CHART_COLORS = {
   primary: 'hsl(var(--primary))',
@@ -1380,6 +1587,260 @@ function BaselinePanel({
   );
 }
 
+function DeviceHealthSectionPanel({ 
+  analytics, 
+  isLoading 
+}: { 
+  analytics: DeviceAnalyticsData | null; 
+  isLoading: boolean;
+}) {
+  const getRiskLevelColor = (level: string) => {
+    switch (level) {
+      case 'critical': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+      case 'high': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+      case 'moderate': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+      case 'low': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+      default: return 'bg-muted text-muted-foreground';
+    }
+  };
+
+  const getTrendIcon = (trend: string) => {
+    switch (trend) {
+      case 'improving': return { icon: TrendingUp, color: 'text-green-500' };
+      case 'worsening':
+      case 'declining': return { icon: TrendingDown, color: 'text-red-500' };
+      default: return { icon: Minus, color: 'text-muted-foreground' };
+    }
+  };
+
+  const getDeteriorationColor = (index: number) => {
+    if (index >= 0.7) return 'text-red-500';
+    if (index >= 0.4) return 'text-yellow-500';
+    return 'text-green-500';
+  };
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {Array(6).fill(0).map((_, i) => (
+          <Skeleton key={i} className="h-48" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!analytics || !analytics.sections || Object.keys(analytics.sections).length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Activity className="h-16 w-16 mx-auto text-muted-foreground opacity-50 mb-4" />
+        <h3 className="text-lg font-semibold mb-2">No Device Data Available</h3>
+        <p className="text-muted-foreground mb-4">
+          Connect medical devices to view health section analytics.
+        </p>
+        <Button asChild variant="outline">
+          <Link href="/device-connect">
+            <Link2 className="h-4 w-4 mr-2" />
+            Connect Devices
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6" data-testid="device-health-sections">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="col-span-1">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Overall Device Risk</p>
+                <p className="text-3xl font-bold" data-testid="text-overall-risk">
+                  {(analytics.overall_risk_score * 100).toFixed(0)}%
+                </p>
+              </div>
+              <div className={`p-3 rounded-full ${
+                analytics.overall_risk_score >= 0.7 ? 'bg-red-100 dark:bg-red-900/30' :
+                analytics.overall_risk_score >= 0.4 ? 'bg-yellow-100 dark:bg-yellow-900/30' :
+                'bg-green-100 dark:bg-green-900/30'
+              }`}>
+                <Shield className={`h-6 w-6 ${
+                  analytics.overall_risk_score >= 0.7 ? 'text-red-500' :
+                  analytics.overall_risk_score >= 0.4 ? 'text-yellow-500' :
+                  'text-green-500'
+                }`} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="col-span-1">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Overall Trend</p>
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const { icon: TrendIconComponent, color } = getTrendIcon(analytics.overall_trend);
+                    return (
+                      <>
+                        <TrendIconComponent className={`h-6 w-6 ${color}`} />
+                        <p className="text-lg font-semibold capitalize" data-testid="text-overall-trend">
+                          {analytics.overall_trend}
+                        </p>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="col-span-1">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Critical Alerts</p>
+                <p className="text-3xl font-bold" data-testid="text-critical-count">
+                  {analytics.critical_alerts?.length || 0}
+                </p>
+              </div>
+              <div className={`p-3 rounded-full ${
+                (analytics.critical_alerts?.length || 0) > 0 
+                  ? 'bg-red-100 dark:bg-red-900/30' 
+                  : 'bg-green-100 dark:bg-green-900/30'
+              }`}>
+                <AlertTriangle className={`h-6 w-6 ${
+                  (analytics.critical_alerts?.length || 0) > 0 ? 'text-red-500' : 'text-green-500'
+                }`} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {Object.entries(analytics.sections).map(([sectionKey, section]) => {
+          const config = HEALTH_SECTION_CONFIG[sectionKey] || {
+            label: sectionKey.replace(/_/g, ' '),
+            icon: Activity,
+            color: 'text-primary',
+            description: ''
+          };
+          const SectionIcon = config.icon;
+          const { icon: TrendIconComponent, color: trendColor } = getTrendIcon(section.trend);
+
+          return (
+            <Card key={sectionKey} id={`section-${sectionKey}`} className="hover-elevate" data-testid={`section-card-${sectionKey}`}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-lg bg-muted`}>
+                      <SectionIcon className={`h-5 w-5 ${config.color}`} />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">{config.label}</CardTitle>
+                      <CardDescription className="text-xs">{config.description}</CardDescription>
+                    </div>
+                  </div>
+                  {section.alert_triggered && (
+                    <Badge variant="destructive" className="text-xs">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      Alert
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Risk Score</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-lg font-bold">{(section.risk_score * 100).toFixed(0)}%</p>
+                      <Badge className={`text-xs ${getRiskLevelColor(section.risk_level)}`}>
+                        {section.risk_level}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Deterioration</p>
+                    <p className={`text-lg font-bold ${getDeteriorationColor(section.deterioration_index)}`}>
+                      {(section.deterioration_index * 100).toFixed(0)}%
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Trend</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <TrendIconComponent className={`h-4 w-4 ${trendColor}`} />
+                      <p className="text-sm font-medium capitalize">{section.trend}</p>
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Stability</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <Progress value={section.stability_score * 100} className="h-2 flex-1" />
+                      <p className="text-sm font-medium">{(section.stability_score * 100).toFixed(0)}%</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
+                  <div className="flex items-center gap-1">
+                    <Activity className="h-3 w-3" />
+                    <span>Coverage: {(section.data_coverage * 100).toFixed(0)}%</span>
+                  </div>
+                  {section.anomalies_detected > 0 && (
+                    <Badge variant="outline" className="text-xs">
+                      {section.anomalies_detected} anomalies
+                    </Badge>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {analytics.recommendations && analytics.recommendations.length > 0 && (
+        <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+          <Info className="h-4 w-4 text-blue-500" />
+          <AlertTitle>Device-Based Recommendations</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
+              {analytics.recommendations.map((rec, idx) => (
+                <li key={idx}>{rec}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {analytics.critical_alerts && analytics.critical_alerts.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Critical Device Alerts</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
+              {analytics.critical_alerts.map((alert, idx) => (
+                <li key={idx}>{alert}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <p className="text-xs text-muted-foreground text-center italic">
+        Device analytics based on connected medical devices. 
+        {analytics.generated_at && ` Last updated: ${format(new Date(analytics.generated_at), 'MMM d, h:mm a')}`}
+      </p>
+    </div>
+  );
+}
+
 export default function AIAlertsDashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -1543,6 +2004,48 @@ export default function AIAlertsDashboard() {
     enabled: !!patientId,
   });
 
+  const { data: diseaseRiskData, isLoading: loadingDiseaseRisk, refetch: refetchDiseaseRisk } = useQuery<MLDiseaseRiskResponse>({
+    queryKey: ['/api/ml/predict/disease-risk', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/ml/predict/disease-risk/${patientId}`, { credentials: 'include' });
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502) return null;
+        throw new Error('Failed to fetch disease risk predictions');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+    staleTime: 60000,
+  });
+
+  const { data: deviceAnalytics, isLoading: loadingDeviceAnalytics, refetch: refetchDeviceAnalytics } = useQuery<DeviceAnalyticsData>({
+    queryKey: ['/api/ai-health-alerts/device-analytics', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/ai-health-alerts/device-analytics/${patientId}?days=7`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502 || response.status === 503) return null;
+        throw new Error('Failed to fetch device analytics');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+    staleTime: 60000,
+  });
+
+  const { data: correlationInsights, isLoading: loadingCorrelations, refetch: refetchCorrelations } = useQuery<CorrelationInsightsData>({
+    queryKey: ['/api/ai-health-alerts/correlation-insights', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/ai-health-alerts/correlation-insights/${patientId}?days=30`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 502 || response.status === 503) return null;
+        throw new Error('Failed to fetch correlation insights');
+      }
+      return response.json();
+    },
+    enabled: !!patientId,
+    staleTime: 120000,
+  });
+
   const recalculateBaselineMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch('/api/v1/baseline/calculate/me', {
@@ -1569,6 +2072,41 @@ export default function AIAlertsDashboard() {
       toast({
         title: "Baseline Calculation Failed",
         description: error.message || "Unable to calculate baseline. You may need more health data.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const [pipelineResult, setPipelineResult] = useState<DevicePipelineResponse | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("alerts");
+
+  const runPipelineMutation = useMutation<DevicePipelineResponse>({
+    mutationFn: async () => {
+      const response = await fetch(`/api/ai-health-alerts/device-data-pipeline/${patientId}?days=7`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || 'Failed to run device data pipeline');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setPipelineResult(data);
+      toast({
+        title: "Pipeline Complete",
+        description: `Analyzed ${data.sections.length} health sections. ${data.alerts_generated} alert(s) generated.`,
+      });
+      refetchAlerts();
+      refetchDeviceAnalytics();
+      refetchOverview();
+      queryClient.invalidateQueries({ queryKey: ['/api/ai-health-alerts'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Pipeline Failed",
+        description: error.message || "Unable to run device data pipeline. Please try again.",
         variant: "destructive",
       });
     },
@@ -1754,11 +2292,47 @@ export default function AIAlertsDashboard() {
         />
       </div>
 
-      <Tabs defaultValue="alerts" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+      <Card className="border-primary/30 bg-gradient-to-r from-primary/5 to-primary/10" data-testid="card-ml-insights-cta">
+        <CardContent className="flex items-center justify-between py-4 flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-primary/20">
+              <Brain className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h4 className="font-semibold">Advanced ML Insights</h4>
+              <p className="text-sm text-muted-foreground">
+                Deep-dive into disease risk, deterioration predictions, time-series forecasts, and patient segmentation
+              </p>
+            </div>
+          </div>
+          <Button 
+            asChild
+            data-testid="button-view-ml-insights"
+          >
+            <Link href="/ml-insights">
+              <Sparkles className="h-4 w-4 mr-2" />
+              View ML Insights
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="alerts" className="flex items-center gap-2" data-testid="tab-alerts">
             <Bell className="h-4 w-4" />
             Alerts {activeAlerts.length > 0 && <Badge variant="destructive" className="ml-1">{activeAlerts.length}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="devices" className="flex items-center gap-2" data-testid="tab-devices">
+            <Activity className="h-4 w-4" />
+            Device Health
+          </TabsTrigger>
+          <TabsTrigger value="correlations" className="flex items-center gap-2" data-testid="tab-correlations">
+            <Link2 className="h-4 w-4" />
+            Correlations
+            {correlationInsights?.summary?.significant_correlations && correlationInsights.summary.significant_correlations > 0 && (
+              <Badge variant="secondary" className="ml-1">{correlationInsights.summary.significant_correlations}</Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="risk" className="flex items-center gap-2" data-testid="tab-risk">
             <Shield className="h-4 w-4" />
@@ -1878,6 +2452,77 @@ export default function AIAlertsDashboard() {
             </div>
           </div>
 
+          <Card data-testid="card-disease-risk-predictions">
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-purple-500" />
+                  <div>
+                    <CardTitle>ML Disease Risk Predictions</CardTitle>
+                    <CardDescription>
+                      AI-powered predictions with SHAP explainability for disease risk assessment
+                    </CardDescription>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchDiseaseRisk()}
+                  disabled={loadingDiseaseRisk}
+                  data-testid="button-refresh-disease-risk"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loadingDiseaseRisk ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingDiseaseRisk ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-48 w-full" />
+                  ))}
+                </div>
+              ) : diseaseRiskData?.predictions && Object.keys(diseaseRiskData.predictions).length > 0 ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {Object.entries(diseaseRiskData.predictions).map(([disease, prediction]) => (
+                      <DetailedPredictionCard
+                        key={disease}
+                        patientId={patientId}
+                        disease={disease}
+                        prediction={prediction}
+                        onRefresh={() => refetchDiseaseRisk()}
+                      />
+                    ))}
+                  </div>
+                  <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+                    <Info className="h-4 w-4 text-blue-500" />
+                    <AlertDescription className="text-xs">
+                      Click on any disease card to view detailed SHAP explanations showing how each factor 
+                      contributes to your risk score. These are AI-assisted wellness insights, not medical diagnoses.
+                    </AlertDescription>
+                  </Alert>
+                  {diseaseRiskData.predicted_at && (
+                    <p className="text-xs text-muted-foreground text-right">
+                      Last updated: {format(new Date(diseaseRiskData.predicted_at), "MMM d, yyyy h:mm a")}
+                      {diseaseRiskData.model_version && ` • Model v${diseaseRiskData.model_version}`}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8" data-testid="empty-disease-risk">
+                  <Brain className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Predictions Available</h3>
+                  <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                    Disease risk predictions require sufficient health data. Continue logging your daily health 
+                    information to enable AI-powered risk analysis.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {dismissedAlerts.length > 0 && (
             <Card data-testid="card-dismissed-alerts">
               <CardHeader>
@@ -1908,6 +2553,490 @@ export default function AIAlertsDashboard() {
                 </div>
               </CardContent>
             </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="devices" className="space-y-4 mt-4">
+          <Card data-testid="card-pipeline-trigger">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-primary/10">
+                    <Zap className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold">Device Data Analysis Pipeline</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Analyze device data and generate health alerts based on thresholds
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => runPipelineMutation.mutate()}
+                    disabled={runPipelineMutation.isPending}
+                    data-testid="button-run-pipeline"
+                  >
+                    {runPipelineMutation.isPending ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-4 w-4 mr-2" />
+                        Run Analysis Pipeline
+                      </>
+                    )}
+                  </Button>
+                  <Button asChild variant="outline" size="sm" data-testid="button-manage-devices-header">
+                    <Link href="/device-connect">
+                      <Link2 className="h-4 w-4 mr-1" />
+                      Manage Devices
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {runPipelineMutation.isPending && (
+            <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200" data-testid="alert-pipeline-processing">
+              <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />
+              <AlertTitle>Pipeline Running</AlertTitle>
+              <AlertDescription>
+                Analyzing device data across all health sections. This may take a moment...
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {pipelineResult && (
+            <Card data-testid="card-pipeline-results">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    <CardTitle className="text-base">Pipeline Results</CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    {format(new Date(pipelineResult.generated_at), 'MMM d, h:mm a')}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <p className="text-2xl font-bold">{pipelineResult.sections.length}</p>
+                    <p className="text-xs text-muted-foreground">Sections Analyzed</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <p className="text-2xl font-bold">{(pipelineResult.overall_risk_score * 100).toFixed(0)}%</p>
+                    <p className="text-xs text-muted-foreground">Overall Risk</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <p className="text-2xl font-bold capitalize">{pipelineResult.overall_trend}</p>
+                    <p className="text-xs text-muted-foreground">Overall Trend</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <p className={`text-2xl font-bold ${pipelineResult.alerts_generated > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                      {pipelineResult.alerts_generated}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Alerts Generated</p>
+                  </div>
+                </div>
+
+                {pipelineResult.new_alerts && pipelineResult.new_alerts.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-orange-500" />
+                      New Alerts Generated
+                    </h4>
+                    <div className="space-y-2">
+                      {pipelineResult.new_alerts.map((alert, idx) => (
+                        <div
+                          key={alert.id || idx}
+                          className="flex items-center justify-between p-3 rounded-lg border"
+                          data-testid={`new-alert-${idx}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Badge variant={
+                              alert.severity === 'critical' ? 'destructive' :
+                              alert.severity === 'high' ? 'default' :
+                              'secondary'
+                            }>
+                              {alert.severity}
+                            </Badge>
+                            <div>
+                              <p className="text-sm font-medium">{alert.title}</p>
+                              <p className="text-xs text-muted-foreground">{alert.message}</p>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {alert.alert_category?.replace('section_', '')}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium">Section Analysis Summary</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {pipelineResult.sections.map((section) => {
+                      const config = HEALTH_SECTION_CONFIG[section.section] || {
+                        label: section.section,
+                        icon: Activity,
+                        color: 'text-primary'
+                      };
+                      const SectionIcon = config.icon;
+                      
+                      return (
+                        <div
+                          key={section.section}
+                          className={`flex items-center justify-between p-2 rounded-lg border ${
+                            section.alert_triggered ? 'border-red-300 bg-red-50 dark:bg-red-900/20' : 'bg-muted/30'
+                          }`}
+                          data-testid={`section-summary-${section.section}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <SectionIcon className={`h-4 w-4 ${config.color}`} />
+                            <span className="text-sm">{config.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {section.alert_triggered && (
+                              <AlertCircle className="h-4 w-4 text-red-500" />
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {section.risk_level}
+                            </Badge>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card data-testid="card-device-health">
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-primary" />
+                    Device Health Analytics
+                  </CardTitle>
+                  <CardDescription>
+                    Health metrics derived from your connected medical devices
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchDeviceAnalytics()}
+                  disabled={loadingDeviceAnalytics}
+                  data-testid="button-refresh-device-analytics"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-1 ${loadingDeviceAnalytics ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <DeviceHealthSectionPanel 
+                analytics={deviceAnalytics || null} 
+                isLoading={loadingDeviceAnalytics} 
+              />
+            </CardContent>
+          </Card>
+
+          {(() => {
+            const deviceAlerts = (alerts || []).filter(a => 
+              a.alert_type === 'device_analytics' || 
+              (a.alert_category && a.alert_category.startsWith('section_'))
+            );
+            
+            if (deviceAlerts.length === 0) return null;
+            
+            return (
+              <Card data-testid="card-device-alert-history">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <History className="h-5 w-5 text-primary" />
+                        Device Alert History
+                        <Badge variant="outline" className="ml-2">{deviceAlerts.length}</Badge>
+                      </CardTitle>
+                      <CardDescription>
+                        Past alerts generated from device data analysis
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {deviceAlerts.slice(0, 20).map((alert) => {
+                      const sectionName = alert.alert_category?.replace('section_', '') || '';
+                      const sectionConfig = HEALTH_SECTION_CONFIG[sectionName];
+                      const SectionIcon = sectionConfig?.icon || Activity;
+                      
+                      const handleScrollToSection = () => {
+                        if (sectionName) {
+                          const element = document.getElementById(`section-${sectionName}`);
+                          if (element) {
+                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            element.classList.add('ring-2', 'ring-primary');
+                            setTimeout(() => {
+                              element.classList.remove('ring-2', 'ring-primary');
+                            }, 2000);
+                          }
+                        }
+                      };
+                      
+                      return (
+                        <div
+                          key={alert.id}
+                          onClick={sectionConfig ? handleScrollToSection : undefined}
+                          className={`flex items-center justify-between p-3 rounded-lg border bg-muted/30 hover-elevate ${sectionConfig ? 'cursor-pointer' : ''}`}
+                          data-testid={`device-alert-history-${alert.id}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Badge variant={
+                              alert.severity === 'critical' ? 'destructive' :
+                              alert.severity === 'high' ? 'default' :
+                              'secondary'
+                            } className="text-xs">
+                              {alert.severity}
+                            </Badge>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium">{alert.title}</p>
+                                {sectionConfig && (
+                                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                    <SectionIcon className={`h-3 w-3 ${sectionConfig.color}`} />
+                                    <span>{sectionConfig.label}</span>
+                                    <ChevronRight className="h-3 w-3 ml-1" />
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(alert.created_at), 'MMM d, h:mm a')}
+                              </p>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {alert.status}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {deviceAlerts.length > 20 && (
+                    <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t">
+                      <p className="text-xs text-muted-foreground">
+                        Showing 20 of {deviceAlerts.length} alerts.
+                      </p>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-xs"
+                        onClick={() => setActiveTab("alerts")}
+                        data-testid="button-view-all-device-alerts"
+                      >
+                        View all in Alerts tab
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
+        </TabsContent>
+
+        <TabsContent value="correlations" className="space-y-4 mt-4">
+          {loadingCorrelations ? (
+            <div className="grid gap-4" data-testid="loading-correlations">
+              <Skeleton className="h-32" data-testid="skeleton-correlation-summary" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Skeleton className="h-64" data-testid="skeleton-correlation-category-1" />
+                <Skeleton className="h-64" data-testid="skeleton-correlation-category-2" />
+              </div>
+            </div>
+          ) : !correlationInsights || !correlationInsights.categories || correlationInsights.categories.length === 0 ? (
+            <Card data-testid="card-no-correlations">
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <Link2 className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2" data-testid="text-no-correlations-title">No Correlation Data Available</h3>
+                <p className="text-sm text-muted-foreground text-center max-w-md" data-testid="text-no-correlations-desc">
+                  We need more health data to identify correlations between your habits, symptoms, and device metrics.
+                  Continue logging your daily health data to enable this feature.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <Card data-testid="card-correlation-summary">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Link2 className="h-5 w-5 text-primary" />
+                        Correlation Insights Summary
+                      </CardTitle>
+                      <CardDescription>
+                        Identified patterns and relationships in your health data over the past {correlationInsights.summary.analysis_period_days} days
+                      </CardDescription>
+                    </div>
+                    {correlationInsights.generated_at && (
+                      <Badge variant="outline" className="text-xs" data-testid="badge-correlation-generated-at">
+                        <Clock className="h-3 w-3 mr-1" />
+                        {format(new Date(correlationInsights.generated_at), 'MMM d, h:mm a')}
+                      </Badge>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="p-4 rounded-lg bg-muted/50" data-testid="stat-total-correlations">
+                      <p className="text-sm text-muted-foreground">Total Correlations</p>
+                      <p className="text-2xl font-bold">{correlationInsights.summary.total_correlations}</p>
+                    </div>
+                    <div className="p-4 rounded-lg bg-green-100 dark:bg-green-900/30" data-testid="stat-significant-correlations">
+                      <p className="text-sm text-green-700 dark:text-green-300">Significant Findings</p>
+                      <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+                        {correlationInsights.summary.significant_correlations}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-lg bg-muted/50" data-testid="stat-categories-analyzed">
+                      <p className="text-sm text-muted-foreground">Categories Analyzed</p>
+                      <p className="text-2xl font-bold">{correlationInsights.summary.categories_analyzed}</p>
+                    </div>
+                    <div className="p-4 rounded-lg bg-muted/50" data-testid="stat-analysis-period">
+                      <p className="text-sm text-muted-foreground">Analysis Period</p>
+                      <p className="text-2xl font-bold">{correlationInsights.summary.analysis_period_days} days</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {correlationInsights.recommendations && correlationInsights.recommendations.length > 0 && (
+                <Card className="border-primary/30 bg-gradient-to-r from-primary/5 to-primary/10" data-testid="card-correlation-recommendations">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      AI Recommendations Based on Correlations
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {correlationInsights.recommendations.map((rec, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-sm" data-testid={`text-recommendation-${idx}`}>
+                          <CornerUpRight className="h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                          {rec}
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {correlationInsights.categories.map((category) => {
+                  const config = CORRELATION_CATEGORY_CONFIG[category.category_name] || {
+                    label: category.category_label,
+                    icon: Link2,
+                    color: "text-gray-500",
+                    bgColor: "bg-gray-100 dark:bg-gray-900/30"
+                  };
+                  const CategoryIcon = config.icon;
+
+                  return (
+                    <Card key={category.category_name} data-testid={`card-correlation-${category.category_name}`}>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center justify-between">
+                          <span className="flex items-center gap-2 text-base">
+                            <CategoryIcon className={`h-4 w-4 ${config.color}`} />
+                            {config.label}
+                          </span>
+                          <Badge variant="secondary" className="text-xs">
+                            {category.significant_correlations} significant
+                          </Badge>
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          {category.category_description}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {category.correlations.length === 0 ? (
+                          <div className="flex flex-col items-center py-6" data-testid={`empty-correlation-${category.category_name}`}>
+                            <CategoryIcon className={`h-8 w-8 ${config.color} opacity-40 mb-2`} />
+                            <p className="text-sm text-muted-foreground text-center">
+                              No correlations found in this category yet.
+                              More data may reveal patterns.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                            {category.correlations.map((corr, idx) => (
+                              <div 
+                                key={idx}
+                                className={`p-3 rounded-lg border ${corr.is_significant ? 'border-green-500/50 bg-green-50/50 dark:bg-green-900/20' : 'border-border'}`}
+                                data-testid={`correlation-pair-${category.category_name}-${idx}`}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <Badge variant="outline" className="text-xs">
+                                      {corr.metric_a_label}
+                                    </Badge>
+                                    {corr.direction === "positive" ? (
+                                      <ArrowUpRight className="h-3 w-3 text-green-500" />
+                                    ) : (
+                                      <ArrowDownRight className="h-3 w-3 text-red-500" />
+                                    )}
+                                    <Badge variant="outline" className="text-xs">
+                                      {corr.metric_b_label}
+                                    </Badge>
+                                  </div>
+                                  {corr.is_significant && (
+                                    <Badge variant="default" className="text-xs bg-green-600">
+                                      Significant
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                  <span>
+                                    r = {corr.correlation_coefficient.toFixed(3)} ({corr.strength})
+                                  </span>
+                                  <span>
+                                    p = {corr.p_value.toFixed(4)} | n = {corr.sample_size}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-end">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => refetchCorrelations()}
+                  data-testid="button-refresh-correlations"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Correlations
+                </Button>
+              </div>
+            </>
           )}
         </TabsContent>
 

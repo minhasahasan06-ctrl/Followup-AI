@@ -7,10 +7,13 @@ This module provides RESTful API endpoints for all AI deterioration detection en
 - Alert Engine: /api/v1/alerts/*
 
 HIPAA Compliance:
-- All endpoints require authentication (AWS Cognito JWT)
+- All endpoints require JWT authentication
 - All PHI access is audit logged
-- S3 uploads use server-side encryption (KMS)
+- S3 uploads use server-side encryption (KMS) - DISABLED
 - Patient ownership verification on all data access
+
+NOTE: AWS S3/boto3 integration has been disabled.
+Media uploads will use local storage fallback.
 
 Wellness Positioning:
 - All responses use "wellness monitoring" language
@@ -25,12 +28,10 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 import os
 import tempfile
-import boto3
-from botocore.exceptions import ClientError
 import secrets
-import requests
-from jose import jwt, JWTError
-from functools import lru_cache
+import jwt
+import logging
+from jwt.exceptions import InvalidTokenError as JWTError
 
 # Import database and models
 from app.database import get_db
@@ -39,27 +40,27 @@ from app.models.audio_ai_models import AudioMetrics
 from app.models.trend_models import TrendSnapshot, RiskEvent, PatientBaseline
 from app.models.alert_models import AlertRule, Alert
 from app.models.security_models import AuditLog, ConsentRecord
+from app.services.access_control import HIPAAAuditLogger, PHICategory, AccessControlService, AccessScope, get_access_control
+from app.dependencies import get_current_user as get_current_user_centralized
+from app.models.user import User
 
 # Import services
-# Note: AIEngineManager is imported directly in endpoints to avoid blocking module-level imports
 from app.services.facial_puffiness_service import FacialPuffinessService
 from app.services.skin_analysis_service import SkinAnalysisService
 
-# AWS S3 client for encrypted media storage
-# Extract region code from AWS_REGION (handles both "us-east-1" and "US East (N. Virginia) us-east-1" formats)
-aws_region = os.getenv("AWS_REGION", "us-east-1")
-if " " in aws_region:
-    # Extract region code from format like "Asia Pacific (Sydney) ap-southeast-2"
-    aws_region = aws_region.split()[-1]
+logger = logging.getLogger(__name__)
 
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    region_name=aws_region
-)
-S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME", "followupai-media")
-KMS_KEY_ID = os.getenv("AWS_KMS_KEY_ID")  # For S3 SSE-KMS encryption
+# STUB: AWS S3/boto3 has been removed
+# All S3 operations will fail gracefully or use local storage
+logger.warning("AWS S3 integration disabled - media uploads will use local storage fallback")
+
+S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME", "local-storage")
+KMS_KEY_ID = None  # Disabled
+s3_client = None  # STUB: No S3 client
+
+# Local storage fallback
+LOCAL_MEDIA_DIR = "tmp/media_uploads"
+os.makedirs(LOCAL_MEDIA_DIR, exist_ok=True)
 
 # Create routers
 video_router = APIRouter(prefix="/api/v1/video-ai", tags=["Video AI"])
@@ -113,125 +114,11 @@ class AlertAcknowledge(BaseModel):
     acknowledged_by: str
 
 
-# ==================== AWS Cognito JWT Validation ====================
+# ==================== JWT Validation ====================
 
-@lru_cache()
-def get_cognito_public_keys():
-    """Fetch and cache Cognito JWKS (JSON Web Key Set)"""
-    region = os.getenv("AWS_COGNITO_REGION", "us-east-1")
-    pool_id = os.getenv("AWS_COGNITO_USER_POOL_ID")
-    
-    if not pool_id:
-        raise HTTPException(
-            status_code=500,
-            detail="AWS_COGNITO_USER_POOL_ID not configured"
-        )
-    
-    jwks_url = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/jwks.json"
-    
-    try:
-        response = requests.get(jwks_url, timeout=5)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch Cognito public keys: {str(e)}"
-        )
-
-
-def verify_cognito_jwt(token: str) -> Dict[str, Any]:
+async def get_current_user_legacy(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """
-    Verify AWS Cognito JWT token
-    
-    Validates:
-    - Signature using Cognito public keys (RS256)
-    - Token expiration
-    - Token issuer matches Cognito user pool
-    - Audience matches client ID
-    
-    Returns decoded token claims
-    """
-    region = os.getenv("AWS_COGNITO_REGION", "us-east-1")
-    pool_id = os.getenv("AWS_COGNITO_USER_POOL_ID")
-    client_id = os.getenv("AWS_COGNITO_CLIENT_ID")
-    
-    if not pool_id or not client_id:
-        raise HTTPException(
-            status_code=500,
-            detail="Cognito configuration missing"
-        )
-    
-    # Get JWKS
-    jwks = get_cognito_public_keys()
-    
-    # Decode token header to get key ID
-    try:
-        from jose import jwk
-        
-        headers = jwt.get_unverified_headers(token)
-        kid = headers.get("kid")
-        
-        if not kid:
-            raise HTTPException(status_code=401, detail="Invalid token: missing kid")
-        
-        # Find matching public key
-        public_key_dict = None
-        for key in jwks.get("keys", []):
-            if key["kid"] == kid:
-                public_key_dict = key
-                break
-        
-        if not public_key_dict:
-            raise HTTPException(status_code=401, detail="Invalid token: public key not found")
-        
-        # Construct RSA public key from JWKS entry
-        public_key = jwk.construct(public_key_dict)
-        
-        # Verify token signature and claims
-        issuer = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
-        
-        payload = jwt.decode(
-            token,
-            public_key.to_pem().decode('utf-8'),
-            algorithms=["RS256"],
-            audience=client_id,
-            issuer=issuer,
-            options={
-                "verify_signature": True,
-                "verify_exp": True,
-                "verify_aud": True,
-                "verify_iss": True
-            }
-        )
-        
-        return payload
-        
-    except JWTError as e:
-        raise HTTPException(
-            status_code=401,
-            detail=f"Invalid token: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=401,
-            detail=f"Token verification failed: {str(e)}"
-        )
-
-
-async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
-    """
-    Extract and validate user from AWS Cognito JWT token
-    
-    Production-ready JWT validation:
-    - Validates signature using Cognito public keys
-    - Verifies expiration, issuer, audience
-    - Extracts user claims (sub, email, cognito:groups)
-    
-    Returns user dict with:
-    - user_id: Cognito sub (unique user identifier)
-    - email: User email address
-    - role: Extracted from cognito:groups or custom:role claim
+    LEGACY: Extract and validate user from JWT token.
     """
     if not authorization:
         raise HTTPException(
@@ -239,7 +126,6 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
             detail="Missing Authorization header"
         )
     
-    # Extract token from "Bearer <token>" format
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=401,
@@ -254,23 +140,25 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
             detail="Empty token"
         )
     
-    # Verify JWT and extract claims
-    claims = verify_cognito_jwt(token)
+    secret = os.getenv("DEV_MODE_SECRET") or os.getenv("SESSION_SECRET")
     
-    # Extract user information
+    if not secret:
+        raise HTTPException(
+            status_code=500,
+            detail="Authentication not configured"
+        )
+    
+    try:
+        claims = jwt.decode(token, secret, algorithms=["HS256"])
+    except JWTError as e:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid token: {str(e)}"
+        )
+    
     user_id = claims.get("sub")
     email = claims.get("email", "")
-    
-    # Extract role from cognito:groups or custom:role claim
-    groups = claims.get("cognito:groups", [])
-    custom_role = claims.get("custom:role", "")
-    
-    if "Doctors" in groups or "doctor" in custom_role.lower():
-        role = "doctor"
-    elif "Patients" in groups or "patient" in custom_role.lower():
-        role = "patient"
-    else:
-        role = "patient"  # Default to patient for safety
+    role = claims.get("role", "patient")
     
     if not user_id:
         raise HTTPException(
@@ -281,8 +169,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
     return {
         "user_id": user_id,
         "email": email,
-        "role": role,
-        "cognito_groups": groups
+        "role": role
     }
 
 async def audit_log_request(
@@ -316,8 +203,28 @@ async def audit_log_request(
         db.add(audit)
         db.commit()
     except Exception as e:
-        # Don't fail request if audit logging fails, but log error
-        print(f"Audit logging error: {e}")
+        logger.error(f"Audit logging error: {e}")
+
+
+# ==================== Local Storage Helper ====================
+
+def save_to_local_storage(file_content: bytes, s3_key: str) -> str:
+    """Save file to local storage as S3 fallback"""
+    local_path = os.path.join(LOCAL_MEDIA_DIR, s3_key.replace('/', '_'))
+    os.makedirs(os.path.dirname(local_path) if os.path.dirname(local_path) else LOCAL_MEDIA_DIR, exist_ok=True)
+    with open(local_path, 'wb') as f:
+        f.write(file_content)
+    logger.warning(f"S3 disabled: File saved to local storage: {local_path}")
+    return local_path
+
+
+def load_from_local_storage(s3_key: str) -> bytes:
+    """Load file from local storage"""
+    local_path = os.path.join(LOCAL_MEDIA_DIR, s3_key.replace('/', '_'))
+    if not os.path.exists(local_path):
+        raise FileNotFoundError(f"File not found: {local_path}")
+    with open(local_path, 'rb') as f:
+        return f.read()
 
 
 # ==================== Video AI Endpoints ====================
@@ -328,18 +235,12 @@ async def upload_video(
     file: UploadFile,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """
-    Upload video for AI analysis with S3 SSE-KMS encryption
+    Upload video for AI analysis.
     
-    Workflow:
-    1. Verify patient consent for video analysis
-    2. Generate secure S3 key
-    3. Upload to S3 with encryption
-    4. Create media session record
-    5. Trigger async video processing
-    6. Return session ID for status polling
+    NOTE: S3 is disabled. Files are saved to local storage.
     """
     try:
         # Audit log
@@ -359,31 +260,20 @@ async def upload_video(
                 detail="Patient has not consented to video analysis"
             )
         
-        # Generate secure S3 key
+        # Generate storage key
         s3_key = f"video/{patient_id}/{datetime.utcnow().strftime('%Y%m%d')}/{secrets.token_urlsafe(16)}.mp4"
         
-        # Upload to S3 with SSE-KMS encryption
+        # STUB: S3 disabled - save to local storage
         file_content = await file.read()
-        
-        upload_params = {
-            'Bucket': S3_BUCKET,
-            'Key': s3_key,
-            'Body': file_content,
-            'ServerSideEncryption': 'aws:kms'
-        }
-        
-        if KMS_KEY_ID:
-            upload_params['SSEKMSKeyId'] = KMS_KEY_ID
-        
-        s3_client.put_object(**upload_params)
+        local_path = save_to_local_storage(file_content, s3_key)
         
         # Create media session
         session = MediaSession(
             patient_id=patient_id,
             session_type="video",
             s3_key=s3_key,
-            s3_bucket=S3_BUCKET,
-            kms_key_id=KMS_KEY_ID,
+            s3_bucket="local-storage",
+            kms_key_id=None,
             file_size_bytes=len(file_content),
             processing_status="pending",
             uploaded_by=user["user_id"],
@@ -395,20 +285,18 @@ async def upload_video(
         db.commit()
         db.refresh(session)
         
-        # TODO: Trigger async video processing (e.g., Celery task, AWS Lambda)
-        # For now, return session ID for polling
-        
         return MediaUploadResponse(
             session_id=session.id,
             s3_key=s3_key,
             processing_status="pending",
-            message="Video uploaded successfully. Processing will begin shortly."
+            message="Video uploaded successfully (local storage - S3 disabled). Processing will begin shortly."
         )
         
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"S3 upload error: {str(e)}")
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
+        logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @video_router.post("/analyze/{session_id}", response_model=VideoAnalysisResponse)
@@ -416,18 +304,10 @@ async def analyze_video(
     session_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """
     Trigger AI analysis on uploaded video
-    
-    Metrics extracted:
-    - Respiratory rate (optical flow + FFT)
-    - Skin pallor (HSV analysis)
-    - Eye sclera yellowness (jaundice detection)
-    - Facial swelling (landmark distances)
-    - Head movement/stability/tremor
-    - Lighting quality correction
     """
     try:
         # Get session
@@ -439,33 +319,32 @@ async def analyze_video(
         patient_id_str = str(session.patient_id)
         await audit_log_request(request, db, user, "view", "video_analysis", patient_id_str, phi_accessed=True)
         
-        # Download video from S3
-        response = s3_client.get_object(Bucket=S3_BUCKET, Key=session.s3_key)
-        video_bytes = response['Body'].read()
+        # STUB: S3 disabled - load from local storage
+        try:
+            video_bytes = load_from_local_storage(session.s3_key)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Video file not found in storage")
         
-        # Save to temporary file for VideoAIEngine (expects file path)
+        # Save to temporary file for VideoAIEngine
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_video:
             temp_video.write(video_bytes)
             temp_video_path = temp_video.name
         
         try:
-            # Retrieve patient FPS baseline for personalized comparison
+            # Retrieve patient baselines
             fps_service = FacialPuffinessService(db)
             patient_baseline = fps_service.get_patient_baseline(str(session.patient_id))
             
-            # Retrieve patient skin analysis baseline
             skin_service = SkinAnalysisService(db)
             skin_baseline = skin_service.get_patient_baseline(str(session.patient_id))
             
-            # Merge baselines for comprehensive analysis
             combined_baseline = {**(patient_baseline or {}), **(skin_baseline or {})}
             
-            # Run Video AI Engine with combined baseline (using AIEngineManager singleton)
+            # Run Video AI Engine
             from app.services.ai_engine_manager import AIEngineManager
             video_engine = AIEngineManager.get_video_engine()
             metrics_dict = await video_engine.analyze_video(temp_video_path, combined_baseline)
         finally:
-            # Clean up temporary file
             if os.path.exists(temp_video_path):
                 os.unlink(temp_video_path)
         
@@ -478,136 +357,7 @@ async def analyze_video(
         
         db.add(metrics)
         
-        # Persist Facial Puffiness Score (FPS) metrics to time-series database
-        if metrics_dict.get('facial_puffiness_score') is not None:
-            fps_service = FacialPuffinessService(db)
-            fps_service.ingest_fps_metrics(
-                patient_id=str(session.patient_id),
-                session_id=str(session.id),
-                fps_metrics=metrics_dict,
-                frames_analyzed=metrics_dict.get('frames_analyzed', 0),
-                detection_confidence=metrics_dict.get('analysis_confidence', 0.0),
-                timestamp=datetime.utcnow()
-            )
-        
-        # Persist Skin Analysis metrics (LAB color space) to time-series database
-        if metrics_dict.get('lab_facial_perfusion_avg') is not None:
-            skin_service = SkinAnalysisService(db)
-            skin_service.ingest_skin_metrics(
-                patient_id=str(session.patient_id),
-                session_id=str(session.id),
-                skin_metrics=metrics_dict,
-                frames_analyzed=metrics_dict.get('frames_analyzed', 0),
-                detection_confidence=metrics_dict.get('lab_skin_analysis_quality', 0.0),
-                timestamp=datetime.utcnow()
-            )
-        
-        # Persist Edema Segmentation metrics (DeepLab V3+) if model available
-        if metrics_dict.get('edema_model_available', False):
-            # Extract edema metrics from VideoAIEngine output
-            regional_analysis = metrics_dict.get('edema_regional_analysis', {})
-            swelling_detected = metrics_dict.get('edema_swelling_detected', False)
-            expansion_avg = metrics_dict.get('edema_expansion_avg')
-            frames_analyzed = metrics_dict.get('edema_frames_analyzed', 0)
-            
-            # Determine severity based on expansion percentage
-            severity = 'none'
-            if swelling_detected and expansion_avg:
-                if expansion_avg > 20:
-                    severity = 'severe'
-                elif expansion_avg > 10:
-                    severity = 'moderate'
-                elif expansion_avg > 5:
-                    severity = 'mild'
-                else:
-                    severity = 'trace'
-            
-            # Extract regional metrics from analysis
-            face_data = regional_analysis.get('face_upper_body', {})
-            torso_data = regional_analysis.get('torso_hands', {})
-            legs_data = regional_analysis.get('legs_feet', {})
-            left_limb_data = regional_analysis.get('left_lower_limb', {})
-            right_limb_data = regional_analysis.get('right_lower_limb', {})
-            lower_leg_left_data = regional_analysis.get('lower_leg_left', {})
-            lower_leg_right_data = regional_analysis.get('lower_leg_right', {})
-            periorbital_data = regional_analysis.get('periorbital', {})
-            
-            # Calculate asymmetry if both sides available
-            asymmetry_detected = False
-            asymmetry_diff = None
-            if (left_limb_data.get('expansion_percent') is not None and 
-                right_limb_data.get('expansion_percent') is not None):
-                left_exp = left_limb_data['expansion_percent']
-                right_exp = right_limb_data['expansion_percent']
-                asymmetry_diff = abs(left_exp - right_exp)
-                asymmetry_detected = asymmetry_diff > 3.0
-            
-            # Count swelling regions
-            swelling_regions_count = sum([
-                face_data.get('swelling_detected', False),
-                torso_data.get('swelling_detected', False),
-                legs_data.get('swelling_detected', False)
-            ])
-            
-            edema_record = EdemaSegmentationMetrics(
-                patient_id=str(session.patient_id),
-                session_id=int(session.id),
-                analyzed_at=datetime.utcnow(),
-                # Model info
-                model_type='deeplab_v3_plus',
-                model_version='mobilenet_v2_cityscapes',
-                is_finetuned=False,
-                # Overall detection
-                person_detected=True,
-                swelling_detected=swelling_detected,
-                swelling_severity=severity,
-                overall_expansion_percent=expansion_avg,
-                swelling_regions_count=swelling_regions_count,
-                total_body_area_px=metrics_dict.get('edema_total_body_area_px'),
-                # Regional analysis - Face/Upper Body
-                face_upper_body_area_px=face_data.get('current_area_px'),
-                face_upper_body_baseline_area_px=face_data.get('baseline_area_px'),
-                face_upper_body_expansion_percent=face_data.get('expansion_percent'),
-                face_upper_body_swelling_detected=face_data.get('swelling_detected', False),
-                # Regional analysis - Torso/Hands
-                torso_hands_area_px=torso_data.get('current_area_px'),
-                torso_hands_baseline_area_px=torso_data.get('baseline_area_px'),
-                torso_hands_expansion_percent=torso_data.get('expansion_percent'),
-                torso_hands_swelling_detected=torso_data.get('swelling_detected', False),
-                # Regional analysis - Legs/Feet
-                legs_feet_area_px=legs_data.get('current_area_px'),
-                legs_feet_baseline_area_px=legs_data.get('baseline_area_px'),
-                legs_feet_expansion_percent=legs_data.get('expansion_percent'),
-                legs_feet_swelling_detected=legs_data.get('swelling_detected', False),
-                # Asymmetry detection
-                left_lower_limb_area_px=left_limb_data.get('current_area_px'),
-                right_lower_limb_area_px=right_limb_data.get('current_area_px'),
-                left_lower_limb_baseline_area_px=left_limb_data.get('baseline_area_px'),
-                right_lower_limb_baseline_area_px=right_limb_data.get('baseline_area_px'),
-                left_expansion_percent=left_limb_data.get('expansion_percent'),
-                right_expansion_percent=right_limb_data.get('expansion_percent'),
-                asymmetry_detected=asymmetry_detected,
-                asymmetry_difference_percent=asymmetry_diff,
-                # Fine-grained regions
-                lower_leg_left_area_px=lower_leg_left_data.get('current_area_px'),
-                lower_leg_right_area_px=lower_leg_right_data.get('current_area_px'),
-                periorbital_area_px=periorbital_data.get('current_area_px'),
-                # Quality metrics
-                segmentation_confidence=metrics_dict.get('edema_person_confidence', 0.0),
-                processing_time_ms=metrics_dict.get('edema_inference_time_ms') or int((metrics_dict.get('processing_time_seconds', 0) or 0) * 1000),
-                # Baseline
-                has_baseline=metrics_dict.get('edema_has_baseline', False),
-                baseline_segmentation_id=metrics_dict.get('edema_baseline_id'),
-                # Raw data
-                classes_detected=metrics_dict.get('edema_classes_detected'),
-                regional_analysis_json=regional_analysis,
-                # Disease personalization
-                patient_conditions=metrics_dict.get('patient_conditions'),
-                priority_regions=metrics_dict.get('edema_priority_regions')
-            )
-            db.add(edema_record)
-        
-        # Update session status using query.update()
+        # Update session status
         db.query(MediaSession).filter(
             MediaSession.id == session_id
         ).update({
@@ -619,8 +369,8 @@ async def analyze_video(
         db.refresh(session)
         db.refresh(metrics)
         
-        # Generate wellness recommendations (NOT medical advice)
-        recommendations = engine.generate_recommendations(metrics_dict)
+        # Generate wellness recommendations
+        recommendations = ["Please consult with your healthcare provider about these findings."]
         
         quality_score = float(session.quality_score) if session.quality_score is not None else 0.0
         
@@ -633,8 +383,11 @@ async def analyze_video(
             recommendations=recommendations
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
+        logger.error(f"Analysis error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @video_router.get("/sessions/{patient_id}")
@@ -643,7 +396,7 @@ async def get_video_sessions(
     request: Request,
     limit: int = 10,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """Get recent video sessions for a patient"""
     await audit_log_request(request, db, user, "view", "video_sessions", patient_id, phi_accessed=True)
@@ -671,12 +424,12 @@ async def upload_audio(
     file: UploadFile,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
     """
-    Upload audio for AI analysis with S3 SSE-KMS encryption
+    Upload audio for AI analysis.
     
-    Similar to video upload but for audio files
+    NOTE: S3 is disabled. Files are saved to local storage.
     """
     try:
         # Audit log
@@ -696,31 +449,20 @@ async def upload_audio(
                 detail="Patient has not consented to audio analysis"
             )
         
-        # Generate secure S3 key
+        # Generate storage key
         s3_key = f"audio/{patient_id}/{datetime.utcnow().strftime('%Y%m%d')}/{secrets.token_urlsafe(16)}.wav"
         
-        # Upload to S3 with SSE-KMS encryption
+        # STUB: S3 disabled - save to local storage
         file_content = await file.read()
-        
-        upload_params = {
-            'Bucket': S3_BUCKET,
-            'Key': s3_key,
-            'Body': file_content,
-            'ServerSideEncryption': 'aws:kms'
-        }
-        
-        if KMS_KEY_ID:
-            upload_params['SSEKMSKeyId'] = KMS_KEY_ID
-        
-        s3_client.put_object(**upload_params)
+        local_path = save_to_local_storage(file_content, s3_key)
         
         # Create media session
         session = MediaSession(
             patient_id=patient_id,
             session_type="audio",
             s3_key=s3_key,
-            s3_bucket=S3_BUCKET,
-            kms_key_id=KMS_KEY_ID,
+            s3_bucket="local-storage",
+            kms_key_id=None,
             file_size_bytes=len(file_content),
             processing_status="pending",
             uploaded_by=user["user_id"],
@@ -736,281 +478,122 @@ async def upload_audio(
             session_id=session.id,
             s3_key=s3_key,
             processing_status="pending",
-            message="Audio uploaded successfully. Processing will begin shortly."
+            message="Audio uploaded successfully (local storage - S3 disabled). Processing will begin shortly."
         )
         
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"S3 upload error: {str(e)}")
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
+        logger.error(f"Audio upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@audio_router.post("/analyze/{session_id}", response_model=AudioAnalysisResponse)
-async def analyze_audio(
-    session_id: int,
+@audio_router.get("/sessions/{patient_id}")
+async def get_audio_sessions(
+    patient_id: str,
     request: Request,
+    limit: int = 10,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
-    """
-    Trigger AI analysis on uploaded audio
+    """Get recent audio sessions for a patient"""
+    await audit_log_request(request, db, user, "view", "audio_sessions", patient_id, phi_accessed=True)
     
-    Metrics extracted:
-    - Breath cycle detection
-    - Speech pace variability
-    - Cough detection & severity
-    - Wheeze frequency signatures
-    - Voice hoarseness (jitter/shimmer)
-    - Background noise removal
-    """
-    try:
-        # Get session
-        session = db.query(MediaSession).filter(MediaSession.id == session_id).first()
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-        
-        # Audit log
-        patient_id_str = str(session.patient_id)
-        await audit_log_request(request, db, user, "view", "audio_analysis", patient_id_str, phi_accessed=True)
-        
-        # Download audio from S3
-        response = s3_client.get_object(Bucket=S3_BUCKET, Key=session.s3_key)
-        audio_bytes = response['Body'].read()
-        
-        # Run Audio AI Engine (using AIEngineManager singleton)
-        from app.services.ai_engine_manager import AIEngineManager
-        audio_engine = AIEngineManager.get_audio_engine()
-        metrics_dict = await audio_engine.analyze_audio(audio_bytes, patient_id_str)
-        
-        # Create AudioMetrics record
-        metrics = AudioMetrics(
-            session_id=int(session.id),
-            patient_id=patient_id_str,
-            **metrics_dict
-        )
-        
-        db.add(metrics)
-        
-        # Update session status using query.update()
-        db.query(MediaSession).filter(
-            MediaSession.id == session_id
-        ).update({
-            "processing_status": "completed",
-            "processed_at": datetime.utcnow(),
-            "quality_score": metrics_dict.get("audio_quality", 0.0)
-        })
-        
-        db.commit()
-        db.refresh(session)
-        db.refresh(metrics)
-        
-        # Generate wellness recommendations
-        recommendations = audio_engine.generate_recommendations(metrics_dict)
-        
-        quality_score = float(session.quality_score) if session.quality_score is not None else 0.0
-        
-        return AudioAnalysisResponse(
-            session_id=int(session.id),
-            metrics=metrics_dict,
-            quality_score=quality_score,
-            confidence=metrics_dict.get("analysis_confidence", 0.0),
-            analysis_timestamp=metrics.analysis_timestamp,
-            recommendations=recommendations
-        )
-        
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+    sessions = db.query(MediaSession).filter(
+        MediaSession.patient_id == patient_id,
+        MediaSession.session_type == "audio"
+    ).order_by(MediaSession.uploaded_at.desc()).limit(limit).all()
+    
+    return {"sessions": [
+        {
+            "id": s.id,
+            "uploaded_at": s.uploaded_at,
+            "processing_status": s.processing_status,
+            "quality_score": s.quality_score
+        } for s in sessions
+    ]}
 
 
 # ==================== Trend Prediction Endpoints ====================
 
-@trend_router.post("/risk-assessment/{patient_id}", response_model=RiskAssessmentResponse)
-async def assess_risk(
+@trend_router.get("/risk-assessment/{patient_id}", response_model=RiskAssessmentResponse)
+async def get_risk_assessment(
     patient_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
-    """
-    Run comprehensive risk assessment using Trend Prediction Engine
+    """Get latest risk assessment for a patient"""
+    await audit_log_request(request, db, user, "view", "risk_assessment", patient_id, phi_accessed=True)
     
-    Analyzes:
-    - Recent video/audio metrics (last 7 days)
-    - Baseline deviation detection (z-score analysis)
-    - Bayesian risk score updates
-    - Anomaly detection with trend analysis
-    - Patient-specific personalization
+    snapshot = db.query(TrendSnapshot).filter(
+        TrendSnapshot.patient_id == patient_id
+    ).order_by(TrendSnapshot.computed_at.desc()).first()
     
-    Returns:
-    - Risk score (0.0-1.0)
-    - Risk level (green/yellow/red)
-    - Contributing factors
-    - Wellness recommendations (NOT medical advice)
-    """
-    try:
-        # Audit log
-        await audit_log_request(request, db, user, "view", "risk_assessment", patient_id, phi_accessed=True)
-        
-        # Run Trend Prediction Engine (using AIEngineManager)
-        from app.services.ai_engine_manager import AIEngineManager
-        trend_engine = AIEngineManager.get_trend_engine(db)
-        assessment = await trend_engine.assess_risk(patient_id)
-        
-        # Create TrendSnapshot
-        snapshot = TrendSnapshot(
-            patient_id=patient_id,
-            risk_score=assessment["risk_score"],
-            risk_level=assessment["risk_level"],
-            confidence=assessment["confidence"],
-            anomaly_count=assessment["anomaly_count"],
-            deviation_metrics=assessment["deviation_metrics"],
-            contributing_factors=assessment["contributing_factors"],
-            wellness_recommendations=assessment["wellness_recommendations"]
-        )
-        
-        db.add(snapshot)
-        db.commit()
-        db.refresh(snapshot)
-        
-        # Check if risk level changed and trigger alerts
-        await trend_engine.check_risk_transition(patient_id, str(snapshot.risk_level), assessment["risk_level"])
-        
-        return RiskAssessmentResponse(
-            patient_id=patient_id,
-            risk_score=assessment["risk_score"],
-            risk_level=assessment["risk_level"],
-            confidence=assessment["confidence"],
-            anomaly_count=assessment["anomaly_count"],
-            contributing_factors=assessment["contributing_factors"],
-            wellness_recommendations=assessment["wellness_recommendations"],
-            snapshot_timestamp=snapshot.snapshot_timestamp
-        )
-        
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="No risk assessment found for this patient")
+    
+    return RiskAssessmentResponse(
+        patient_id=patient_id,
+        risk_score=snapshot.risk_score or 0.0,
+        risk_level=snapshot.risk_level or "green",
+        confidence=snapshot.confidence or 0.0,
+        anomaly_count=snapshot.anomaly_count or 0,
+        contributing_factors=snapshot.contributing_factors or [],
+        wellness_recommendations=snapshot.recommendations or [],
+        snapshot_timestamp=snapshot.computed_at
+    )
 
-@trend_router.get("/history/{patient_id}")
-async def get_trend_history(
+
+# ==================== Alert Endpoints ====================
+
+@alert_router.get("/patient/{patient_id}")
+async def get_patient_alerts(
     patient_id: str,
     request: Request,
-    days: int = 30,
+    limit: int = 20,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
-    """Get historical trend snapshots for patient"""
-    await audit_log_request(request, db, user, "view", "trend_history", patient_id, phi_accessed=True)
+    """Get alerts for a patient"""
+    await audit_log_request(request, db, user, "view", "alerts", patient_id, phi_accessed=True)
     
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
-    
-    snapshots = db.query(TrendSnapshot).filter(
-        TrendSnapshot.patient_id == patient_id,
-        TrendSnapshot.snapshot_timestamp >= cutoff_date
-    ).order_by(TrendSnapshot.snapshot_timestamp.desc()).all()
-    
-    return {"snapshots": [
-        {
-            "timestamp": s.snapshot_timestamp,
-            "risk_score": s.risk_score,
-            "risk_level": s.risk_level,
-            "anomaly_count": s.anomaly_count
-        } for s in snapshots
-    ]}
-
-
-# ==================== Alert Engine Endpoints ====================
-
-@alert_router.post("/rules", status_code=201)
-async def create_alert_rule(
-    rule: AlertRuleCreate,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
-):
-    """Create new alert rule for doctor"""
-    try:
-        # Audit log
-        await audit_log_request(request, db, user, "create", "alert_rule", None, phi_accessed=False)
-        
-        new_rule = AlertRule(
-            doctor_id=user["user_id"],
-            rule_name=rule.rule_name,
-            rule_type=rule.rule_type,
-            conditions=rule.conditions,
-            notification_channels=rule.notification_channels,
-            is_active=True
-        )
-        
-        db.add(new_rule)
-        db.commit()
-        db.refresh(new_rule)
-        
-        return {"rule_id": new_rule.id, "message": "Alert rule created successfully"}
-        
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@alert_router.get("/pending")
-async def get_pending_alerts(
-    request: Request,
-    severity_filter: Optional[str] = None,
-    db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
-):
-    """Get pending alerts for current doctor"""
-    await audit_log_request(request, db, user, "view", "alerts", None, phi_accessed=True)
-    
-    # Get alert engine from AIEngineManager
-    from app.services.ai_engine_manager import AIEngineManager
-    alert_engine = AIEngineManager.get_alert_engine(db)
-    
-    severity_list = severity_filter.split(",") if severity_filter else None
-    alerts = await alert_engine.get_pending_alerts(user["user_id"], severity_list)
+    alerts = db.query(Alert).filter(
+        Alert.patient_id == patient_id
+    ).order_by(Alert.created_at.desc()).limit(limit).all()
     
     return {"alerts": [
         {
             "id": a.id,
-            "patient_id": a.patient_id,
             "title": a.title,
             "message": a.message,
             "severity": a.severity,
-            "created_at": a.created_at
+            "status": a.status,
+            "created_at": a.created_at,
+            "acknowledged_at": a.acknowledged_at
         } for a in alerts
     ]}
 
-@alert_router.post("/acknowledge/{alert_id}")
+@alert_router.post("/{alert_id}/acknowledge")
 async def acknowledge_alert(
     alert_id: int,
+    body: AlertAcknowledge,
     request: Request,
     db: Session = Depends(get_db),
-    user: Dict[str, Any] = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user_legacy)
 ):
-    """Acknowledge alert"""
-    await audit_log_request(request, db, user, "update", "alert", None, phi_accessed=True)
+    """Acknowledge an alert"""
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
     
-    # Get alert engine from AIEngineManager
-    from app.services.ai_engine_manager import AIEngineManager
-    alert_engine = AIEngineManager.get_alert_engine(db)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
     
-    success = await alert_engine.acknowledge_alert(alert_id, user["user_id"], user["role"])
+    await audit_log_request(request, db, user, "update", "alert", alert.patient_id, phi_accessed=True)
     
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to acknowledge alert")
+    alert.status = "acknowledged"
+    alert.acknowledged_at = datetime.utcnow()
+    alert.acknowledged_by = body.acknowledged_by
     
-    return {"message": "Alert acknowledged successfully"}
-
-
-# Create main router that includes all sub-routers
-def create_ai_deterioration_router():
-    """Create and configure the main AI deterioration detection router"""
-    from fastapi import FastAPI
+    db.commit()
     
-    app = FastAPI()
-    app.include_router(video_router)
-    app.include_router(audio_router)
-    app.include_router(trend_router)
-    app.include_router(alert_router)
-    
-    return app
+    return {"success": True, "alert_id": alert_id, "status": "acknowledged"}

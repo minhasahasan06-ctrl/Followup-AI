@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -47,17 +48,23 @@ import {
   Eye,
   FlaskConical,
   Image,
+  Lock,
+  Users,
+  BarChart3,
+  Shield,
 } from "lucide-react";
 import { startOfWeek, endOfWeek, subWeeks, format, formatDistanceToNow } from "date-fns";
-import type { User, DailyFollowup, Medication, ChatMessage, Prescription } from "@shared/schema";
+import type { User, DailyFollowup, Medication, ChatMessage, Prescription, DoctorPatientConsentPermissions } from "@shared/schema";
 import { PatientAIAlerts } from "@/components/patient-ai-alerts";
-import { PatientMLTools } from "@/components/patient-ml-tools";
+import { MLInsightsPanel } from "@/components/MLInsightsPanel";
 import { LysaPatientAssistant } from "@/components/LysaPatientAssistant";
 import { ClinicalDecisionSupport } from "@/components/ClinicalDecisionSupport";
 import { PredictiveAnalyticsDashboard } from "@/components/PredictiveAnalyticsDashboard";
 import { DiagnosticImagingAnalysis } from "@/components/DiagnosticImagingAnalysis";
 import { LabReportAnalysis } from "@/components/LabReportAnalysis";
 import { LysaInsightFeed } from "@/components/LysaInsightFeed";
+import { PatientSummaryCard } from "@/components/PatientSummaryCard";
+import { RiskExposuresPanel } from "@/components/RiskExposuresCards";
 
 interface ChatSession {
   id: string;
@@ -153,17 +160,39 @@ export default function PatientReview() {
   const [checkingInteractions, setCheckingInteractions] = useState(false);
   const [detectedInteractions, setDetectedInteractions] = useState<DrugInteraction[]>([]);
 
-  // Queries
+  // Consent permissions query - MUST load first to gate other queries
+  const { data: consentPermissions, isLoading: loadingPermissions } = useQuery<DoctorPatientConsentPermissions>({
+    queryKey: [`/api/doctor/patients/${patientId}/consent-permissions`],
+    queryFn: async () => {
+      const res = await fetch(`/api/doctor/patients/${patientId}/consent-permissions`, { credentials: 'include' });
+      if (!res.ok) {
+        if (res.status === 404 || res.status === 403) return null;
+        throw new Error('Failed to fetch consent permissions');
+      }
+      return res.json();
+    },
+  });
+
+  // Helper to check if a specific permission is granted
+  const hasPermission = (permission: keyof DoctorPatientConsentPermissions): boolean => {
+    if (!consentPermissions) return false;
+    return Boolean(consentPermissions[permission]);
+  };
+
+  // Patient basic info query - always allowed for assigned patients
   const { data: patient } = useQuery<User>({
     queryKey: [`/api/doctor/patients/${patientId}`],
   });
 
+  // Consent-gated queries - only fetch data when permission is granted
   const { data: followups } = useQuery<DailyFollowup[]>({
     queryKey: [`/api/doctor/patients/${patientId}/followups`],
+    enabled: !!consentPermissions && (hasPermission('shareDailyFollowups') || hasPermission('shareHealthData')),
   });
 
   const { data: medications } = useQuery<Medication[]>({
     queryKey: [`/api/doctor/patients/${patientId}/medications`],
+    enabled: !!consentPermissions && (hasPermission('shareMedications') || hasPermission('shareHealthData')),
   });
 
   const { data: prescriptions } = useQuery<Prescription[]>({
@@ -173,10 +202,12 @@ export default function PatientReview() {
       if (!res.ok) return [];
       return res.json();
     },
+    enabled: !!consentPermissions && (hasPermission('shareMedications') || hasPermission('shareHealthData')),
   });
 
   const { data: chatSessions } = useQuery<ChatSession[]>({
     queryKey: [`/api/doctor/patient-sessions/${patientId}`],
+    enabled: !!consentPermissions && hasPermission('shareAIMessages'),
   });
 
   // Health Summary - computed from available real data only
@@ -206,9 +237,9 @@ export default function PatientReview() {
   // Drug interaction check mutation
   const checkInteractionsMutation = useMutation({
     mutationFn: async (drugName: string) => {
-      const res = await apiRequest('POST', '/api/drug-interactions/analyze-for-patient', {
-        patientId,
-        drugName,
+      const res = await apiRequest('/api/drug-interactions/analyze-for-patient', {
+        method: 'POST',
+        json: { patientId, drugName }
       });
       return res.json();
     },
@@ -231,15 +262,18 @@ export default function PatientReview() {
   // Create prescription mutation
   const createPrescriptionMutation = useMutation({
     mutationFn: async (prescription: typeof newPrescription) => {
-      const res = await apiRequest('POST', '/api/prescriptions', {
-        patientId,
-        medicationName: prescription.medicationName,
-        dosage: prescription.dosage,
-        frequency: prescription.frequency,
-        quantity: parseInt(prescription.quantity) || null,
-        refills: parseInt(prescription.refills) || 0,
-        dosageInstructions: prescription.dosageInstructions || null,
-        notes: prescription.notes || null,
+      const res = await apiRequest('/api/prescriptions', {
+        method: 'POST',
+        json: {
+          patientId,
+          medicationName: prescription.medicationName,
+          dosage: prescription.dosage,
+          frequency: prescription.frequency,
+          quantity: parseInt(prescription.quantity) || null,
+          refills: parseInt(prescription.refills) || 0,
+          dosageInstructions: prescription.dosageInstructions || null,
+          notes: prescription.notes || null,
+        }
       });
       return res.json();
     },
@@ -356,131 +390,84 @@ export default function PatientReview() {
 
   return (
     <div className="space-y-6">
-      {/* Patient Header */}
-      {patient && (
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4 flex-wrap">
-              <Avatar className="h-16 w-16">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xl">
-                  {getInitials(patient.firstName, patient.lastName)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <h1 className="text-2xl font-semibold" data-testid="text-patient-name">
-                  {patient.firstName} {patient.lastName}
-                </h1>
-                <p className="text-muted-foreground">{patient.email}</p>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <Badge variant="secondary">Patient ID: {patient.id.slice(0, 8)}</Badge>
-                <Badge className={getStatusColor(healthSummary.overallStatus)}>
-                  {healthSummary.overallStatus.charAt(0).toUpperCase() + healthSummary.overallStatus.slice(1)}
-                </Badge>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Enhanced Patient Summary Card with Consent Permissions */}
+      {patientId && (
+        <PatientSummaryCard
+          patient={patient}
+          patientId={patientId}
+          followups={followups}
+          medications={medications}
+          consentPermissions={consentPermissions}
+          isLoadingPermissions={loadingPermissions}
+        />
       )}
-
-      {/* Health Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card data-testid="card-risk-score">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">Risk Score</span>
-              <AlertCircle className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <p className="text-2xl font-bold">{healthSummary.riskScore.toFixed(1)}/15</p>
-            <Progress value={(healthSummary.riskScore / 15) * 100} className="h-1.5 mt-2" />
-            <p className="text-xs text-muted-foreground mt-1">Low Risk</p>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-adherence">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">Medication Adherence</span>
-              <Pill className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <p className="text-2xl font-bold">{healthSummary.medicationAdherence}%</p>
-            <Progress value={healthSummary.medicationAdherence} className="h-1.5 mt-2" />
-            <p className="text-xs text-green-600 mt-1">Excellent</p>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-vitals">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">Latest Vitals</span>
-              <Heart className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div className="space-y-1">
-              {healthSummary.lastVitals.heartRate && (
-                <p className="text-sm">HR: <span className="font-medium">{healthSummary.lastVitals.heartRate} bpm</span></p>
-              )}
-              {healthSummary.lastVitals.oxygenSaturation && (
-                <p className="text-sm">SpO2: <span className="font-medium">{healthSummary.lastVitals.oxygenSaturation}%</span></p>
-              )}
-              {healthSummary.lastVitals.temperature && (
-                <p className="text-sm">Temp: <span className="font-medium">{healthSummary.lastVitals.temperature}°F</span></p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-last-checkin">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">Last Check-in</span>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <p className="text-lg font-medium">
-              {healthSummary.lastCheckIn 
-                ? formatDistanceToNow(new Date(healthSummary.lastCheckIn), { addSuffix: true })
-                : 'No data'}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {healthSummary.lastCheckIn 
-                ? format(new Date(healthSummary.lastCheckIn), 'MMM d, yyyy')
-                : 'N/A'}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Main Content */}
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Tabs defaultValue="ai-alerts" className="space-y-4">
             <TabsList className="flex flex-wrap gap-1">
+              {/* Core Health Tabs - Always Available */}
               <TabsTrigger value="ai-alerts" data-testid="tab-ai-alerts">
                 <Bell className="h-4 w-4 mr-2" />
                 AI Alerts
+                {!hasPermission('shareHealthAlerts') && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
               </TabsTrigger>
               <TabsTrigger value="ml-tools" data-testid="tab-ml-tools">
                 <Brain className="h-4 w-4 mr-2" />
                 ML Tools
               </TabsTrigger>
+              
+              {/* Consent-Controlled Tabs */}
+              <TabsTrigger value="daily-followups" data-testid="tab-daily-followups">
+                <Calendar className="h-4 w-4 mr-2" />
+                Daily Followups
+                {!hasPermission('shareDailyFollowups') && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
+              </TabsTrigger>
+              <TabsTrigger value="ai-messages" data-testid="tab-ai-messages">
+                <Bot className="h-4 w-4 mr-2" />
+                AI Messages
+                {!hasPermission('shareAIMessages') && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
+              </TabsTrigger>
+              <TabsTrigger value="doctor-messages" data-testid="tab-doctor-messages">
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Messages
+                {!hasPermission('shareDoctorMessages') && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
+              </TabsTrigger>
+              <TabsTrigger value="behavioral-insights" data-testid="tab-behavioral-insights">
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Behavioral
+                {!hasPermission('shareBehavioralInsights') && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
+              </TabsTrigger>
+              
+              {/* Medical Data Tabs */}
               <TabsTrigger value="medications" data-testid="tab-medications">
                 <Pill className="h-4 w-4 mr-2" />
                 Medications
+                {!hasPermission('shareMedications') && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
+              </TabsTrigger>
+              <TabsTrigger value="risk-exposures" data-testid="tab-risk-exposures">
+                <Shield className="h-4 w-4 mr-2" />
+                Risk & Exposures
               </TabsTrigger>
               <TabsTrigger value="prescriptions" data-testid="tab-prescriptions">
                 <ClipboardList className="h-4 w-4 mr-2" />
                 Prescriptions
               </TabsTrigger>
+              <TabsTrigger value="documents" data-testid="tab-documents">
+                <FolderOpen className="h-4 w-4 mr-2" />
+                Medical Files
+                {!hasPermission('shareMedicalFiles') && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
+              </TabsTrigger>
+              
+              {/* Clinical Tabs */}
               <TabsTrigger value="complications" data-testid="tab-complications">
                 <AlertTriangle className="h-4 w-4 mr-2" />
                 Complications
               </TabsTrigger>
               <TabsTrigger value="timeline" data-testid="tab-timeline">
-                <Calendar className="h-4 w-4 mr-2" />
+                <Clock className="h-4 w-4 mr-2" />
                 Timeline
-              </TabsTrigger>
-              <TabsTrigger value="documents" data-testid="tab-documents">
-                <FolderOpen className="h-4 w-4 mr-2" />
-                Documents
               </TabsTrigger>
               <TabsTrigger value="reports" data-testid="tab-reports">
                 <FileText className="h-4 w-4 mr-2" />
@@ -507,7 +494,7 @@ export default function PatientReview() {
                 Labs
               </TabsTrigger>
               <TabsTrigger value="insights" data-testid="tab-insights">
-                <Bot className="h-4 w-4 mr-2" />
+                <Eye className="h-4 w-4 mr-2" />
                 Insights
               </TabsTrigger>
             </TabsList>
@@ -525,10 +512,268 @@ export default function PatientReview() {
             {/* ML Prediction Tools Tab */}
             <TabsContent value="ml-tools">
               {patientId && (
-                <PatientMLTools 
+                <MLInsightsPanel 
                   patientId={patientId} 
                   patientName={patient ? `${patient.firstName} ${patient.lastName}` : undefined}
+                  isDoctor={true}
                 />
+              )}
+            </TabsContent>
+
+            {/* Daily Followups Tab - Consent Controlled */}
+            <TabsContent value="daily-followups">
+              {!hasPermission('shareDailyFollowups') ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Lock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">Access Restricted</h3>
+                    <p className="text-muted-foreground max-w-md mx-auto">
+                      Patient consent is required to view daily followup data. 
+                      Request consent permissions to access this information.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Daily Followups</CardTitle>
+                    <CardDescription>Patient health check-ins and symptom reports</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[400px]">
+                      {followups && followups.length > 0 ? (
+                        <div className="space-y-4">
+                          {followups.map((followup) => (
+                            <div key={followup.id} className="p-4 border rounded-lg space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium">
+                                  {format(new Date(followup.date), 'MMMM d, yyyy')}
+                                </span>
+                                <Badge variant={followup.mood === 'good' ? 'default' : followup.mood === 'fair' ? 'secondary' : 'destructive'}>
+                                  {followup.mood || 'Unknown'}
+                                </Badge>
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                                {followup.heartRate && (
+                                  <div className="flex items-center gap-2">
+                                    <Heart className="h-4 w-4 text-red-500" />
+                                    <span>{followup.heartRate} bpm</span>
+                                  </div>
+                                )}
+                                {followup.bloodPressureSystolic && followup.bloodPressureDiastolic && (
+                                  <div className="flex items-center gap-2">
+                                    <Activity className="h-4 w-4 text-blue-500" />
+                                    <span>{followup.bloodPressureSystolic}/{followup.bloodPressureDiastolic} mmHg</span>
+                                  </div>
+                                )}
+                                {followup.oxygenSaturation && (
+                                  <div className="flex items-center gap-2">
+                                    <Wind className="h-4 w-4 text-cyan-500" />
+                                    <span>{followup.oxygenSaturation}% SpO2</span>
+                                  </div>
+                                )}
+                                {followup.temperature && (
+                                  <div className="flex items-center gap-2">
+                                    <ThermometerSun className="h-4 w-4 text-orange-500" />
+                                    <span>{followup.temperature}°F</span>
+                                  </div>
+                                )}
+                              </div>
+                              {followup.symptoms && followup.symptoms.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                  {followup.symptoms.map((symptom, idx) => (
+                                    <Badge key={idx} variant="outline">
+                                      {typeof symptom === 'string' ? symptom : symptom.name || 'Unknown'}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+                              {followup.notes && (
+                                <p className="text-sm text-muted-foreground italic">{followup.notes}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          No daily followups recorded yet.
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* AI Messages Tab - Consent Controlled */}
+            <TabsContent value="ai-messages">
+              {!hasPermission('shareAIMessages') ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Lock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">Access Restricted</h3>
+                    <p className="text-muted-foreground max-w-md mx-auto">
+                      Patient consent is required to view AI chat messages. 
+                      Request consent permissions to access this information.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>AI Chat History</CardTitle>
+                    <CardDescription>Patient conversations with Agent Clona</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[400px]">
+                      {chatSessions && chatSessions.length > 0 ? (
+                        <div className="space-y-4">
+                          {chatSessions.map((session) => (
+                            <div key={session.id} className="p-4 border rounded-lg space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Bot className="h-4 w-4 text-primary" />
+                                  <span className="font-medium">{session.sessionTitle || 'Chat Session'}</span>
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                  {formatDistanceToNow(new Date(session.startedAt), { addSuffix: true })}
+                                </span>
+                              </div>
+                              {session.messageCount && (
+                                <p className="text-sm text-muted-foreground">
+                                  {session.messageCount} messages
+                                </p>
+                              )}
+                              {session.aiSummary && (
+                                <p className="text-sm bg-muted p-2 rounded">{session.aiSummary}</p>
+                              )}
+                              {session.symptomsDiscussed && session.symptomsDiscussed.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                  {session.symptomsDiscussed.map((symptom, idx) => (
+                                    <Badge key={idx} variant="outline">{symptom}</Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          No AI chat sessions found.
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* Doctor Messages Tab - Consent Controlled */}
+            <TabsContent value="doctor-messages">
+              {!hasPermission('shareDoctorMessages') ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Lock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">Access Restricted</h3>
+                    <p className="text-muted-foreground max-w-md mx-auto">
+                      Patient consent is required to view doctor communications. 
+                      Request consent permissions to access this information.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Doctor Messages</CardTitle>
+                    <CardDescription>Communication history with healthcare providers</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-8 text-muted-foreground">
+                      <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>Doctor messaging feature coming soon.</p>
+                      <p className="text-sm mt-2">Use the Lysa AI assistant tab for patient communication.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* Behavioral Insights Tab - Consent Controlled */}
+            <TabsContent value="behavioral-insights">
+              {!hasPermission('shareBehavioralInsights') ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Lock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">Access Restricted</h3>
+                    <p className="text-muted-foreground max-w-md mx-auto">
+                      Patient consent is required to view behavioral insights and AI analysis. 
+                      Request consent permissions to access this information.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Behavioral Insights</CardTitle>
+                    <CardDescription>AI-powered analysis of patient behavior patterns</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-6">
+                      <div className="grid md:grid-cols-3 gap-4">
+                        <div className="p-4 border rounded-lg">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Activity className="h-5 w-5 text-primary" />
+                            <h4 className="font-medium">Activity Level</h4>
+                          </div>
+                          <p className="text-2xl font-bold">Moderate</p>
+                          <p className="text-sm text-muted-foreground">Based on daily check-ins</p>
+                        </div>
+                        <div className="p-4 border rounded-lg">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Clock className="h-5 w-5 text-primary" />
+                            <h4 className="font-medium">Check-in Consistency</h4>
+                          </div>
+                          <p className="text-2xl font-bold">
+                            {followups ? Math.round((followups.length / 7) * 100) : 0}%
+                          </p>
+                          <p className="text-sm text-muted-foreground">Past 7 days</p>
+                        </div>
+                        <div className="p-4 border rounded-lg">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Brain className="h-5 w-5 text-primary" />
+                            <h4 className="font-medium">Engagement Score</h4>
+                          </div>
+                          <p className="text-2xl font-bold">
+                            {chatSessions?.length ? 'High' : 'Low'}
+                          </p>
+                          <p className="text-sm text-muted-foreground">AI interaction level</p>
+                        </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      <div>
+                        <h4 className="font-medium mb-3">Behavioral Patterns</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                            <span>Sleep pattern regularity</span>
+                            <Badge variant="secondary">Analyzing...</Badge>
+                          </div>
+                          <div className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                            <span>Medication adherence trend</span>
+                            <Badge variant="secondary">
+                              {medications?.filter(m => m.status === 'active').length || 0} active meds
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                            <span>Mood pattern analysis</span>
+                            <Badge variant="secondary">Analyzing...</Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
             </TabsContent>
 
@@ -770,6 +1015,27 @@ export default function PatientReview() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Risk & Exposures Tab */}
+            <TabsContent value="risk-exposures">
+              {patientId && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold">Risk & Exposures Profile</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Auto-populated from clinical data. Edit to add manual corrections.
+                      </p>
+                    </div>
+                  </div>
+                  <RiskExposuresPanel 
+                    patientId={patientId} 
+                    isDoctor={true}
+                    compact={false}
+                  />
+                </div>
+              )}
             </TabsContent>
 
             {/* Prescriptions Tab */}

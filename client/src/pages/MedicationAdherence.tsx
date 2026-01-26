@@ -231,7 +231,7 @@ export default function MedicationAdherence() {
               {(adherenceData?.regimenRisk.rationale?.includes("drug interactions") ||
                 adherenceData?.regimenRisk.rationale?.includes("interaction")) && (
                 <div className="pt-4">
-                  <Link href="/drug-interactions">
+                  <Link href="/medications">
                     <a className="text-primary hover:underline flex items-center gap-2">
                       View detailed drug interaction analysis →
                     </a>

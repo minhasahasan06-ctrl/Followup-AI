@@ -64,6 +64,7 @@ import {
   appointments,
   consultations,
   doctorPatientAssignments,
+  doctorPatientConsentPermissions,
   doctorAvailability,
   emailThreads,
   emailMessages,
@@ -73,6 +74,9 @@ import {
   googleCalendarSyncLogs,
   gmailSync,
   gmailSyncLogs,
+  doctorIntegrations,
+  doctorEmails,
+  doctorWhatsappMessages,
   type User,
   type UpsertUser,
   type PatientProfile,
@@ -212,6 +216,12 @@ import {
   type InsertEmailMessage,
   type CallLog,
   type InsertCallLog,
+  type DoctorIntegration,
+  type InsertDoctorIntegration,
+  type DoctorEmail,
+  type InsertDoctorEmail,
+  type DoctorWhatsappMessage,
+  type InsertDoctorWhatsappMessage,
   type AppointmentReminder,
   type InsertAppointmentReminder,
   type GoogleCalendarSync,
@@ -225,6 +235,9 @@ import {
   paintrackSessions,
   type PaintrackSession,
   type InsertPaintrackSession,
+  deviceReadings,
+  type DeviceReading,
+  type InsertDeviceReading,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, sql, gte, lte, gt, like, ilike, inArray, between } from "drizzle-orm";
@@ -281,6 +294,13 @@ export interface IStorage {
   generateFollowupPatientId(): Promise<string>;
   getPatientByFollowupId(followupPatientId: string): Promise<User | undefined>;
   
+  // Consent Permissions operations (granular HIPAA permissions)
+  createConsentPermissions(permissions: any): Promise<any>;
+  getConsentPermissions(assignmentId: string): Promise<any>;
+  getConsentPermissionsByDoctorPatient(doctorId: string, patientId: string): Promise<any>;
+  getPatientConsentPermissions(patientId: string): Promise<any[]>;
+  updateConsentPermissions(assignmentId: string, permissions: any): Promise<any>;
+  
   // Daily followup operations
   getDailyFollowup(patientId: string, date: Date): Promise<DailyFollowup | undefined>;
   getRecentFollowups(patientId: string, limit?: number): Promise<DailyFollowup[]>;
@@ -324,6 +344,19 @@ export interface IStorage {
   createPrescription(prescription: InsertPrescription): Promise<Prescription>;
   updatePrescription(id: string, data: Partial<Prescription>): Promise<Prescription | undefined>;
   acknowledgePrescription(id: string, acknowledgedBy: string): Promise<Prescription | undefined>;
+  
+  // Chronic care medication lifecycle operations
+  getMedicationsBySpecialty(patientId: string, specialty: string): Promise<Medication[]>;
+  getMedicationsByDrugClass(patientId: string, drugClassPattern: string): Promise<Medication[]>;
+  supersedeMedication(oldMedicationId: string, newMedicationId: string, reason: string): Promise<Medication | undefined>;
+  
+  // Cross-specialty conflict operations
+  getMedicationConflicts(patientId: string): Promise<any[]>;
+  getPendingConflicts(doctorId: string): Promise<any[]>;
+  createMedicationConflict(conflict: any): Promise<any>;
+  getMedicationConflict(id: string): Promise<any | undefined>;
+  updateMedicationConflict(id: string, data: any): Promise<any | undefined>;
+  resolveMedicationConflict(id: string, resolution: any): Promise<any | undefined>;
   
   // Medication change log operations
   getMedicationChangelog(medicationId: string): Promise<MedicationChangeLog[]>;
@@ -678,6 +711,49 @@ export interface IStorage {
   createPaintrackSession(session: InsertPaintrackSession): Promise<PaintrackSession>;
   getPaintrackSessions(userId: string, limit?: number): Promise<PaintrackSession[]>;
   getPaintrackSession(id: string, userId: string): Promise<PaintrackSession | undefined>;
+
+  // Device Readings operations (BP, glucose, scale, thermometer, stethoscope, smartwatch)
+  createDeviceReading(reading: InsertDeviceReading): Promise<DeviceReading>;
+  getDeviceReadings(patientId: string, options?: { 
+    deviceType?: string; 
+    limit?: number; 
+    startDate?: Date; 
+    endDate?: Date;
+  }): Promise<DeviceReading[]>;
+  getDeviceReading(id: string): Promise<DeviceReading | undefined>;
+  getLatestDeviceReading(patientId: string, deviceType: string): Promise<DeviceReading | undefined>;
+  getDeviceReadingsByType(patientId: string, deviceType: string, limit?: number): Promise<DeviceReading[]>;
+  updateDeviceReading(id: string, data: Partial<DeviceReading>): Promise<DeviceReading | undefined>;
+  deleteDeviceReading(id: string): Promise<boolean>;
+  getDeviceReadingsForHealthAlerts(patientId: string, hours?: number): Promise<DeviceReading[]>;
+  markDeviceReadingProcessedForAlerts(id: string, alertIds: string[]): Promise<DeviceReading | undefined>;
+
+  // Doctor Integrations operations (per-doctor OAuth/API connections)
+  getDoctorIntegrations(doctorId: string): Promise<DoctorIntegration[]>;
+  getDoctorIntegrationByType(doctorId: string, integrationType: string): Promise<DoctorIntegration | undefined>;
+  createDoctorIntegration(integration: InsertDoctorIntegration): Promise<DoctorIntegration>;
+  updateDoctorIntegration(id: string, data: Partial<DoctorIntegration>): Promise<DoctorIntegration | undefined>;
+  deleteDoctorIntegration(id: string): Promise<boolean>;
+  
+  // Doctor Emails operations
+  getDoctorEmails(doctorId: string, options?: { category?: string; isRead?: boolean; limit?: number; offset?: number }): Promise<DoctorEmail[]>;
+  getDoctorEmailByProviderId(doctorId: string, providerMessageId: string): Promise<DoctorEmail | undefined>;
+  createDoctorEmail(email: InsertDoctorEmail): Promise<DoctorEmail>;
+  updateDoctorEmail(id: string, data: Partial<DoctorEmail>): Promise<DoctorEmail | undefined>;
+  
+  // Doctor WhatsApp operations
+  getDoctorWhatsappMessages(doctorId: string, options?: { status?: string; limit?: number }): Promise<DoctorWhatsappMessage[]>;
+  createDoctorWhatsappMessage(message: InsertDoctorWhatsappMessage): Promise<DoctorWhatsappMessage>;
+  updateDoctorWhatsappMessage(id: string, data: Partial<DoctorWhatsappMessage>): Promise<DoctorWhatsappMessage | undefined>;
+  
+  // Call log operations (enhanced)
+  getCallLogs(doctorId: string, options?: { status?: string; limit?: number }): Promise<CallLog[]>;
+  getCallLogByTwilioSid(twilioCallSid: string): Promise<CallLog | undefined>;
+  createCallLog(log: InsertCallLog): Promise<CallLog>;
+  updateCallLog(id: string, data: Partial<CallLog>): Promise<CallLog | undefined>;
+  
+  // Utility
+  getUserByPhone(phone: string): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1230,6 +1306,61 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  // Consent Permissions operations (granular HIPAA permissions)
+  async createConsentPermissions(permissions: any): Promise<any> {
+    try {
+      const [result] = await db
+        .insert(doctorPatientConsentPermissions)
+        .values(permissions)
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("[Storage] Error creating consent permissions:", error);
+      throw error;
+    }
+  }
+
+  async getConsentPermissions(assignmentId: string): Promise<any> {
+    const [permissions] = await db
+      .select()
+      .from(doctorPatientConsentPermissions)
+      .where(eq(doctorPatientConsentPermissions.assignmentId, assignmentId));
+    return permissions;
+  }
+
+  async getConsentPermissionsByDoctorPatient(doctorId: string, patientId: string): Promise<any> {
+    const [permissions] = await db
+      .select()
+      .from(doctorPatientConsentPermissions)
+      .where(
+        and(
+          eq(doctorPatientConsentPermissions.doctorId, doctorId),
+          eq(doctorPatientConsentPermissions.patientId, patientId)
+        )
+      );
+    return permissions;
+  }
+
+  async getPatientConsentPermissions(patientId: string): Promise<any[]> {
+    const permissions = await db
+      .select()
+      .from(doctorPatientConsentPermissions)
+      .where(eq(doctorPatientConsentPermissions.patientId, patientId));
+    return permissions;
+  }
+
+  async updateConsentPermissions(assignmentId: string, permissionUpdates: any): Promise<any> {
+    const [result] = await db
+      .update(doctorPatientConsentPermissions)
+      .set({
+        ...permissionUpdates,
+        updatedAt: new Date(),
+      })
+      .where(eq(doctorPatientConsentPermissions.assignmentId, assignmentId))
+      .returning();
+    return result;
+  }
+
   // Daily followup operations
   async getDailyFollowup(patientId: string, date: Date): Promise<DailyFollowup | undefined> {
     const startOfDay = new Date(date);
@@ -1637,6 +1768,144 @@ export class DatabaseStorage implements IStorage {
       .where(eq(prescriptions.id, id))
       .returning();
     return rx;
+  }
+
+  // Chronic care medication lifecycle operations
+  async getMedicationsBySpecialty(patientId: string, specialty: string): Promise<Medication[]> {
+    const meds = await db
+      .select()
+      .from(medications)
+      .where(and(
+        eq(medications.patientId, patientId),
+        eq(medications.specialty, specialty),
+        eq(medications.active, true)
+      ))
+      .orderBy(medications.name);
+    return meds;
+  }
+
+  async getMedicationsByDrugClass(patientId: string, drugClassPattern: string): Promise<Medication[]> {
+    const meds = await db
+      .select()
+      .from(medications)
+      .where(and(
+        eq(medications.patientId, patientId),
+        eq(medications.active, true)
+      ))
+      .orderBy(medications.name);
+    
+    // Filter by drug class using joined drug table
+    const medsWithDrugs = await Promise.all(meds.map(async (med) => {
+      if (med.drugId) {
+        const [drug] = await db.select().from(drugs).where(eq(drugs.id, med.drugId));
+        if (drug?.drugClass && drug.drugClass.toLowerCase().includes(drugClassPattern.toLowerCase())) {
+          return med;
+        }
+      }
+      return null;
+    }));
+    
+    return medsWithDrugs.filter((m): m is Medication => m !== null);
+  }
+
+  async supersedeMedication(oldMedicationId: string, newMedicationId: string, reason: string): Promise<Medication | undefined> {
+    const now = new Date();
+    
+    // Mark the old medication as superseded
+    const [oldMed] = await db
+      .update(medications)
+      .set({
+        status: "superseded",
+        active: false,
+        supersededBy: newMedicationId,
+        supersededAt: now,
+        supersessionReason: reason,
+        updatedAt: now,
+      })
+      .where(eq(medications.id, oldMedicationId))
+      .returning();
+    
+    return oldMed;
+  }
+
+  // Cross-specialty conflict operations
+  async getMedicationConflicts(patientId: string): Promise<any[]> {
+    const conflicts = await db.execute(sql`
+      SELECT * FROM medication_conflicts 
+      WHERE patient_id = ${patientId} 
+      ORDER BY created_at DESC
+    `);
+    return conflicts.rows as any[];
+  }
+
+  async getPendingConflicts(doctorId: string): Promise<any[]> {
+    const conflicts = await db.execute(sql`
+      SELECT * FROM medication_conflicts 
+      WHERE (doctor1_id = ${doctorId} OR doctor2_id = ${doctorId})
+        AND status = 'pending'
+      ORDER BY created_at DESC
+    `);
+    return conflicts.rows as any[];
+  }
+
+  async createMedicationConflict(conflict: any): Promise<any> {
+    const result = await db.execute(sql`
+      INSERT INTO medication_conflicts (
+        patient_id, conflict_group_id, medication1_id, medication2_id,
+        prescription1_id, prescription2_id, doctor1_id, doctor2_id,
+        specialty1, specialty2, conflict_type, severity,
+        description, detected_reason, status
+      ) VALUES (
+        ${conflict.patientId}, ${conflict.conflictGroupId}, ${conflict.medication1Id}, ${conflict.medication2Id},
+        ${conflict.prescription1Id || null}, ${conflict.prescription2Id || null}, ${conflict.doctor1Id}, ${conflict.doctor2Id},
+        ${conflict.specialty1}, ${conflict.specialty2}, ${conflict.conflictType}, ${conflict.severity},
+        ${conflict.description}, ${conflict.detectedReason || null}, 'pending'
+      ) RETURNING *
+    `);
+    return result.rows[0];
+  }
+
+  async getMedicationConflict(id: string): Promise<any | undefined> {
+    const result = await db.execute(sql`
+      SELECT * FROM medication_conflicts WHERE id = ${id}
+    `);
+    return result.rows[0];
+  }
+
+  async updateMedicationConflict(id: string, data: any): Promise<any | undefined> {
+    const setClauses: string[] = [];
+    const values: any[] = [];
+    
+    Object.entries(data).forEach(([key, value]) => {
+      const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+      setClauses.push(`${snakeKey} = $${values.length + 1}`);
+      values.push(value);
+    });
+    
+    if (setClauses.length === 0) return undefined;
+    
+    const result = await db.execute(sql`
+      UPDATE medication_conflicts 
+      SET ${sql.raw(setClauses.join(', '))}, updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `);
+    return result.rows[0];
+  }
+
+  async resolveMedicationConflict(id: string, resolution: any): Promise<any | undefined> {
+    const result = await db.execute(sql`
+      UPDATE medication_conflicts SET
+        status = 'resolved',
+        resolution = ${resolution.resolution},
+        resolution_details = ${resolution.resolutionDetails || null},
+        resolved_by = ${resolution.resolvedBy},
+        resolved_at = NOW(),
+        updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `);
+    return result.rows[0];
   }
 
   // Medication change log operations
@@ -4344,6 +4613,284 @@ export class DatabaseStorage implements IStorage {
       .from(paintrackSessions)
       .where(and(eq(paintrackSessions.id, id), eq(paintrackSessions.userId, userId)));
     return session;
+  }
+
+  // Device Readings operations (BP, glucose, scale, thermometer, stethoscope, smartwatch)
+  async createDeviceReading(reading: InsertDeviceReading): Promise<DeviceReading> {
+    const [created] = await db.insert(deviceReadings).values(reading).returning();
+    return created;
+  }
+
+  async getDeviceReadings(patientId: string, options?: { 
+    deviceType?: string; 
+    limit?: number; 
+    startDate?: Date; 
+    endDate?: Date;
+  }): Promise<DeviceReading[]> {
+    const conditions = [eq(deviceReadings.patientId, patientId)];
+    
+    if (options?.deviceType) {
+      conditions.push(eq(deviceReadings.deviceType, options.deviceType));
+    }
+    if (options?.startDate) {
+      conditions.push(gte(deviceReadings.recordedAt, options.startDate));
+    }
+    if (options?.endDate) {
+      conditions.push(lte(deviceReadings.recordedAt, options.endDate));
+    }
+
+    return await db
+      .select()
+      .from(deviceReadings)
+      .where(and(...conditions))
+      .orderBy(desc(deviceReadings.recordedAt))
+      .limit(options?.limit || 100);
+  }
+
+  async getDeviceReading(id: string): Promise<DeviceReading | undefined> {
+    const [reading] = await db
+      .select()
+      .from(deviceReadings)
+      .where(eq(deviceReadings.id, id));
+    return reading;
+  }
+
+  async getLatestDeviceReading(patientId: string, deviceType: string): Promise<DeviceReading | undefined> {
+    const [reading] = await db
+      .select()
+      .from(deviceReadings)
+      .where(and(
+        eq(deviceReadings.patientId, patientId),
+        eq(deviceReadings.deviceType, deviceType)
+      ))
+      .orderBy(desc(deviceReadings.recordedAt))
+      .limit(1);
+    return reading;
+  }
+
+  async getDeviceReadingsByType(patientId: string, deviceType: string, limit: number = 50): Promise<DeviceReading[]> {
+    return await db
+      .select()
+      .from(deviceReadings)
+      .where(and(
+        eq(deviceReadings.patientId, patientId),
+        eq(deviceReadings.deviceType, deviceType)
+      ))
+      .orderBy(desc(deviceReadings.recordedAt))
+      .limit(limit);
+  }
+
+  async updateDeviceReading(id: string, data: Partial<DeviceReading>): Promise<DeviceReading | undefined> {
+    const [updated] = await db
+      .update(deviceReadings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(deviceReadings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDeviceReading(id: string): Promise<boolean> {
+    await db.delete(deviceReadings).where(eq(deviceReadings.id, id));
+    return true;
+  }
+
+  async getDeviceReadingsForHealthAlerts(patientId: string, hours: number = 24): Promise<DeviceReading[]> {
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    return await db
+      .select()
+      .from(deviceReadings)
+      .where(and(
+        eq(deviceReadings.patientId, patientId),
+        eq(deviceReadings.processedForAlerts, false),
+        gte(deviceReadings.recordedAt, since)
+      ))
+      .orderBy(desc(deviceReadings.recordedAt));
+  }
+
+  async markDeviceReadingProcessedForAlerts(id: string, alertIds: string[]): Promise<DeviceReading | undefined> {
+    const [updated] = await db
+      .update(deviceReadings)
+      .set({ 
+        processedForAlerts: true, 
+        alertsGenerated: alertIds,
+        updatedAt: new Date() 
+      })
+      .where(eq(deviceReadings.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Doctor Integrations operations
+  async getDoctorIntegrations(doctorId: string): Promise<DoctorIntegration[]> {
+    return await db
+      .select()
+      .from(doctorIntegrations)
+      .where(eq(doctorIntegrations.doctorId, doctorId));
+  }
+
+  async getDoctorIntegrationByType(doctorId: string, integrationType: string): Promise<DoctorIntegration | undefined> {
+    const [integration] = await db
+      .select()
+      .from(doctorIntegrations)
+      .where(and(
+        eq(doctorIntegrations.doctorId, doctorId),
+        eq(doctorIntegrations.integrationType, integrationType)
+      ));
+    return integration;
+  }
+
+  async createDoctorIntegration(integration: InsertDoctorIntegration): Promise<DoctorIntegration> {
+    const [created] = await db
+      .insert(doctorIntegrations)
+      .values(integration)
+      .returning();
+    return created;
+  }
+
+  async updateDoctorIntegration(id: string, data: Partial<DoctorIntegration>): Promise<DoctorIntegration | undefined> {
+    const [updated] = await db
+      .update(doctorIntegrations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(doctorIntegrations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDoctorIntegration(id: string): Promise<boolean> {
+    await db.delete(doctorIntegrations).where(eq(doctorIntegrations.id, id));
+    return true;
+  }
+
+  // Doctor Emails operations
+  async getDoctorEmails(doctorId: string, options?: { category?: string; isRead?: boolean; limit?: number; offset?: number }): Promise<DoctorEmail[]> {
+    const conditions = [eq(doctorEmails.doctorId, doctorId)];
+    
+    if (options?.category) {
+      conditions.push(eq(doctorEmails.aiCategory, options.category));
+    }
+    if (options?.isRead !== undefined) {
+      conditions.push(eq(doctorEmails.isRead, options.isRead));
+    }
+
+    return await db
+      .select()
+      .from(doctorEmails)
+      .where(and(...conditions))
+      .orderBy(desc(doctorEmails.receivedAt))
+      .limit(options?.limit || 50)
+      .offset(options?.offset || 0);
+  }
+
+  async getDoctorEmailByProviderId(doctorId: string, providerMessageId: string): Promise<DoctorEmail | undefined> {
+    const [email] = await db
+      .select()
+      .from(doctorEmails)
+      .where(and(
+        eq(doctorEmails.doctorId, doctorId),
+        eq(doctorEmails.providerMessageId, providerMessageId)
+      ));
+    return email;
+  }
+
+  async createDoctorEmail(email: InsertDoctorEmail): Promise<DoctorEmail> {
+    const [created] = await db
+      .insert(doctorEmails)
+      .values(email)
+      .returning();
+    return created;
+  }
+
+  async updateDoctorEmail(id: string, data: Partial<DoctorEmail>): Promise<DoctorEmail | undefined> {
+    const [updated] = await db
+      .update(doctorEmails)
+      .set(data)
+      .where(eq(doctorEmails.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Doctor WhatsApp operations
+  async getDoctorWhatsappMessages(doctorId: string, options?: { status?: string; limit?: number }): Promise<DoctorWhatsappMessage[]> {
+    const conditions = [eq(doctorWhatsappMessages.doctorId, doctorId)];
+    
+    if (options?.status) {
+      conditions.push(eq(doctorWhatsappMessages.status, options.status));
+    }
+
+    return await db
+      .select()
+      .from(doctorWhatsappMessages)
+      .where(and(...conditions))
+      .orderBy(desc(doctorWhatsappMessages.receivedAt))
+      .limit(options?.limit || 50);
+  }
+
+  async createDoctorWhatsappMessage(message: InsertDoctorWhatsappMessage): Promise<DoctorWhatsappMessage> {
+    const [created] = await db
+      .insert(doctorWhatsappMessages)
+      .values(message)
+      .returning();
+    return created;
+  }
+
+  async updateDoctorWhatsappMessage(id: string, data: Partial<DoctorWhatsappMessage>): Promise<DoctorWhatsappMessage | undefined> {
+    const [updated] = await db
+      .update(doctorWhatsappMessages)
+      .set(data)
+      .where(eq(doctorWhatsappMessages.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Call log operations (enhanced)
+  async getCallLogs(doctorId: string, options?: { status?: string; limit?: number }): Promise<CallLog[]> {
+    const conditions = [eq(callLogs.doctorId, doctorId)];
+    
+    if (options?.status) {
+      conditions.push(eq(callLogs.status, options.status));
+    }
+
+    return await db
+      .select()
+      .from(callLogs)
+      .where(and(...conditions))
+      .orderBy(desc(callLogs.startTime))
+      .limit(options?.limit || 50);
+  }
+
+  async getCallLogByTwilioSid(twilioCallSid: string): Promise<CallLog | undefined> {
+    const [log] = await db
+      .select()
+      .from(callLogs)
+      .where(eq(callLogs.twilioCallSid, twilioCallSid));
+    return log;
+  }
+
+  async createCallLog(log: InsertCallLog): Promise<CallLog> {
+    const [created] = await db
+      .insert(callLogs)
+      .values(log)
+      .returning();
+    return created;
+  }
+
+  async updateCallLog(id: string, data: Partial<CallLog>): Promise<CallLog | undefined> {
+    const [updated] = await db
+      .update(callLogs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(callLogs.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Utility
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    const normalizedPhone = phone.replace(/\D/g, '');
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(sql`REPLACE(${users.phoneNumber}, '+', '') LIKE '%' || ${normalizedPhone} || '%'`);
+    return user;
   }
 }
 

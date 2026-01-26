@@ -17,10 +17,13 @@ import {
   UserPlus,
   MessageSquare,
   ArrowLeft,
+  UserCheck,
 } from "lucide-react";
 import { Link } from "wouter";
+import { useAuth } from "@/hooks/useAuth";
+import api from "@/lib/api";
 
-interface DoctorProfile {
+interface DoctorProfileData {
   id: string;
   first_name?: string;
   last_name?: string;
@@ -42,18 +45,21 @@ export default function DoctorProfile() {
   const { doctorId } = useParams();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isPatient = user?.role === "patient";
 
-  const { data: doctor, isLoading } = useQuery<DoctorProfile>({
+  const { data: doctor, isLoading } = useQuery<DoctorProfileData>({
     queryKey: [`/api/doctors/${doctorId}`],
     enabled: !!doctorId,
   });
 
   const connectMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/doctors/connect", {
-        doctor_id: doctorId,
-        connection_type: "specialist",
+      const res = await apiRequest("/api/doctors/connect", {
+        method: "POST",
+        json: { doctor_id: doctorId, connection_type: "specialist" }
       });
+      return await res.json();
     },
     onSuccess: () => {
       toast({
@@ -67,6 +73,29 @@ export default function DoctorProfile() {
       toast({
         title: "Connection Failed",
         description: error.message || "Unable to connect with this doctor.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const assignDoctorMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post("/api/patient/assign-doctor", {
+        doctor_id: doctorId,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Doctor Assigned",
+        description: "This doctor has been assigned as your primary doctor.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/patient/profile/extended"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Assignment Failed",
+        description: error.response?.data?.detail || "Unable to assign this doctor.",
         variant: "destructive",
       });
     },
@@ -223,12 +252,29 @@ export default function DoctorProfile() {
 
             <Separator />
 
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
+              {isPatient && (
+                <Button
+                  onClick={() => assignDoctorMutation.mutate()}
+                  disabled={assignDoctorMutation.isPending}
+                  data-testid="button-assign-primary-doctor"
+                  className="flex-1"
+                  variant="default"
+                >
+                  {assignDoctorMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <UserCheck className="mr-2 h-4 w-4" />
+                  )}
+                  Assign as my primary doctor
+                </Button>
+              )}
               <Button
                 onClick={() => connectMutation.mutate()}
                 disabled={connectMutation.isPending}
                 data-testid="button-connect"
                 className="flex-1"
+                variant={isPatient ? "outline" : "default"}
               >
                 {connectMutation.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

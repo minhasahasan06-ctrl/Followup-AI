@@ -7,7 +7,7 @@ export default function WellnessSessionCardExample() {
         title="Morning Calm"
         duration="10 min"
         difficulty="Easy"
-        description="Start your day with gentle mindfulness meditation designed for immunocompromised patients"
+        description="Start your day with gentle mindfulness meditation designed for chronic care patients"
         type="meditation"
         recommended={true}
       />

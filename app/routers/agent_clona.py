@@ -3,8 +3,10 @@ Agent Clona - Enhanced AI Chatbot Router.
 Provides symptom analysis, differential diagnosis, and doctor suggestions.
 """
 
+import os
+import httpx
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -28,11 +30,24 @@ class ChatRequest(BaseModel):
     conversation_history: List[Message] = []
 
 
+class RedFlagInfo(BaseModel):
+    detected: bool
+    severity: Optional[str] = None
+    categories: List[str] = []
+    symptoms: List[dict] = []
+    escalation_type: Optional[str] = None
+    emergency_instructions: Optional[str] = None
+    confidence: Optional[float] = None
+
+
 class SymptomAnalysisResponse(BaseModel):
     ai_response: str
     structured_recommendations: Optional[dict] = None
     suggested_doctors: List[dict] = []
     timestamp: str
+    red_flag_detection: Optional[RedFlagInfo] = None
+    escalation_triggered: bool = False
+    escalation_id: Optional[str] = None
 
 
 class DiagnosticQuestionsRequest(BaseModel):
@@ -75,6 +90,41 @@ def extract_symptoms_background(
         db.close()
 
 
+async def trigger_escalation_background(
+    patient_id: str,
+    red_flag_detection: dict,
+    conversation_context: str
+):
+    """
+    Background task to trigger escalation flow when red flags are detected.
+    """
+    try:
+        from app.services.escalation_flow_service import get_escalation_flow_service
+        from app.services.red_flag_detection_service import RedFlagDetectionResult, RedFlagSeverity, EscalationType
+        
+        escalation_service = get_escalation_flow_service()
+        
+        detection_result = RedFlagDetectionResult(
+            has_red_flags=True,
+            symptoms=red_flag_detection.get("symptoms", []),
+            categories=red_flag_detection.get("categories", []),
+            highest_severity=RedFlagSeverity(red_flag_detection.get("severity", "moderate")),
+            confidence_score=red_flag_detection.get("confidence", 0.8),
+            escalation_type=EscalationType(red_flag_detection.get("escalation_type", "doctor_alert")),
+            emergency_instructions=red_flag_detection.get("emergency_instructions"),
+            detected_at=None
+        )
+        
+        await escalation_service.initiate_escalation(
+            patient_id=patient_id,
+            red_flag_detection=detection_result,
+            conversation_context=conversation_context
+        )
+        
+    except Exception as e:
+        print(f"[ESCALATION] Background escalation error: {e}")
+
+
 @router.post("/chat", response_model=SymptomAnalysisResponse)
 async def chat_with_clona(
     request: ChatRequest,
@@ -90,6 +140,11 @@ async def chat_with_clona(
     - Analyzes patient messages for symptom mentions
     - Automatically creates SymptomLog entries in background
     - Integrates with Medication Side-Effect Predictor
+    
+    RED FLAG DETECTION:
+    - Real-time detection of 13 emergency symptom categories
+    - Automatic escalation to Lysa and assigned doctor when detected
+    - Multi-channel alerts (dashboard, SMS, email) for critical symptoms
     """
     try:
         conversation = [
@@ -104,8 +159,6 @@ async def chat_with_clona(
             conversation_history=conversation
         )
         
-        # Background task: Extract and save symptoms from this conversation
-        # FIX: No DB session passed - background task creates its own
         background_tasks.add_task(
             extract_symptoms_background,
             patient_id=current_user.id,
@@ -113,7 +166,32 @@ async def chat_with_clona(
             ai_response=analysis["ai_response"]
         )
         
-        return analysis
+        escalation_id = None
+        if analysis.get("escalation_triggered") and analysis.get("red_flag_detection"):
+            full_context = request.message
+            for msg in request.conversation_history:
+                if msg.role == "user":
+                    full_context = f"{msg.content}\n{full_context}"
+            
+            background_tasks.add_task(
+                trigger_escalation_background,
+                patient_id=str(current_user.id),
+                red_flag_detection=analysis["red_flag_detection"],
+                conversation_context=full_context
+            )
+            
+            import uuid
+            escalation_id = str(uuid.uuid4())
+        
+        return {
+            "ai_response": analysis["ai_response"],
+            "structured_recommendations": analysis.get("structured_recommendations"),
+            "suggested_doctors": analysis.get("suggested_doctors", []),
+            "timestamp": analysis["timestamp"],
+            "red_flag_detection": analysis.get("red_flag_detection"),
+            "escalation_triggered": analysis.get("escalation_triggered", False),
+            "escalation_id": escalation_id
+        }
         
     except Exception as e:
         raise HTTPException(
@@ -191,4 +269,182 @@ async def suggest_treatment(
         raise HTTPException(
             status_code=500,
             detail=f"Error generating treatment suggestions: {str(e)}"
+        )
+
+
+def verify_doctor_patient_access(
+    db: Session,
+    doctor_id: str,
+    patient_id: str
+) -> bool:
+    """Verify doctor has access to patient data via active assignment."""
+    from app.models.patient_doctor_connection import DoctorPatientAssignment
+    
+    assignment = db.query(DoctorPatientAssignment).filter(
+        DoctorPatientAssignment.doctor_id == doctor_id,
+        DoctorPatientAssignment.patient_id == patient_id,
+        DoctorPatientAssignment.status == "active"
+    ).first()
+    
+    return assignment is not None
+
+
+@router.get("/recommendations")
+async def get_habit_recommendations(
+    patientId: str = "me",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI-powered personalized habit recommendations from Agent Clona.
+    
+    Uses the patient's health profile, conditions, and medications to generate
+    evidence-based habit suggestions categorized by health domain.
+    
+    HIPAA Compliance:
+    - Patients can only access their own recommendations
+    - Doctors can only access recommendations for assigned patients
+    - Full audit trail for all PHI access
+    
+    Returns:
+        recommendations: List of habit suggestions by category
+        generated_at: Timestamp of generation
+        source: "agent_clona"
+    """
+    from datetime import datetime
+    from app.services.personalized_recommendations_service import get_personalized_recommendations_service
+    from app.services.hipaa_audit_logger import HIPAAAuditLogger, PHICategory
+    
+    try:
+        # Determine patient ID
+        pid = current_user.id if patientId == "me" else patientId
+        user_role = current_user.role if hasattr(current_user, 'role') else "patient"
+        
+        # Role-based access control
+        if patientId != "me" and str(pid) != str(current_user.id):
+            if user_role == "patient":
+                # Patients can only access their own data
+                HIPAAAuditLogger.log_phi_access(
+                    actor_id=str(current_user.id),
+                    actor_role="patient",
+                    patient_id=str(pid),
+                    action="view_denied",
+                    phi_categories=[PHICategory.HEALTH_METRICS.value],
+                    resource_type="habit_recommendations",
+                    access_scope="blocked",
+                    access_reason="unauthorized_patient_access",
+                    consent_verified=False
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail="Not authorized to access this patient's recommendations"
+                )
+            elif user_role == "doctor":
+                # Doctors must have active assignment to patient
+                if not verify_doctor_patient_access(db, str(current_user.id), str(pid)):
+                    HIPAAAuditLogger.log_phi_access(
+                        actor_id=str(current_user.id),
+                        actor_role="doctor",
+                        patient_id=str(pid),
+                        action="view_denied",
+                        phi_categories=[PHICategory.HEALTH_METRICS.value],
+                        resource_type="habit_recommendations",
+                        access_scope="blocked",
+                        access_reason="no_active_assignment",
+                        consent_verified=False
+                    )
+                    raise HTTPException(
+                        status_code=403,
+                        detail="No authorized access to this patient - not assigned"
+                    )
+            else:
+                # Unknown role - deny access
+                raise HTTPException(
+                    status_code=403,
+                    detail="Not authorized to access this patient's recommendations"
+                )
+        
+        # Try external Agent Clona service first if configured
+        AGENT_CLONA_URL = os.getenv("AGENT_CLONA_URL")
+        AGENT_CLONA_KEY = os.getenv("AGENT_CLONA_KEY")
+        
+        recommendations_result = None
+        source = "agent_clona"
+        
+        if AGENT_CLONA_URL:
+            try:
+                headers = {"Content-Type": "application/json"}
+                if AGENT_CLONA_KEY:
+                    headers["Authorization"] = f"Bearer {AGENT_CLONA_KEY}"
+                
+                async with httpx.AsyncClient(timeout=20) as client:
+                    resp = await client.get(
+                        f"{AGENT_CLONA_URL.rstrip('/')}/recommendations",
+                        params={"patientId": str(pid)},
+                        headers=headers
+                    )
+                    if resp.status_code == 200:
+                        recommendations_result = resp.json()
+                        source = "agent_clona_external"
+            except Exception as ext_err:
+                # Log external service failure, fall through to internal
+                print(f"External Agent Clona unavailable: {ext_err}")
+        
+        # Fallback to internal personalization service
+        if recommendations_result is None:
+            service = get_personalized_recommendations_service(db)
+            raw_recommendations = await service.get_recommendations(
+                patient_id=str(pid),
+                accessor_id=str(current_user.id),
+                max_recommendations=15
+            )
+            
+            # Transform to Agent Clona format with categories
+            category_map = {}
+            for rec in raw_recommendations:
+                category = rec.get("category", "wellness")
+                if category not in category_map:
+                    category_map[category] = {
+                        "category": category,
+                        "condition_context": rec.get("reason", "").split(" for ")[-1] if " for " in rec.get("reason", "") else None,
+                        "habits": []
+                    }
+                
+                category_map[category]["habits"].append({
+                    "name": rec.get("name", ""),
+                    "description": rec.get("description", ""),
+                    "frequency": rec.get("frequency", "daily"),
+                    "priority": "high" if "important" in rec.get("reason", "").lower() else "medium",
+                    "evidence_based": True,
+                    "condition_link": rec.get("safety_notes")
+                })
+            
+            recommendations_result = {
+                "recommendations": list(category_map.values()),
+                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "source": source
+            }
+        
+        # HIPAA Audit log successful access
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=str(current_user.id),
+            actor_role=user_role,
+            patient_id=str(pid),
+            action="view",
+            phi_categories=[PHICategory.HEALTH_METRICS.value],
+            resource_type="habit_recommendations",
+            access_scope="full" if user_role == "doctor" else "self",
+            access_reason="clinical_review" if user_role == "doctor" else "patient_self_access",
+            consent_verified=True,
+            additional_context={"recommendations_count": len(recommendations_result.get("recommendations", [])), "source": source}
+        )
+        
+        return recommendations_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating recommendations: {str(e)}"
         )

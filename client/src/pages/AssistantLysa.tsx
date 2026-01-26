@@ -42,7 +42,7 @@ export default function AssistantLysa() {
                 Assistant Lysa
               </h1>
               <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
-                Your intelligent clinical companion that transforms how you care for immunocompromised patients. 
+                Your intelligent clinical companion that transforms how you care for chronic care patients. 
                 Lysa analyzes patient data, identifies patterns, and provides evidence-based insights—so you can 
                 focus on what matters most: patient care.
               </p>
@@ -108,7 +108,7 @@ export default function AssistantLysa() {
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4">How Assistant Lysa Transforms Your Practice</h2>
             <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-              Designed specifically for physicians managing immunocompromised patients, Lysa combines 
+              Designed specifically for physicians managing chronic care patients, Lysa combines 
               AI intelligence with clinical expertise to elevate care quality.
             </p>
           </div>
@@ -295,7 +295,7 @@ export default function AssistantLysa() {
                 <div className="text-5xl font-bold text-primary mb-2">40%</div>
                 <p className="text-sm text-muted-foreground mb-4">Faster Detection</p>
                 <p className="text-sm">
-                  Early identification of infection patterns in immunocompromised patients
+                  Early identification of infection patterns in chronic care patients
                 </p>
               </CardContent>
             </Card>

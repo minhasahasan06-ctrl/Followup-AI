@@ -20,9 +20,7 @@ import {
   Wallet as WalletIcon,
   Gift,
   ScanText,
-  AlertTriangle,
   Shield,
-  MapPin,
   Target,
   Headphones,
   Search,
@@ -32,6 +30,7 @@ import {
   Bell,
   TrendingUp,
   Brain,
+  Microscope,
 } from "lucide-react";
 import {
   Sidebar,
@@ -63,8 +62,8 @@ const patientItems = [
     badge: "History",
   },
   {
-    title: "Chat with Agent Clona",
-    url: "/chat",
+    title: "Agent Clona",
+    url: "/agent-hub",
     icon: Bot,
     badge: "AI",
   },
@@ -87,15 +86,10 @@ const patientItems = [
     badge: "AI",
   },
   {
-    title: "Prescriptions",
-    url: "/prescriptions",
+    title: "Patient Records",
+    url: "/patient-records",
     icon: FileText,
-  },
-  {
-    title: "Drug Interactions",
-    url: "/drug-interactions",
-    icon: AlertTriangle,
-    badge: "AI",
+    badge: "Unified",
   },
   {
     title: "My Doctors",
@@ -108,20 +102,21 @@ const patientItems = [
     icon: Wind,
   },
   {
-    title: "Counseling",
-    url: "/counseling",
-    icon: MessageCircle,
-  },
-  {
     title: "App Connections",
     url: "/consents",
     icon: LinkIcon,
   },
   {
-    title: "Medical Files",
-    url: "/medical-files",
-    icon: FileText,
-    badge: "OCR",
+    title: "Research Consent",
+    url: "/research-consent",
+    icon: Microscope,
+    badge: "HIPAA",
+  },
+  {
+    title: "Privacy & Research",
+    url: "/privacy-research",
+    icon: Shield,
+    badge: "NON-BAA",
   },
   {
     title: "Wearable Devices",
@@ -129,16 +124,10 @@ const patientItems = [
     icon: Watch,
   },
   {
-    title: "Immune Monitoring",
-    url: "/immune-monitoring",
+    title: "Risk & Exposures",
+    url: "/risk-exposures",
     icon: Shield,
-    badge: "AI",
-  },
-  {
-    title: "Environmental Risk",
-    url: "/environmental-risk",
-    icon: MapPin,
-    badge: "LIVE",
+    badge: "Auto",
   },
   {
     title: "Referrals",
@@ -159,32 +148,20 @@ const patientItems = [
 
 const doctorItems = [
   {
-    title: "Assistant Lysa",
+    title: "Dashboard",
     url: "/",
-    icon: Headphones,
-    badge: "AI",
+    icon: Home,
   },
   {
-    title: "Doctor Wellness",
-    url: "/doctor-wellness",
-    icon: Heart,
+    title: "Assistant Lysa",
+    url: "/agent-hub",
+    icon: Headphones,
     badge: "AI",
   },
   {
     title: "Research Center",
     url: "/research",
     icon: Beaker,
-  },
-  {
-    title: "Chat with Assistant Lysa",
-    url: "/chat",
-    icon: Bot,
-    badge: "AI",
-  },
-  {
-    title: "Counseling",
-    url: "/counseling",
-    icon: MessageCircle,
   },
   {
     title: "Referrals",
@@ -203,11 +180,37 @@ const doctorItems = [
   },
 ];
 
+const adminItems = [
+  {
+    title: "ML Training",
+    url: "/ml-training",
+    icon: Brain,
+    badge: "Admin",
+  },
+  {
+    title: "Tinker AI",
+    url: "/tinker",
+    icon: Bot,
+    badge: "NON-BAA",
+  },
+  {
+    title: "Security",
+    url: "/security/2fa",
+    icon: Shield,
+  },
+  {
+    title: "Profile",
+    url: "/profile",
+    icon: User,
+  },
+];
+
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuth();
   const isDoctor = user?.role === "doctor";
-  const menuItems = isDoctor ? doctorItems : patientItems;
+  const isAdmin = user?.role === "admin";
+  const menuItems = isAdmin ? adminItems : isDoctor ? doctorItems : patientItems;
 
   const handleLogout = () => {
     logout();
@@ -224,7 +227,7 @@ export function AppSidebar() {
           <div>
             <h2 className="text-base font-semibold">Followup AI</h2>
             <p className="text-xs text-muted-foreground">
-              {isDoctor ? "Doctor Portal" : "Patient Portal"}
+              {isAdmin ? "Admin Console" : isDoctor ? "Doctor Portal" : "Patient Portal"}
             </p>
           </div>
         </div>

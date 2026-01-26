@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, User, FileText, Plus, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Calendar, Clock, User, FileText, Plus, CheckCircle, XCircle, AlertCircle, Video } from "lucide-react";
+import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
@@ -74,7 +75,8 @@ export default function ConsultationRequests() {
       symptoms?: string;
       urgency?: string;
     }) => {
-      return await apiRequest("POST", "/api/v1/consultations/patient/request", data);
+      const res = await apiRequest("/api/v1/consultations/patient/request", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/consultations/patient/my-requests"] });
@@ -346,15 +348,29 @@ export default function ConsultationRequests() {
                   </div>
                 </div>
 
-                {request.scheduled_for && request.status === "approved" && (
+                {request.status === "approved" && (
                   <div className="p-4 bg-muted rounded-md">
-                    <div className="flex items-center gap-2 text-sm font-medium mb-1">
-                      <CheckCircle className="h-4 w-4 text-primary" />
-                      Scheduled For:
+                    <div className="flex items-center justify-between">
+                      <div>
+                        {request.scheduled_for && (
+                          <>
+                            <div className="flex items-center gap-2 text-sm font-medium mb-1">
+                              <CheckCircle className="h-4 w-4 text-primary" />
+                              Scheduled For:
+                            </div>
+                            <p className="text-sm font-semibold" data-testid={`text-scheduled-${request.id}`}>
+                              {new Date(request.scheduled_for).toLocaleString()}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      <Link href={`/video-consultation/${request.id}`}>
+                        <Button data-testid={`button-video-call-${request.id}`}>
+                          <Video className="h-4 w-4 mr-2" />
+                          Join Video Call
+                        </Button>
+                      </Link>
                     </div>
-                    <p className="text-sm font-semibold" data-testid={`text-scheduled-${request.id}`}>
-                      {new Date(request.scheduled_for).toLocaleString()}
-                    </p>
                   </div>
                 )}
               </CardContent>

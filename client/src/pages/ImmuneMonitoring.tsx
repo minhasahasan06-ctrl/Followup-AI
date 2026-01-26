@@ -78,7 +78,8 @@ export default function ImmuneMonitoring() {
 
   const syncBiomarkersMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/immune/biomarkers/sync");
+      const res = await apiRequest("/api/immune/biomarkers/sync", { method: "POST", json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/immune/biomarkers"] });
@@ -99,7 +100,8 @@ export default function ImmuneMonitoring() {
 
   const dismissAlertMutation = useMutation({
     mutationFn: async (alertId: number) => {
-      return await apiRequest("POST", `/api/risk/alerts/${alertId}/dismiss`);
+      const res = await apiRequest(`/api/risk/alerts/${alertId}/dismiss`, { method: "POST", json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/risk/alerts"] });

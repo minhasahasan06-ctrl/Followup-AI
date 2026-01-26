@@ -1,0 +1,122 @@
+{
+  "H001": {
+    "name": "Morning Medication",
+    "description": "Take morning medications as prescribed",
+    "category": "medication",
+    "frequency_templates": ["daily", "weekdays"]
+  },
+  "H002": {
+    "name": "Evening Medication",
+    "description": "Take evening medications as prescribed",
+    "category": "medication",
+    "frequency_templates": ["daily", "weekdays"]
+  },
+  "H003": {
+    "name": "Blood Pressure Check",
+    "description": "Measure and log blood pressure",
+    "category": "vitals",
+    "frequency_templates": ["daily", "twice_daily", "weekly"]
+  },
+  "H004": {
+    "name": "Blood Glucose Check",
+    "description": "Check and log blood glucose levels",
+    "category": "vitals",
+    "frequency_templates": ["daily", "twice_daily", "before_meals"]
+  },
+  "H005": {
+    "name": "Weight Tracking",
+    "description": "Weigh yourself and log weight",
+    "category": "vitals",
+    "frequency_templates": ["daily", "weekly"]
+  },
+  "H006": {
+    "name": "Symptom Journal",
+    "description": "Record any symptoms or changes in health",
+    "category": "tracking",
+    "frequency_templates": ["daily", "as_needed"]
+  },
+  "H007": {
+    "name": "Hydration",
+    "description": "Drink recommended amount of water",
+    "category": "wellness",
+    "frequency_templates": ["daily"]
+  },
+  "H008": {
+    "name": "Light Exercise",
+    "description": "Engage in light physical activity",
+    "category": "exercise",
+    "frequency_templates": ["daily", "3_times_weekly", "weekdays"]
+  },
+  "H009": {
+    "name": "Stretching",
+    "description": "Complete stretching routine",
+    "category": "exercise",
+    "frequency_templates": ["daily", "twice_daily"]
+  },
+  "H010": {
+    "name": "Walking",
+    "description": "Take a walk for recommended duration",
+    "category": "exercise",
+    "frequency_templates": ["daily", "weekdays"]
+  },
+  "H011": {
+    "name": "Meditation",
+    "description": "Practice mindfulness or meditation",
+    "category": "mental_health",
+    "frequency_templates": ["daily", "twice_daily"]
+  },
+  "H012": {
+    "name": "Sleep Hygiene",
+    "description": "Follow sleep schedule and hygiene practices",
+    "category": "wellness",
+    "frequency_templates": ["daily"]
+  },
+  "H013": {
+    "name": "Meal Logging",
+    "description": "Log meals and nutrition intake",
+    "category": "nutrition",
+    "frequency_templates": ["daily", "per_meal"]
+  },
+  "H014": {
+    "name": "Wound Care",
+    "description": "Complete wound care routine",
+    "category": "care",
+    "frequency_templates": ["daily", "twice_daily", "as_needed"]
+  },
+  "H015": {
+    "name": "Hand Hygiene",
+    "description": "Practice thorough hand washing",
+    "category": "infection_control",
+    "frequency_templates": ["multiple_daily"]
+  },
+  "H016": {
+    "name": "Temperature Check",
+    "description": "Check and log body temperature",
+    "category": "vitals",
+    "frequency_templates": ["daily", "twice_daily"]
+  },
+  "H017": {
+    "name": "Oxygen Saturation Check",
+    "description": "Measure and log SpO2 levels",
+    "category": "vitals",
+    "frequency_templates": ["daily", "as_needed"]
+  },
+  "H018": {
+    "name": "Breathing Exercises",
+    "description": "Complete prescribed breathing exercises",
+    "category": "therapy",
+    "frequency_templates": ["daily", "twice_daily", "3_times_daily"]
+  },
+  "H019": {
+    "name": "Mood Check-in",
+    "description": "Record mood and emotional state",
+    "category": "mental_health",
+    "frequency_templates": ["daily", "twice_daily"]
+  },
+  "H020": {
+    "name": "Social Connection",
+    "description": "Connect with friends, family, or support group",
+    "category": "social",
+    "frequency_templates": ["daily", "weekly"]
+  }
+}

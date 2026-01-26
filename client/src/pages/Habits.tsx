@@ -4,6 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { HabitGamificationPanel } from "@/components/habits/HabitGamificationPanel";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -23,8 +24,11 @@ import {
   Meh, Frown, SmilePlus, Calendar, Clock, Bell, Brain, MessageSquare,
   Users, Award, BookOpen, AlertTriangle, Zap, Flower2, TreeDeciduous,
   Send, RefreshCw, ChevronRight, ChevronDown, X, BarChart3, LineChart,
-  Shield, AlertCircle, HelpCircle, Loader2
+  Shield, AlertCircle, HelpCircle, Loader2, Wand2
 } from "lucide-react";
+import { useHabitSuggestions, type HabitSuggestion } from "@/hooks/usePatientAI";
+import { HabitSuggestionsModal } from "@/components/ai/HabitSuggestionsModal";
+import { useAuth } from "@/hooks/useAuth";
 import { Progress } from "@/components/ui/progress";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, parseISO, isToday } from "date-fns";
 
@@ -221,21 +225,81 @@ const getGrowthStageVisual = (stage: string, points: number) => {
 
 export default function Habits() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedHabitForCompletion, setSelectedHabitForCompletion] = useState<Habit | null>(null);
   const [isQuitPlanDialogOpen, setIsQuitPlanDialogOpen] = useState(false);
   const [isJournalDialogOpen, setIsJournalDialogOpen] = useState(false);
   const [isMoodDialogOpen, setIsMoodDialogOpen] = useState(false);
+  const [isAISuggestionsOpen, setIsAISuggestionsOpen] = useState(false);
   const [coachMessage, setCoachMessage] = useState("");
   const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([]);
+  const [coachPersonality, setCoachPersonality] = useState<"supportive" | "motivational" | "analytical" | "tough_love" | "mindful">("supportive");
+  const [coachSessionId, setCoachSessionId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [activeCbtSession, setActiveCbtSession] = useState<any>(null);
   const [cbtResponse, setCbtResponse] = useState("");
+  
+  const habitSuggestionsMutation = useHabitSuggestions(user?.id || '');
+  
+  const handleOpenAISuggestions = async () => {
+    if (!user?.id) {
+      toast({
+        title: 'Sign in required',
+        description: 'Please sign in to get AI-powered habit suggestions.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsAISuggestionsOpen(true);
+    try {
+      await habitSuggestionsMutation.mutateAsync({});
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'Failed to load AI suggestions. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  const handleAddSuggestedHabit = async (habit: HabitSuggestion) => {
+    try {
+      await apiRequest('/api/habits', {
+        method: 'POST',
+        json: {
+          name: habit.name,
+          description: habit.description,
+          category: habit.category,
+          frequency: habit.frequency,
+        }
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/habits'] });
+      toast({
+        title: 'Habit added',
+        description: `"${habit.name}" has been added to your habits.`,
+      });
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'Failed to add habit. Please try again.',
+        variant: 'destructive',
+      });
+      throw new Error('Failed to add habit');
+    }
+  };
 
   // Fetch habits from Express backend
   const { data: habits = [], isLoading: habitsLoading, error: habitsError } = useQuery<Habit[]>({
-    queryKey: ['/api/v1/ml/habits'],
+    queryKey: ['/api/habits'],
+    queryFn: async () => {
+      const res = await apiRequest('/api/habits');
+      if (!res.ok) throw new Error('Failed to fetch habits');
+      const json = await res.json();
+      // Normalize response: backend returns {habits: [...], total: n}
+      return Array.isArray(json) ? json : json.habits || [];
+    },
     retry: 1,
   });
 
@@ -340,15 +404,46 @@ export default function Habits() {
     retry: 1,
   });
 
-  // Fetch AI recommendations
-  const { data: recommendationsData } = useQuery({
-    queryKey: ['/api/habits/recommendations'],
+  // Fetch AI recommendations from Agent Clona with fallback
+  const { data: recommendationsData, isLoading: isLoadingRecommendations } = useQuery({
+    queryKey: ['/api/agent-clona/recommendations'],
     queryFn: async () => {
-      const res = await fetch('/api/habits/recommendations?user_id=current&status=pending');
-      if (!res.ok) return { recommendations: [] };
-      return res.json();
+      try {
+        // Try Agent Clona first
+        const res = await fetch('/api/agent-clona/recommendations?patientId=me');
+        if (res.ok) {
+          const data = await res.json();
+          // Transform Agent Clona format to expected format
+          const flattened: any[] = [];
+          for (const category of data.recommendations || []) {
+            for (const habit of category.habits || []) {
+              flattened.push({
+                id: `${category.category}-${habit.name}`.replace(/\s+/g, '-').toLowerCase(),
+                title: habit.name,
+                description: habit.description,
+                category: category.category,
+                priority: habit.priority,
+                evidence_based: habit.evidence_based,
+              });
+            }
+          }
+          return { recommendations: flattened, source: 'agent_clona' };
+        }
+        // Fallback to legacy endpoint
+        const fallbackRes = await fetch('/api/habits/recommendations?user_id=current&status=pending');
+        if (fallbackRes.ok) return fallbackRes.json();
+        return { recommendations: [] };
+      } catch (error) {
+        // Fallback on network error
+        try {
+          const fallbackRes = await fetch('/api/habits/recommendations?user_id=current&status=pending');
+          if (fallbackRes.ok) return fallbackRes.json();
+        } catch {}
+        return { recommendations: [] };
+      }
     },
     retry: 1,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Create habit form
@@ -368,10 +463,11 @@ export default function Habits() {
   // Create habit mutation
   const createHabitMutation = useMutation({
     mutationFn: async (data: z.infer<typeof createHabitSchema>) => {
-      return await apiRequest('POST', '/api/v1/ml/habits', data);
+      const res = await apiRequest('/api/habits', { method: 'POST', json: data });
+      return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/v1/ml/habits'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/habits'] });
       setIsCreateDialogOpen(false);
       createHabitForm.reset();
       toast({
@@ -401,10 +497,11 @@ export default function Habits() {
   // Complete habit mutation
   const completeHabitMutation = useMutation({
     mutationFn: async ({ habitId, data }: { habitId: string; data: any }) => {
-      return await apiRequest('POST', `/api/v1/ml/habits/${habitId}/complete`, data);
+      const res = await apiRequest(`/api/habits/${habitId}/complete`, { method: 'POST', json: data });
+      return await res.json();
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/v1/ml/habits'] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/habits'] });
       queryClient.invalidateQueries({ queryKey: ['/api/habits/streaks'] });
       queryClient.invalidateQueries({ queryKey: ['/api/habits/rewards'] });
       setSelectedHabitForCompletion(null);
@@ -532,18 +629,25 @@ export default function Habits() {
     },
   });
 
-  // Coach chat mutation
+  // Coach chat mutation - using enhanced endpoint with personality and session memory
   const coachChatMutation = useMutation({
     mutationFn: async (message: string) => {
-      const res = await fetch('/api/habits/coach/chat?user_id=current', {
+      const res = await fetch('/api/habits/coach/enhanced-chat?user_id=current', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ 
+          message, 
+          personality: coachPersonality,
+          session_id: coachSessionId 
+        }),
       });
       if (!res.ok) throw new Error('Failed to send message');
       return res.json();
     },
     onSuccess: (data) => {
+      if (data.session_id && !coachSessionId) {
+        setCoachSessionId(data.session_id);
+      }
       setCoachMessages(prev => [
         ...prev,
         { id: Date.now().toString(), role: 'user', content: coachMessage, createdAt: new Date().toISOString() },
@@ -635,8 +739,9 @@ export default function Habits() {
       return res.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/agent-clona/recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['/api/habits/recommendations'] });
-      toast({ title: "Recommendations Generated", description: "Check the insights tab for personalized tips." });
+      toast({ title: "Recommendations Generated", description: "Check the overview for personalized AI tips." });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to generate recommendations", variant: "destructive" });
@@ -797,6 +902,20 @@ export default function Habits() {
           <p className="text-muted-foreground">Build healthy habits with AI-powered insights</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button 
+            onClick={handleOpenAISuggestions} 
+            variant="outline" 
+            size="sm"
+            disabled={habitSuggestionsMutation.isPending}
+            data-testid="button-ai-optimize"
+          >
+            {habitSuggestionsMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Wand2 className="h-4 w-4 mr-1" />
+            )}
+            AI Optimize
+          </Button>
           <Button onClick={() => setIsMoodDialogOpen(true)} variant="outline" size="sm" data-testid="button-log-mood">
             <Smile className="h-4 w-4 mr-1" />
             Log Mood
@@ -970,10 +1089,24 @@ export default function Habits() {
                   <Target className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="font-semibold text-lg">No habits yet</h3>
                   <p className="text-muted-foreground mb-4">Start building healthy routines today!</p>
-                  <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-first-habit">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Create Your First Habit
-                  </Button>
+                  <div className="flex flex-col gap-3 items-center">
+                    <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-first-habit">
+                      <Plus className="h-4 w-4 mr-1" />
+                      Create Your First Habit
+                    </Button>
+                    {isLoadingRecommendations && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading AI suggestions...
+                      </div>
+                    )}
+                    {recommendationsData?.recommendations?.length > 0 && (
+                      <p className="text-sm text-primary">
+                        <Sparkles className="inline h-4 w-4 mr-1" />
+                        {recommendationsData.recommendations.length} AI suggestions available below
+                      </p>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -981,22 +1114,60 @@ export default function Habits() {
 
           {/* AI Recommendations */}
           {recommendationsData?.recommendations?.length > 0 && (
-            <Card>
+            <Card data-testid="card-ai-recommendations">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-primary" />
-                  AI Recommendations
+                  AI-Powered Suggestions
+                  {recommendationsData.source === 'agent_clona' && (
+                    <Badge variant="secondary" className="text-xs">Agent Clona</Badge>
+                  )}
                 </CardTitle>
+                <CardDescription>Personalized habit recommendations based on your health profile</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {recommendationsData.recommendations.slice(0, 3).map((rec: any) => (
-                    <div key={rec.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                      <Zap className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-medium">{rec.title}</div>
-                        <p className="text-sm text-muted-foreground">{rec.description}</p>
+                  {recommendationsData.recommendations.slice(0, 5).map((rec: any) => (
+                    <div key={rec.id} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-muted/50 hover-elevate" data-testid={`recommendation-${rec.id}`}>
+                      <div className="flex items-start gap-3 flex-1">
+                        <div className="p-2 rounded-lg bg-primary/10">
+                          <Zap className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{rec.title}</span>
+                            {rec.evidence_based && (
+                              <Badge variant="outline" className="text-xs">Evidence-based</Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">{rec.description}</p>
+                          {rec.category && (
+                            <Badge variant="secondary" className="mt-2 text-xs capitalize">{rec.category}</Badge>
+                          )}
+                        </div>
                       </div>
+                      <Button 
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          createHabitForm.reset({
+                            name: rec.title,
+                            description: rec.description || "",
+                            category: rec.category === 'wellness' || rec.category === 'nutrition' || rec.category === 'exercise' || rec.category === 'medication' || rec.category === 'sleep' 
+                              ? rec.category as any 
+                              : 'health',
+                            frequency: "daily",
+                            goalCount: 1,
+                            reminderEnabled: true,
+                            reminderTime: "09:00",
+                          });
+                          setIsCreateDialogOpen(true);
+                        }}
+                        data-testid={`button-add-recommendation-${rec.id}`}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -1082,9 +1253,23 @@ export default function Habits() {
         <TabsContent value="coach" className="space-y-4">
           <Card className="h-[600px] flex flex-col">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Brain className="h-5 w-5 text-primary" />
-                AI Habit Coach
+              <CardTitle className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-primary" />
+                  AI Habit Coach
+                </div>
+                <Select value={coachPersonality} onValueChange={(v: any) => setCoachPersonality(v)}>
+                  <SelectTrigger className="w-[140px]" data-testid="select-coach-personality">
+                    <SelectValue placeholder="Personality" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="supportive">Supportive</SelectItem>
+                    <SelectItem value="motivational">Motivational</SelectItem>
+                    <SelectItem value="analytical">Analytical</SelectItem>
+                    <SelectItem value="tough_love">Tough Love</SelectItem>
+                    <SelectItem value="mindful">Mindful</SelectItem>
+                  </SelectContent>
+                </Select>
               </CardTitle>
               <CardDescription>
                 Get personalized advice, motivation, and CBT techniques
@@ -1489,7 +1674,10 @@ export default function Habits() {
 
         {/* Rewards Tab */}
         <TabsContent value="rewards" className="space-y-4">
-          {renderRewardsVisualization()}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <HabitGamificationPanel />
+            {renderRewardsVisualization()}
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -1949,6 +2137,17 @@ export default function Habits() {
           </Form>
         </DialogContent>
       </Dialog>
+      
+      {/* AI Habit Suggestions Modal */}
+      <HabitSuggestionsModal
+        open={isAISuggestionsOpen}
+        onOpenChange={setIsAISuggestionsOpen}
+        suggestions={habitSuggestionsMutation.data?.suggestions || []}
+        experienceId={habitSuggestionsMutation.data?.experience_id || ''}
+        patientId={user?.id || ''}
+        isLoading={habitSuggestionsMutation.isPending}
+        onAddHabit={handleAddSuggestedHabit}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -46,8 +49,19 @@ import {
   X,
   Edit3,
   MessageSquare,
+  Infinity,
+  Timer,
+  ArrowRightLeft,
+  Stethoscope,
+  Shield,
+  Ban,
+  ClipboardList,
+  Brain,
+  Loader2,
+  Save,
+  Trash2,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import type { User as UserType, Prescription, Drug, DosageChangeRequest } from "@shared/schema";
 
 interface DrugInteractionCheck {
@@ -68,6 +82,44 @@ interface PatientMedication {
   dosage: string;
   frequency: string;
   status: string;
+}
+
+interface SOAPNote {
+  id: string;
+  patientId: string;
+  doctorId: string;
+  encounterDate: string;
+  chiefComplaint?: string;
+  subjective?: string;
+  historyPresentIllness?: string;
+  reviewOfSystems?: Record<string, any>;
+  objective?: string;
+  vitalSigns?: Record<string, any>;
+  physicalExam?: string;
+  labResults?: Array<Record<string, any>>;
+  assessment?: string;
+  primaryDiagnosis?: string;
+  primaryIcd10?: string;
+  secondaryDiagnoses?: Array<{ diagnosis: string; icd10: string }>;
+  differentialDiagnoses?: string[];
+  plan?: string;
+  medicationsPrescribed?: Array<Record<string, any>>;
+  proceduresOrdered?: string[];
+  referrals?: string[];
+  patientEducation?: string;
+  followUpInstructions?: string;
+  followUpDate?: string;
+  linkedAppointmentId?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ICD10Suggestion {
+  code: string;
+  description: string;
+  confidence: number;
+  category?: string;
 }
 
 export default function Prescriptions() {
@@ -98,6 +150,32 @@ export default function Prescriptions() {
     dosageInstructions: "",
     notes: "",
     startDate: format(new Date(), "yyyy-MM-dd"),
+    specialty: "",
+    isContinuous: false,
+    durationDays: "",
+    supersedes: "",
+  });
+
+  const [showSupersessionDialog, setShowSupersessionDialog] = useState(false);
+  const [supersessionCandidates, setSupersessionCandidates] = useState<any[]>([]);
+  const [conflictResponse, setConflictResponse] = useState<{ id: string; response: string; notes: string } | null>(null);
+
+  // SOAP Notes state
+  const [soapNotePatient, setSoapNotePatient] = useState<string>("");
+  const [selectedSoapNote, setSelectedSoapNote] = useState<SOAPNote | null>(null);
+  const [icd10Suggestions, setIcd10Suggestions] = useState<ICD10Suggestion[]>([]);
+  const [icd10Loading, setIcd10Loading] = useState(false);
+  const [soapForm, setSoapForm] = useState({
+    chiefComplaint: "",
+    subjective: "",
+    historyPresentIllness: "",
+    objective: "",
+    physicalExam: "",
+    assessment: "",
+    primaryDiagnosis: "",
+    primaryIcd10: "",
+    plan: "",
+    followUpInstructions: "",
   });
 
   const { data: patients, isLoading: patientsLoading } = useQuery<UserType[]>({
@@ -147,6 +225,185 @@ export default function Prescriptions() {
     enabled: isDoctor && !!selectedPatient,
   });
 
+  interface MedicationConflict {
+    id: string;
+    patientId: string;
+    medication1Id: string;
+    medication2Id: string;
+    doctor1Id: string;
+    doctor2Id: string;
+    specialty1: string;
+    specialty2: string;
+    conflictType: string;
+    severity: string;
+    description: string;
+    status: 'pending' | 'resolved';
+    doctor1Response?: string;
+    doctor2Response?: string;
+    resolution?: string;
+    createdAt: string;
+    medication1Name?: string;
+    medication2Name?: string;
+    patientName?: string;
+  }
+
+  const { data: pendingConflicts, isLoading: conflictsLoading } = useQuery<MedicationConflict[]>({
+    queryKey: ["/api/doctor/medication-conflicts/pending"],
+    enabled: isDoctor,
+  });
+
+  // SOAP Notes queries
+  const { data: soapNotes, isLoading: soapNotesLoading } = useQuery<SOAPNote[]>({
+    queryKey: ["/api/v1/rx-builder/soap-notes", soapNotePatient],
+    queryFn: async () => {
+      if (!soapNotePatient) return [];
+      const res = await fetch(`/api/v1/rx-builder/soap-notes?patient_id=${soapNotePatient}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isDoctor && !!soapNotePatient,
+  });
+
+  const createSoapNoteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("/api/v1/rx-builder/soap-notes", {
+        method: "POST",
+        json: {
+          patient_id: soapNotePatient,
+          encounter_date: new Date().toISOString(),
+          chief_complaint: soapForm.chiefComplaint,
+          subjective: soapForm.subjective,
+          history_present_illness: soapForm.historyPresentIllness,
+          objective: soapForm.objective,
+          physical_exam: soapForm.physicalExam,
+          assessment: soapForm.assessment,
+          primary_diagnosis: soapForm.primaryDiagnosis,
+          primary_icd10: soapForm.primaryIcd10,
+          plan: soapForm.plan,
+          follow_up_instructions: soapForm.followUpInstructions,
+        }
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/rx-builder/soap-notes", soapNotePatient] });
+      resetSoapForm();
+      toast({
+        title: "SOAP Note Created",
+        description: "Clinical documentation saved successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create SOAP note",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const getIcd10SuggestionsMutation = useMutation({
+    mutationFn: async (symptoms: string) => {
+      setIcd10Loading(true);
+      const res = await apiRequest("/api/v1/rx-builder/icd10/suggest", {
+        method: "POST",
+        json: { symptoms, include_related: true }
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setIcd10Suggestions(data.suggestions || []);
+      setIcd10Loading(false);
+    },
+    onError: () => {
+      setIcd10Loading(false);
+      toast({
+        title: "Error",
+        description: "Failed to get ICD-10 suggestions",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resetSoapForm = () => {
+    setSoapForm({
+      chiefComplaint: "",
+      subjective: "",
+      historyPresentIllness: "",
+      objective: "",
+      physicalExam: "",
+      assessment: "",
+      primaryDiagnosis: "",
+      primaryIcd10: "",
+      plan: "",
+      followUpInstructions: "",
+    });
+    setSelectedSoapNote(null);
+    setIcd10Suggestions([]);
+  };
+
+  const handleGetIcd10Suggestions = () => {
+    const symptoms = [soapForm.chiefComplaint, soapForm.subjective, soapForm.assessment]
+      .filter(Boolean)
+      .join(". ");
+    if (symptoms.length > 5) {
+      getIcd10SuggestionsMutation.mutate(symptoms);
+    }
+  };
+
+  const handleSelectIcd10 = (suggestion: ICD10Suggestion) => {
+    setSoapForm(prev => ({
+      ...prev,
+      primaryDiagnosis: suggestion.description,
+      primaryIcd10: suggestion.code,
+    }));
+  };
+
+  const respondToConflictMutation = useMutation({
+    mutationFn: async ({ conflictId, response, notes }: { conflictId: string; response: string; notes: string }) => {
+      const res = await apiRequest(`/api/doctor/medication-conflicts/${conflictId}/respond`, {
+        method: "POST",
+        json: { response, notes }
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctor/medication-conflicts/pending"] });
+      setConflictResponse(null);
+      if (data.resolved) {
+        toast({
+          title: "Conflict Resolved",
+          description: "Both doctors agreed. The medications are now active.",
+        });
+      } else {
+        toast({
+          title: "Response Recorded",
+          description: "Waiting for the other doctor to respond.",
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to submit response",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const checkSupersessionMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/medications/supersession-check?patientId=${selectedPatient}&specialty=${prescriptionForm.specialty}`, { method: "GET" });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.supersessionCandidates && data.supersessionCandidates.length > 0) {
+        setSupersessionCandidates(data.supersessionCandidates);
+        setShowSupersessionDialog(true);
+      }
+    },
+  });
+
   const { data: myMedications } = useQuery<PatientMedication[]>({
     queryKey: ["/api/medications"],
     enabled: !isDoctor,
@@ -154,10 +411,9 @@ export default function Prescriptions() {
 
   const checkInteractionsMutation = useMutation({
     mutationFn: async (drugName: string) => {
-      const res = await apiRequest("POST", "/api/drug-interactions/analyze", {
-        drugName,
-        patientId: selectedPatient,
-        createAlerts: false,
+      const res = await apiRequest("/api/drug-interactions/analyze", {
+        method: "POST",
+        json: { drugName, patientId: selectedPatient, createAlerts: false }
       });
       return res.json();
     },
@@ -178,26 +434,47 @@ export default function Prescriptions() {
 
   const createPrescriptionMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/prescriptions", {
-        patientId: selectedPatient,
-        drugId: selectedDrug?.id,
-        rxcui: selectedDrug?.rxcui,
-        medicationName: prescriptionForm.medicationName,
-        dosage: prescriptionForm.dosage,
-        frequency: prescriptionForm.frequency,
-        quantity: parseInt(prescriptionForm.quantity) || null,
-        refills: parseInt(prescriptionForm.refills) || 0,
-        dosageInstructions: prescriptionForm.dosageInstructions || null,
-        notes: prescriptionForm.notes || null,
-        startDate: new Date(prescriptionForm.startDate),
+      const res = await apiRequest("/api/prescriptions", {
+        method: "POST",
+        json: {
+          patientId: selectedPatient,
+          drugId: selectedDrug?.id,
+          rxcui: selectedDrug?.rxcui,
+          medicationName: prescriptionForm.medicationName,
+          dosage: prescriptionForm.dosage,
+          frequency: prescriptionForm.frequency,
+          quantity: parseInt(prescriptionForm.quantity) || null,
+          refills: parseInt(prescriptionForm.refills) || 0,
+          dosageInstructions: prescriptionForm.dosageInstructions || null,
+          notes: prescriptionForm.notes || null,
+          startDate: new Date(prescriptionForm.startDate),
+          specialty: prescriptionForm.specialty || null,
+          isContinuous: prescriptionForm.isContinuous,
+          durationDays: prescriptionForm.isContinuous ? null : (parseInt(prescriptionForm.durationDays) || null),
+          intendedStartDate: prescriptionForm.startDate ? new Date(prescriptionForm.startDate) : null,
+          supersedes: prescriptionForm.supersedes || null,
+        }
       });
       return res.json();
     },
-    onSuccess: () => {
-      toast({
-        title: "Prescription Created",
-        description: "The prescription has been sent to the patient",
-      });
+    onSuccess: (data) => {
+      if (data.conflictDetected) {
+        toast({
+          title: "Prescription Created with Conflict Warning",
+          description: `Cross-specialty conflict detected: ${data.conflictDetected.description}. The medication is on hold until resolved.`,
+          variant: "destructive",
+        });
+      } else if (data.supersessionTarget) {
+        toast({
+          title: "Prescription Created",
+          description: "The previous medication has been superseded by this new prescription.",
+        });
+      } else {
+        toast({
+          title: "Prescription Created",
+          description: "The prescription has been sent to the patient",
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/prescriptions/doctor"] });
       resetForm();
     },
@@ -212,7 +489,7 @@ export default function Prescriptions() {
 
   const acknowledgePrescriptionMutation = useMutation({
     mutationFn: async (prescriptionId: string) => {
-      const res = await apiRequest("POST", `/api/prescriptions/${prescriptionId}/acknowledge`, {});
+      const res = await apiRequest(`/api/prescriptions/${prescriptionId}/acknowledge`, { method: "POST", json: {} });
       return res.json();
     },
     onSuccess: () => {
@@ -233,13 +510,16 @@ export default function Prescriptions() {
 
   const createDosageRequestMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/dosage-change-requests", {
-        medicationId: selectedMedicationForChange?.id,
-        currentDosage: selectedMedicationForChange?.dosage,
-        currentFrequency: selectedMedicationForChange?.frequency,
-        requestedDosage: dosageChangeForm.requestedDosage,
-        requestedFrequency: dosageChangeForm.requestedFrequency,
-        requestReason: dosageChangeForm.reason,
+      const res = await apiRequest("/api/dosage-change-requests", {
+        method: "POST",
+        json: {
+          medicationId: selectedMedicationForChange?.id,
+          currentDosage: selectedMedicationForChange?.dosage,
+          currentFrequency: selectedMedicationForChange?.frequency,
+          requestedDosage: dosageChangeForm.requestedDosage,
+          requestedFrequency: dosageChangeForm.requestedFrequency,
+          requestReason: dosageChangeForm.reason,
+        }
       });
       return res.json();
     },
@@ -274,9 +554,28 @@ export default function Prescriptions() {
       dosageInstructions: "",
       notes: "",
       startDate: format(new Date(), "yyyy-MM-dd"),
+      specialty: "",
+      isContinuous: false,
+      durationDays: "",
+      supersedes: "",
     });
     setInteractionResult(null);
+    setSupersessionCandidates([]);
   };
+
+  const MEDICAL_SPECIALTIES = [
+    "cardiology",
+    "oncology",
+    "neurology",
+    "rheumatology",
+    "immunology",
+    "endocrinology",
+    "gastroenterology",
+    "pulmonology",
+    "nephrology",
+    "psychiatry",
+    "general medicine",
+  ];
 
   const resetDosageForm = () => {
     setSelectedMedicationForChange(null);
@@ -351,390 +650,18 @@ export default function Prescriptions() {
   };
 
   const selectedPatientData = patients?.find(p => p.id === selectedPatient);
-  const pendingPrescriptions = patientPrescriptions?.filter(p => p.status === "sent") || [];
-  const acknowledgedPrescriptions = patientPrescriptions?.filter(p => p.status !== "sent") || [];
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isDoctor) {
+      setLocation("/patient-records");
+    }
+  }, [isDoctor, setLocation]);
 
   if (!isDoctor) {
-    return (
-      <div className="container mx-auto p-6 max-w-6xl space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold" data-testid="text-page-title">My Prescriptions</h1>
-            <p className="text-muted-foreground mt-1">
-              View and manage your prescriptions from your healthcare providers
-            </p>
-          </div>
-          {pendingPrescriptions.length > 0 && (
-            <Badge variant="destructive">
-              <Clock className="h-3 w-3 mr-1" />
-              {pendingPrescriptions.length} New
-            </Badge>
-          )}
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Prescriptions</CardTitle>
-              <Pill className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="count-active">
-                {patientPrescriptions?.filter(p => p.status === "acknowledged" || p.status === "filled").length || 0}
-              </div>
-              <p className="text-xs text-muted-foreground">Currently taking</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Review</CardTitle>
-              <Clock className="h-4 w-4 text-amber-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-amber-600" data-testid="count-pending">
-                {pendingPrescriptions.length}
-              </div>
-              <p className="text-xs text-muted-foreground">Requires acknowledgment</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Dosage Requests</CardTitle>
-              <MessageSquare className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="count-requests">
-                {myDosageRequests?.filter(r => r.status === "pending").length || 0}
-              </div>
-              <p className="text-xs text-muted-foreground">Awaiting doctor approval</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="active" data-testid="tab-active">
-              <Pill className="h-4 w-4 mr-2" />
-              Prescriptions
-              {pendingPrescriptions.length > 0 && (
-                <Badge variant="destructive" className="ml-2">{pendingPrescriptions.length}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="medications" data-testid="tab-medications">
-              <Activity className="h-4 w-4 mr-2" />
-              My Medications
-            </TabsTrigger>
-            <TabsTrigger value="requests" data-testid="tab-requests">
-              <Edit3 className="h-4 w-4 mr-2" />
-              Change Requests
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="active" className="space-y-6 mt-6">
-            {pendingPrescriptions.length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-amber-500" />
-                  New Prescriptions Requiring Acknowledgment
-                </h3>
-                {pendingPrescriptions.map((rx) => (
-                  <Card key={rx.id} className="border-amber-200 dark:border-amber-800" data-testid={`pending-rx-${rx.id}`}>
-                    <CardContent className="p-6">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg font-semibold">{rx.medicationName}</span>
-                            {getStatusBadge(rx.status)}
-                          </div>
-                          <div className="text-muted-foreground">
-                            {rx.dosage} • {rx.frequency}
-                          </div>
-                          {rx.dosageInstructions && (
-                            <div className="text-sm text-muted-foreground">
-                              <span className="font-medium">Instructions:</span> {rx.dosageInstructions}
-                            </div>
-                          )}
-                          <div className="text-sm text-muted-foreground">
-                            Prescribed: {format(new Date(rx.createdAt!), "MMMM d, yyyy")}
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => acknowledgePrescriptionMutation.mutate(rx.id)}
-                          disabled={acknowledgePrescriptionMutation.isPending}
-                          data-testid={`button-acknowledge-${rx.id}`}
-                        >
-                          {acknowledgePrescriptionMutation.isPending ? (
-                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <CheckCircle2 className="h-4 w-4 mr-2" />
-                          )}
-                          Acknowledge
-                        </Button>
-                      </div>
-                      {rx.notes && (
-                        <Alert className="mt-4">
-                          <MessageSquare className="h-4 w-4" />
-                          <AlertTitle>Doctor's Note</AlertTitle>
-                          <AlertDescription>{rx.notes}</AlertDescription>
-                        </Alert>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Prescription History</h3>
-              {patientPrescriptionsLoading ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 w-full" />)}
-                </div>
-              ) : acknowledgedPrescriptions.length > 0 ? (
-                acknowledgedPrescriptions.map((rx) => (
-                  <Card key={rx.id} data-testid={`rx-${rx.id}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">{rx.medicationName}</span>
-                            {getStatusBadge(rx.status)}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {rx.dosage} • {rx.frequency}
-                          </div>
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              {format(new Date(rx.createdAt!), "MMM d, yyyy")}
-                            </span>
-                            {rx.quantity && <span>Qty: {rx.quantity}</span>}
-                            {rx.refills !== null && rx.refills > 0 && (
-                              <span>{rx.refills} refill(s) remaining</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              ) : (
-                <Card>
-                  <CardContent className="py-12 text-center">
-                    <FileText className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
-                    <h3 className="text-lg font-medium mb-1">No Prescription History</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Your prescription history will appear here
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="medications" className="space-y-6 mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  Current Medications
-                </CardTitle>
-                <CardDescription>
-                  Your active medications. Request dosage changes if needed.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {myMedications && myMedications.length > 0 ? (
-                  <div className="space-y-3">
-                    {myMedications.map((med) => (
-                      <div
-                        key={med.id}
-                        className="p-4 border rounded-lg flex items-center justify-between gap-4"
-                        data-testid={`medication-${med.id}`}
-                      >
-                        <div className="space-y-1">
-                          <div className="font-medium">{med.name}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {med.dosage} • {med.frequency}
-                          </div>
-                          <Badge variant={med.status === "active" ? "default" : "secondary"}>
-                            {med.status}
-                          </Badge>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRequestDosageChange(med)}
-                          data-testid={`button-request-change-${med.id}`}
-                        >
-                          <Edit3 className="h-4 w-4 mr-2" />
-                          Request Change
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Pill className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
-                    <p className="text-muted-foreground">No active medications</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="requests" className="space-y-6 mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  Your Dosage Change Requests
-                </CardTitle>
-                <CardDescription>
-                  Track the status of your dosage change requests
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {myDosageRequests && myDosageRequests.length > 0 ? (
-                  <div className="space-y-4">
-                    {myDosageRequests.map((request) => (
-                      <Card key={request.id} data-testid={`request-${request.id}`}>
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="space-y-2 flex-1">
-                              <div className="flex items-center gap-2">
-                                {getRequestStatusBadge(request.status)}
-                                <span className="text-sm text-muted-foreground">
-                                  {format(new Date(request.createdAt!), "MMM d, yyyy")}
-                                </span>
-                              </div>
-                              <div className="grid gap-2 md:grid-cols-2 mt-2">
-                                <div className="p-2 bg-muted rounded">
-                                  <div className="text-xs text-muted-foreground">Current</div>
-                                  <div className="font-medium">{request.currentDosage} - {request.currentFrequency}</div>
-                                </div>
-                                <div className="p-2 bg-primary/10 rounded">
-                                  <div className="text-xs text-muted-foreground">Requested</div>
-                                  <div className="font-medium text-primary">
-                                    {request.requestedDosage} - {request.requestedFrequency}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="text-sm">
-                                <span className="font-medium">Your reason:</span> {request.requestReason}
-                              </div>
-                              {request.doctorNotes && (
-                                <Alert>
-                                  <MessageSquare className="h-4 w-4" />
-                                  <AlertTitle>Doctor's Response</AlertTitle>
-                                  <AlertDescription>{request.doctorNotes}</AlertDescription>
-                                </Alert>
-                              )}
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <Edit3 className="h-12 w-12 mx-auto text-muted-foreground opacity-50 mb-4" />
-                    <h3 className="text-lg font-medium mb-1">No Dosage Change Requests</h3>
-                    <p className="text-sm text-muted-foreground">
-                      When you request a dosage change, it will appear here
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-
-        <Dialog open={showDosageRequestDialog} onOpenChange={setShowDosageRequestDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Edit3 className="h-5 w-5" />
-                Request Dosage Change
-              </DialogTitle>
-              <DialogDescription>
-                Submit a request to your doctor to change your medication dosage
-              </DialogDescription>
-            </DialogHeader>
-            {selectedMedicationForChange && (
-              <div className="space-y-4 py-4">
-                <Alert>
-                  <Pill className="h-4 w-4" />
-                  <AlertTitle>Current Medication</AlertTitle>
-                  <AlertDescription>
-                    <strong>{selectedMedicationForChange.name}</strong>
-                    <br />
-                    {selectedMedicationForChange.dosage} • {selectedMedicationForChange.frequency}
-                  </AlertDescription>
-                </Alert>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="requested-dosage">Requested Dosage</Label>
-                    <Input
-                      id="requested-dosage"
-                      value={dosageChangeForm.requestedDosage}
-                      onChange={(e) => setDosageChangeForm({ ...dosageChangeForm, requestedDosage: e.target.value })}
-                      placeholder="e.g., 20mg"
-                      data-testid="input-requested-dosage"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="requested-frequency">Requested Frequency</Label>
-                    <Select
-                      value={dosageChangeForm.requestedFrequency}
-                      onValueChange={(val) => setDosageChangeForm({ ...dosageChangeForm, requestedFrequency: val })}
-                    >
-                      <SelectTrigger data-testid="select-requested-frequency">
-                        <SelectValue placeholder="Select frequency..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="once daily">Once Daily</SelectItem>
-                        <SelectItem value="twice daily">Twice Daily</SelectItem>
-                        <SelectItem value="three times daily">Three Times Daily</SelectItem>
-                        <SelectItem value="as needed">As Needed (PRN)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="request-reason">Reason for Request *</Label>
-                  <Textarea
-                    id="request-reason"
-                    value={dosageChangeForm.reason}
-                    onChange={(e) => setDosageChangeForm({ ...dosageChangeForm, reason: e.target.value })}
-                    placeholder="Explain why you're requesting this change (e.g., side effects, medication not effective enough)..."
-                    rows={4}
-                    data-testid="input-request-reason"
-                  />
-                </div>
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowDosageRequestDialog(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => createDosageRequestMutation.mutate()}
-                disabled={!dosageChangeForm.reason.trim() || createDosageRequestMutation.isPending}
-              >
-                {createDosageRequestMutation.isPending ? (
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4 mr-2" />
-                )}
-                Submit Request
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-    );
+    return null;
   }
+
 
   return (
     <div className="container mx-auto p-6 max-w-7xl space-y-6">
@@ -753,11 +680,110 @@ export default function Prescriptions() {
         </Badge>
       </div>
 
+      {pendingConflicts && pendingConflicts.length > 0 && (
+        <Alert variant="destructive" className="border-2" data-testid="alert-pending-conflicts">
+          <Ban className="h-5 w-5" />
+          <AlertTitle className="text-lg">Cross-Specialty Conflicts Require Your Attention</AlertTitle>
+          <AlertDescription className="mt-2">
+            <p className="mb-3">
+              The following medication conflicts are on hold waiting for your response. Both prescribing doctors must respond before medications can be released.
+            </p>
+            <div className="space-y-3">
+              {pendingConflicts.map(conflict => (
+                <div key={conflict.id} className="p-4 bg-background rounded-md border">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline">{conflict.specialty1}</Badge>
+                        <span className="text-muted-foreground">vs</span>
+                        <Badge variant="outline">{conflict.specialty2}</Badge>
+                        <Badge variant={conflict.severity === 'severe' ? 'destructive' : 'secondary'}>
+                          {conflict.severity}
+                        </Badge>
+                      </div>
+                      <p className="text-sm font-medium mb-1">
+                        {conflict.medication1Name || 'Medication 1'} + {conflict.medication2Name || 'Medication 2'}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{conflict.description}</p>
+                      {conflict.patientName && (
+                        <p className="text-xs text-muted-foreground mt-1">Patient: {conflict.patientName}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {conflictResponse?.id === conflict.id ? (
+                        <div className="space-y-2 min-w-[200px]">
+                          <RadioGroup
+                            value={conflictResponse.response}
+                            onValueChange={(val) => setConflictResponse({ ...conflictResponse, response: val })}
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="approve" id={`approve-${conflict.id}`} />
+                              <Label htmlFor={`approve-${conflict.id}`} className="text-sm cursor-pointer">Approve my medication</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="withdraw" id={`withdraw-${conflict.id}`} />
+                              <Label htmlFor={`withdraw-${conflict.id}`} className="text-sm cursor-pointer">Withdraw my prescription</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="modify" id={`modify-${conflict.id}`} />
+                              <Label htmlFor={`modify-${conflict.id}`} className="text-sm cursor-pointer">Suggest modification</Label>
+                            </div>
+                          </RadioGroup>
+                          <Input
+                            placeholder="Notes (optional)"
+                            value={conflictResponse.notes}
+                            onChange={(e) => setConflictResponse({ ...conflictResponse, notes: e.target.value })}
+                            className="text-sm"
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setConflictResponse(null)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => respondToConflictMutation.mutate({
+                                conflictId: conflict.id,
+                                response: conflictResponse.response,
+                                notes: conflictResponse.notes,
+                              })}
+                              disabled={!conflictResponse.response || respondToConflictMutation.isPending}
+                            >
+                              Submit
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => setConflictResponse({ id: conflict.id, response: '', notes: '' })}
+                          data-testid={`button-respond-conflict-${conflict.id}`}
+                        >
+                          <Shield className="h-4 w-4 mr-1" />
+                          Respond
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="write" data-testid="tab-write">
             <Plus className="h-4 w-4 mr-2" />
             Write Prescription
+          </TabsTrigger>
+          <TabsTrigger value="soap-notes" data-testid="tab-soap-notes">
+            <ClipboardList className="h-4 w-4 mr-2" />
+            SOAP Notes
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
             <FileText className="h-4 w-4 mr-2" />
@@ -866,6 +892,123 @@ export default function Prescriptions() {
                       </AlertDescription>
                     </Alert>
                   )}
+
+                  <Card className="mb-4 border-primary/20 bg-primary/5">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Stethoscope className="h-4 w-4" />
+                        Chronic Care Settings
+                      </CardTitle>
+                      <CardDescription>
+                        Configure specialty and duration for multi-specialist coordination
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="specialty">Medical Specialty *</Label>
+                          <Select
+                            value={prescriptionForm.specialty}
+                            onValueChange={(val) => {
+                              setPrescriptionForm({ ...prescriptionForm, specialty: val });
+                              if (selectedPatient && val) {
+                                checkSupersessionMutation.mutate();
+                              }
+                            }}
+                          >
+                            <SelectTrigger data-testid="select-specialty">
+                              <SelectValue placeholder="Select your specialty..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {MEDICAL_SPECIALTIES.map((spec) => (
+                                <SelectItem key={spec} value={spec} className="capitalize">
+                                  {spec.charAt(0).toUpperCase() + spec.slice(1)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Duration Type</Label>
+                          <div className="flex items-center gap-4 mt-2">
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                id="continuous"
+                                checked={prescriptionForm.isContinuous}
+                                onCheckedChange={(checked) =>
+                                  setPrescriptionForm({ ...prescriptionForm, isContinuous: checked, durationDays: "" })
+                                }
+                                data-testid="switch-continuous"
+                              />
+                              <Label htmlFor="continuous" className="cursor-pointer">
+                                {prescriptionForm.isContinuous ? (
+                                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                    <Infinity className="h-4 w-4" /> Continuous
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                                    <Timer className="h-4 w-4" /> Fixed Duration
+                                  </span>
+                                )}
+                              </Label>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {!prescriptionForm.isContinuous && (
+                        <div className="space-y-2">
+                          <Label htmlFor="duration-days">Duration (Days)</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              id="duration-days"
+                              type="number"
+                              value={prescriptionForm.durationDays}
+                              onChange={(e) => setPrescriptionForm({ ...prescriptionForm, durationDays: e.target.value })}
+                              placeholder="e.g., 14"
+                              className="w-32"
+                              data-testid="input-duration-days"
+                            />
+                            <span className="text-sm text-muted-foreground">days</span>
+                            {prescriptionForm.durationDays && prescriptionForm.startDate && (
+                              <Badge variant="outline" className="ml-2">
+                                Ends: {format(addDays(new Date(prescriptionForm.startDate), parseInt(prescriptionForm.durationDays)), "MMM d, yyyy")}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {supersessionCandidates.length > 0 && (
+                        <Alert className="border-amber-500 bg-amber-50 dark:bg-amber-950/30">
+                          <ArrowRightLeft className="h-4 w-4 text-amber-600" />
+                          <AlertTitle className="text-amber-800 dark:text-amber-300">Supersession Available</AlertTitle>
+                          <AlertDescription>
+                            <p className="text-amber-700 dark:text-amber-400 mb-2">
+                              This patient has {supersessionCandidates.length} existing {prescriptionForm.specialty} medication(s). 
+                              Would you like this prescription to supersede any of them?
+                            </p>
+                            <Select
+                              value={prescriptionForm.supersedes}
+                              onValueChange={(val) => setPrescriptionForm({ ...prescriptionForm, supersedes: val })}
+                            >
+                              <SelectTrigger data-testid="select-supersedes" className="bg-white dark:bg-gray-900">
+                                <SelectValue placeholder="Select medication to supersede (optional)..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">None (Add as new)</SelectItem>
+                                {supersessionCandidates.map((med) => (
+                                  <SelectItem key={med.id} value={med.id}>
+                                    {med.name} ({med.dosage}) - {med.frequency}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </CardContent>
+                  </Card>
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
@@ -1098,6 +1241,338 @@ export default function Prescriptions() {
                       <p className="text-sm text-muted-foreground">
                         No significant interactions detected with current medications
                       </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="soap-notes" className="space-y-6 mt-6">
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2 space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    Select Patient for SOAP Note
+                  </CardTitle>
+                  <CardDescription>
+                    Choose the patient to create clinical documentation for
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {patientsLoading ? (
+                    <Skeleton className="h-10 w-full" />
+                  ) : (
+                    <Select value={soapNotePatient} onValueChange={setSoapNotePatient}>
+                      <SelectTrigger data-testid="select-soap-patient">
+                        <SelectValue placeholder="Select a patient..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {patients?.map((patient) => (
+                          <SelectItem key={patient.id} value={patient.id}>
+                            {patient.firstName} {patient.lastName} ({patient.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </CardContent>
+              </Card>
+
+              {soapNotePatient && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ClipboardList className="h-5 w-5" />
+                      SOAP Note Documentation
+                    </CardTitle>
+                    <CardDescription>
+                      Subjective, Objective, Assessment, and Plan
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="chief-complaint">Chief Complaint</Label>
+                        <Input
+                          id="chief-complaint"
+                          placeholder="Patient's primary reason for visit..."
+                          value={soapForm.chiefComplaint}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, chiefComplaint: e.target.value }))}
+                          data-testid="input-chief-complaint"
+                        />
+                      </div>
+
+                      <Separator />
+                      <h4 className="font-semibold text-sm text-muted-foreground">SUBJECTIVE</h4>
+
+                      <div>
+                        <Label htmlFor="subjective">Patient History & Symptoms</Label>
+                        <Textarea
+                          id="subjective"
+                          placeholder="Patient's description of symptoms, history, pain levels..."
+                          value={soapForm.subjective}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, subjective: e.target.value }))}
+                          className="min-h-[100px]"
+                          data-testid="input-subjective"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="hpi">History of Present Illness</Label>
+                        <Textarea
+                          id="hpi"
+                          placeholder="Onset, location, duration, character, aggravating/relieving factors..."
+                          value={soapForm.historyPresentIllness}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, historyPresentIllness: e.target.value }))}
+                          className="min-h-[80px]"
+                          data-testid="input-hpi"
+                        />
+                      </div>
+
+                      <Separator />
+                      <h4 className="font-semibold text-sm text-muted-foreground">OBJECTIVE</h4>
+
+                      <div>
+                        <Label htmlFor="objective">Clinical Findings</Label>
+                        <Textarea
+                          id="objective"
+                          placeholder="Vital signs, lab results, imaging findings..."
+                          value={soapForm.objective}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, objective: e.target.value }))}
+                          className="min-h-[80px]"
+                          data-testid="input-objective"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="physical-exam">Physical Examination</Label>
+                        <Textarea
+                          id="physical-exam"
+                          placeholder="Physical exam findings, observations..."
+                          value={soapForm.physicalExam}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, physicalExam: e.target.value }))}
+                          className="min-h-[80px]"
+                          data-testid="input-physical-exam"
+                        />
+                      </div>
+
+                      <Separator />
+                      <h4 className="font-semibold text-sm text-muted-foreground">ASSESSMENT</h4>
+
+                      <div>
+                        <Label htmlFor="assessment">Clinical Assessment</Label>
+                        <Textarea
+                          id="assessment"
+                          placeholder="Clinical reasoning and impressions..."
+                          value={soapForm.assessment}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, assessment: e.target.value }))}
+                          className="min-h-[80px]"
+                          data-testid="input-assessment"
+                        />
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                          <Label htmlFor="primary-diagnosis">Primary Diagnosis</Label>
+                          <Input
+                            id="primary-diagnosis"
+                            placeholder="Main diagnosis..."
+                            value={soapForm.primaryDiagnosis}
+                            onChange={(e) => setSoapForm(prev => ({ ...prev, primaryDiagnosis: e.target.value }))}
+                            data-testid="input-primary-diagnosis"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="primary-icd10">ICD-10 Code</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="primary-icd10"
+                              placeholder="e.g., J06.9"
+                              value={soapForm.primaryIcd10}
+                              onChange={(e) => setSoapForm(prev => ({ ...prev, primaryIcd10: e.target.value }))}
+                              data-testid="input-primary-icd10"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={handleGetIcd10Suggestions}
+                              disabled={icd10Loading}
+                              data-testid="button-get-icd10"
+                            >
+                              {icd10Loading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Brain className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Separator />
+                      <h4 className="font-semibold text-sm text-muted-foreground">PLAN</h4>
+
+                      <div>
+                        <Label htmlFor="plan">Treatment Plan</Label>
+                        <Textarea
+                          id="plan"
+                          placeholder="Medications, procedures, referrals, patient education..."
+                          value={soapForm.plan}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, plan: e.target.value }))}
+                          className="min-h-[100px]"
+                          data-testid="input-plan"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="follow-up">Follow-up Instructions</Label>
+                        <Textarea
+                          id="follow-up"
+                          placeholder="When to return, warning signs, self-care..."
+                          value={soapForm.followUpInstructions}
+                          onChange={(e) => setSoapForm(prev => ({ ...prev, followUpInstructions: e.target.value }))}
+                          className="min-h-[60px]"
+                          data-testid="input-follow-up"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter className="flex justify-between gap-4">
+                    <Button
+                      variant="outline"
+                      onClick={resetSoapForm}
+                      data-testid="button-reset-soap"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Clear Form
+                    </Button>
+                    <Button
+                      onClick={() => createSoapNoteMutation.mutate()}
+                      disabled={createSoapNoteMutation.isPending || !soapForm.chiefComplaint}
+                      data-testid="button-save-soap"
+                    >
+                      {createSoapNoteMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4 mr-2" />
+                      )}
+                      Save SOAP Note
+                    </Button>
+                  </CardFooter>
+                </Card>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              {icd10Suggestions.length > 0 && (
+                <Card className="border-primary/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Brain className="h-5 w-5 text-primary" />
+                      AI ICD-10 Suggestions
+                    </CardTitle>
+                    <CardDescription>
+                      Click to apply a suggested diagnosis code
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      {icd10Suggestions.map((suggestion, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 border rounded-md cursor-pointer hover-elevate"
+                          onClick={() => handleSelectIcd10(suggestion)}
+                          data-testid={`icd10-suggestion-${idx}`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <Badge variant="outline" className="font-mono">
+                              {suggestion.code}
+                            </Badge>
+                            <Badge variant="secondary" className="text-xs">
+                              {Math.round(suggestion.confidence * 100)}% match
+                            </Badge>
+                          </div>
+                          <p className="text-sm">{suggestion.description}</p>
+                          {suggestion.category && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {suggestion.category}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {soapNotePatient && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg">Previous SOAP Notes</CardTitle>
+                    <CardDescription>
+                      Recent clinical documentation
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {soapNotesLoading ? (
+                      <div className="space-y-2">
+                        {[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}
+                      </div>
+                    ) : soapNotes && soapNotes.length > 0 ? (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {soapNotes.map((note) => (
+                          <div
+                            key={note.id}
+                            className="p-3 border rounded-md hover-elevate cursor-pointer"
+                            onClick={() => {
+                              setSelectedSoapNote(note);
+                              setSoapForm({
+                                chiefComplaint: note.chiefComplaint || "",
+                                subjective: note.subjective || "",
+                                historyPresentIllness: note.historyPresentIllness || "",
+                                objective: note.objective || "",
+                                physicalExam: note.physicalExam || "",
+                                assessment: note.assessment || "",
+                                primaryDiagnosis: note.primaryDiagnosis || "",
+                                primaryIcd10: note.primaryIcd10 || "",
+                                plan: note.plan || "",
+                                followUpInstructions: note.followUpInstructions || "",
+                              });
+                            }}
+                            data-testid={`soap-note-${note.id}`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="text-sm font-medium truncate">
+                                {note.chiefComplaint || "No chief complaint"}
+                              </span>
+                              <Badge variant="outline" className="text-xs shrink-0">
+                                {note.status}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              {format(new Date(note.encounterDate), "MMM d, yyyy")}
+                              {note.primaryIcd10 && (
+                                <Badge variant="secondary" className="font-mono text-xs">
+                                  {note.primaryIcd10}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <ClipboardList className="h-8 w-8 mx-auto text-muted-foreground opacity-50 mb-2" />
+                        <p className="text-sm text-muted-foreground">
+                          No previous SOAP notes for this patient
+                        </p>
+                      </div>
                     )}
                   </CardContent>
                 </Card>

@@ -10,11 +10,6 @@ class Settings(BaseSettings):
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
     AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY")
-    AWS_COGNITO_USER_POOL_ID: Optional[str] = os.getenv("AWS_COGNITO_USER_POOL_ID")
-    AWS_COGNITO_CLIENT_ID: Optional[str] = os.getenv("AWS_COGNITO_CLIENT_ID")
-    AWS_COGNITO_CLIENT_SECRET: Optional[str] = os.getenv("AWS_COGNITO_CLIENT_SECRET")
-    AWS_COGNITO_REGION: Optional[str] = os.getenv("AWS_COGNITO_REGION")
-    AWS_COGNITO_DOMAIN: Optional[str] = os.getenv("AWS_COGNITO_DOMAIN")
     AWS_S3_BUCKET_NAME: Optional[str] = os.getenv("AWS_S3_BUCKET_NAME")
     
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
@@ -22,6 +17,31 @@ class Settings(BaseSettings):
     OPENAI_ZDR_ENABLED: bool = os.getenv("OPENAI_ZDR_ENABLED", "false").lower() == "true"
     OPENAI_ENTERPRISE: bool = os.getenv("OPENAI_ENTERPRISE", "false").lower() == "true"
     
+    # Stytch Authentication (replaces Auth0/Twilio for verification)
+    STYTCH_PROJECT_ID: Optional[str] = os.getenv("STYTCH_PROJECT_ID")
+    STYTCH_SECRET: Optional[str] = os.getenv("STYTCH_SECRET")
+    STYTCH_PUBLIC_TOKEN: Optional[str] = os.getenv("STYTCH_PUBLIC_TOKEN")
+    STYTCH_ENV: str = os.getenv("STYTCH_ENV", "test")
+    
+    # Stripe Payments & Connect
+    STRIPE_API_KEY: Optional[str] = os.getenv("STRIPE_API_KEY")
+    STRIPE_WEBHOOK_SECRET: Optional[str] = os.getenv("STRIPE_WEBHOOK_SECRET")
+    STRIPE_CONNECT_CLIENT_ID: Optional[str] = os.getenv("STRIPE_CONNECT_CLIENT_ID")
+    PAYMENTS_WEBHOOK_SECRET: Optional[str] = os.getenv("PAYMENTS_WEBHOOK_SECRET")
+    PAYMENT_PROVIDER: str = os.getenv("PAYMENT_PROVIDER", "stripe")
+    
+    # Google Cloud Platform (for KMS, Logging)
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    GCP_PROJECT_ID: Optional[str] = os.getenv("GCP_PROJECT_ID")
+    GCP_REGION: str = os.getenv("GCP_REGION", "us-central1")
+    GCP_KMS_KEY_RING_ID: Optional[str] = os.getenv("GCP_KMS_KEY_RING_ID")
+    GCP_KMS_CRYPTO_KEY_ID: Optional[str] = os.getenv("GCP_KMS_CRYPTO_KEY_ID")
+    
+    # Monitoring and Logging
+    SENTRY_DSN: Optional[str] = os.getenv("SENTRY_DSN")
+    SIEM_ENDPOINT: Optional[str] = os.getenv("SIEM_ENDPOINT")
+    
+    # Legacy - Twilio (deprecated, use Stytch)
     TWILIO_ACCOUNT_SID: Optional[str] = os.getenv("TWILIO_ACCOUNT_SID")
     TWILIO_AUTH_TOKEN: Optional[str] = os.getenv("TWILIO_AUTH_TOKEN")
     TWILIO_PHONE_NUMBER: Optional[str] = os.getenv("TWILIO_PHONE_NUMBER")
@@ -29,9 +49,79 @@ class Settings(BaseSettings):
     DEV_MODE_SECRET: Optional[str] = os.getenv("DEV_MODE_SECRET")
     SESSION_SECRET: Optional[str] = os.getenv("SESSION_SECRET")
     
-    CORS_ORIGINS: list = ["http://localhost:5000", "http://127.0.0.1:5000"]
+    # Daily.co Video Configuration
+    DAILY_API_KEY: Optional[str] = os.getenv("DAILY_API_KEY")
+    DAILY_DOMAIN: str = os.getenv("DAILY_DOMAIN", "followupai.daily.co")
+    DAILY_WEBHOOK_SECRET: Optional[str] = os.getenv("DAILY_WEBHOOK_SECRET")
+    DAILY_RATE_USD: str = os.getenv("DAILY_RATE_USD", "0.004")
+    
+    # Video Billing Plan Configuration
+    OVERAGE_RATE_USD: str = os.getenv("OVERAGE_RATE_USD", "0.008")
+    PLAN_TRIAL_INCLUDED_PM: int = int(os.getenv("PLAN_TRIAL_INCLUDED_PM", "300"))
+    PLAN_PRO_INCLUDED_PM: int = int(os.getenv("PLAN_PRO_INCLUDED_PM", "3000"))
+    PLAN_CLINIC_INCLUDED_PM: int = int(os.getenv("PLAN_CLINIC_INCLUDED_PM", "20000"))
+    
+    # Application URLs
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://localhost:8000")
+    FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "http://localhost:5000")
+    
+    # CORS Configuration - supports environment-based origins
+    # In production, set CORS_ALLOWED_ORIGINS as comma-separated list
+    # Example: CORS_ALLOWED_ORIGINS=https://myapp.replit.app,https://followup.ai
+    CORS_ALLOWED_ORIGINS: str = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    
+    @property
+    def CORS_ORIGINS(self) -> list:
+        """Get CORS origins from environment or defaults."""
+        env_origins = self.CORS_ALLOWED_ORIGINS
+        if env_origins:
+            origins = [o.strip() for o in env_origins.split(",") if o.strip()]
+            return origins
+        # Default development origins
+        defaults = [
+            "http://localhost:5000",
+            "http://127.0.0.1:5000",
+            "http://localhost:3000",
+        ]
+        # Include Replit domain if available
+        replit_domain = os.getenv("REPLIT_DEV_DOMAIN")
+        if replit_domain:
+            defaults.append(f"https://{replit_domain}")
+        replit_app_url = os.getenv("REPLIT_APP_URL")
+        if replit_app_url:
+            defaults.append(replit_app_url)
+        return defaults
     
     ENVIRONMENT: str = os.getenv("NODE_ENV", "development")
+    
+    # Tinker Thinking Machine Configuration (NON-BAA Mode)
+    # CRITICAL: Tinker does NOT have a BAA - never send PHI
+    TINKER_API_KEY: Optional[str] = os.getenv("TINKER_API_KEY")
+    TINKER_ENABLED: bool = os.getenv("TINKER_ENABLED", "false").lower() == "true"
+    TINKER_MODE: str = os.getenv("TINKER_MODE", "NON_BAA")
+    TINKER_K_ANON: int = int(os.getenv("TINKER_K_ANON", "25"))
+    TINKER_API_URL: str = os.getenv("TINKER_API_URL", "https://api.tinker.ai/v1")
+    TINKER_TIMEOUT_SECONDS: int = int(os.getenv("TINKER_TIMEOUT_SECONDS", "15"))
+    TINKER_MAX_RETRIES: int = int(os.getenv("TINKER_MAX_RETRIES", "2"))
+    
+    def is_tinker_enabled(self) -> bool:
+        """Check if Tinker integration is enabled and configured"""
+        return self.TINKER_ENABLED and self.TINKER_API_KEY is not None
+    
+    def validate_tinker_non_baa(self) -> bool:
+        """Validate Tinker is in NON-BAA mode (required - no PHI allowed)"""
+        if self.TINKER_MODE != "NON_BAA":
+            raise ValueError("TINKER_MODE must be 'NON_BAA' - Tinker does not have a BAA")
+        return True
+    
+    def get_plan_included_minutes(self, plan: str) -> int:
+        """Get included participant minutes for a plan"""
+        plan_map = {
+            "TRIAL": self.PLAN_TRIAL_INCLUDED_PM,
+            "PRO": self.PLAN_PRO_INCLUDED_PM,
+            "CLINIC": self.PLAN_CLINIC_INCLUDED_PM,
+        }
+        return plan_map.get(plan.upper(), self.PLAN_TRIAL_INCLUDED_PM)
     
     def validate_database_url(self):
         if not self.DATABASE_URL:
@@ -62,18 +152,15 @@ def get_openai_client() -> OpenAI:
 
 
 def check_openai_baa_compliance():
-    """Check OpenAI BAA compliance - uses secure logging"""
-    import logging
-    logger = logging.getLogger(__name__)
-    
     if not settings.OPENAI_BAA_SIGNED:
-        logger.warning("HIPAA COMPLIANCE WARNINGS:")
-        logger.warning("CRITICAL: Business Associate Agreement (BAA) with OpenAI NOT signed. AI features BLOCKED.")
-        logger.warning("Set OPENAI_BAA_SIGNED=true after signing BAA.")
+        print("⚠️  HIPAA COMPLIANCE WARNINGS:")
+        print("   - CRITICAL: Business Associate Agreement (BAA) with OpenAI NOT signed. AI features BLOCKED.")
+        print("   - Set OPENAI_BAA_SIGNED=true after signing BAA.")
         if not settings.OPENAI_ZDR_ENABLED:
-            logger.warning("IMPORTANT: Zero Data Retention (ZDR) not enabled. Set OPENAI_ZDR_ENABLED=true for HIPAA compliance.")
+            print("   - IMPORTANT: Zero Data Retention (ZDR) not enabled. Set OPENAI_ZDR_ENABLED=true for HIPAA compliance.")
         if not settings.OPENAI_ENTERPRISE:
-            logger.warning("NOTICE: OpenAI Enterprise plan recommended for HIPAA compliance. Set OPENAI_ENTERPRISE=true.")
-        logger.warning("AI FEATURES BLOCKED until BAA is signed. Visit: https://openai.com/enterprise")
+            print("   - NOTICE: OpenAI Enterprise plan recommended for HIPAA compliance. Set OPENAI_ENTERPRISE=true.")
+        print("   🚫 AI FEATURES BLOCKED until BAA is signed.")
+        print("   Visit: https://openai.com/enterprise")
         return False
     return True

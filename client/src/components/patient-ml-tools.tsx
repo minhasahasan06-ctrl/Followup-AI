@@ -18,6 +18,7 @@ import {
   Brain,
   Stethoscope,
   TrendingUp,
+  TrendingDown,
   AlertTriangle,
   Play,
   Loader2,
@@ -32,7 +33,12 @@ import {
   Zap,
   RefreshCw,
   Clock,
-  FileText
+  FileText,
+  BarChart3,
+  LineChart as LineChartIcon,
+  ArrowUp,
+  ArrowDown,
+  Minus
 } from "lucide-react";
 import {
   PieChart,
@@ -40,8 +46,16 @@ import {
   Cell,
   ResponsiveContainer,
   Tooltip,
-  Legend
+  Legend,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  AreaChart,
+  Area
 } from "recharts";
+import { format } from "date-fns";
 
 interface PatientMLToolsProps {
   patientId: string;
@@ -68,6 +82,38 @@ interface DeteriorationResult {
   time_to_action: string;
   model_used: string;
   inference_time_ms: number;
+}
+
+interface TimeSeriesForecast {
+  metric: string;
+  historical: Array<{
+    timestamp: string;
+    value: number;
+  }>;
+  predictions: Array<{
+    timestamp: string;
+    value: number;
+    lower_bound: number;
+    upper_bound: number;
+    confidence: number;
+  }>;
+  trend: string;
+  anomalies: Array<{
+    timestamp: string;
+    value: number;
+    z_score: number;
+    severity: string;
+  }>;
+  model_used: string;
+  mape: number;
+}
+
+interface TimeSeriesResponse {
+  patient_id: string;
+  forecasts: Record<string, TimeSeriesForecast>;
+  predicted_at: string;
+  horizon_hours: number;
+  model_version: string;
 }
 
 const ENTITY_COLORS: Record<string, string> = {
@@ -99,6 +145,20 @@ export function PatientMLTools({ patientId, patientName }: PatientMLToolsProps) 
     fatigue_score: 4,
   });
   const [deteriorationResult, setDeteriorationResult] = useState<DeteriorationResult | null>(null);
+  const [forecastHorizon, setForecastHorizon] = useState(24);
+  const [selectedMetric, setSelectedMetric] = useState<string>("heart_rate");
+
+  // Fetch time-series forecast
+  const { data: timeSeriesData, isLoading: timeSeriesLoading, refetch: refetchTimeSeries } = useQuery<TimeSeriesResponse>({
+    queryKey: ['/api/ml/predict/time-series-forecast', patientId, forecastHorizon],
+    queryFn: async () => {
+      const res = await fetch(`/api/ml/predict/time-series-forecast/${patientId}?horizon_hours=${forecastHorizon}`, { credentials: 'include' });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    retry: 1,
+    staleTime: 120000, // 2 minutes
+  });
 
   // Check if ML backend is available
   const { data: mlStats } = useQuery({
@@ -111,10 +171,9 @@ export function PatientMLTools({ patientId, patientName }: PatientMLToolsProps) 
   // Symptom Analysis Mutation
   const symptomAnalysisMutation = useMutation({
     mutationFn: async (data: { text: string; include_context: boolean }) => {
-      const res = await apiRequest('POST', '/api/v1/ml/predict/symptom-analysis', {
-        text: data.text,
-        include_context: data.include_context,
-        patient_id: patientId
+      const res = await apiRequest('/api/v1/ml/predict/symptom-analysis', {
+        method: 'POST',
+        json: { text: data.text, include_context: data.include_context, patient_id: patientId }
       });
       return res.json();
     },
@@ -137,10 +196,9 @@ export function PatientMLTools({ patientId, patientName }: PatientMLToolsProps) 
   // Deterioration Prediction Mutation
   const deteriorationMutation = useMutation({
     mutationFn: async (data: { patient_id: string; metrics: typeof metrics }) => {
-      const res = await apiRequest('POST', '/api/v1/ml/predict/deterioration', {
-        patient_id: data.patient_id,
-        metrics: data.metrics,
-        time_window_days: 7
+      const res = await apiRequest('/api/v1/ml/predict/deterioration', {
+        method: 'POST',
+        json: { patient_id: data.patient_id, metrics: data.metrics, time_window_days: 7 }
       });
       return res.json();
     },
@@ -577,6 +635,257 @@ export function PatientMLTools({ patientId, patientName }: PatientMLToolsProps) 
           </CardContent>
         </Card>
       </div>
+
+      {/* LSTM Time-Series Forecast Section */}
+      <Card data-testid="card-time-series-forecast">
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <LineChartIcon className="h-5 w-5" />
+                LSTM Time-Series Forecast
+              </CardTitle>
+              <CardDescription>
+                Deep learning vital sign predictions with confidence intervals
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 border rounded-md p-1">
+                {[12, 24, 48].map(hours => (
+                  <Button
+                    key={hours}
+                    variant={forecastHorizon === hours ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setForecastHorizon(hours)}
+                    data-testid={`button-horizon-${hours}`}
+                  >
+                    {hours}h
+                  </Button>
+                ))}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetchTimeSeries()}
+                disabled={timeSeriesLoading}
+                data-testid="button-refresh-forecast"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${timeSeriesLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {timeSeriesLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-64 w-full" />
+              <div className="grid gap-4 md:grid-cols-3">
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-24" />)}
+              </div>
+            </div>
+          ) : timeSeriesData?.forecasts && Object.keys(timeSeriesData.forecasts).length > 0 ? (
+            <div className="space-y-6">
+              {/* Metric Selector */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {Object.keys(timeSeriesData.forecasts).map(metric => (
+                  <Button
+                    key={metric}
+                    variant={selectedMetric === metric ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedMetric(metric)}
+                    data-testid={`button-metric-${metric}`}
+                    className="capitalize"
+                  >
+                    {metric === 'heart_rate' && <HeartPulse className="h-4 w-4 mr-1" />}
+                    {metric === 'respiratory_rate' && <Wind className="h-4 w-4 mr-1" />}
+                    {metric === 'oxygen_saturation' && <Activity className="h-4 w-4 mr-1" />}
+                    {metric === 'blood_pressure' && <BarChart3 className="h-4 w-4 mr-1" />}
+                    {metric.replace('_', ' ')}
+                  </Button>
+                ))}
+              </div>
+
+              {/* Selected Metric Chart */}
+              {timeSeriesData.forecasts[selectedMetric] && (
+                <div className="space-y-4">
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={[
+                          ...timeSeriesData.forecasts[selectedMetric].historical.map(h => ({
+                            time: format(new Date(h.timestamp), 'MM/dd HH:mm'),
+                            value: h.value,
+                            type: 'historical'
+                          })),
+                          ...timeSeriesData.forecasts[selectedMetric].predictions.map(p => ({
+                            time: format(new Date(p.timestamp), 'MM/dd HH:mm'),
+                            predicted: p.value,
+                            lower: p.lower_bound,
+                            upper: p.upper_bound,
+                            type: 'prediction'
+                          }))
+                        ]}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="time" tick={{ fontSize: 11 }} />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Line 
+                          type="monotone" 
+                          dataKey="value" 
+                          stroke="#3b82f6" 
+                          strokeWidth={2}
+                          dot={false}
+                          name="Historical"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="upper"
+                          stroke="transparent"
+                          fill="#10b981"
+                          fillOpacity={0.1}
+                          name="Upper Bound"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="lower"
+                          stroke="transparent"
+                          fill="#10b981"
+                          fillOpacity={0.1}
+                          name="Lower Bound"
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="predicted" 
+                          stroke="#10b981" 
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          dot={false}
+                          name="Predicted"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Metric Summary Cards */}
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <Card className="hover-elevate" data-testid="card-trend-indicator">
+                      <CardContent className="pt-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-muted-foreground">Trend</p>
+                            <div className="flex items-center gap-1 mt-1">
+                              {timeSeriesData.forecasts[selectedMetric].trend === 'increasing' && (
+                                <>
+                                  <ArrowUp className="h-5 w-5 text-red-500" />
+                                  <span className="font-medium text-red-500">Increasing</span>
+                                </>
+                              )}
+                              {timeSeriesData.forecasts[selectedMetric].trend === 'decreasing' && (
+                                <>
+                                  <ArrowDown className="h-5 w-5 text-green-500" />
+                                  <span className="font-medium text-green-500">Decreasing</span>
+                                </>
+                              )}
+                              {timeSeriesData.forecasts[selectedMetric].trend === 'stable' && (
+                                <>
+                                  <Minus className="h-5 w-5 text-blue-500" />
+                                  <span className="font-medium text-blue-500">Stable</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="hover-elevate" data-testid="card-model-accuracy">
+                      <CardContent className="pt-4">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Model Accuracy</p>
+                          <p className="text-xl font-bold text-green-600">
+                            {((1 - (timeSeriesData.forecasts[selectedMetric].mape || 0)) * 100).toFixed(1)}%
+                          </p>
+                          <p className="text-xs text-muted-foreground">MAPE: {((timeSeriesData.forecasts[selectedMetric].mape || 0) * 100).toFixed(2)}%</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="hover-elevate" data-testid="card-anomalies">
+                      <CardContent className="pt-4">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Anomalies Detected</p>
+                          <p className="text-xl font-bold">
+                            {timeSeriesData.forecasts[selectedMetric].anomalies?.length || 0}
+                          </p>
+                          {timeSeriesData.forecasts[selectedMetric].anomalies?.length > 0 && (
+                            <Badge variant="destructive" className="mt-1">Requires Attention</Badge>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="hover-elevate" data-testid="card-model-info">
+                      <CardContent className="pt-4">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Model</p>
+                          <p className="font-medium">{timeSeriesData.forecasts[selectedMetric].model_used || 'LSTM-RNN'}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Horizon: {timeSeriesData.horizon_hours}h
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Anomaly Details */}
+                  {timeSeriesData.forecasts[selectedMetric].anomalies?.length > 0 && (
+                    <div className="border-t pt-4">
+                      <h4 className="font-medium mb-2 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                        Detected Anomalies
+                      </h4>
+                      <div className="space-y-2">
+                        {timeSeriesData.forecasts[selectedMetric].anomalies.slice(0, 5).map((anomaly, i) => (
+                          <div key={i} className="flex items-center justify-between p-2 rounded-lg border">
+                            <div className="flex items-center gap-2">
+                              <Badge 
+                                variant={anomaly.severity === 'critical' ? 'destructive' : 'secondary'}
+                              >
+                                {anomaly.severity}
+                              </Badge>
+                              <span className="text-sm">
+                                {format(new Date(anomaly.timestamp), 'MMM d, HH:mm')}
+                              </span>
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              Value: {anomaly.value.toFixed(1)} | Z-Score: {anomaly.z_score.toFixed(2)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Model Version Footer */}
+              <div className="flex items-center justify-between pt-4 border-t text-xs text-muted-foreground">
+                <span>Model Version: {timeSeriesData.model_version}</span>
+                <span>Last Predicted: {timeSeriesData.predicted_at ? format(new Date(timeSeriesData.predicted_at), 'MMM d, h:mm a') : 'N/A'}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <LineChartIcon className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>No time-series forecast available</p>
+              <p className="text-sm">Forecasts require sufficient historical vital sign data</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Disclaimer */}
       <Alert>

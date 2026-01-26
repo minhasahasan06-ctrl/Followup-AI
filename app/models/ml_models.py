@@ -1,9 +1,12 @@
 """
 ML Inference Database Models
 Tracks ML model versions, predictions, and audit logs for HIPAA compliance
+
+Phase 13: Added MLModelArtifact and MLCalibrationParams for storing trained
+model weights and calibration parameters in PostgreSQL (Neon).
 """
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, ForeignKey, Index, LargeBinary
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -13,7 +16,7 @@ class MLModel(Base):
     """Track ML model versions and metadata"""
     __tablename__ = "ml_models"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False, index=True)  # e.g., "pain_detector", "deterioration_lstm"
     version = Column(String, nullable=False)  # e.g., "1.0.0"
     model_type = Column(String, nullable=False)  # e.g., "pytorch", "onnx", "sklearn"
@@ -49,7 +52,7 @@ class MLPrediction(Base):
     __tablename__ = "ml_predictions"
 
     id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(Integer, ForeignKey("ml_models.id"), nullable=False, index=True)
+    model_id = Column(String, ForeignKey("ml_models.id"), nullable=False, index=True)
     patient_id = Column(String, nullable=False, index=True)  # AWS Cognito user ID
     
     # Prediction data
@@ -81,7 +84,7 @@ class MLPerformanceLog(Base):
     __tablename__ = "ml_performance_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(Integer, ForeignKey("ml_models.id"), nullable=False, index=True)
+    model_id = Column(String, ForeignKey("ml_models.id"), nullable=False, index=True)
     
     # Performance metrics
     metric_name = Column(String, nullable=False)  # e.g., "accuracy", "latency", "throughput"
@@ -114,7 +117,7 @@ class MLBatchJob(Base):
     __tablename__ = "ml_batch_jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(Integer, ForeignKey("ml_models.id"), nullable=False, index=True)
+    model_id = Column(String, ForeignKey("ml_models.id"), nullable=False, index=True)
     
     # Job metadata
     job_name = Column(String, nullable=False)
@@ -142,4 +145,78 @@ class MLBatchJob(Base):
     __table_args__ = (
         Index('idx_ml_batch_status', 'status'),
         Index('idx_ml_batch_created', 'created_at'),
+    )
+
+
+class MLModelArtifact(Base):
+    """
+    Store trained model weights and artifacts in PostgreSQL.
+    
+    Phase 13: Enables storing ONNX/PyTorch/sklearn model binaries directly
+    in Neon PostgreSQL instead of file system or S3.
+    """
+    __tablename__ = "ml_model_artifacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(String, ForeignKey("ml_models.id"), nullable=False, index=True)
+    
+    artifact_type = Column(String, nullable=False)
+    artifact_format = Column(String, nullable=False)
+    artifact_data = Column(LargeBinary, nullable=False)
+    artifact_size_bytes = Column(Integer, nullable=False)
+    checksum_sha256 = Column(String, nullable=False)
+    
+    compression = Column(String, default="none")
+    is_primary = Column(Boolean, default=False)
+    
+    training_data_hash = Column(String)
+    training_samples = Column(Integer)
+    training_duration_seconds = Column(Float)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by = Column(String)
+    
+    __table_args__ = (
+        Index('idx_artifact_model_type', 'model_id', 'artifact_type'),
+        Index('idx_artifact_primary', 'model_id', 'is_primary'),
+    )
+
+
+class MLCalibrationParams(Base):
+    """
+    Store probability calibration parameters for ML models.
+    
+    Phase 13: Supports Platt scaling, temperature scaling, and isotonic regression
+    parameters for converting raw model outputs to calibrated probabilities.
+    """
+    __tablename__ = "ml_calibration_params"
+
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(String, ForeignKey("ml_models.id"), nullable=False, index=True)
+    
+    calibration_method = Column(String, nullable=False)
+    
+    platt_a = Column(Float)
+    platt_b = Column(Float)
+    
+    temperature = Column(Float)
+    
+    isotonic_x = Column(JSON)
+    isotonic_y = Column(JSON)
+    
+    ece_before = Column(Float)
+    ece_after = Column(Float)
+    brier_before = Column(Float)
+    brier_after = Column(Float)
+    reliability_diagram = Column(JSON)
+    
+    validation_samples = Column(Integer)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by = Column(String)
+    
+    __table_args__ = (
+        Index('idx_calibration_model', 'model_id'),
+        Index('idx_calibration_active', 'model_id', 'is_active'),
     )

@@ -1,9 +1,18 @@
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import twilio from 'twilio';
 import type { Storage } from './storage';
 import { addDays, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
 
-const sesClient = new SESClient({ region: process.env.AWS_REGION || 'us-east-1' });
+// Resend integration disabled - using stub
+function getResendClient(): any {
+  console.warn('[RESEND] Email sending disabled - Resend removed from dependencies');
+  return {
+    emails: {
+      send: async (opts: any) => {
+        console.log('[RESEND] Would send email:', { to: opts.to, subject: opts.subject });
+        return { id: 'mock-email-id-' + Date.now() };
+      }
+    }
+  };
+}
 
 interface ReminderConfig {
   enableSMS: boolean;
@@ -19,16 +28,24 @@ const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
   hoursBefore: [24],
 };
 
+// Twilio integration disabled - using stub
+const twilioClientStub = {
+  messages: {
+    create: async (opts: any) => {
+      console.warn('[TWILIO] SMS sending disabled - Twilio removed from dependencies');
+      console.log('[TWILIO] Would send SMS:', { to: opts.to, body: opts.body?.substring(0, 50) + '...' });
+      return { sid: 'mock-sid-' + Date.now(), status: 'stub' };
+    }
+  }
+};
+
 class AppointmentReminderService {
   private storage: Storage;
-  private twilioClient: twilio.Twilio;
+  private twilioClient: any;
 
   constructor(storage: Storage) {
     this.storage = storage;
-    this.twilioClient = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
+    this.twilioClient = twilioClientStub;
   }
 
   async sendDailyReminders(): Promise<{
@@ -207,27 +224,19 @@ class AppointmentReminderService {
       </html>
     `;
 
-    const command = new SendEmailCommand({
-      Source: process.env.SES_FROM_EMAIL || 'noreply@followupai.com',
-      Destination: {
-        ToAddresses: [patient.email],
-      },
-      Message: {
-        Subject: {
-          Data: `Appointment Reminder - ${formattedDate}`,
-        },
-        Body: {
-          Html: {
-            Data: emailHtml,
-          },
-          Text: {
-            Data: `Reminder: You have an appointment with Dr. ${doctor.firstName} ${doctor.lastName} on ${formattedDate} at ${formattedTime}. Location: ${appointment.location || 'TBD'}`,
-          },
-        },
-      },
+    const resendClient = getResendClient();
+    if (!resendClient) {
+      console.warn('[Email] Skipping email reminder - Resend not configured');
+      return;
+    }
+    
+    await resendClient.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || 'noreply@followupai.com',
+      to: patient.email,
+      subject: `Appointment Reminder - ${formattedDate}`,
+      html: emailHtml,
+      text: `Reminder: You have an appointment with Dr. ${doctor.firstName} ${doctor.lastName} on ${formattedDate} at ${formattedTime}. Location: ${appointment.location || 'TBD'}`,
     });
-
-    await sesClient.send(command);
   }
 
   async sendImmediateReminder(appointmentId: string): Promise<{

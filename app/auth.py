@@ -1,58 +1,77 @@
 """
 Authentication and authorization utilities for HIPAA-compliant video exam system
 
-DEPRECATED: This module is deprecated. Use app.core.authentication instead.
-This file is kept for backward compatibility but redirects to the new module.
+This module uses JWT tokens signed with DEV_MODE_SECRET for Express-to-Python authentication.
+For production authentication, use Stytch M2M tokens - see app/dependencies.py
 """
 
-from typing import Optional
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+import jwt
+from jwt.exceptions import InvalidTokenError as JWTError
+import os
+
 from app.database import get_db
 from app.models import User
-from app.core.authentication import (
-    get_current_user as _get_current_user,
-    get_current_doctor as _get_current_doctor,
-    get_current_patient as _get_current_patient,
-    require_role as _require_role
-)
 
-security = HTTPBearer(auto_error=False)
+DEV_MODE_SECRET = os.getenv("DEV_MODE_SECRET")
+SESSION_SECRET = os.getenv("SESSION_SECRET")
 
-# Re-export for backward compatibility
+security = HTTPBearer()
+
+
 async def get_current_user(
-    request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
     """
-    Backward compatibility wrapper - use app.core.authentication.get_current_user
+    Verify JWT token and return current user.
     
-    This wrapper properly extracts credentials from FastAPI's dependency injection
-    and passes them to the new authentication function, maintaining backward
-    compatibility with existing code that uses this module.
+    Uses DEV_MODE_SECRET or SESSION_SECRET to verify HS256-signed JWT tokens
+    from the Express server.
     
-    Note: With HTTPBearer(auto_error=False), credentials will be None if no
-    Authorization header is present, which the underlying function handles correctly.
+    Args:
+        credentials: Bearer token from Authorization header
+        db: Database session
+        
+    Returns:
+        User: Authenticated user object
+        
+    Raises:
+        HTTPException: 401 if authentication fails
     """
-    return await _get_current_user(request, credentials, db)
-
-
-async def get_current_doctor(
-    current_user: User = Depends(get_current_user)
-) -> User:
-    """Backward compatibility wrapper"""
-    return await _get_current_doctor(current_user)
-
-
-async def get_current_patient(
-    current_user: User = Depends(get_current_user)
-) -> User:
-    """Backward compatibility wrapper"""
-    return await _get_current_patient(current_user)
-
-
-def require_role(role: str):
-    """Backward compatibility wrapper"""
-    return _require_role(role)
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        token = credentials.credentials
+        secret = DEV_MODE_SECRET or SESSION_SECRET
+        
+        if not secret:
+            raise credentials_exception
+        
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+        
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found in database"
+            )
+        
+        return user
+        
+    except JWTError as e:
+        print(f"[AUTH ERROR] JWT validation failed: {str(e)}")
+        raise credentials_exception
+    except Exception as e:
+        print(f"[AUTH ERROR] Authentication error: {str(e)}")
+        raise credentials_exception

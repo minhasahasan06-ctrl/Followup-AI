@@ -19,7 +19,8 @@ export default function RoleSelection() {
 
   const selectRoleMutation = useMutation({
     mutationFn: async (data: { role: string; medicalLicenseNumber?: string; termsAccepted: boolean }) => {
-      return await apiRequest("POST", "/api/user/select-role", data);
+      const res = await apiRequest("/api/user/select-role", { method: "POST", json: data });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });

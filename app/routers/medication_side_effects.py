@@ -4,7 +4,7 @@ Provides AI-powered correlation analysis between medications and symptoms
 HIPAA-compliant with defense-in-depth security
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -20,6 +20,9 @@ from app.models.medication_side_effects import (
 )
 from app.models.patient_doctor_connection import PatientDoctorConnection
 from app.services.medication_correlation import MedicationCorrelationEngine
+from app.services.access_control import (
+    HIPAAAuditLogger, PHICategory, AccessControlService, AccessScope, get_access_control
+)
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1/medication-side-effects", tags=["Medication Side Effects"])
@@ -83,11 +86,12 @@ class EffectsSummaryResponse(BaseModel):
 def verify_patient_access(
     patient_id: str,
     current_user: User,
-    db: Session
+    db: Session,
+    request: Request = None
 ) -> None:
     """
     Defense-in-depth: Verify user has access to patient data
-    Prevents unauthorized access
+    Uses AccessControlService for doctor access verification
     """
     # Verify user has permission to access
     if current_user.role == "patient":
@@ -95,14 +99,28 @@ def verify_patient_access(
         if current_user.id != patient_id:
             raise HTTPException(status_code=403, detail="Patients can only access their own medication analysis")
     elif current_user.role == "doctor":
-        # Doctors need active connection
-        connection = db.query(PatientDoctorConnection).filter(
-            PatientDoctorConnection.patient_id == patient_id,
-            PatientDoctorConnection.doctor_id == current_user.id,
-            PatientDoctorConnection.status == "active"
-        ).first()
-        if not connection:
-            raise HTTPException(status_code=403, detail="No active connection with this patient")
+        # Use AccessControlService for doctor access verification
+        acs = get_access_control()
+        decision = acs.verify_doctor_patient_access(
+            db=db,
+            doctor_id=current_user.id,
+            patient_id=patient_id,
+            required_scope=AccessScope.READ,
+            phi_categories=[PHICategory.MEDICATIONS.value]
+        )
+        if not decision.allowed:
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=current_user.id,
+                actor_role="doctor",
+                patient_id=patient_id,
+                action="medication_analysis_denied",
+                phi_categories=[PHICategory.MEDICATIONS.value],
+                resource_type="medication_side_effects",
+                success=False,
+                error_message=decision.reason,
+                ip_address=request.client.host if request and request.client else None
+            )
+            raise HTTPException(status_code=403, detail=decision.reason)
     else:
         raise HTTPException(status_code=403, detail="Invalid role for medication analysis access")
 
@@ -114,7 +132,8 @@ def verify_patient_access(
 @router.post("/analyze/{patient_id}")
 async def analyze_patient_correlations(
     patient_id: str,
-    request: AnalyzeCorrelationsRequest,
+    request_data: AnalyzeCorrelationsRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -125,7 +144,7 @@ async def analyze_patient_correlations(
     Analysis: Uses OpenAI GPT-4o for temporal pattern detection
     """
     # Defense-in-depth security verification
-    verify_patient_access(patient_id, current_user, db)
+    verify_patient_access(patient_id, current_user, db, request)
     
     # Initialize correlation engine
     engine = MedicationCorrelationEngine(db)
@@ -134,8 +153,8 @@ async def analyze_patient_correlations(
         # Run correlation analysis
         correlations = engine.analyze_patient_correlations(
             patient_id=patient_id,
-            days_back=request.days_back,
-            min_correlation_score=request.min_confidence
+            days_back=request_data.days_back,
+            min_correlation_score=request_data.min_confidence
         )
         
         # Convert to response format
@@ -144,10 +163,21 @@ async def analyze_patient_correlations(
             for corr in correlations
         ]
         
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=current_user.id,
+            actor_role=str(current_user.role),
+            patient_id=patient_id,
+            action="analyze_medication_correlations",
+            phi_categories=[PHICategory.MEDICATIONS.value, PHICategory.SYMPTOMS.value],
+            resource_type="medication_side_effects",
+            success=True,
+            ip_address=request.client.host if request.client else None
+        )
+        
         return {
             "patient_id": patient_id,
-            "analysis_period_days": request.days_back,
-            "min_confidence_threshold": request.min_confidence,
+            "analysis_period_days": request_data.days_back,
+            "min_confidence_threshold": request_data.min_confidence,
             "total_correlations_found": len(correlations),
             "strong_correlations": sum(1 for c in correlations if c.correlation_strength == CorrelationStrength.STRONG),
             "correlations": correlation_responses,

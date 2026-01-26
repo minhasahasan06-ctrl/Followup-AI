@@ -1,0 +1,1699 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation, useSearch } from "wouter";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  Watch, CheckCircle2, XCircle, AlertCircle, Plus, Trash2, RefreshCw, 
+  Battery, Activity, Dumbbell, Zap, Smartphone, Stethoscope, Heart,
+  Thermometer, Droplets, Scale, Bluetooth, Wifi, Shield, Settings,
+  ArrowRight, ExternalLink, Clock, TrendingUp, AlertTriangle, Info,
+  ChevronRight, Check, X, Loader2, Link2, Unlink, BarChart2, FileText,
+  QrCode, Webhook, Signal, BatteryWarning, BatteryFull, BatteryLow,
+  Radio, Scan, CheckCheck, WifiOff, RefreshCcw
+} from "lucide-react";
+import { SiApple, SiFitbit, SiGarmin, SiSamsung, SiGoogle } from "react-icons/si";
+
+interface DeviceType {
+  id: string;
+  name: string;
+  category: string;
+  icon: string;
+  description: string;
+  metrics: string[];
+  pairingMethods: string[];
+}
+
+interface ConnectedDevice {
+  id: string;
+  deviceType: string;
+  deviceName: string;
+  vendorId: string;
+  connectionStatus: "connected" | "disconnected" | "syncing" | "error" | "pending";
+  batteryLevel?: number;
+  lastSyncAt?: string;
+  firmwareVersion?: string;
+  trackedMetrics: string[];
+  consentGiven: boolean;
+  consentTimestamp?: string;
+  autoSync?: boolean;
+  signalStrength?: number;
+  healthData?: {
+    latestReadings: Record<string, any>;
+    dailyAverage: Record<string, number>;
+    trends: Record<string, string>;
+  };
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+  status: "active" | "coming_soon" | "requires_partnership";
+  pairingMethod: "oauth" | "ble" | "manual" | "qr" | "healthkit" | "google_fit";
+  deviceTypes: string[];
+  logoComponent?: React.ComponentType<any>;
+  metrics?: string[];
+}
+
+interface BLEDevice {
+  id: string;
+  name: string;
+  rssi: number;
+  serviceUUID?: string;
+}
+
+interface WebhookStatus {
+  vendorId: string;
+  deviceName?: string;
+  lastReceived?: string;
+  lastSyncedAt?: string;
+  lastSyncStatus?: string;
+  status: "active" | "inactive" | "error";
+  eventsToday: number;
+  errorsToday?: number;
+}
+
+interface PairingSession {
+  sessionId: string;
+  status: string;
+  authUrl?: string;
+  bleInstructions?: any;
+  qrCodeData?: string;
+  expiresAt: string;
+}
+
+const DEVICE_CATEGORIES = [
+  { id: "smartwatch", name: "Smartwatch", icon: Watch, description: "Apple Watch, Fitbit, Garmin, Oura" },
+  { id: "bp_monitor", name: "Blood Pressure Monitor", icon: Heart, description: "Withings, Omron, iHealth" },
+  { id: "glucose_meter", name: "Glucose Meter", icon: Droplets, description: "Dexcom, Abbott Libre, iHealth" },
+  { id: "scale", name: "Smart Scale", icon: Scale, description: "Withings, Fitbit Aria, Renpho" },
+  { id: "thermometer", name: "Smart Thermometer", icon: Thermometer, description: "Withings Thermo, Kinsa" },
+  { id: "stethoscope", name: "Digital Stethoscope", icon: Stethoscope, description: "Eko, Littmann Core" },
+  { id: "pulse_oximeter", name: "Pulse Oximeter", icon: Activity, description: "Masimo, iHealth, Wellue" },
+  { id: "activity_tracker", name: "Activity Tracker", icon: Dumbbell, description: "Fitbit, Whoop, Oura Ring" },
+];
+
+const VENDORS: Vendor[] = [
+  { id: "apple_healthkit", name: "Apple Health", status: "active", pairingMethod: "healthkit", deviceTypes: ["smartwatch", "all"], logoComponent: SiApple, metrics: ["heart_rate", "hrv", "spo2", "sleep", "steps", "bp", "glucose", "weight", "temperature", "ecg"] },
+  { id: "fitbit", name: "Fitbit", status: "active", pairingMethod: "oauth", deviceTypes: ["smartwatch", "scale", "activity_tracker"], logoComponent: SiFitbit, metrics: ["heart_rate", "hrv", "spo2", "sleep", "steps", "calories", "respiratory_rate", "weight"] },
+  { id: "withings", name: "Withings", status: "active", pairingMethod: "oauth", deviceTypes: ["bp_monitor", "scale", "thermometer", "smartwatch"], metrics: ["bp", "weight", "body_fat", "temperature", "heart_rate", "spo2"] },
+  { id: "oura", name: "Oura", status: "active", pairingMethod: "oauth", deviceTypes: ["activity_tracker", "smartwatch"], metrics: ["heart_rate", "hrv", "spo2", "sleep", "readiness", "activity", "temperature"] },
+  { id: "google_fit", name: "Google Fit", status: "active", pairingMethod: "google_fit", deviceTypes: ["smartwatch", "all"], logoComponent: SiGoogle, metrics: ["heart_rate", "steps", "calories", "sleep", "bp", "glucose", "weight", "spo2"] },
+  { id: "ihealth", name: "iHealth", status: "active", pairingMethod: "oauth", deviceTypes: ["bp_monitor", "glucose_meter", "pulse_oximeter", "scale"], metrics: ["bp", "weight", "spo2", "glucose"] },
+  { id: "garmin", name: "Garmin", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["smartwatch", "activity_tracker"], logoComponent: SiGarmin, metrics: ["heart_rate", "hrv", "spo2", "sleep", "steps", "stress", "body_battery", "vo2_max"] },
+  { id: "whoop", name: "Whoop", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["activity_tracker"], metrics: ["heart_rate", "hrv", "spo2", "sleep", "recovery", "strain"] },
+  { id: "dexcom", name: "Dexcom", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["glucose_meter"], metrics: ["glucose"] },
+  { id: "samsung", name: "Samsung Health", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["smartwatch"], logoComponent: SiSamsung, metrics: ["heart_rate", "spo2", "sleep", "steps", "stress", "bp", "ecg"] },
+  { id: "eko", name: "Eko", status: "requires_partnership", pairingMethod: "ble", deviceTypes: ["stethoscope"], metrics: ["heart_sounds", "lung_sounds", "ecg"] },
+  { id: "abbott", name: "Abbott LibreView", status: "requires_partnership", pairingMethod: "oauth", deviceTypes: ["glucose_meter"], metrics: ["glucose"] },
+  { id: "omron", name: "Omron", status: "active", pairingMethod: "ble", deviceTypes: ["bp_monitor"], metrics: ["bp", "heart_rate", "afib"] },
+  { id: "generic_ble", name: "Generic BLE Device", status: "active", pairingMethod: "ble", deviceTypes: ["bp_monitor", "pulse_oximeter", "thermometer", "scale", "glucose_meter"], metrics: ["bp", "spo2", "temperature", "weight", "glucose"] },
+];
+
+const METRIC_LABELS: Record<string, string> = {
+  heart_rate: "Heart Rate",
+  resting_heart_rate: "Resting HR",
+  hrv: "HRV",
+  steps: "Steps",
+  calories: "Calories",
+  sleep: "Sleep",
+  spo2: "SpO2",
+  bp: "Blood Pressure",
+  glucose: "Glucose",
+  weight: "Weight",
+  temperature: "Temperature",
+  respiratory_rate: "Respiratory Rate",
+  stress: "Stress",
+  recovery: "Recovery",
+  readiness: "Readiness",
+  vo2_max: "VO2 Max",
+  active_minutes: "Active Minutes",
+  body_battery: "Body Battery",
+  body_fat: "Body Fat",
+  ecg: "ECG",
+  afib: "AFib Detection",
+  heart_sounds: "Heart Sounds",
+  lung_sounds: "Lung Sounds",
+};
+
+const DATA_CONSENT_TYPES = [
+  { id: "heart_rate", label: "Heart Rate & HRV", description: "Continuous heart rate monitoring and heart rate variability" },
+  { id: "blood_pressure", label: "Blood Pressure", description: "Systolic, diastolic, and pulse readings" },
+  { id: "glucose", label: "Blood Glucose", description: "Fasting and postprandial glucose levels" },
+  { id: "sleep", label: "Sleep Data", description: "Sleep duration, stages, quality, and breathing" },
+  { id: "activity", label: "Activity & Steps", description: "Daily steps, calories, and active minutes" },
+  { id: "spo2", label: "Blood Oxygen (SpO2)", description: "Oxygen saturation levels" },
+  { id: "temperature", label: "Temperature", description: "Skin and body temperature readings" },
+  { id: "weight", label: "Weight & Body Composition", description: "Weight, BMI, body fat, muscle mass" },
+  { id: "respiratory", label: "Respiratory Rate", description: "Breathing rate and patterns" },
+  { id: "stress", label: "Stress & Recovery", description: "Stress levels and recovery scores" },
+];
+
+const BLE_SERVICE_UUIDS: Record<string, string> = {
+  blood_pressure: "00001810-0000-1000-8000-00805f9b34fb",
+  heart_rate: "0000180d-0000-1000-8000-00805f9b34fb",
+  health_thermometer: "00001809-0000-1000-8000-00805f9b34fb",
+  weight_scale: "0000181d-0000-1000-8000-00805f9b34fb",
+  glucose: "00001808-0000-1000-8000-00805f9b34fb",
+  pulse_oximeter: "00001822-0000-1000-8000-00805f9b34fb",
+};
+
+export default function DeviceConnect() {
+  const { toast } = useToast();
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+  
+  const [activeTab, setActiveTab] = useState("devices");
+  const [showPairingWizard, setShowPairingWizard] = useState(false);
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [showDeviceDetails, setShowDeviceDetails] = useState(false);
+  const [showBLEScanModal, setShowBLEScanModal] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState<ConnectedDevice | null>(null);
+  const [pairingStep, setPairingStep] = useState(0);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedVendor, setSelectedVendor] = useState<string | null>(null);
+  const [consentSelections, setConsentSelections] = useState<Record<string, boolean>>({});
+  const [pairingStatus, setPairingStatus] = useState<"idle" | "connecting" | "scanning" | "success" | "error">("idle");
+  const [manualDeviceName, setManualDeviceName] = useState("");
+  const [pairingSession, setPairingSession] = useState<PairingSession | null>(null);
+  const [bleDevices, setBleDevices] = useState<BLEDevice[]>([]);
+  const [selectedBleDevice, setSelectedBleDevice] = useState<BLEDevice | null>(null);
+  const [oauthPolling, setOauthPolling] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const { data: devices = [], isLoading: devicesLoading, error: devicesError, refetch: refetchDevices } = useQuery<ConnectedDevice[]>({
+    queryKey: ["/api/v1/devices/connections"],
+    retry: false,
+  });
+
+  const isAuthenticated = !devicesError || !(devicesError as Error)?.message?.includes("401");
+
+  const { data: healthAnalytics } = useQuery({
+    queryKey: ["/api/v1/devices/health-analytics"],
+    enabled: devices.length > 0 && isAuthenticated,
+    retry: false,
+  });
+
+  const { data: syncHistory } = useQuery({
+    queryKey: ["/api/v1/devices/sync-history"],
+    enabled: devices.length > 0 && isAuthenticated,
+    retry: false,
+  });
+
+  const { data: webhookStatuses } = useQuery<WebhookStatus[]>({
+    queryKey: ["/api/v1/devices/webhook-status"],
+    enabled: devices.length > 0 && isAuthenticated,
+    retry: false,
+    refetchInterval: 60000,
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const paired = params.get("paired");
+    const error = params.get("error");
+    const vendor = params.get("vendor");
+
+    if (paired === "true" && vendor) {
+      const vendorName = VENDORS.find(v => v.id === vendor)?.name || vendor;
+      toast({
+        title: "Device Connected!",
+        description: `Successfully connected to ${vendorName}. Your health data will sync automatically.`,
+      });
+      refetchDevices();
+      setLocation("/wearables", { replace: true });
+    } else if (error === "pairing_failed" && vendor) {
+      const vendorName = VENDORS.find(v => v.id === vendor)?.name || vendor;
+      toast({
+        title: "Connection Failed",
+        description: `Could not connect to ${vendorName}. Please try again.`,
+        variant: "destructive",
+      });
+      setLocation("/wearables", { replace: true });
+    }
+  }, [search, toast, refetchDevices, setLocation]);
+
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  const startPairingMutation = useMutation({
+    mutationFn: async (data: { vendorId: string; deviceType: string; pairingMethod: string; deviceName?: string }) => {
+      return await apiRequest("/api/v1/devices/pair/start", {
+        method: "POST",
+        body: JSON.stringify({
+          vendor_id: data.vendorId,
+          device_type: data.deviceType,
+          pairing_method: data.pairingMethod,
+          device_model: data.deviceName,
+        }),
+      });
+    },
+    onSuccess: (response: any) => {
+      setPairingSession({
+        sessionId: response.session_id,
+        status: response.status,
+        authUrl: response.auth_url,
+        bleInstructions: response.ble_instructions,
+        qrCodeData: response.qr_code_data,
+        expiresAt: response.expires_at,
+      });
+
+      if (response.pairing_method === "oauth" && response.auth_url) {
+        window.open(response.auth_url, "_blank", "width=600,height=700");
+        setPairingStatus("connecting");
+        setOauthPolling(true);
+        startOAuthPolling(response.session_id);
+      } else if (response.pairing_method === "ble") {
+        setPairingStatus("idle");
+        setShowBLEScanModal(true);
+      } else if (response.pairing_method === "manual" || response.pairing_method === "healthkit") {
+        setPairingStatus("success");
+        completePairingMutation.mutate({
+          sessionId: response.session_id,
+          consentGranted: true,
+          consentedDataTypes: Object.entries(consentSelections).filter(([_, v]) => v).map(([k]) => k),
+        });
+      }
+    },
+    onError: (error: any) => {
+      setPairingStatus("error");
+      toast({
+        title: "Pairing Failed",
+        description: error?.message || "Could not start device pairing. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const completePairingMutation = useMutation({
+    mutationFn: async (data: { sessionId: string; bleDeviceId?: string; consentGranted: boolean; consentedDataTypes: string[] }) => {
+      return await apiRequest("/api/v1/devices/pair/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          session_id: data.sessionId,
+          ble_device_id: data.bleDeviceId,
+          consent_granted: data.consentGranted,
+          consented_data_types: data.consentedDataTypes,
+        }),
+      });
+    },
+    onSuccess: () => {
+      setPairingStatus("success");
+      toast({
+        title: "Device Connected!",
+        description: "Your device has been paired successfully. Data will sync automatically.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/devices/connections"] });
+      setTimeout(() => closePairingWizard(), 1500);
+    },
+    onError: () => {
+      setPairingStatus("error");
+      toast({
+        title: "Pairing Failed",
+        description: "Could not complete device pairing. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const syncDeviceMutation = useMutation({
+    mutationFn: async (deviceId: string) => {
+      return await apiRequest(`/api/v1/devices/${deviceId}/sync`, {
+        method: "POST",
+      });
+    },
+    onSuccess: (response: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/devices/connections"] });
+      toast({
+        title: "Sync Started",
+        description: response?.job_id ? `Sync job ${response.job_id} queued.` : "Your health data sync has been initiated.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Sync Failed",
+        description: "Could not sync device data. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const disconnectDeviceMutation = useMutation({
+    mutationFn: async (deviceId: string) => {
+      return await apiRequest(`/api/v1/devices/${deviceId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/devices/connections"] });
+      setShowDeviceDetails(false);
+      setSelectedDevice(null);
+      toast({
+        title: "Device Disconnected",
+        description: "The device has been removed from your account.",
+      });
+    },
+  });
+
+  const updateConsentMutation = useMutation({
+    mutationFn: async (data: { deviceId: string; consents: Record<string, boolean> }) => {
+      return await apiRequest(`/api/v1/devices/${data.deviceId}/consent`, {
+        method: "PATCH",
+        body: JSON.stringify({ consent_types: data.consents }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/devices/connections"] });
+      setShowConsentModal(false);
+      toast({
+        title: "Consent Updated",
+        description: "Your data sharing preferences have been saved.",
+      });
+    },
+  });
+
+  const startOAuthPolling = useCallback((sessionId: string) => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    let attempts = 0;
+    const maxAttempts = 60;
+
+    pollingIntervalRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        clearInterval(pollingIntervalRef.current!);
+        setOauthPolling(false);
+        setPairingStatus("error");
+        toast({
+          title: "Authorization Timeout",
+          description: "OAuth authorization timed out. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        const response = await apiRequest(`/api/v1/devices/pair/status/${sessionId}`);
+        if (response.status === "completed") {
+          clearInterval(pollingIntervalRef.current!);
+          setOauthPolling(false);
+          setPairingStatus("success");
+          queryClient.invalidateQueries({ queryKey: ["/api/v1/devices/connections"] });
+          toast({
+            title: "Device Connected!",
+            description: "Your device has been paired successfully.",
+          });
+          setTimeout(() => closePairingWizard(), 1500);
+        } else if (response.status === "failed") {
+          clearInterval(pollingIntervalRef.current!);
+          setOauthPolling(false);
+          setPairingStatus("error");
+          toast({
+            title: "Authorization Failed",
+            description: response.error_message || "OAuth authorization failed.",
+            variant: "destructive",
+          });
+        }
+      } catch (e) {
+      }
+    }, 3000);
+  }, [toast]);
+
+  const scanForBLEDevices = useCallback(async () => {
+    if (!navigator.bluetooth) {
+      toast({
+        title: "Bluetooth Not Available",
+        description: "Web Bluetooth is only available in Chrome, Edge, and Opera browsers.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPairingStatus("scanning");
+    setBleDevices([]);
+
+    try {
+      const category = selectedCategory || "bp_monitor";
+      let serviceUUID = BLE_SERVICE_UUIDS.heart_rate;
+      
+      if (category === "bp_monitor") {
+        serviceUUID = BLE_SERVICE_UUIDS.blood_pressure;
+      } else if (category === "thermometer") {
+        serviceUUID = BLE_SERVICE_UUIDS.health_thermometer;
+      } else if (category === "scale") {
+        serviceUUID = BLE_SERVICE_UUIDS.weight_scale;
+      } else if (category === "glucose_meter") {
+        serviceUUID = BLE_SERVICE_UUIDS.glucose;
+      } else if (category === "pulse_oximeter") {
+        serviceUUID = BLE_SERVICE_UUIDS.pulse_oximeter;
+      }
+
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [serviceUUID] }],
+        optionalServices: Object.values(BLE_SERVICE_UUIDS),
+      });
+
+      if (device) {
+        const bleDevice: BLEDevice = {
+          id: device.id,
+          name: device.name || "Unknown Device",
+          rssi: -50,
+          serviceUUID,
+        };
+        setBleDevices([bleDevice]);
+        setSelectedBleDevice(bleDevice);
+        setPairingStatus("idle");
+      }
+    } catch (error: any) {
+      if (error.name !== "NotFoundError") {
+        toast({
+          title: "Bluetooth Error",
+          description: error.message || "Could not scan for devices.",
+          variant: "destructive",
+        });
+      }
+      setPairingStatus("idle");
+    }
+  }, [selectedCategory, toast]);
+
+  const connectBLEDevice = useCallback(async () => {
+    if (!selectedBleDevice || !pairingSession) return;
+
+    setPairingStatus("connecting");
+    
+    completePairingMutation.mutate({
+      sessionId: pairingSession.sessionId,
+      bleDeviceId: selectedBleDevice.id,
+      consentGranted: true,
+      consentedDataTypes: Object.entries(consentSelections).filter(([_, v]) => v).map(([k]) => k),
+    });
+  }, [selectedBleDevice, pairingSession, consentSelections, completePairingMutation]);
+
+  const closePairingWizard = () => {
+    setShowPairingWizard(false);
+    setShowBLEScanModal(false);
+    setPairingStep(0);
+    setSelectedCategory(null);
+    setSelectedVendor(null);
+    setConsentSelections({});
+    setPairingStatus("idle");
+    setManualDeviceName("");
+    setPairingSession(null);
+    setBleDevices([]);
+    setSelectedBleDevice(null);
+    setOauthPolling(false);
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+  };
+
+  const handleStartPairing = () => {
+    if (!selectedVendor || !selectedCategory) return;
+    
+    const vendor = VENDORS.find(v => v.id === selectedVendor);
+    if (!vendor) return;
+
+    startPairingMutation.mutate({
+      vendorId: selectedVendor,
+      deviceType: selectedCategory,
+      pairingMethod: vendor.pairingMethod,
+      deviceName: manualDeviceName || undefined,
+    });
+  };
+
+  const getDeviceIcon = (deviceType: string) => {
+    const category = DEVICE_CATEGORIES.find(c => c.id === deviceType);
+    if (category) {
+      const Icon = category.icon;
+      return <Icon className="h-6 w-6" />;
+    }
+    return <Watch className="h-6 w-6" />;
+  };
+
+  const getVendorLogo = (vendorId: string) => {
+    const vendor = VENDORS.find(v => v.id === vendorId);
+    if (vendor?.logoComponent) {
+      const Logo = vendor.logoComponent;
+      return <Logo className="h-5 w-5" />;
+    }
+    return null;
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "connected":
+        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Connected</Badge>;
+      case "syncing":
+        return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">Syncing</Badge>;
+      case "error":
+        return <Badge variant="destructive">Error</Badge>;
+      case "pending":
+        return <Badge variant="secondary">Pending</Badge>;
+      default:
+        return <Badge variant="outline">Disconnected</Badge>;
+    }
+  };
+
+  const getDataFreshnessBadge = (lastSyncAt?: string, showFresh: boolean = false) => {
+    if (!lastSyncAt) return showFresh ? <Badge variant="secondary" className="text-xs">No Data</Badge> : null;
+    const hoursSinceSync = (Date.now() - new Date(lastSyncAt).getTime()) / (1000 * 60 * 60);
+    if (hoursSinceSync > 48) {
+      return <Badge variant="destructive" className="text-xs">Stale</Badge>;
+    } else if (hoursSinceSync > 24) {
+      return <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 text-xs">Needs Sync</Badge>;
+    }
+    return showFresh ? <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs">Fresh</Badge> : null;
+  };
+
+  const getBatteryIcon = (level?: number) => {
+    if (!level) return null;
+    const Icon = level > 50 ? BatteryFull : level > 20 ? Battery : BatteryLow;
+    const color = level > 50 ? "text-green-600" : level > 20 ? "text-yellow-600" : "text-red-600";
+    return (
+      <div className="flex items-center gap-1">
+        <Icon className={`h-4 w-4 ${color}`} />
+        <span className="text-xs text-muted-foreground">{level}%</span>
+      </div>
+    );
+  };
+
+  const formatLastSync = (timestamp?: string) => {
+    if (!timestamp) return "Never";
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
+    return `${Math.floor(diffMins / 1440)}d ago`;
+  };
+
+  const getWebhookStatusBadge = (status?: WebhookStatus) => {
+    if (!status) return null;
+    switch (status.status) {
+      case "active":
+        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs"><Webhook className="h-3 w-3 mr-1" />Active</Badge>;
+      case "inactive":
+        return <Badge variant="secondary" className="text-xs"><WifiOff className="h-3 w-3 mr-1" />Inactive</Badge>;
+      case "error":
+        return <Badge variant="destructive" className="text-xs"><AlertCircle className="h-3 w-3 mr-1" />Error</Badge>;
+      default:
+        return null;
+    }
+  };
+
+  const connectedDevices = devices.filter((d: ConnectedDevice) => d.connectionStatus === "connected");
+  const pendingDevices = devices.filter((d: ConnectedDevice) => d.connectionStatus === "pending");
+  const totalMetrics = connectedDevices.reduce((acc, d) => acc + (d.trackedMetrics?.length || 0), 0);
+  const activeConsents = connectedDevices.filter(d => d.consentGiven).length;
+
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="text-page-title">Device Connect</h1>
+          <p className="text-muted-foreground">
+            Connect your health devices to enable continuous monitoring and AI-powered insights
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => refetchDevices()} data-testid="button-refresh-devices">
+            <RefreshCcw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+          <Button onClick={() => setShowPairingWizard(true)} data-testid="button-add-device">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Device
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-green-100 dark:bg-green-900/30">
+                <Link2 className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="text-connected-count">{connectedDevices.length}</p>
+                <p className="text-sm text-muted-foreground">Connected Devices</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900/30">
+                <BarChart2 className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="text-metrics-count">{totalMetrics}</p>
+                <p className="text-sm text-muted-foreground">Active Metrics</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-purple-100 dark:bg-purple-900/30">
+                <Clock className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="text-last-sync">
+                  {connectedDevices.length > 0 
+                    ? formatLastSync(connectedDevices[0]?.lastSyncAt)
+                    : "--"
+                  }
+                </p>
+                <p className="text-sm text-muted-foreground">Last Sync</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-amber-100 dark:bg-amber-900/30">
+                <Shield className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="text-consent-status">{activeConsents}/{connectedDevices.length}</p>
+                <p className="text-sm text-muted-foreground">Consents Active</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {webhookStatuses && webhookStatuses.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Webhook className="h-5 w-5 text-muted-foreground" />
+              <CardTitle className="text-base">Data Sync Status</CardTitle>
+            </div>
+            <CardDescription>Real-time data sync status from connected vendors</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3">
+              {webhookStatuses.map((webhook) => (
+                <TooltipProvider key={webhook.vendorId}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 cursor-default">
+                        {getVendorLogo(webhook.vendorId)}
+                        <span className="text-sm font-medium">
+                          {webhook.deviceName || VENDORS.find(v => v.id === webhook.vendorId)?.name || webhook.vendorId}
+                        </span>
+                        {getWebhookStatusBadge(webhook)}
+                        {webhook.eventsToday > 0 && (
+                          <Badge variant="outline" className="text-xs">{webhook.eventsToday} syncs</Badge>
+                        )}
+                        {(webhook.errorsToday ?? 0) > 0 && (
+                          <Badge variant="destructive" className="text-xs">{webhook.errorsToday} errors</Badge>
+                        )}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <div className="text-xs space-y-1">
+                        <p>Last activity: {webhook.lastReceived ? new Date(webhook.lastReceived).toLocaleString() : "Never"}</p>
+                        {webhook.lastSyncedAt && (
+                          <p>Last sync: {new Date(webhook.lastSyncedAt).toLocaleString()}</p>
+                        )}
+                        {webhook.lastSyncStatus && (
+                          <p>Sync status: {webhook.lastSyncStatus}</p>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="devices" data-testid="tab-devices">My Devices</TabsTrigger>
+          <TabsTrigger value="available" data-testid="tab-available">Available Devices</TabsTrigger>
+          <TabsTrigger value="history" data-testid="tab-history">Sync History</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="devices" className="mt-6">
+          {!isAuthenticated ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Authentication Required</h3>
+                <p className="text-muted-foreground mb-4">
+                  Please sign in to view and manage your connected health devices
+                </p>
+                <Button asChild data-testid="button-login">
+                  <a href="/login">Sign In</a>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : devicesLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : devices.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Watch className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No devices connected</h3>
+                <p className="text-muted-foreground mb-4">
+                  Connect your health devices to start tracking your vitals and receive AI-powered insights
+                </p>
+                <Button onClick={() => setShowPairingWizard(true)} data-testid="button-add-first-device">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Your First Device
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {devices.map((device: ConnectedDevice) => (
+                <Card 
+                  key={device.id} 
+                  className="hover-elevate cursor-pointer"
+                  onClick={() => {
+                    setSelectedDevice(device);
+                    setShowDeviceDetails(true);
+                  }}
+                  data-testid={`card-device-${device.id}`}
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-muted">
+                          {getDeviceIcon(device.deviceType)}
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">{device.deviceName}</CardTitle>
+                          <CardDescription className="flex items-center gap-2">
+                            {getVendorLogo(device.vendorId)}
+                            <span>{VENDORS.find(v => v.id === device.vendorId)?.name || device.vendorId}</span>
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        {getStatusBadge(device.connectionStatus)}
+                        {getDataFreshnessBadge(device.lastSyncAt)}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pb-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Clock className="h-4 w-4" />
+                        <span>Last sync: {formatLastSync(device.lastSyncAt)}</span>
+                      </div>
+                      {getBatteryIcon(device.batteryLevel)}
+                    </div>
+                    
+                    {device.signalStrength && (
+                      <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                        <Signal className="h-4 w-4" />
+                        <span>Signal: {device.signalStrength}%</span>
+                      </div>
+                    )}
+                    
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {device.trackedMetrics?.slice(0, 4).map(metric => (
+                        <Badge key={metric} variant="outline" className="text-xs">
+                          {METRIC_LABELS[metric] || metric}
+                        </Badge>
+                      ))}
+                      {(device.trackedMetrics?.length || 0) > 4 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{device.trackedMetrics.length - 4} more
+                        </Badge>
+                      )}
+                    </div>
+                  </CardContent>
+                  <CardFooter className="pt-3 border-t gap-2">
+                    {device.connectionStatus === "disconnected" ? (
+                      <Button 
+                        size="sm" 
+                        variant="default"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedCategory(device.deviceType);
+                          setSelectedVendor(device.vendorId);
+                          setPairingStep(3);
+                          setShowPairingWizard(true);
+                        }}
+                        data-testid={`button-reconnect-${device.id}`}
+                      >
+                        <Link2 className="mr-2 h-4 w-4" />
+                        Reconnect
+                      </Button>
+                    ) : (
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          syncDeviceMutation.mutate(device.id);
+                        }}
+                        disabled={syncDeviceMutation.isPending}
+                        data-testid={`button-sync-${device.id}`}
+                      >
+                        {syncDeviceMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        Sync
+                      </Button>
+                    )}
+                    <Button 
+                      size="sm" 
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedDevice(device);
+                        setConsentSelections({});
+                        setShowConsentModal(true);
+                      }}
+                      data-testid={`button-consent-${device.id}`}
+                    >
+                      <Shield className="mr-2 h-4 w-4" />
+                      Consent
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="available" className="mt-6">
+          <div className="grid gap-6">
+            {DEVICE_CATEGORIES.map(category => (
+              <Card key={category.id}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-muted">
+                      <category.icon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{category.name}</CardTitle>
+                      <CardDescription>{category.description}</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {VENDORS.filter(v => v.deviceTypes.includes(category.id) || v.deviceTypes.includes("all"))
+                      .map(vendor => (
+                        <Badge 
+                          key={vendor.id}
+                          variant={vendor.status === "active" ? "default" : "secondary"}
+                          className="cursor-pointer hover-elevate py-1.5 px-3"
+                          onClick={() => {
+                            if (vendor.status === "active") {
+                              setSelectedCategory(category.id);
+                              setSelectedVendor(vendor.id);
+                              setPairingStep(2);
+                              setShowPairingWizard(true);
+                            } else {
+                              toast({
+                                title: "Coming Soon",
+                                description: `${vendor.name} integration requires a partnership agreement.`,
+                              });
+                            }
+                          }}
+                          data-testid={`badge-vendor-${vendor.id}`}
+                        >
+                          {vendor.logoComponent && <vendor.logoComponent className="h-3.5 w-3.5 mr-1.5" />}
+                          {vendor.name}
+                          {vendor.status !== "active" && (
+                            <span className="ml-1 text-xs opacity-60">
+                              {vendor.status === "coming_soon" ? "(Soon)" : "(Partner)"}
+                            </span>
+                          )}
+                        </Badge>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Sync History</CardTitle>
+              <CardDescription>Recent data synchronization events</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!syncHistory || (syncHistory as any[])?.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No sync history available</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-3">
+                    {(syncHistory as any[])?.map((event: any, i: number) => (
+                      <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
+                        <div className={`p-2 rounded-full ${
+                          event.status === "success" ? "bg-green-100 dark:bg-green-900/30" :
+                          event.status === "error" ? "bg-red-100 dark:bg-red-900/30" :
+                          "bg-blue-100 dark:bg-blue-900/30"
+                        }`}>
+                          {event.status === "success" ? (
+                            <CheckCheck className="h-4 w-4 text-green-600" />
+                          ) : event.status === "error" ? (
+                            <X className="h-4 w-4 text-red-600" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4 text-blue-600 animate-spin" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium">{event.deviceName}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {event.recordsProcessed} records synced
+                          </p>
+                        </div>
+                        <div className="text-right text-sm text-muted-foreground">
+                          <p>{new Date(event.timestamp).toLocaleDateString()}</p>
+                          <p>{new Date(event.timestamp).toLocaleTimeString()}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={showPairingWizard} onOpenChange={(open) => !open && closePairingWizard()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Connect a Device</DialogTitle>
+            <DialogDescription>
+              {pairingStep === 0 && "Select the type of device you want to connect"}
+              {pairingStep === 1 && "Choose your device manufacturer"}
+              {pairingStep === 2 && "Configure data sharing preferences"}
+              {pairingStep === 3 && "Complete the connection"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center justify-between py-4">
+            {[0, 1, 2, 3].map(step => (
+              <div key={step} className="flex items-center">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  pairingStep > step ? "bg-primary text-primary-foreground" :
+                  pairingStep === step ? "bg-primary text-primary-foreground" :
+                  "bg-muted text-muted-foreground"
+                }`}>
+                  {pairingStep > step ? <Check className="h-4 w-4" /> : step + 1}
+                </div>
+                {step < 3 && (
+                  <div className={`w-16 h-0.5 mx-2 ${
+                    pairingStep > step ? "bg-primary" : "bg-muted"
+                  }`} />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {pairingStep === 0 && (
+            <div className="grid gap-3 md:grid-cols-2 max-h-[400px] overflow-y-auto">
+              {DEVICE_CATEGORIES.map(category => (
+                <Card 
+                  key={category.id}
+                  className={`cursor-pointer hover-elevate ${
+                    selectedCategory === category.id ? "ring-2 ring-primary" : ""
+                  }`}
+                  onClick={() => setSelectedCategory(category.id)}
+                  data-testid={`card-category-${category.id}`}
+                >
+                  <CardContent className="pt-4 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-muted">
+                        <category.icon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{category.name}</p>
+                        <p className="text-xs text-muted-foreground">{category.description}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {pairingStep === 1 && (
+            <div className="grid gap-3 md:grid-cols-2 max-h-[400px] overflow-y-auto">
+              {VENDORS.filter(v => 
+                v.deviceTypes.includes(selectedCategory!) || v.deviceTypes.includes("all")
+              ).map(vendor => (
+                <Card 
+                  key={vendor.id}
+                  className={`cursor-pointer hover-elevate ${
+                    selectedVendor === vendor.id ? "ring-2 ring-primary" : ""
+                  } ${vendor.status !== "active" ? "opacity-60" : ""}`}
+                  onClick={() => vendor.status === "active" && setSelectedVendor(vendor.id)}
+                  data-testid={`card-vendor-${vendor.id}`}
+                >
+                  <CardContent className="pt-4 pb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-muted">
+                          {vendor.logoComponent ? (
+                            <vendor.logoComponent className="h-5 w-5" />
+                          ) : (
+                            <Link2 className="h-5 w-5" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium">{vendor.name}</p>
+                          <p className="text-xs text-muted-foreground capitalize">
+                            {vendor.pairingMethod === "oauth" || vendor.pairingMethod === "google_fit" ? "OAuth Connection" : 
+                             vendor.pairingMethod === "ble" ? "Bluetooth" : 
+                             vendor.pairingMethod === "healthkit" ? "Apple HealthKit" : "Manual Entry"}
+                          </p>
+                        </div>
+                      </div>
+                      {vendor.status !== "active" && (
+                        <Badge variant="secondary" className="text-xs">
+                          {vendor.status === "coming_soon" ? "Soon" : "Partner Only"}
+                        </Badge>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {pairingStep === 2 && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <div className="flex gap-3">
+                  <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-blue-900 dark:text-blue-100">HIPAA Compliant Data Sharing</p>
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      Your data is encrypted and only shared with your healthcare providers with your explicit consent.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Select data to share:</span>
+                <div className="flex gap-2">
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => {
+                      const allOn: Record<string, boolean> = {};
+                      DATA_CONSENT_TYPES.forEach(t => allOn[t.id] = true);
+                      setConsentSelections(allOn);
+                    }}
+                    data-testid="button-select-all"
+                  >
+                    Select All
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => setConsentSelections({})}
+                    data-testid="button-clear-all"
+                  >
+                    Clear All
+                  </Button>
+                </div>
+              </div>
+
+              <ScrollArea className="h-[280px]">
+                <div className="space-y-2">
+                  {DATA_CONSENT_TYPES.map(type => (
+                    <div 
+                      key={type.id}
+                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50"
+                    >
+                      <div>
+                        <p className="font-medium">{type.label}</p>
+                        <p className="text-sm text-muted-foreground">{type.description}</p>
+                      </div>
+                      <Switch
+                        checked={consentSelections[type.id] || false}
+                        onCheckedChange={(checked) => 
+                          setConsentSelections(prev => ({ ...prev, [type.id]: checked }))
+                        }
+                        data-testid={`switch-consent-${type.id}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+
+          {pairingStep === 3 && (
+            <div className="space-y-6">
+              {(() => {
+                const vendor = VENDORS.find(v => v.id === selectedVendor);
+                if (!vendor) return null;
+
+                if (vendor.pairingMethod === "healthkit") {
+                  return (
+                    <div className="space-y-4">
+                      <div className="text-center">
+                        <div className="p-4 rounded-full bg-muted inline-block mx-auto">
+                          <SiApple className="h-12 w-12" />
+                        </div>
+                      </div>
+                      <Label htmlFor="device-name">Device Name (Optional)</Label>
+                      <Input
+                        id="device-name"
+                        placeholder="My Apple Watch"
+                        value={manualDeviceName}
+                        onChange={(e) => setManualDeviceName(e.target.value)}
+                        data-testid="input-device-name"
+                      />
+                      <div className="p-4 rounded-lg bg-muted">
+                        <h4 className="font-medium mb-2">How to sync your Apple Health data:</h4>
+                        <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+                          <li>Open the Health app on your iPhone</li>
+                          <li>Tap your profile icon, then tap "Apps"</li>
+                          <li>Find and enable Followup AI for data access</li>
+                          <li>Alternatively, use "Export All Health Data" and upload</li>
+                          <li>Or use our iOS Shortcuts integration for automatic syncing</li>
+                        </ol>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (vendor.pairingMethod === "oauth" || vendor.pairingMethod === "google_fit") {
+                  return (
+                    <div className="text-center space-y-4">
+                      {pairingStatus === "idle" && (
+                        <>
+                          <div className="p-4 rounded-lg bg-muted inline-block mx-auto">
+                            {vendor.logoComponent ? (
+                              <vendor.logoComponent className="h-12 w-12" />
+                            ) : (
+                              <Link2 className="h-12 w-12" />
+                            )}
+                          </div>
+                          <p className="text-muted-foreground">
+                            Click "Connect" to authorize access to your {vendor.name} account
+                          </p>
+                          <Alert>
+                            <Info className="h-4 w-4" />
+                            <AlertDescription>
+                              You'll be redirected to {vendor.name} to securely authorize data access. No passwords are shared with us.
+                            </AlertDescription>
+                          </Alert>
+                        </>
+                      )}
+
+                      {pairingStatus === "connecting" && (
+                        <>
+                          <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
+                          <p className="font-medium">Waiting for authorization...</p>
+                          <p className="text-sm text-muted-foreground">
+                            Complete the authorization in the popup window
+                          </p>
+                          <Progress value={undefined} className="w-full" />
+                          <Button variant="outline" size="sm" onClick={() => {
+                            setPairingStatus("idle");
+                            setOauthPolling(false);
+                            if (pollingIntervalRef.current) {
+                              clearInterval(pollingIntervalRef.current);
+                            }
+                          }}>
+                            Cancel
+                          </Button>
+                        </>
+                      )}
+
+                      {pairingStatus === "success" && (
+                        <>
+                          <div className="p-4 rounded-full bg-green-100 dark:bg-green-900/30 inline-block">
+                            <CheckCircle2 className="h-12 w-12 text-green-600" />
+                          </div>
+                          <p className="font-medium text-green-600">Successfully connected!</p>
+                          <p className="text-sm text-muted-foreground">
+                            Your data will begin syncing automatically.
+                          </p>
+                        </>
+                      )}
+
+                      {pairingStatus === "error" && (
+                        <>
+                          <div className="p-4 rounded-full bg-red-100 dark:bg-red-900/30 inline-block">
+                            <XCircle className="h-12 w-12 text-red-600" />
+                          </div>
+                          <p className="font-medium text-red-600">Connection failed</p>
+                          <p className="text-sm text-muted-foreground">
+                            Please try again or contact support if the issue persists.
+                          </p>
+                          <Button variant="outline" onClick={() => setPairingStatus("idle")}>
+                            Try Again
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (vendor.pairingMethod === "ble") {
+                  return (
+                    <div className="text-center space-y-4">
+                      <div className="p-4 rounded-full bg-blue-100 dark:bg-blue-900/30 inline-block">
+                        <Bluetooth className="h-12 w-12 text-blue-600" />
+                      </div>
+                      <p className="font-medium">Bluetooth Pairing</p>
+                      <p className="text-muted-foreground">
+                        Make sure your device is in pairing mode and nearby
+                      </p>
+                      
+                      {!navigator.bluetooth && (
+                        <Alert variant="destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertTitle>Browser Not Supported</AlertTitle>
+                          <AlertDescription>
+                            Web Bluetooth is only available in Chrome, Edge, and Opera. Please use one of these browsers.
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {pairingStatus === "scanning" && (
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <span>Scanning for devices...</span>
+                        </div>
+                      )}
+
+                      {bleDevices.length > 0 && (
+                        <div className="space-y-2 text-left">
+                          <Label>Found Devices:</Label>
+                          {bleDevices.map(device => (
+                            <Card 
+                              key={device.id}
+                              className={`cursor-pointer hover-elevate ${
+                                selectedBleDevice?.id === device.id ? "ring-2 ring-primary" : ""
+                              }`}
+                              onClick={() => setSelectedBleDevice(device)}
+                            >
+                              <CardContent className="py-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <Bluetooth className="h-5 w-5 text-blue-600" />
+                                    <span className="font-medium">{device.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Signal className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm text-muted-foreground">{device.rssi} dBm</span>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <div className="flex gap-2 justify-center">
+                        <Button 
+                          onClick={scanForBLEDevices}
+                          disabled={pairingStatus === "scanning" || !navigator.bluetooth}
+                          data-testid="button-scan-bluetooth"
+                        >
+                          {pairingStatus === "scanning" ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Scan className="mr-2 h-4 w-4" />
+                          )}
+                          Scan for Devices
+                        </Button>
+                        {selectedBleDevice && (
+                          <Button 
+                            onClick={connectBLEDevice}
+                            disabled={pairingStatus === "connecting"}
+                          >
+                            {pairingStatus === "connecting" ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Link2 className="mr-2 h-4 w-4" />
+                            )}
+                            Connect
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-4">
+                    <Label htmlFor="device-name">Device Name</Label>
+                    <Input
+                      id="device-name"
+                      placeholder="My Device"
+                      value={manualDeviceName}
+                      onChange={(e) => setManualDeviceName(e.target.value)}
+                      data-testid="input-device-name"
+                    />
+                    <div className="p-4 rounded-lg bg-muted">
+                      <h4 className="font-medium mb-2">Manual Entry Mode</h4>
+                      <p className="text-sm text-muted-foreground">
+                        You can manually enter readings from your device in the Daily Follow-up section.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            {pairingStep > 0 && pairingStatus === "idle" && (
+              <Button 
+                variant="outline" 
+                onClick={() => setPairingStep(prev => prev - 1)}
+                data-testid="button-wizard-back"
+              >
+                Back
+              </Button>
+            )}
+            
+            {pairingStep < 3 && (
+              <Button 
+                onClick={() => setPairingStep(prev => prev + 1)}
+                disabled={
+                  (pairingStep === 0 && !selectedCategory) ||
+                  (pairingStep === 1 && !selectedVendor) ||
+                  (pairingStep === 2 && Object.values(consentSelections).filter(Boolean).length === 0)
+                }
+                data-testid="button-wizard-next"
+              >
+                Next
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            )}
+            
+            {pairingStep === 3 && pairingStatus === "idle" && (
+              <Button 
+                onClick={handleStartPairing}
+                disabled={startPairingMutation.isPending}
+                data-testid="button-connect-device"
+              >
+                {startPairingMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="mr-2 h-4 w-4" />
+                    Connect
+                  </>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeviceDetails} onOpenChange={setShowDeviceDetails}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              {selectedDevice && getDeviceIcon(selectedDevice.deviceType)}
+              {selectedDevice?.deviceName}
+            </DialogTitle>
+            <DialogDescription className="flex items-center gap-2">
+              {VENDORS.find(v => v.id === selectedDevice?.vendorId)?.name}
+              {getDataFreshnessBadge(selectedDevice?.lastSyncAt, true)}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedDevice && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 rounded-lg bg-muted">
+                  <p className="text-sm text-muted-foreground">Status</p>
+                  <div className="mt-1">{getStatusBadge(selectedDevice.connectionStatus)}</div>
+                </div>
+                <div className="p-3 rounded-lg bg-muted">
+                  <p className="text-sm text-muted-foreground">Battery</p>
+                  <p className="font-medium mt-1 flex items-center gap-2">
+                    {selectedDevice.batteryLevel ? (
+                      <>
+                        {getBatteryIcon(selectedDevice.batteryLevel)}
+                        {selectedDevice.batteryLevel}%
+                      </>
+                    ) : "N/A"}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted">
+                  <p className="text-sm text-muted-foreground">Last Sync</p>
+                  <p className="font-medium mt-1">{formatLastSync(selectedDevice.lastSyncAt)}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted">
+                  <p className="text-sm text-muted-foreground">Firmware</p>
+                  <p className="font-medium mt-1">{selectedDevice.firmwareVersion || "N/A"}</p>
+                </div>
+              </div>
+
+              {selectedDevice.healthData?.latestReadings && Object.keys(selectedDevice.healthData.latestReadings).length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2 flex items-center gap-2">
+                    <Activity className="h-4 w-4" />
+                    Latest Readings
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(selectedDevice.healthData.latestReadings).slice(0, 6).map(([key, value]) => (
+                      <div key={key} className="p-2 rounded-lg bg-muted/50 text-sm">
+                        <p className="text-xs text-muted-foreground">{METRIC_LABELS[key] || key}</p>
+                        <p className="font-medium">
+                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                        </p>
+                        {selectedDevice.healthData?.trends?.[key] && (
+                          <p className={`text-xs ${
+                            selectedDevice.healthData.trends[key] === 'up' ? 'text-green-600' :
+                            selectedDevice.healthData.trends[key] === 'down' ? 'text-red-600' :
+                            'text-muted-foreground'
+                          }`}>
+                            {selectedDevice.healthData.trends[key] === 'up' ? '↑ Increasing' :
+                             selectedDevice.healthData.trends[key] === 'down' ? '↓ Decreasing' : '→ Stable'}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <h4 className="font-medium mb-2">Tracked Metrics</h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedDevice.trackedMetrics?.map(metric => (
+                    <Badge key={metric} variant="outline">
+                      {METRIC_LABELS[metric] || metric}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  <span>Data Sharing Consent</span>
+                </div>
+                {selectedDevice.consentGiven ? (
+                  <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Active</Badge>
+                ) : (
+                  <Badge variant="secondary">Not Configured</Badge>
+                )}
+              </div>
+
+              {selectedDevice.autoSync !== undefined && (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="h-5 w-5" />
+                    <span>Auto Sync</span>
+                  </div>
+                  <Badge variant={selectedDevice.autoSync ? "default" : "secondary"}>
+                    {selectedDevice.autoSync ? "Enabled" : "Disabled"}
+                  </Badge>
+                </div>
+              )}
+
+              <Separator />
+
+              <div className="flex gap-2">
+                {selectedDevice.connectionStatus === "disconnected" ? (
+                  <Button 
+                    className="flex-1"
+                    onClick={() => {
+                      setSelectedCategory(selectedDevice.deviceType);
+                      setSelectedVendor(selectedDevice.vendorId);
+                      setPairingStep(3);
+                      setShowDeviceDetails(false);
+                      setShowPairingWizard(true);
+                    }}
+                    data-testid="button-reconnect-device"
+                  >
+                    <Link2 className="mr-2 h-4 w-4" />
+                    Reconnect Device
+                  </Button>
+                ) : (
+                  <Button 
+                    className="flex-1"
+                    onClick={() => syncDeviceMutation.mutate(selectedDevice.id)}
+                    disabled={syncDeviceMutation.isPending}
+                    data-testid="button-detail-sync"
+                  >
+                    {syncDeviceMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                    )}
+                    Sync Now
+                  </Button>
+                )}
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    setConsentSelections({});
+                    setShowConsentModal(true);
+                  }}
+                  data-testid="button-detail-consent"
+                >
+                  <Shield className="mr-2 h-4 w-4" />
+                  Manage Consent
+                </Button>
+              </div>
+
+              <Button 
+                variant="destructive" 
+                className="w-full"
+                onClick={() => {
+                  if (confirm("Are you sure you want to disconnect this device? All synced data will remain in your account.")) {
+                    disconnectDeviceMutation.mutate(selectedDevice.id);
+                  }
+                }}
+                data-testid="button-disconnect-device"
+              >
+                <Unlink className="mr-2 h-4 w-4" />
+                Disconnect Device
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showConsentModal} onOpenChange={setShowConsentModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Data Sharing Preferences
+            </DialogTitle>
+            <DialogDescription>
+              Choose what health data to share with your healthcare team
+            </DialogDescription>
+          </DialogHeader>
+
+          <Alert className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-800 dark:text-amber-200">
+              Your data sharing preferences are protected under HIPAA regulations. 
+              Changes are logged for compliance and audit purposes.
+            </AlertDescription>
+          </Alert>
+
+          <ScrollArea className="h-[300px]">
+            <div className="space-y-2">
+              {DATA_CONSENT_TYPES.map(type => (
+                <div 
+                  key={type.id}
+                  className="flex items-center justify-between p-3 rounded-lg border"
+                >
+                  <div>
+                    <p className="font-medium">{type.label}</p>
+                    <p className="text-sm text-muted-foreground">{type.description}</p>
+                  </div>
+                  <Switch
+                    checked={consentSelections[type.id] || false}
+                    onCheckedChange={(checked) => 
+                      setConsentSelections(prev => ({ ...prev, [type.id]: checked }))
+                    }
+                    data-testid={`switch-update-consent-${type.id}`}
+                  />
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowConsentModal(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => {
+                if (selectedDevice) {
+                  updateConsentMutation.mutate({
+                    deviceId: selectedDevice.id,
+                    consents: consentSelections,
+                  });
+                }
+              }}
+              disabled={updateConsentMutation.isPending}
+              data-testid="button-save-consent"
+            >
+              {updateConsentMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="mr-2 h-4 w-4" />
+              )}
+              Save Preferences
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

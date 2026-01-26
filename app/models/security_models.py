@@ -207,6 +207,54 @@ class SecurityEvent(Base):
     )
 
 
+class HIPAAAuditLog(Base):
+    """
+    HIPAA-compliant PHI access audit logging.
+    Tracks all access to Protected Health Information with full audit trail.
+    Required fields: who, what, when, why, from-where
+    """
+    __tablename__ = "hipaa_audit_logs"
+
+    id = Column(String, primary_key=True, index=True)
+    
+    # WHO - Actor information
+    actor_id = Column(String, nullable=False, index=True)
+    actor_role = Column(String, nullable=False)  # "patient", "doctor", "admin", "system"
+    
+    # WHAT - PHI access details
+    patient_id = Column(String, nullable=False, index=True)
+    action = Column(String, nullable=False, index=True)  # "access_check", "view", "create", "update", "delete", "export"
+    phi_categories = Column(JSON)  # ["vitals", "symptoms", "medications", etc.]
+    resource_type = Column(String, nullable=False)  # "patient_data", "prescription", "lab_result", etc.
+    resource_id = Column(String)  # Specific resource ID
+    
+    # WHY - Access justification
+    access_scope = Column(String)  # "full", "limited", "summary_only", "emergency"
+    access_reason = Column(String)  # "clinical_care", "emergency", "data_export", "ml_training"
+    consent_verified = Column(Boolean, default=False)
+    assignment_id = Column(String)  # Doctor-patient assignment ID
+    
+    # FROM WHERE - Request context
+    ip_address = Column(String)
+    user_agent = Column(String)
+    request_path = Column(String)
+    
+    # Result
+    success = Column(Boolean, default=True)
+    error_message = Column(Text)
+    additional_context = Column(JSON)
+    
+    # WHEN - Timestamp
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True, nullable=False)
+    
+    __table_args__ = (
+        Index('idx_hipaa_patient_actor', 'patient_id', 'actor_id'),
+        Index('idx_hipaa_action', 'action', 'created_at'),
+        Index('idx_hipaa_phi_access', 'patient_id', 'created_at'),
+        Index('idx_hipaa_actor_time', 'actor_id', 'created_at'),
+    )
+
+
 class LegalHold(Base):
     """Track legal holds on patient data (prevent deletion)"""
     __tablename__ = "legal_holds"

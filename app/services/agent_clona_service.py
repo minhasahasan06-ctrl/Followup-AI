@@ -1,16 +1,20 @@
 """
 Enhanced Agent Clona Service for Symptom Analysis.
 Provides differential diagnosis, doctor suggestions, lab test recommendations.
+Integrated with Red Flag Detection for real-time emergency escalation.
 """
 
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 import json
+import logging
 from datetime import datetime
 
 from app.config import settings, get_openai_client, check_openai_baa_compliance
 from app.models.user import User
 from app.services.doctor_search_service import DoctorSearchService
+
+logger = logging.getLogger(__name__)
 
 
 class AgentClonaService:
@@ -65,6 +69,7 @@ For wellness pattern analysis, structure your responses like this:
     ) -> Dict[str, Any]:
         """
         Analyze patient symptoms and provide recommendations.
+        Integrates with Red Flag Detection for real-time emergency escalation.
         
         HIPAA COMPLIANCE: Only works if OpenAI BAA is signed.
         PHI (Patient Health Information) is transmitted to OpenAI.
@@ -76,10 +81,33 @@ For wellness pattern analysis, structure your responses like this:
             conversation_history: Previous messages in the conversation
             
         Returns:
-            Dictionary with analysis, recommendations, and suggested doctors
+            Dictionary with analysis, recommendations, suggested doctors, and red flag info
         """
         check_openai_baa_compliance()
         client = get_openai_client()
+        
+        red_flag_result = None
+        escalation_triggered = False
+        
+        try:
+            from app.services.red_flag_detection_service import get_red_flag_detection_service
+            red_flag_service = get_red_flag_detection_service()
+            
+            full_conversation_text = symptom_description
+            for msg in conversation_history:
+                if msg.get("role") == "user":
+                    full_conversation_text = f"{msg.get('content', '')} {full_conversation_text}"
+            
+            red_flag_result = red_flag_service.detect_red_flags(
+                text=full_conversation_text,
+                patient_id=str(patient.id),
+                use_ai_analysis=True,
+                context={"source": "clona_chat", "message": symptom_description}
+            )
+            
+        except Exception as e:
+            logger.warning(f"[Clona] Red flag detection failed: {e}")
+            red_flag_result = None
         
         messages = [{"role": "system", "content": AgentClonaService.SYSTEM_PROMPT}]
         
@@ -138,11 +166,31 @@ If you suggest medical specialty consultation, structure your response to includ
                 )
                 suggested_doctors.extend(doctors)
         
+        red_flag_info = None
+        if red_flag_result and hasattr(red_flag_result, 'detected') and red_flag_result.detected:
+            escalation_triggered = True
+            categories_list = [cat.value if hasattr(cat, 'value') else str(cat) for cat in red_flag_result.categories]
+            red_flag_info = {
+                "detected": True,
+                "severity": red_flag_result.highest_severity.value if red_flag_result.highest_severity else None,
+                "categories": categories_list,
+                "symptoms": red_flag_result.symptoms,
+                "escalation_type": red_flag_result.escalation_type.value if red_flag_result.escalation_type else None,
+                "emergency_instructions": red_flag_result.emergency_instructions,
+                "confidence": red_flag_result.confidence_score
+            }
+            logger.warning(
+                f"[Clona] RED FLAG DETECTED for patient {patient.id}: "
+                f"severity={red_flag_result.highest_severity}, categories={categories_list}"
+            )
+        
         return {
             "ai_response": ai_response,
             "structured_recommendations": structured_data,
             "suggested_doctors": suggested_doctors,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
+            "red_flag_detection": red_flag_info,
+            "escalation_triggered": escalation_triggered
         }
     
     @staticmethod

@@ -10,7 +10,7 @@ export default function Wellness() {
       <div>
         <h1 className="text-4xl font-semibold mb-2">Wellness Center</h1>
         <p className="text-muted-foreground">
-          Personalized meditation, breathing exercises, and gentle movement for immunocompromised patients
+          Personalized meditation, breathing exercises, and gentle movement for chronic care patients
         </p>
       </div>
 
@@ -52,7 +52,7 @@ export default function Wellness() {
                 title="Morning Calm"
                 duration="10 min"
                 difficulty="Easy"
-                description="Start your day with gentle mindfulness meditation designed for immunocompromised patients"
+                description="Start your day with gentle mindfulness meditation designed for chronic care patients"
                 type="meditation"
                 recommended={true}
               />

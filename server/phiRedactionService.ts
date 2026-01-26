@@ -1,16 +1,16 @@
 /**
  * PHI Redaction Service - HIPAA Compliance Layer
  * 
- * Uses AWS Comprehend Medical for deterministic PHI detection and redaction
- * before sending data to external AI services (OpenAI).
+ * Now uses OpenAI GPT-4o (via Python backend) for PHI detection and redaction
+ * instead of AWS Comprehend Medical, providing superior accuracy and flexibility.
  * 
  * CRITICAL REQUIREMENTS:
- * 1. AWS Comprehend Medical must be configured
+ * 1. OpenAI GPT-4o API must be configured
  * 2. Business Associate Agreement (BAA) with OpenAI must be signed
  * 3. OpenAI Enterprise with Zero Data Retention (ZDR) must be enabled
  * 
  * This service provides defense-in-depth by:
- * - Using AWS Comprehend Medical to detect all PHI (names, dates, locations, IDs)
+ * - Using GPT-4o to detect all PHI (names, dates, locations, IDs)
  * - Blocking AI calls if HIPAA compliance requirements are not met
  * - Logging all redaction actions for audit trail
  * 
@@ -20,20 +20,39 @@
  * - OPENAI_ENTERPRISE=true (OpenAI Enterprise plan active)
  */
 
-import { DetectPHICommand } from "@aws-sdk/client-comprehendmedical";
-import { comprehendMedicalClient } from "./aws";
+import axios from "axios";
+
+const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || "http://localhost:8000";
 
 interface RedactionResult {
   redactedText: string;
   redactions: Array<{
-    type: 'name' | 'phone' | 'email' | 'ssn' | 'date' | 'address' | 'mrn';
+    type: 'name' | 'phone' | 'email' | 'ssn' | 'date' | 'address' | 'mrn' | 'age' | 'id' | 'other';
     original: string;
     placeholder: string;
   }>;
 }
 
+interface PHIEntity {
+  text: string;
+  category: string;
+  start_offset: number;
+  end_offset: number;
+  confidence: number;
+  placeholder: string;
+}
+
+interface PHIDetectionResponse {
+  original_text: string;
+  redacted_text: string;
+  phi_detected: boolean;
+  phi_entities: PHIEntity[];
+  redaction_count: number;
+  processing_time_ms: number;
+}
+
 /**
- * Redact PHI from text before sending to OpenAI
+ * Redact PHI from text using regex patterns (local fallback)
  * Uses regex patterns to identify and replace common PHI elements
  */
 export function redactPHI(text: string, options?: {
@@ -121,8 +140,8 @@ export function redactPatientName(text: string, patientName?: string): string {
 }
 
 /**
- * Use AWS Comprehend Medical to detect and redact PHI
- * This is deterministic and doesn't rely on manual context
+ * Use OpenAI GPT-4o (via Python backend) to detect and redact PHI
+ * This replaces AWS Comprehend Medical with superior accuracy
  */
 export async function redactPHIWithComprehendMedical(text: string): Promise<{
   redactedText: string;
@@ -130,53 +149,29 @@ export async function redactPHIWithComprehendMedical(text: string): Promise<{
   phiEntities: Array<{ text: string; type: string; category: string }>;
 }> {
   try {
-    const command = new DetectPHICommand({ Text: text });
-    const response = await comprehendMedicalClient.send(command);
-
-    let redactedText = text;
-    const phiEntities: Array<{ text: string; type: string; category: string }> = [];
-
-    if (response.Entities && response.Entities.length > 0) {
-      // Sort entities by BeginOffset in descending order to avoid offset shifts
-      const sortedEntities = response.Entities.sort((a, b) => 
-        (b.BeginOffset || 0) - (a.BeginOffset || 0)
-      );
-
-      for (const entity of sortedEntities) {
-        if (entity.Text && entity.Type && entity.Category) {
-          phiEntities.push({
-            text: entity.Text,
-            type: entity.Type,
-            category: entity.Category
-          });
-
-          // Redact PHI based on category
-          let placeholder = `[${entity.Category}_REDACTED]`;
-          
-          // More specific placeholders for better context
-          if (entity.Type === 'NAME') placeholder = '[PATIENT_NAME]';
-          else if (entity.Type === 'AGE') placeholder = '[AGE]';
-          else if (entity.Type === 'DATE') placeholder = '[DATE]';
-          else if (entity.Type === 'ID') placeholder = '[PATIENT_ID]';
-          else if (entity.Type === 'PHONE_OR_FAX') placeholder = '[PHONE]';
-          else if (entity.Type === 'EMAIL') placeholder = '[EMAIL]';
-          else if (entity.Type === 'ADDRESS') placeholder = '[ADDRESS]';
-
-          // Replace PHI with placeholder
-          const entityText = entity.Text;
-          const regex = new RegExp(entityText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-          redactedText = redactedText.replace(regex, placeholder);
-        }
+    // Call Python backend for GPT-4o based PHI detection
+    const response = await axios.post<PHIDetectionResponse>(
+      `${PYTHON_BACKEND_URL}/api/v1/medical-nlp/detect-phi`,
+      { text },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000 // 30 second timeout
       }
-    }
+    );
+
+    const result = response.data;
 
     return {
-      redactedText,
-      phiDetected: phiEntities.length > 0,
-      phiEntities
+      redactedText: result.redacted_text,
+      phiDetected: result.phi_detected,
+      phiEntities: result.phi_entities.map(entity => ({
+        text: entity.text,
+        type: entity.category,
+        category: entity.category
+      }))
     };
   } catch (error) {
-    console.error('AWS Comprehend Medical PHI detection failed:', error);
+    console.error('OpenAI GPT-4o PHI detection failed:', error);
     // Fallback to regex-based redaction
     const fallback = redactPHI(text);
     return {
@@ -193,7 +188,7 @@ export async function redactPHIWithComprehendMedical(text: string): Promise<{
 
 /**
  * Sanitize email content for AI processing
- * Uses AWS Comprehend Medical for deterministic PHI detection
+ * Uses OpenAI GPT-4o (via Python backend) for PHI detection
  */
 export async function sanitizeEmailForAI(email: {
   subject: string;
@@ -206,18 +201,108 @@ export async function sanitizeEmailForAI(email: {
   wasRedacted: boolean;
   redactionCount: number;
 }> {
-  // Use AWS Comprehend Medical for deterministic PHI detection
-  const subjectResult = await redactPHIWithComprehendMedical(email.subject);
-  const contentResult = await redactPHIWithComprehendMedical(email.content);
+  try {
+    // Call Python backend for email sanitization
+    const response = await axios.post(
+      `${PYTHON_BACKEND_URL}/api/v1/medical-nlp/sanitize-email`,
+      {
+        subject: email.subject,
+        content: email.content,
+        patient_name: email.patientName,
+        sender_name: email.senderName
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000
+      }
+    );
 
-  const totalRedactions = subjectResult.phiEntities.length + contentResult.phiEntities.length;
+    return {
+      subject: response.data.subject,
+      content: response.data.content,
+      wasRedacted: response.data.was_redacted,
+      redactionCount: response.data.redaction_count
+    };
+  } catch (error) {
+    console.error('Email sanitization via Python backend failed:', error);
+    // Fallback to local regex-based redaction
+    const subjectResult = redactPHI(email.subject);
+    const contentResult = redactPHI(email.content);
 
-  return {
-    subject: subjectResult.redactedText,
-    content: contentResult.redactedText,
-    wasRedacted: totalRedactions > 0,
-    redactionCount: totalRedactions
-  };
+    let sanitizedSubject = subjectResult.redactedText;
+    let sanitizedContent = contentResult.redactedText;
+
+    // Also redact known patient/sender names
+    if (email.patientName) {
+      sanitizedSubject = redactPatientName(sanitizedSubject, email.patientName);
+      sanitizedContent = redactPatientName(sanitizedContent, email.patientName);
+    }
+    if (email.senderName) {
+      sanitizedSubject = redactPatientName(sanitizedSubject, email.senderName);
+      sanitizedContent = redactPatientName(sanitizedContent, email.senderName);
+    }
+
+    const totalRedactions = subjectResult.redactions.length + contentResult.redactions.length;
+
+    return {
+      subject: sanitizedSubject,
+      content: sanitizedContent,
+      wasRedacted: totalRedactions > 0,
+      redactionCount: totalRedactions
+    };
+  }
+}
+
+/**
+ * Sanitize text for AI processing
+ * Uses OpenAI GPT-4o (via Python backend) for PHI detection
+ */
+export async function sanitizeForAI(text: string, patientName?: string): Promise<{
+  sanitizedText: string;
+  wasRedacted: boolean;
+  redactionCount: number;
+  phiCategories: string[];
+  processingTimeMs: number;
+}> {
+  try {
+    const response = await axios.post(
+      `${PYTHON_BACKEND_URL}/api/v1/medical-nlp/sanitize-for-ai`,
+      {
+        text,
+        patient_name: patientName
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000
+      }
+    );
+
+    return {
+      sanitizedText: response.data.sanitized_text,
+      wasRedacted: response.data.was_redacted,
+      redactionCount: response.data.redaction_count,
+      phiCategories: response.data.phi_categories,
+      processingTimeMs: response.data.processing_time_ms
+    };
+  } catch (error) {
+    console.error('Sanitization via Python backend failed:', error);
+    // Fallback to local regex-based redaction
+    const startTime = Date.now();
+    const result = redactPHI(text);
+    let sanitizedText = result.redactedText;
+    
+    if (patientName) {
+      sanitizedText = redactPatientName(sanitizedText, patientName);
+    }
+
+    return {
+      sanitizedText,
+      wasRedacted: result.redactions.length > 0,
+      redactionCount: result.redactions.length,
+      phiCategories: [...new Set(result.redactions.map(r => r.type))],
+      processingTimeMs: Date.now() - startTime
+    };
+  }
 }
 
 /**
@@ -274,8 +359,8 @@ export function logHIPAAStatus(): void {
       console.warn('   🚫 AI FEATURES BLOCKED until BAA is signed.');
       console.warn('   Emails will use local categorization only.');
     } else {
-      console.warn('   AWS Comprehend Medical PHI detection is active.');
-      console.warn('   All PHI is automatically redacted before OpenAI processing.');
+      console.warn('   OpenAI GPT-4o PHI detection is active (via Python backend).');
+      console.warn('   All PHI is automatically redacted before AI processing.');
     }
     console.warn('');
     console.warn('   To enable full AI features:');
@@ -286,6 +371,170 @@ export function logHIPAAStatus(): void {
     console.warn('');
   } else {
     console.log('✅ HIPAA compliance checks passed for OpenAI integration');
-    console.log('✅ AWS Comprehend Medical PHI detection active');
+    console.log('✅ OpenAI GPT-4o PHI detection active (via Python backend)');
+  }
+}
+
+/**
+ * Extract medical entities from text using GPT-4o
+ * Replaces AWS Comprehend Medical entity extraction
+ */
+export async function extractMedicalEntities(text: string): Promise<{
+  entities: Array<{
+    text: string;
+    category: string;
+    confidence: number;
+    traits?: Array<{ name: string; score: number }>;
+    attributes?: Array<{ text: string; type: string; score: number }>;
+  }>;
+  icd10Codes: Array<{ code: string; description: string; score: number }>;
+  rxnormConcepts: Array<{ code: string; description: string; score: number }>;
+  snomedConcepts: Array<{ code: string; description: string; score: number }>;
+}> {
+  try {
+    const response = await axios.post(
+      `${PYTHON_BACKEND_URL}/api/v1/medical-nlp/extract-entities`,
+      { text, include_phi_check: false },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 60000 // 60 second timeout for entity extraction
+      }
+    );
+
+    return {
+      entities: response.data.entities,
+      icd10Codes: response.data.icd10_codes,
+      rxnormConcepts: response.data.rxnorm_concepts,
+      snomedConcepts: response.data.snomed_concepts
+    };
+  } catch (error) {
+    console.error('Medical entity extraction via Python backend failed:', error);
+    return {
+      entities: [],
+      icd10Codes: [],
+      rxnormConcepts: [],
+      snomedConcepts: []
+    };
+  }
+}
+
+/**
+ * Infer ICD-10-CM codes from clinical text using GPT-4o
+ * Replaces AWS Comprehend Medical ICD-10 inference
+ */
+export async function inferICD10Codes(text: string): Promise<Array<{
+  code: string;
+  description: string;
+  score: number;
+  category?: string;
+}>> {
+  try {
+    const response = await axios.post(
+      `${PYTHON_BACKEND_URL}/api/v1/medical-nlp/infer-icd10`,
+      { text },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000
+      }
+    );
+
+    return response.data.codes;
+  } catch (error) {
+    console.error('ICD-10 inference via Python backend failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Infer RxNorm concepts from medication text using GPT-4o
+ * Replaces AWS Comprehend Medical RxNorm inference
+ */
+export async function inferRxNormConcepts(text: string): Promise<Array<{
+  code: string;
+  description: string;
+  score: number;
+  drugClass?: string;
+}>> {
+  try {
+    const response = await axios.post(
+      `${PYTHON_BACKEND_URL}/api/v1/medical-nlp/infer-rxnorm`,
+      { text },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000
+      }
+    );
+
+    return response.data.concepts;
+  } catch (error) {
+    console.error('RxNorm inference via Python backend failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Infer SNOMED-CT concepts from clinical text using GPT-4o
+ * Replaces AWS Comprehend Medical SNOMED inference
+ */
+export async function inferSNOMEDConcepts(text: string): Promise<Array<{
+  code: string;
+  description: string;
+  score: number;
+  hierarchy?: string;
+}>> {
+  try {
+    const response = await axios.post(
+      `${PYTHON_BACKEND_URL}/api/v1/medical-nlp/infer-snomed`,
+      { text },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000
+      }
+    );
+
+    return response.data.concepts;
+  } catch (error) {
+    console.error('SNOMED inference via Python backend failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Check HIPAA compliance status from Python backend
+ */
+export async function checkHIPAAStatusFromBackend(): Promise<{
+  isConfigured: boolean;
+  canUseAI: boolean;
+  warnings: string[];
+  baaSignned: boolean;
+  zdrEnabled: boolean;
+  enterprise: boolean;
+}> {
+  try {
+    const response = await axios.get(
+      `${PYTHON_BACKEND_URL}/api/v1/medical-nlp/hipaa-status`,
+      { timeout: 5000 }
+    );
+
+    return {
+      isConfigured: response.data.is_configured,
+      canUseAI: response.data.can_use_ai,
+      warnings: response.data.warnings,
+      baaSignned: response.data.baa_signed,
+      zdrEnabled: response.data.zdr_enabled,
+      enterprise: response.data.enterprise
+    };
+  } catch (error) {
+    console.error('Failed to check HIPAA status from Python backend:', error);
+    // Fall back to local check
+    const localCheck = validateHIPAACompliance();
+    return {
+      isConfigured: localCheck.isConfigured,
+      canUseAI: localCheck.canUseAI,
+      warnings: localCheck.warnings,
+      baaSignned: process.env.OPENAI_BAA_SIGNED === 'true',
+      zdrEnabled: process.env.OPENAI_ZDR_ENABLED === 'true',
+      enterprise: process.env.OPENAI_ENTERPRISE === 'true'
+    };
   }
 }

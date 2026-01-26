@@ -50,6 +50,18 @@ interface InteractionCheckResult {
   contraindications: string[];
   warnings: string[];
   safeToPresrcibe: boolean;
+  crossSpecialtyCount?: number;
+  sameSpecialtyCount?: number;
+  allMedicationsCount?: number;
+  checkedMedications?: string[];
+  _note?: string;
+  _allMedicationsMode?: boolean;
+  _specialty?: string | null;
+  _fallback?: boolean;
+  // Error response fields
+  error?: string;
+  message?: string;
+  hint?: string;
 }
 
 interface PrescriptionHelperProps {
@@ -57,6 +69,7 @@ interface PrescriptionHelperProps {
   patientName?: string;
   patientAllergies?: string[];
   currentMedications?: string[];
+  doctorSpecialty?: string;
   className?: string;
 }
 
@@ -65,6 +78,7 @@ export function PrescriptionHelper({
   patientName, 
   patientAllergies = [], 
   currentMedications = [],
+  doctorSpecialty,
   className 
 }: PrescriptionHelperProps) {
   const [medications, setMedications] = useState<Medication[]>([]);
@@ -118,6 +132,7 @@ export function PrescriptionHelper({
         method: 'POST',
         body: JSON.stringify({
           patientId,
+          doctorSpecialty,
           medications: allMedications,
           allergies: patientAllergies,
           newPrescriptions: medications.map(m => m.name)
@@ -127,13 +142,32 @@ export function PrescriptionHelper({
     },
     onSuccess: (data: InteractionCheckResult) => {
       setInteractionResult(data);
-      toast({
-        title: "Safety Check Complete",
-        description: data.safeToPresrcibe 
-          ? "No critical drug interactions found."
-          : "Safety concerns identified. Please review.",
-        variant: data.safeToPresrcibe ? "default" : "destructive",
-      });
+      
+      // Determine toast variant and messaging based on response state
+      if (data._fallback) {
+        toast({
+          title: "AI Analysis Unavailable",
+          description: "Please verify drug interactions manually using clinical references.",
+          variant: "destructive",
+        });
+      } else if (data._allMedicationsMode) {
+        toast({
+          title: "All-Medications Mode Active",
+          description: `Checked against ALL ${data.allMedicationsCount || 0} patient medication(s). Cross-specialty filtering was bypassed.`,
+          variant: "destructive",
+        });
+      } else {
+        const crossSpecialtyNote = data.crossSpecialtyCount !== undefined 
+          ? ` (checked against ${data.crossSpecialtyCount} cross-specialty medication${data.crossSpecialtyCount !== 1 ? 's' : ''})`
+          : '';
+        toast({
+          title: "Cross-Specialty Safety Check Complete",
+          description: data.safeToPresrcibe 
+            ? `No critical drug interactions found${crossSpecialtyNote}.`
+            : `Safety concerns identified${crossSpecialtyNote}. Please review.`,
+          variant: data.safeToPresrcibe ? "default" : "destructive",
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -427,7 +461,7 @@ export function PrescriptionHelper({
             Safety Analysis
           </CardTitle>
           <CardDescription>
-            Drug interactions and safety checks
+            Cross-specialty drug interactions and safety checks
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -460,6 +494,51 @@ export function PrescriptionHelper({
                       </>
                     )}
                   </div>
+                  {/* All-Medications Mode Warning Banner */}
+                  {interactionResult._allMedicationsMode && (
+                    <div className="mt-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                        <span className="font-medium text-yellow-700 text-sm">All-Medications Mode</span>
+                      </div>
+                      <p className="text-xs text-yellow-600 mt-1">
+                        Cross-specialty filtering bypassed. Checked against ALL {interactionResult.allMedicationsCount || 0} patient medications.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Fallback Warning */}
+                  {interactionResult._fallback && (
+                    <div className="mt-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 text-orange-600" />
+                        <span className="font-medium text-orange-700 text-sm">AI Analysis Unavailable</span>
+                      </div>
+                      <p className="text-xs text-orange-600 mt-1">Please verify drug interactions manually using clinical references.</p>
+                    </div>
+                  )}
+
+                  {/* Cross-specialty context */}
+                  {(interactionResult.crossSpecialtyCount !== undefined || interactionResult._note) && !interactionResult._allMedicationsMode && (
+                    <div className="mt-3 pt-3 border-t border-current/10">
+                      <div className="flex items-center gap-4 text-sm">
+                        {interactionResult.crossSpecialtyCount !== undefined && (
+                          <div className="flex items-center gap-1">
+                            <Info className="h-3 w-3" />
+                            <span>{interactionResult.crossSpecialtyCount} cross-specialty med{interactionResult.crossSpecialtyCount !== 1 ? 's' : ''} checked</span>
+                          </div>
+                        )}
+                        {interactionResult.sameSpecialtyCount !== undefined && interactionResult.sameSpecialtyCount > 0 && (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <span>{interactionResult.sameSpecialtyCount} same-specialty (supersession rules)</span>
+                          </div>
+                        )}
+                      </div>
+                      {interactionResult._note && (
+                        <p className="text-xs text-muted-foreground mt-2">{interactionResult._note}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {interactionResult.contraindications.length > 0 && (

@@ -31,12 +31,17 @@ class GmailSync(Base):
     id = Column(String, primary_key=True)
     doctor_id = Column(String, nullable=False, unique=True, index=True)
     
+    gmail_address = Column(String, nullable=True, index=True)
+    
     access_token = Column(Text, nullable=False)
     refresh_token = Column(Text, nullable=False)
     token_expiry = Column(DateTime, nullable=False)
     
     sync_enabled = Column(Boolean, default=True)
     last_sync_at = Column(DateTime, nullable=True)
+    
+    history_id = Column(String, nullable=True)
+    watch_expiration = Column(DateTime, nullable=True)
     
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

@@ -47,9 +47,12 @@ async def start_video_consultation(
     try:
         service = DailyVideoService()
         
-        is_doctor = current_user.role == "doctor"
-        patient_id = current_user.id if not is_doctor else request.doctor_id
-        doctor_id = request.doctor_id if not is_doctor else current_user.id
+        user_role = str(getattr(current_user, 'role', None) or "patient")
+        user_id = str(current_user.id)
+        is_doctor = user_role == "doctor"
+        
+        patient_id = user_id if not is_doctor else str(request.doctor_id)
+        doctor_id = str(request.doctor_id) if not is_doctor else user_id
         
         room_data = service.create_consultation_room(
             patient_id=patient_id,
@@ -94,7 +97,8 @@ async def end_video_consultation(
     HIPAA best practice: Delete rooms immediately after consultation to minimize data retention.
     Only doctors can end video consultations.
     """
-    if current_user.role != "doctor":
+    user_role = str(getattr(current_user, 'role', None) or "patient")
+    if user_role != "doctor":
         raise HTTPException(
             status_code=403,
             detail="Only doctors can end video consultations"

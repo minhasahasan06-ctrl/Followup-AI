@@ -40,8 +40,8 @@ from app.dependencies import get_current_user
 # Import AI engine manager (lazy initialization to prevent blocking imports)
 from app.services.ai_engine_manager import AIEngineManager
 
-# Import S3 service with local fallback support
-from app.services.s3_service import s3_service
+# Import GCS service with local fallback support
+from app.services.gcs_service import gcs_service
 
 logger = logging.getLogger(__name__)
 
@@ -163,17 +163,17 @@ async def upload_frame_to_s3(
             'upload-timestamp': timestamp
         }
         
-        # Upload using S3Service (automatically handles S3 or local fallback)
-        # FIX ISSUE B: Await async upload to avoid blocking event loop
-        uri = await s3_service.upload_file(
+        # Upload using GCS service (automatically handles GCS or local fallback)
+        result = await gcs_service.upload_file(
             file_data=frame_data,
-            s3_key=s3_key,
+            key=s3_key,
             content_type='image/jpeg',
             metadata=metadata
         )
+        uri = result["uri"]
         
         if uri.startswith('file://'):
-            logger.warning(f"Using local storage for frame: {stage} (AWS credentials not available)")
+            logger.warning(f"Using local storage for frame: {stage} (GCP credentials not available)")
         
         return uri
         
@@ -193,7 +193,7 @@ async def download_frame_from_s3(uri: str) -> bytes:
     try:
         # Use S3Service to download (handles both S3 and local)
         # FIX ISSUE B: Await async download to avoid blocking event loop
-        frame_data = await s3_service.download_file(uri)
+        frame_data = await gcs_service.download_file(uri)
         return frame_data
         
     except Exception as e:

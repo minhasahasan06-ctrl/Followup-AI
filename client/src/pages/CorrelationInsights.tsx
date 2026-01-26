@@ -56,7 +56,8 @@ export default function CorrelationInsights() {
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/correlations/analyze");
+      const res = await apiRequest("/api/correlations/analyze", { method: "POST", json: {} });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/correlations"] });

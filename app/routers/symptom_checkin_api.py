@@ -22,7 +22,7 @@ from app.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.models.symptom_checkin_models import SymptomCheckin, ChatSymptom, PassiveMetric, TrendReport
 from app.services.symptom_checkin_service import SymptomExtractionService, SymptomTrendService
-from app.services.s3_service import S3Service
+from app.services.gcs_service import GCSService as S3Service
 from app.services.audit_logger import AuditLogger
 
 router = APIRouter(prefix="/api/symptom-checkin", tags=["Symptom Check-in"])
@@ -737,16 +737,18 @@ async def upload_voice_note(
         if not file.content_type or not file.content_type.startswith("audio/"):
             raise HTTPException(status_code=400, detail="File must be an audio file")
         
-        # Upload to S3
-        s3_service = S3Service()
+        # Upload to GCS
+        from app.services.gcs_service import gcs_service
         file_content = await file.read()  # Async file read
         
-        s3_key = f"voice-notes/{current_user.id}/{datetime.utcnow().strftime('%Y%m%d')}/{file.filename}"
-        s3_url = await s3_service.upload_file(
+        file_key = f"{datetime.utcnow().strftime('%Y%m%d')}/{file.filename}"
+        result = await gcs_service.upload_file(
             file_data=file_content,
-            s3_key=s3_key,
-            content_type=file.content_type
+            key=file_key,
+            content_type=file.content_type,
+            folder=f"voice-notes/{current_user.id}"
         )
+        s3_url = result["url"]
         
         # Update check-in if checkin_id provided
         if checkin_id:

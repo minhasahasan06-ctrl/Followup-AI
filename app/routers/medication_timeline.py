@@ -4,7 +4,7 @@ Tracks medications, dosage changes, and supports side-effect correlation
 WITHOUT making medical diagnoses - pattern detection only
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from typing import List, Optional
@@ -18,6 +18,9 @@ from app.models.medication_side_effects import (
 from app.models.user import User
 from app.models.patient_doctor_connection import PatientDoctorConnection
 from app.dependencies import get_current_user
+from app.services.access_control import (
+    HIPAAAuditLogger, PHICategory, AccessControlService, AccessScope, get_access_control
+)
 
 
 router = APIRouter(prefix="/api/v1/medication-timeline", tags=["Medication Timeline"])
@@ -96,6 +99,7 @@ class DosageChangeResponse(BaseModel):
 @router.post("/", response_model=MedicationTimelineResponse)
 def create_medication_timeline(
     medication: MedicationTimelineCreate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -116,16 +120,28 @@ def create_medication_timeline(
         if patient_id != current_user.id:
             raise HTTPException(status_code=403, detail="Patients can only create medications for themselves")
     elif current_user.role == "doctor":
-        # Doctors must have active connection to patient
-        connection = db.query(PatientDoctorConnection).filter(
-            and_(
-                PatientDoctorConnection.patient_id == patient_id,
-                PatientDoctorConnection.doctor_id == current_user.id,
-                PatientDoctorConnection.status == "active"
+        # Doctors must use AccessControlService for patient access
+        acs = get_access_control()
+        decision = acs.verify_doctor_patient_access(
+            db=db,
+            doctor_id=current_user.id,
+            patient_id=patient_id,
+            required_scope=AccessScope.FULL,
+            phi_categories=[PHICategory.MEDICATIONS.value]
+        )
+        if not decision.allowed:
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=current_user.id,
+                actor_role="doctor",
+                patient_id=patient_id,
+                action="create_medication_denied",
+                phi_categories=[PHICategory.MEDICATIONS.value],
+                resource_type="medication_timeline",
+                success=False,
+                error_message=decision.reason,
+                ip_address=request.client.host if request.client else None
             )
-        ).first()
-        if not connection:
-            raise HTTPException(status_code=403, detail="Not connected to this patient")
+            raise HTTPException(status_code=403, detail=decision.reason)
     
     # Create medication timeline
     new_medication = MedicationTimeline(
@@ -162,12 +178,25 @@ def create_medication_timeline(
     db.add(initial_change)
     db.commit()
     
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=current_user.id,
+        actor_role=str(current_user.role),
+        patient_id=patient_id,
+        action="create_medication",
+        phi_categories=[PHICategory.MEDICATIONS.value],
+        resource_type="medication_timeline",
+        resource_id=str(new_medication.id),
+        success=True,
+        ip_address=request.client.host if request.client else None
+    )
+    
     return new_medication
 
 
 @router.get("/patient/{patient_id}", response_model=List[MedicationTimelineResponse])
 def get_patient_medications(
     patient_id: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     active_only: bool = True,
     db: Session = Depends(get_db)
@@ -186,16 +215,28 @@ def get_patient_medications(
         if patient_id != current_user.id:
             raise HTTPException(status_code=403, detail="Access denied")
     elif current_user.role == "doctor":
-        # Verify doctor-patient connection
-        connection = db.query(PatientDoctorConnection).filter(
-            and_(
-                PatientDoctorConnection.patient_id == patient_id,
-                PatientDoctorConnection.doctor_id == current_user.id,
-                PatientDoctorConnection.status == "active"
+        # Use AccessControlService for patient access verification
+        acs = get_access_control()
+        decision = acs.verify_doctor_patient_access(
+            db=db,
+            doctor_id=current_user.id,
+            patient_id=patient_id,
+            required_scope=AccessScope.READ,
+            phi_categories=[PHICategory.MEDICATIONS.value]
+        )
+        if not decision.allowed:
+            HIPAAAuditLogger.log_phi_access(
+                actor_id=current_user.id,
+                actor_role="doctor",
+                patient_id=patient_id,
+                action="view_medications_denied",
+                phi_categories=[PHICategory.MEDICATIONS.value],
+                resource_type="medication_timeline",
+                success=False,
+                error_message=decision.reason,
+                ip_address=request.client.host if request.client else None
             )
-        ).first()
-        if not connection:
-            raise HTTPException(status_code=403, detail="Not connected to this patient")
+            raise HTTPException(status_code=403, detail=decision.reason)
     
     # Query medications
     query = db.query(MedicationTimeline).filter(
@@ -206,6 +247,17 @@ def get_patient_medications(
         query = query.filter(MedicationTimeline.is_active == True)
     
     medications = query.order_by(desc(MedicationTimeline.started_at)).all()
+    
+    HIPAAAuditLogger.log_phi_access(
+        actor_id=current_user.id,
+        actor_role=str(current_user.role),
+        patient_id=patient_id,
+        action="view_medications",
+        phi_categories=[PHICategory.MEDICATIONS.value],
+        resource_type="medication_timeline",
+        success=True,
+        ip_address=request.client.host if request.client else None
+    )
     
     return medications
 

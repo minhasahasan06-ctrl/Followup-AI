@@ -1,64 +1,109 @@
 """
-Daily.co HIPAA-Compliant Video Service for Live Physical Examination Monitoring.
-Integrates with Daily.co API for secure telehealth video sessions.
+Daily.co HIPAA-Compliant Video Service - Phase 12 Enhanced
+============================================================
+
+Production-grade video consultation service with:
+- Deterministic room naming (appt-{uuid})
+- Role-based token generation
+- External provider support (Zoom/Meet)
+- HIPAA-compliant session management
+- Webhook signature validation
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
+from decimal import Decimal
 import requests
-import os
+import hmac
+import hashlib
+import logging
+import re
+
+from app.config import settings
+from app.services.access_control import HIPAAAuditLogger, PHICategory
+
+logger = logging.getLogger(__name__)
 
 
 class DailyVideoService:
     """
-    Service for managing HIPAA-compliant video sessions using Daily.co.
+    Production-grade Daily.co video service for HIPAA-compliant consultations.
     
-    HIPAA Features:
-    - BAA signed with Daily.co (required - apply via Daily.co portal)
-    - End-to-end encryption (default)
-    - No PHI in URLs (randomized room names)
-    - No cookies or local storage in HIPAA mode
-    - Recording disabled by default (custom storage available)
-    - Automatic data scrubbing
+    Features:
+    - Deterministic room naming: appt-{appointment_id}
+    - Role-based tokens (doctor = owner, patient = participant)
+    - Webhook signature validation
+    - External provider fallback (Zoom/Meet)
+    - Automatic room cleanup
     """
     
     BASE_URL = "https://api.daily.co/v1"
     
     def __init__(self):
         """Initialize Daily.co service with API key from environment"""
-        self.api_key = os.getenv("DAILY_API_KEY")
+        self.api_key = settings.DAILY_API_KEY
+        self.domain = settings.DAILY_DOMAIN
+        self.webhook_secret = settings.DAILY_WEBHOOK_SECRET
+        
         if not self.api_key:
-            raise ValueError("DAILY_API_KEY environment variable not set")
+            logger.warning("DAILY_API_KEY not set - video features will be limited")
         
         self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
             "Content-Type": "application/json"
         }
     
-    def create_consultation_room(
+    @staticmethod
+    def generate_room_name(appointment_id: str) -> str:
+        """Generate deterministic room name from appointment ID"""
+        clean_id = re.sub(r'[^a-zA-Z0-9-]', '', str(appointment_id))
+        return f"appt-{clean_id}"
+    
+    @staticmethod
+    def extract_appointment_id(room_name: str) -> Optional[str]:
+        """Extract appointment ID from room name"""
+        if room_name and room_name.startswith("appt-"):
+            return room_name[5:]
+        return None
+    
+    def validate_webhook_signature(self, payload: bytes, signature: str) -> bool:
+        """Validate Daily.co webhook signature for security"""
+        if not self.webhook_secret:
+            logger.warning("DAILY_WEBHOOK_SECRET not set - webhook validation skipped")
+            return True
+        
+        expected = hmac.new(
+            self.webhook_secret.encode(),
+            payload,
+            hashlib.sha256
+        ).hexdigest()
+        
+        return hmac.compare_digest(expected, signature)
+    
+    def create_room(
         self,
-        patient_id: str,
-        doctor_id: str,
+        appointment_id: str,
         duration_minutes: int = 60,
         enable_chat: bool = True,
-        enable_recording: bool = False
+        enable_recording: bool = False,
+        max_participants: int = 2
     ) -> Dict[str, Any]:
         """
-        Create a HIPAA-compliant video room for doctor-patient consultation.
+        Create a HIPAA-compliant video room for an appointment.
         
-        Args:
-            patient_id: Patient's unique identifier (NOT included in room name)
-            doctor_id: Doctor's unique identifier (NOT included in room name)
-            duration_minutes: Session duration (default 60 minutes)
-            enable_chat: Enable HIPAA-compliant text chat
-            enable_recording: Enable recording (requires custom HIPAA-compliant storage)
-            
+        Uses deterministic naming: appt-{appointment_id}
+        
         Returns:
-            Dictionary with room details including URL and access tokens
+            Dictionary with room_name, room_url, expires_at
         """
+        if not self.api_key:
+            raise ValueError("DAILY_API_KEY not configured")
+        
+        room_name = self.generate_room_name(appointment_id)
         exp_time = datetime.utcnow() + timedelta(minutes=duration_minutes + 30)
         
         payload = {
+            "name": room_name,
             "privacy": "private",
             "properties": {
                 "enable_chat": enable_chat,
@@ -70,7 +115,7 @@ class DailyVideoService:
                 "enable_prejoin_ui": True,
                 "exp": int(exp_time.timestamp()),
                 "eject_at_room_exp": True,
-                "max_participants": 2,
+                "max_participants": max_participants,
                 "autojoin": False,
                 "enable_network_ui": True,
                 "enable_noise_cancellation_ui": True,
@@ -83,60 +128,65 @@ class DailyVideoService:
             json=payload
         )
         
+        if response.status_code == 400 and "already exists" in response.text.lower():
+            room_info = self.get_room_info(room_name)
+            return {
+                "room_name": room_info["name"],
+                "room_url": room_info["url"],
+                "expires_at": exp_time.isoformat(),
+                "created": False
+            }
+        
         if response.status_code != 200:
+            logger.error(f"Failed to create room: {response.text}")
             raise Exception(f"Failed to create room: {response.text}")
         
         room_data = response.json()
         
-        patient_token = self._create_meeting_token(
-            room_name=room_data["name"],
-            user_name="Patient",
-            is_owner=False
-        )
-        
-        doctor_token = self._create_meeting_token(
-            room_name=room_data["name"],
-            user_name="Doctor",
-            is_owner=True
-        )
+        logger.info(f"Created Daily room: {room_name}")
         
         return {
             "room_name": room_data["name"],
             "room_url": room_data["url"],
-            "patient_token": patient_token,
-            "doctor_token": doctor_token,
             "expires_at": exp_time.isoformat(),
-            "config": {
-                "chat_enabled": enable_chat,
-                "recording_enabled": enable_recording,
-                "max_duration_minutes": duration_minutes
-            }
+            "created": True
         }
     
-    def _create_meeting_token(
+    def create_meeting_token(
         self,
         room_name: str,
+        user_id: str,
         user_name: str,
-        is_owner: bool = False
+        is_owner: bool = False,
+        exp_seconds: int = 7200
     ) -> str:
         """
         Create a meeting token for a specific participant.
         
         Args:
             room_name: Daily.co room name
-            user_name: Display name (NO PHI - use generic names like "Patient" or "Doctor")
-            is_owner: Whether user has owner privileges
+            user_id: Internal user ID (for tracking, not displayed)
+            user_name: Display name (NO PHI - use "Doctor" or "Patient")
+            is_owner: Whether user has owner privileges (doctors)
+            exp_seconds: Token expiry in seconds (default 2 hours)
             
         Returns:
             Meeting token string
         """
+        if not self.api_key:
+            raise ValueError("DAILY_API_KEY not configured")
+        
+        exp_time = datetime.utcnow() + timedelta(seconds=exp_seconds)
+        
         payload = {
             "properties": {
                 "room_name": room_name,
                 "user_name": user_name,
+                "user_id": user_id,
                 "is_owner": is_owner,
                 "enable_screenshare": is_owner,
                 "enable_recording": is_owner,
+                "exp": int(exp_time.timestamp()),
             }
         }
         
@@ -147,9 +197,86 @@ class DailyVideoService:
         )
         
         if response.status_code != 200:
+            logger.error(f"Failed to create meeting token: {response.text}")
             raise Exception(f"Failed to create meeting token: {response.text}")
         
         return response.json()["token"]
+    
+    def create_consultation_room(
+        self,
+        patient_id: str,
+        doctor_id: str,
+        duration_minutes: int = 60,
+        enable_chat: bool = True,
+        enable_recording: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Create a complete consultation room with tokens for both participants.
+        
+        This is a convenience method that:
+        1. Creates the room using deterministic naming
+        2. Generates tokens for doctor (owner) and patient (participant)
+        3. Returns all necessary data for both parties to join
+        
+        Args:
+            patient_id: Patient's internal ID
+            doctor_id: Doctor's internal ID  
+            duration_minutes: Session duration
+            enable_chat: Enable in-call chat
+            enable_recording: Enable recording (HIPAA: disabled by default)
+            
+        Returns:
+            Dict with room_name, room_url, doctor_token, patient_token, expires_at, config
+        """
+        consultation_id = f"{doctor_id}-{patient_id}"
+        
+        room_data = self.create_room(
+            appointment_id=consultation_id,
+            duration_minutes=duration_minutes,
+            enable_chat=enable_chat,
+            enable_recording=enable_recording,
+            max_participants=2
+        )
+        
+        doctor_token = self.create_meeting_token(
+            room_name=room_data["room_name"],
+            user_id=doctor_id,
+            user_name="Doctor",
+            is_owner=True,
+            exp_seconds=duration_minutes * 60 + 1800
+        )
+        
+        patient_token = self.create_meeting_token(
+            room_name=room_data["room_name"],
+            user_id=patient_id,
+            user_name="Patient",
+            is_owner=False,
+            exp_seconds=duration_minutes * 60 + 1800
+        )
+        
+        HIPAAAuditLogger.log_phi_access(
+            actor_id=doctor_id,
+            actor_role="doctor",
+            patient_id=patient_id,
+            action="create_video_room",
+            phi_categories=["video_consultation"],
+            resource_type="video_consultation",
+            resource_id=room_data["room_name"],
+            access_reason=f"Start video consultation, duration: {duration_minutes}min"
+        )
+        
+        return {
+            "room_name": room_data["room_name"],
+            "room_url": room_data["room_url"],
+            "doctor_token": doctor_token,
+            "patient_token": patient_token,
+            "expires_at": room_data["expires_at"],
+            "config": {
+                "chat_enabled": enable_chat,
+                "recording_enabled": enable_recording,
+                "max_duration_minutes": duration_minutes
+            }
+        }
     
     def get_room_info(self, room_name: str) -> Dict[str, Any]:
         """Get information about an existing room"""
@@ -159,27 +286,37 @@ class DailyVideoService:
         )
         
         if response.status_code != 200:
-            raise Exception(f"Failed to get room info: {response.text}")
+            raise Exception(f"Room not found: {room_name}")
         
         return response.json()
+    
+    def room_exists(self, room_name: str) -> bool:
+        """Check if a room exists"""
+        try:
+            self.get_room_info(room_name)
+            return True
+        except Exception:
+            return False
     
     def delete_room(self, room_name: str) -> bool:
         """
         Delete a room after consultation is complete.
-        Recommended for HIPAA compliance to minimize data retention.
+        HIPAA requirement: minimize data retention.
         """
         response = requests.delete(
             f"{self.BASE_URL}/rooms/{room_name}",
             headers=self.headers
         )
         
-        return response.status_code == 200
+        if response.status_code == 200:
+            logger.info(f"Deleted Daily room: {room_name}")
+            return True
+        
+        logger.warning(f"Failed to delete room {room_name}: {response.text}")
+        return False
     
     def get_session_participants(self, room_name: str) -> Dict[str, Any]:
-        """
-        Get current participants in a room.
-        Useful for monitoring active consultations.
-        """
+        """Get current participants in a room"""
         response = requests.get(
             f"{self.BASE_URL}/rooms/{room_name}/participants",
             headers=self.headers
@@ -189,3 +326,86 @@ class DailyVideoService:
             raise Exception(f"Failed to get participants: {response.text}")
         
         return response.json()
+
+
+class ExternalVideoProvider:
+    """
+    Handle external video providers (Zoom/Meet) for doctor-demand scenarios.
+    
+    These are only available when:
+    1. Doctor has allow_external_video = true
+    2. Doctor has configured the respective URLs
+    3. Doctor explicitly selects external for an appointment
+    """
+    
+    @staticmethod
+    def validate_zoom_url(url: str) -> bool:
+        """Validate Zoom join URL format"""
+        if not url:
+            return False
+        return url.startswith("https://") and ("zoom.us" in url or "zoomgov.com" in url)
+    
+    @staticmethod
+    def validate_meet_url(url: str) -> bool:
+        """Validate Google Meet URL format"""
+        if not url:
+            return False
+        return url.startswith("https://") and "meet.google.com" in url
+    
+    @staticmethod
+    def validate_external_url(url: str, provider: str) -> bool:
+        """Validate external provider URL"""
+        if provider == "zoom":
+            return ExternalVideoProvider.validate_zoom_url(url)
+        elif provider == "meet":
+            return ExternalVideoProvider.validate_meet_url(url)
+        return False
+
+
+class VideoUsageCalculator:
+    """
+    Calculate participant-minutes for billing.
+    
+    Formula: participant_minutes = num_participants × minutes_in_call
+    Example: 1 doctor + 1 patient for 15 min = 2 × 15 = 30 participant-minutes
+    """
+    
+    @staticmethod
+    def calculate_session_minutes(duration_seconds: int) -> int:
+        """Calculate billed minutes from duration (ceiling)"""
+        import math
+        return math.ceil(duration_seconds / 60)
+    
+    @staticmethod
+    def calculate_cost(participant_minutes: int, rate_usd: Optional[Decimal] = None) -> Decimal:
+        """Calculate platform cost for participant minutes"""
+        if rate_usd is None:
+            rate_usd = Decimal(settings.DAILY_RATE_USD)
+        return Decimal(participant_minutes) * rate_usd
+    
+    @staticmethod
+    def calculate_overage(
+        total_minutes: int,
+        included_minutes: int,
+        overage_rate: Optional[Decimal] = None
+    ) -> tuple[int, Decimal]:
+        """
+        Calculate overage minutes and cost.
+        
+        Returns:
+            (overage_minutes, overage_cost_usd)
+        """
+        if overage_rate is None:
+            overage_rate = Decimal(settings.OVERAGE_RATE_USD)
+        
+        overage_minutes = max(0, total_minutes - included_minutes)
+        overage_cost = Decimal(overage_minutes) * overage_rate
+        
+        return overage_minutes, overage_cost
+    
+    @staticmethod
+    def get_billing_month(dt: Optional[datetime] = None) -> str:
+        """Get billing month string (YYYY-MM)"""
+        if dt is None:
+            dt = datetime.utcnow()
+        return dt.strftime("%Y-%m")

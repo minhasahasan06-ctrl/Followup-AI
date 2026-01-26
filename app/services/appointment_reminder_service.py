@@ -1,34 +1,41 @@
+"""
+Appointment Reminder Service
+
+NOTE: AWS SES and Twilio integrations have been disabled.
+Email and SMS reminders will log warnings but not actually send.
+"""
+
 from datetime import datetime, timedelta
 from typing import List, Dict
 from sqlalchemy.orm import Session
 from app.models.appointment import Appointment
 from app.models.user import User
 from app.config import settings
-import boto3
-from twilio.rest import Client as TwilioClient
+import logging
+
+logger = logging.getLogger(__name__)
+
+# STUB: boto3 and twilio have been removed
+logger.warning("AWS SES integration disabled - email reminders will not be sent")
+logger.warning("Twilio integration disabled - SMS reminders will not be sent")
 
 
 class AppointmentReminderService:
+    """
+    Appointment reminder service.
+    
+    NOTE: Email (AWS SES) and SMS (Twilio) are disabled.
+    All reminder operations will log warnings but not actually send.
+    """
+    
     def __init__(self, db: Session):
         self.db = db
         
-        if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
-            self.twilio_client = TwilioClient(
-                settings.TWILIO_ACCOUNT_SID,
-                settings.TWILIO_AUTH_TOKEN
-            )
-        else:
-            self.twilio_client = None
+        # STUB: Twilio client disabled
+        self.twilio_client = None
         
-        if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
-            self.ses_client = boto3.client(
-                'ses',
-                region_name=settings.AWS_REGION,
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
-            )
-        else:
-            self.ses_client = None
+        # STUB: SES client disabled
+        self.ses_client = None
     
     def get_upcoming_appointments(self) -> List[Appointment]:
         tomorrow = datetime.utcnow() + timedelta(hours=24)
@@ -43,63 +50,34 @@ class AppointmentReminderService:
         ).all()
     
     def send_sms_reminder(self, phone_number: str, appointment: Appointment) -> bool:
-        if not self.twilio_client or not settings.TWILIO_PHONE_NUMBER:
-            print("Twilio not configured")
-            return False
-        
-        try:
-            message_body = f"Reminder: You have an appointment tomorrow at {appointment.appointment_date.strftime('%I:%M %p')}. Please arrive 10 minutes early."
-            
-            self.twilio_client.messages.create(
-                body=message_body,
-                from_=settings.TWILIO_PHONE_NUMBER,
-                to=phone_number
-            )
-            return True
-        except Exception as e:
-            print(f"Error sending SMS: {e}")
-            return False
+        """
+        Send SMS reminder via Twilio.
+        STUB: Twilio is disabled - logs warning and returns False.
+        """
+        logger.warning(f"SMS reminder not sent to {phone_number[:4]}**** - Twilio integration disabled")
+        logger.info(f"Would have sent: Reminder for appointment at {appointment.appointment_date.strftime('%I:%M %p')}")
+        return False
     
     def send_email_reminder(self, email: str, appointment: Appointment) -> bool:
-        if not self.ses_client:
-            print("AWS SES not configured")
-            return False
-        
-        try:
-            subject = "Appointment Reminder - Tomorrow"
-            body = f"""
-            <html>
-            <body>
-                <h2>Appointment Reminder</h2>
-                <p>This is a friendly reminder about your upcoming appointment:</p>
-                <ul>
-                    <li><strong>Date:</strong> {appointment.appointment_date.strftime('%B %d, %Y')}</li>
-                    <li><strong>Time:</strong> {appointment.appointment_date.strftime('%I:%M %p')}</li>
-                    <li><strong>Duration:</strong> {appointment.duration_minutes} minutes</li>
-                </ul>
-                <p>Please arrive 10 minutes early.</p>
-            </body>
-            </html>
-            """
-            
-            self.ses_client.send_email(
-                Source="noreply@followupai.com",
-                Destination={'ToAddresses': [email]},
-                Message={
-                    'Subject': {'Data': subject},
-                    'Body': {'Html': {'Data': body}}
-                }
-            )
-            return True
-        except Exception as e:
-            print(f"Error sending email: {e}")
-            return False
+        """
+        Send email reminder via AWS SES.
+        STUB: AWS SES is disabled - logs warning and returns False.
+        """
+        logger.warning(f"Email reminder not sent to {email} - AWS SES integration disabled")
+        logger.info(f"Would have sent reminder for appointment on {appointment.appointment_date.strftime('%B %d, %Y')}")
+        return False
     
     def process_reminders(self) -> Dict:
+        """
+        Process all pending reminders.
+        
+        NOTE: Actual sending is disabled, but appointments will still be marked as reminded
+        to prevent repeated processing.
+        """
         appointments = self.get_upcoming_appointments()
         
-        sms_sent = 0
-        email_sent = 0
+        sms_attempted = 0
+        email_attempted = 0
         
         for appointment in appointments:
             patient = self.db.query(User).filter(User.id == appointment.patient_id).first()
@@ -108,20 +86,27 @@ class AppointmentReminderService:
                 continue
             
             if patient.phone_number:
-                if self.send_sms_reminder(patient.phone_number, appointment):
-                    sms_sent += 1
+                self.send_sms_reminder(patient.phone_number, appointment)
+                sms_attempted += 1
             
             if patient.email:
-                if self.send_email_reminder(patient.email, appointment):
-                    email_sent += 1
+                self.send_email_reminder(patient.email, appointment)
+                email_attempted += 1
             
+            # Mark as reminded even though sending is disabled
+            # to prevent repeated processing
             appointment.reminder_sent = True
         
         if appointments:
             self.db.commit()
         
+        logger.warning(f"Processed {len(appointments)} appointments - actual sending disabled")
+        
         return {
             "total_appointments": len(appointments),
-            "sms_sent": sms_sent,
-            "email_sent": email_sent
+            "sms_attempted": sms_attempted,
+            "email_attempted": email_attempted,
+            "sms_sent": 0,  # Always 0 since disabled
+            "email_sent": 0,  # Always 0 since disabled
+            "warning": "AWS SES and Twilio integrations are disabled - no actual reminders sent"
         }

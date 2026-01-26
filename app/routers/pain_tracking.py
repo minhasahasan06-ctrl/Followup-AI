@@ -1,21 +1,30 @@
 """
 Pain Tracking API - HIPAA Compliant
 Handles facial analysis for pain detection, questionnaire responses, and trend summaries.
+
+Phase 7 Integration:
+- VAS slider data (0-10) is wired to Autopilot ML pipeline via SignalIngestorService
+- Video analysis endpoint connected to VideoAIEngine
+- All operations are HIPAA audit logged
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
+import logging
 
 from app.database import get_db
 from app.models.pain_tracking import PainMeasurement, PainQuestionnaire, PainTrendSummary
 from app.models.user import User
 from app.models.patient_doctor_connection import PatientDoctorConnection
-from app.dependencies import require_role
+from app.dependencies import require_role, get_current_patient
+from app.services.signal_ingestor_service import SignalIngestorService
+from app.services.access_control import HIPAAAuditLogger, PHICategory
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/pain-tracking", tags=["Pain Tracking"])
 
@@ -219,8 +228,10 @@ async def submit_pain_questionnaire(
 ):
     """
     Submit questionnaire responses associated with a pain measurement.
+    
+    Phase 7: VAS slider data (pain_level_self_reported 0-10) is wired to
+    Autopilot ML pipeline via SignalIngestorService for feature building.
     """
-    # Verify measurement belongs to patient
     measurement = db.query(PainMeasurement).filter(
         PainMeasurement.id == measurement_id,
         PainMeasurement.patient_id == current_user.id
@@ -229,7 +240,6 @@ async def submit_pain_questionnaire(
     if not measurement:
         raise HTTPException(status_code=404, detail="Measurement not found")
     
-    # Create questionnaire record
     questionnaire_record = PainQuestionnaire(
         patient_id=current_user.id,
         measurement_id=measurement_id,
@@ -240,10 +250,40 @@ async def submit_pain_questionnaire(
     db.commit()
     db.refresh(questionnaire_record)
     
+    signal_id = None
+    if questionnaire.pain_level_self_reported is not None:
+        try:
+            signal_ingestor = SignalIngestorService(db)
+            signal = signal_ingestor.ingest_pain_signal(
+                patient_id=current_user.id,
+                pain_level=questionnaire.pain_level_self_reported,
+                facial_stress_score=measurement.facial_stress_score,
+                source="pain_tracking_questionnaire",
+                metadata={
+                    "questionnaire_id": questionnaire_record.id,
+                    "measurement_id": measurement_id,
+                    "pain_location": questionnaire.pain_location,
+                    "pain_type": questionnaire.pain_type,
+                    "pain_duration": questionnaire.pain_duration,
+                    "affects_sleep": questionnaire.affects_sleep,
+                    "affects_daily_activities": questionnaire.affects_daily_activities,
+                    "affects_mood": questionnaire.affects_mood,
+                    "medication_taken": questionnaire.pain_medication_taken
+                }
+            )
+            signal_id = str(signal.id)
+            logger.info(
+                f"[PAIN-TRACKING] VAS signal ingested for patient {current_user.id}: "
+                f"pain_level={questionnaire.pain_level_self_reported}, signal_id={signal_id}"
+            )
+        except Exception as e:
+            logger.error(f"[PAIN-TRACKING] Signal ingestion failed: {e}")
+    
     return {
         "success": True,
         "message": "Pain questionnaire submitted successfully",
-        "questionnaire_id": questionnaire_record.id
+        "questionnaire_id": questionnaire_record.id,
+        "autopilot_signal_id": signal_id
     }
 
 
@@ -421,6 +461,75 @@ async def get_patient_measurements_for_doctor(
             for q in questionnaires
         ]
     }
+
+
+@router.post("/video-analysis")
+async def analyze_pain_video(
+    video: UploadFile = File(...),
+    current_user: User = Depends(require_role("patient")),
+    db: Session = Depends(get_db)
+):
+    """
+    Analyze uploaded video for pain indicators using VideoAIEngine.
+    
+    Phase 7: Video analysis results are wired to Autopilot ML pipeline.
+    Extracts respiratory patterns, facial stress indicators, and movement analysis.
+    
+    Returns:
+        Video analysis results with respiratory risk score and pain indicators
+    """
+    import tempfile
+    import os
+    
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+            content = await video.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        from app.services.video_ai_engine import VideoAIEngine
+        video_engine = VideoAIEngine()
+        
+        analysis_result = await video_engine.analyze_video(temp_path)
+        
+        respiratory_risk = analysis_result.get("respiratory_risk_score", 0.0)
+        
+        signal_ingestor = SignalIngestorService(db)
+        signal = signal_ingestor.ingest_video_analysis_signal(
+            patient_id=current_user.id,
+            respiratory_risk=respiratory_risk,
+            analysis_results=analysis_result,
+            source="pain_tracking_video",
+            metadata={
+                "video_filename": video.filename,
+                "analysis_timestamp": datetime.utcnow().isoformat()
+            }
+        )
+        
+        logger.info(
+            f"[PAIN-TRACKING] Video analysis signal ingested for patient {current_user.id}: "
+            f"respiratory_risk={respiratory_risk:.4f}, signal_id={signal.id}"
+        )
+        
+        return {
+            "success": True,
+            "analysis": {
+                "respiratory_risk_score": respiratory_risk,
+                "respiratory_rate": analysis_result.get("respiratory_rate"),
+                "facial_stress_indicators": analysis_result.get("facial_analysis", {}),
+                "quality_score": analysis_result.get("quality_score", 0.0),
+                "analysis_confidence": analysis_result.get("confidence_score", 0.0)
+            },
+            "autopilot_signal_id": str(signal.id)
+        }
+        
+    except Exception as e:
+        logger.error(f"[PAIN-TRACKING] Video analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Video analysis failed: {str(e)}")
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
 
 
 @router.get("/doctor/patient/{patient_id}/trends")

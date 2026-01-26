@@ -10,7 +10,7 @@ from typing import Optional
 import io
 
 from app.models.symptom_journal import SymptomMeasurement, SymptomImage, SymptomAlert, BodyArea
-from app.services.s3_service import upload_file_to_s3
+from app.services.gcs_service import upload_file_to_storage as upload_file_to_s3
 
 
 async def generate_symptom_journal_pdf(

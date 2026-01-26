@@ -4,7 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["abseil-cpp", "ffmpeg-full", "freetype", "glibcLocales", "gtest", "lcms2", "libGL", "libGLU", "libimagequant", "libjpeg", "libjpeg_turbo", "libpng", "libsndfile", "libtiff", "libwebp", "libxcrypt", "oneDNN", "openjpeg", "pkg-config", "re2", "tcl", "tk", "which", "xsimd", "zlib"]
+packages = ["abseil-cpp", "ffmpeg-full", "freetype", "glibcLocales", "gtest", "lcms2", "libGL", "libGLU", "libimagequant", "libjpeg", "libjpeg_turbo", "libpng", "libsndfile", "libtiff", "libwebp", "libxcrypt", "oneDNN", "openjpeg", "pkg-config", "postgresql", "re2", "tcl", "tk", "which", "xsimd", "zlib", "google-cloud-sdk"]
 
 [deployment]
 deploymentTarget = "autoscale"
@@ -16,64 +16,8 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 35799
-externalPort = 8099
-
-[[ports]]
-localPort = 36433
-externalPort = 8080
-
-[[ports]]
-localPort = 36679
-externalPort = 9000
-
-[[ports]]
-localPort = 38991
-externalPort = 5173
-
-[[ports]]
-localPort = 39087
-externalPort = 3003
-
-[[ports]]
-localPort = 40239
-externalPort = 6800
-
-[[ports]]
-localPort = 41063
-externalPort = 3001
-
-[[ports]]
-localPort = 41077
-externalPort = 4200
-
-[[ports]]
-localPort = 41413
+localPort = 8000
 externalPort = 8000
-
-[[ports]]
-localPort = 42523
-externalPort = 3000
-
-[[ports]]
-localPort = 45501
-externalPort = 6000
-
-[[ports]]
-localPort = 45623
-externalPort = 3002
-
-[[ports]]
-localPort = 45649
-externalPort = 8081
-
-[[ports]]
-localPort = 46005
-externalPort = 5000
-
-[[ports]]
-localPort = 46149
-externalPort = 8008
 
 [env]
 PORT = "5000"
@@ -101,3 +45,21 @@ waitForPort = 5000
 
 [agent]
 integrations = ["javascript_database:1.0.0", "javascript_websocket:1.0.0", "javascript_openai:1.0.0", "javascript_log_in_with_replit:1.0.0", "javascript_stripe:1.0.0", "resend:1.0.0", "google-drive:1.0.0"]
+
+[userenv]
+
+[userenv.shared]
+TINKER_ENABLED = "true"
+TINKER_API_URL = "https://api.thinkingmachines.ai"
+ENV = "production"
+PHI_DETECTION_ENABLED = "true"
+PHI_BLOCK_ON_DETECT = "true"
+USE_RESEARCH_EMBEDDINGS = "false"
+VITE_API_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
+VITE_USE_CLOUD_RUN_PROXY = "true"
+CLOUD_RUN_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
+PYTHON_BACKEND_URL = "https://followupai-backend-ujttoo34lq-uc.a.run.app"
+PROXY_AUTH_SECRET = "bcd4a082e6d9da326804f6a1d4bfa7bf22bf65d7e46f17cd608068e6978e9a94"
+
+[userenv.development]
+LEGACY_SESSION_ENABLED = "true"

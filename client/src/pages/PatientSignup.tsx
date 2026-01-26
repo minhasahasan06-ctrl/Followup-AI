@@ -30,6 +30,7 @@ const signupSchema = z.object({
   }),
   ehrPlatform: z.string().optional(),
   termsAccepted: z.boolean().refine(val => val === true, "You must accept the terms and conditions"),
+  researchConsent: z.boolean().optional().default(false),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -54,6 +55,7 @@ export default function PatientSignup() {
       ehrImportMethod: undefined,
       ehrPlatform: "",
       termsAccepted: false,
+      researchConsent: false,
     },
   });
 
@@ -289,6 +291,30 @@ export default function PatientSignup() {
                         By signing up, you get a 7-day free trial with 20 consultation credits
                       </p>
                       <FormMessage />
+                    </div>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="researchConsent"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 p-4 border rounded-md bg-muted/30">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="checkbox-research-consent"
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel className="text-sm font-normal">
+                        I consent to sharing my de-identified data for medical research (optional)
+                      </FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Help advance chronic care research. Your data will be de-identified and protected with privacy safeguards including k-anonymity (k≥25). You can change this anytime in Settings.
+                      </p>
                     </div>
                   </FormItem>
                 )}

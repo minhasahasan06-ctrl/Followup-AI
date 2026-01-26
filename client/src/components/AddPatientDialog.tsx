@@ -68,7 +68,7 @@ export function AddPatientDialog({ trigger }: AddPatientDialogProps) {
 
   const sendConsentRequest = useMutation({
     mutationFn: async (data: { patientId: string; requestMessage: string }) => {
-      const res = await apiRequest("POST", "/api/doctor/consent-requests", data);
+      const res = await apiRequest("/api/doctor/consent-requests", { method: "POST", json: data });
       return res.json();
     },
     onSuccess: () => {
