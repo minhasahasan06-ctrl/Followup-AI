@@ -29,7 +29,25 @@ jobs:
       - name: Run gitleaks scan and generate report
         id: gitleaks
         run: |
-          gitleaks detect --source . --config .gitleaks.toml --report-path=gitleaks-report.json --report-format=json --verbose --redact || true
+          # Run gitleaks and capture exit code
+          # Exit codes: 0 = no leaks, 1 = leaks found, other = tool error
+          set +e
+          gitleaks detect --source . --config .gitleaks.toml --report-path=gitleaks-report.json --report-format=json --verbose --redact
+          GITLEAKS_EXIT=$?
+          set -e
+          
+          # Ensure report file always exists for artifact upload
+          if [ ! -f gitleaks-report.json ]; then
+            echo '[]' > gitleaks-report.json
+          fi
+          
+          # Fail on tool errors (exit code > 1), but not on leaks found (handled later)
+          if [ $GITLEAKS_EXIT -gt 1 ]; then
+            echo "ERROR: Gitleaks tool failed with exit code $GITLEAKS_EXIT"
+            exit $GITLEAKS_EXIT
+          fi
+          
+          echo "gitleaks_exit=$GITLEAKS_EXIT" >> $GITHUB_OUTPUT
 
       - name: Upload gitleaks report
         uses: actions/upload-artifact@v4
@@ -183,15 +201,32 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Run npm audit
-        run: npm audit --audit-level=high
-        continue-on-error: true
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Check for critical vulnerabilities
+      - name: Run security audit
         run: |
-          CRITICAL=$(npm audit --json 2>/dev/null | jq '.metadata.vulnerabilities.critical // 0')
+          # Run audit once and save JSON output for analysis
+          npm audit --json > audit-report.json 2>&1 || true
+          
+          # Parse vulnerabilities from the report
+          CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' audit-report.json 2>/dev/null || echo "0")
+          HIGH=$(jq '.metadata.vulnerabilities.high // 0' audit-report.json 2>/dev/null || echo "0")
+          
+          echo "Security audit results:"
+          echo "  Critical: $CRITICAL"
+          echo "  High: $HIGH"
+          
+          # Fail only on critical vulnerabilities
           if [ "$CRITICAL" -gt 0 ]; then
             echo "ERROR: $CRITICAL critical vulnerabilities found"
+            echo "Run 'npm audit' locally for details"
             exit 1
           fi
-          echo "No critical vulnerabilities found"
+          
+          # Warn on high vulnerabilities but don't fail
+          if [ "$HIGH" -gt 0 ]; then
+            echo "WARNING: $HIGH high vulnerabilities found - review recommended"
+          fi
+          
+          echo "SUCCESS: No critical vulnerabilities found"
