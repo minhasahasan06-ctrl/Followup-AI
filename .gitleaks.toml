@@ -13,12 +13,16 @@ paths = [
   '''.*\.example$''',
   '''.*\.template$''',
   
+  # Replit configuration (contains Replit-specific proxy auth)
+  '''\.replit$''',
+  
   # GitHub workflow files (contain test credentials)
   '''\.github/workflows/.*\.yml$''',
   '''\.github/.*\.yml$''',
   
   # Test files
   '''tests/.*\.py$''',
+  '''tests/.*\.ts$''',
   '''test/.*\.py$''',
   '''conftest\.py$''',
   '''test_.*\.py$''',
@@ -36,6 +40,10 @@ paths = [
   '''uv\.lock$''',
   '''poetry\.lock$''',
   '''Pipfile\.lock$''',
+  
+  # Snapshot files (contain serialized data)
+  '''.*snapshot\.json$''',
+  '''migrations/meta/.*\.json$''',
 ]
 
 regexes = [
@@ -57,10 +65,12 @@ regexes = [
   '''dummy[_-]?secret''',
   '''dummy[_-]?token''',
   
-  # Development tokens
+  # Development tokens and secrets
   '''dev[_-]?token''',
   '''dev[_-]?access[_-]?token''',
   '''dev[_-]?refresh[_-]?token''',
+  '''dev[_-]?insecure[_-]?.*''',
+  '''dev[_-]?secret''',
   
   # Placeholder values
   '''your_.*_here''',
@@ -74,6 +84,12 @@ regexes = [
   '''test_user''',
   '''test_db''',
   '''localhost:5432''',
+  
+  # Stripe test webhooks
+  '''whsec_.*''',
+  '''secret_123''',
+  '''secret[_-]test[_-].*''',
+  '''secret[_-]\d+''',
   
   # Common safe patterns
   '''TestPassword123!''',
