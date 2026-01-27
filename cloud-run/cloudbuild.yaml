@@ -111,32 +111,6 @@ steps:
       # =====================================================================
       - '--set-env-vars'
       - 'GCP_PROJECT_ID=$PROJECT_ID,NODE_ENV=production,LOG_LEVEL=info,WORKERS=2,OPENAI_BAA_SIGNED=true,OPENAI_ZDR_ENABLED=true'
-      # =====================================================================
-      # CLOUD RUN STARTUP & LIVENESS PROBE CONFIGURATION
-      # Allows up to 300s for slow-starting ML containers
-      # =====================================================================
-      - '--startup-cpu-boost'
-      - '--startup-probe-http-get-path'
-      - '/startup'
-      - '--startup-probe-initial-delay-seconds'
-      - '0'
-      - '--startup-probe-timeout-seconds'
-      - '10'
-      - '--startup-probe-period-seconds'
-      - '10'
-      - '--startup-probe-failure-threshold'
-      - '30'
-      # Liveness probe uses same lightweight endpoint
-      - '--liveness-probe-http-get-path'
-      - '/startup'
-      - '--liveness-probe-initial-delay-seconds'
-      - '30'
-      - '--liveness-probe-timeout-seconds'
-      - '5'
-      - '--liveness-probe-period-seconds'
-      - '30'
-      - '--liveness-probe-failure-threshold'
-      - '3'
 
   # Step 4: Output service URL for frontend configuration
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
