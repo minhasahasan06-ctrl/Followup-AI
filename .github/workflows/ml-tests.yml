@@ -212,6 +212,8 @@ jobs:
         run: python -m pip show pytest
       
       - name: Run governance tests
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test_db
         run: |
           python -m pytest tests/python/test_governance_service.py -v
 
