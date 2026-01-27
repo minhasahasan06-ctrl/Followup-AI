@@ -87,7 +87,9 @@ USER appuser
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
+# Startup probe uses lightweight /startup endpoint (no DB checks)
+# Cloud Run ignores Docker HEALTHCHECK but this helps local testing
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+    CMD curl -f http://localhost:${PORT}/startup || exit 1
 
 CMD ["sh", "-c", "uvicorn app.main:app --host ${HOST} --port ${PORT} --workers ${WORKERS} --log-level ${LOG_LEVEL} --timeout-keep-alive 75"]

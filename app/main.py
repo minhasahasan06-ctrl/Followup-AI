@@ -320,132 +320,190 @@ except ImportError as e:
     logger.warning(f"❌ Could not import payments: {e}")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+import asyncio
+
+# Background initialization task reference (for cleanup)
+_background_init_task: asyncio.Task | None = None
+
+
+def _sync_init_gcp_secrets():
+    """Synchronous GCP Secret Manager initialization (runs in thread)."""
+    try:
+        from app.services.gcp_secrets import init_secrets
+        secrets = init_secrets()
+        return secrets.is_stytch_configured()
+    except Exception as e:
+        logger.warning(f"⚠️  GCP Secret Manager init skipped: {e}")
+        return False
+
+
+def _sync_create_tables():
+    """Synchronous database table creation (runs in thread)."""
+    try:
+        Base.metadata.create_all(bind=engine)
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to create tables: {e}")
+        return False
+
+
+def _sync_check_baa_compliance():
+    """Synchronous BAA compliance check (runs in thread)."""
+    try:
+        check_openai_baa_compliance()
+        return True
+    except Exception as e:
+        logger.warning(f"⚠️  OpenAI BAA compliance check failed: {e}")
+        return False
+
+
+async def _deferred_initialization():
     """
-    Application lifespan manager with async AI engine initialization.
-    Prevents blocking uvicorn startup by deferring heavy library loads to startup event.
-    """
-    logger.info("🚀 Starting Followup AI Backend...")
+    Heavy initialization tasks deferred to background.
+    Runs after server is ready to accept health probe requests.
     
-    # Step 0: Initialize GCP Secret Manager (production only)
-    if os.getenv("NODE_ENV") == "production" or os.getenv("GCP_PROJECT_ID"):
-        logger.info("🔐 Initializing GCP Secret Manager...")
-        try:
-            from app.services.gcp_secrets import init_secrets
-            secrets = init_secrets()
-            if secrets.is_stytch_configured():
+    IMPORTANT: Blocking operations are offloaded to threads via asyncio.to_thread()
+    to keep the event loop responsive for /startup health probes.
+    """
+    global _startup_complete
+    
+    try:
+        # Step 1: Initialize GCP Secret Manager (production only) - THREAD
+        if os.getenv("NODE_ENV") == "production" or os.getenv("GCP_PROJECT_ID"):
+            logger.info("🔐 Initializing GCP Secret Manager...")
+            stytch_configured = await asyncio.to_thread(_sync_init_gcp_secrets)
+            if stytch_configured:
                 logger.info("✅ Stytch credentials loaded from Secret Manager")
             else:
                 logger.warning("⚠️  Stytch credentials not found in Secret Manager")
-            logger.info("✅ GCP Secret Manager initialized")
-        except Exception as e:
-            logger.warning(f"⚠️  GCP Secret Manager init skipped: {e}")
-    
-    # Step 1: Create database tables
-    logger.info("📊 Creating database tables...")
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("✅ Database tables created")
-    except Exception as e:
-        logger.error(f"❌ Failed to create tables: {e}")
-    
-    # Step 2: Check OpenAI BAA compliance
-    logger.info("🔐 Verifying OpenAI BAA compliance...")
-    try:
-        check_openai_baa_compliance()
-        logger.info("✅ OpenAI BAA compliance verified")
-    except Exception as e:
-        logger.warning(f"⚠️  OpenAI BAA compliance check failed: {e}")
-    
-    # Step 3: Initialize AI engines asynchronously
-    logger.info("🤖 Initializing AI engines asynchronously...")
-    await AIEngineManager.initialize_all()
-    logger.info("✅ AI engines initialized successfully")
-    
-    # Step 4: Initialize Multi-Agent Communication System
-    logger.info("🤖 Initializing Multi-Agent Communication System...")
-    try:
-        from app.services.agent_engine import get_agent_engine
-        from app.services.message_router import get_message_router
-        from app.services.memory_service import get_memory_service
-        from app.services.delivery_service import init_delivery_service
         
-        await get_agent_engine()
-        message_router = await get_message_router()
-        await get_memory_service()
+        # Step 2: Create database tables - THREAD (blocking I/O)
+        logger.info("📊 Creating database tables...")
+        if await asyncio.to_thread(_sync_create_tables):
+            logger.info("✅ Database tables created")
         
-        # Initialize delivery service with Redis stream and WebSocket dependencies
-        # Use public accessor methods instead of private attributes
-        await init_delivery_service(
-            redis_stream=message_router.get_redis_stream(),
-            connection_manager=message_router.get_connection_manager()
-        )
+        # Step 3: Check OpenAI BAA compliance - THREAD
+        logger.info("🔐 Verifying OpenAI BAA compliance...")
+        if await asyncio.to_thread(_sync_check_baa_compliance):
+            logger.info("✅ OpenAI BAA compliance verified")
         
-        logger.info("✅ Multi-Agent Communication System initialized (Clona & Lysa)")
+        # Step 4: Initialize AI engines asynchronously
+        logger.info("🤖 Initializing AI engines asynchronously...")
+        await AIEngineManager.initialize_all()
+        logger.info("✅ AI engines initialized successfully")
+        
+        # Step 5: Initialize Multi-Agent Communication System
+        logger.info("🤖 Initializing Multi-Agent Communication System...")
+        try:
+            from app.services.agent_engine import get_agent_engine
+            from app.services.message_router import get_message_router
+            from app.services.memory_service import get_memory_service
+            from app.services.delivery_service import init_delivery_service
+            
+            await get_agent_engine()
+            message_router = await get_message_router()
+            await get_memory_service()
+            
+            await init_delivery_service(
+                redis_stream=message_router.get_redis_stream(),
+                connection_manager=message_router.get_connection_manager()
+            )
+            
+            logger.info("✅ Multi-Agent Communication System initialized (Clona & Lysa)")
+        except Exception as e:
+            logger.warning(f"⚠️  Multi-Agent System initialization failed: {e}")
+        
+        # Step 6: Start Lysa Automation Engine (optional)
+        automation_enabled = os.getenv("LYSA_AUTOMATION_ENABLED", "false").lower() == "true"
+        if automation_enabled:
+            logger.info("🤖 Starting Lysa Automation Engine...")
+            try:
+                from app.services.scheduler import start_automation_services
+                await start_automation_services()
+                logger.info("✅ Lysa Automation Engine started")
+            except Exception as e:
+                logger.warning(f"⚠️  Automation Engine startup failed: {e}")
+        
+        # Step 7: Start Device Sync Worker
+        device_sync_enabled = os.getenv("DEVICE_SYNC_ENABLED", "true").lower() == "true"
+        if device_sync_enabled:
+            logger.info("📱 Starting Device Sync Worker...")
+            try:
+                from app.services.device_sync_worker import start_sync_worker
+                await start_sync_worker()
+            except Exception as e:
+                logger.warning(f"⚠️  Device Sync Worker startup failed: {e}")
+        
+        # Step 8: Start Study Job Worker
+        study_jobs_enabled = os.getenv("STUDY_JOBS_ENABLED", "true").lower() == "true"
+        if study_jobs_enabled:
+            logger.info("🔬 Starting Study Job Worker...")
+            try:
+                from app.services.study_job_worker import start_study_job_worker
+                await start_study_job_worker()
+                logger.info("✅ Study Job Worker started")
+            except Exception as e:
+                logger.warning(f"⚠️  Study Job Worker startup failed: {e}")
+        
+        # Step 9: Initialize Tinker Thinking Machine Service
+        tinker_enabled = settings.is_tinker_enabled()
+        if tinker_enabled:
+            logger.info("🧠 Initializing Tinker Thinking Machine (NON-BAA Mode)...")
+            try:
+                from app.services.tinker_service import get_tinker_service
+                tinker_service = get_tinker_service()
+                health_result = await tinker_service.health_check()
+                if health_result.success:
+                    logger.info("✅ Tinker service initialized and healthy")
+                else:
+                    logger.warning("⚠️  Tinker service initialized but health check failed")
+            except Exception as e:
+                logger.warning(f"⚠️  Tinker service initialization failed: {e}")
+        
+        # Mark full initialization complete
+        _startup_complete = True
+        logger.info("🎉 Followup AI Backend full initialization complete!")
+        
     except Exception as e:
-        logger.warning(f"⚠️  Multi-Agent System initialization failed: {e}")
+        logger.error(f"❌ Background initialization failed: {e}")
+        # Still mark as complete to avoid health check failures
+        _startup_complete = True
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan manager with DEFERRED initialization.
     
-    # Step 5: Start Lysa Automation Engine (optional - enabled via environment)
-    automation_enabled = os.getenv("LYSA_AUTOMATION_ENABLED", "false").lower() == "true"
-    if automation_enabled:
-        logger.info("🤖 Starting Lysa Automation Engine...")
-        try:
-            from app.services.scheduler import start_automation_services
-            await start_automation_services()
-            logger.info("✅ Lysa Automation Engine started")
-        except Exception as e:
-            logger.warning(f"⚠️  Automation Engine startup failed: {e}")
-    else:
-        logger.info("ℹ️  Lysa Automation Engine disabled (set LYSA_AUTOMATION_ENABLED=true to enable)")
+    Cloud Run deployment fix: Heavy initialization is deferred to background
+    so the server can accept health probe requests immediately.
+    This prevents deployment timeouts caused by slow cold starts.
+    """
+    global _background_init_task
     
-    # Step 6: Start Device Sync Worker (background data synchronization)
-    device_sync_enabled = os.getenv("DEVICE_SYNC_ENABLED", "true").lower() == "true"
-    if device_sync_enabled:
-        logger.info("📱 Starting Device Sync Worker...")
-        try:
-            from app.services.device_sync_worker import start_sync_worker
-            await start_sync_worker()
-        except Exception as e:
-            logger.warning(f"⚠️  Device Sync Worker startup failed: {e}")
+    logger.info("🚀 Starting Followup AI Backend (fast startup mode)...")
     
-    # Step 7: Start Study Job Worker (Phase 10 - Research Center)
-    study_jobs_enabled = os.getenv("STUDY_JOBS_ENABLED", "true").lower() == "true"
-    if study_jobs_enabled:
-        logger.info("🔬 Starting Study Job Worker...")
-        try:
-            from app.services.study_job_worker import start_study_job_worker
-            await start_study_job_worker()
-            logger.info("✅ Study Job Worker started")
-        except Exception as e:
-            logger.warning(f"⚠️  Study Job Worker startup failed: {e}")
+    # Schedule heavy initialization as background task
+    # Server will be ready to accept /startup probes immediately
+    _background_init_task = asyncio.create_task(_deferred_initialization())
     
-    # Step 8: Initialize Tinker Thinking Machine Service (NON-BAA Mode)
-    tinker_enabled = settings.is_tinker_enabled()
-    if tinker_enabled:
-        logger.info("🧠 Initializing Tinker Thinking Machine (NON-BAA Mode)...")
-        try:
-            from app.services.tinker_service import get_tinker_service
-            tinker_service = get_tinker_service()
-            health_result = await tinker_service.health_check()
-            if health_result.success:
-                logger.info("✅ Tinker service initialized and healthy")
-            else:
-                logger.warning("⚠️  Tinker service initialized but health check failed")
-        except Exception as e:
-            logger.warning(f"⚠️  Tinker service initialization failed: {e}")
-    else:
-        logger.info("ℹ️  Tinker service disabled (set TINKER_ENABLED=true and TINKER_API_KEY to enable)")
-    
-    logger.info("🎉 Followup AI Backend startup complete!")
+    logger.info("✅ Server ready - background initialization started")
     
     yield
     
     # Shutdown: Cleanup AI engines, automation, and device sync
     logger.info("🛑 Shutting down Followup AI Backend...")
     
-    # Stop Device Sync Worker
-    if device_sync_enabled:
+    # Cancel background init if still running
+    if _background_init_task and not _background_init_task.done():
+        _background_init_task.cancel()
+        try:
+            await _background_init_task
+        except asyncio.CancelledError:
+            pass
+    
+    # Stop Device Sync Worker (check env var since we can't track state)
+    if os.getenv("DEVICE_SYNC_ENABLED", "true").lower() == "true":
         try:
             from app.services.device_sync_worker import stop_sync_worker
             await stop_sync_worker()
@@ -453,7 +511,7 @@ async def lifespan(app: FastAPI):
             logger.warning(f"⚠️  Device Sync Worker shutdown error: {e}")
     
     # Stop Study Job Worker
-    if study_jobs_enabled:
+    if os.getenv("STUDY_JOBS_ENABLED", "true").lower() == "true":
         try:
             from app.services.study_job_worker import stop_study_job_worker
             await stop_study_job_worker()
@@ -462,7 +520,7 @@ async def lifespan(app: FastAPI):
             logger.warning(f"⚠️  Study Job Worker shutdown error: {e}")
     
     # Stop Lysa Automation Engine
-    if automation_enabled:
+    if os.getenv("LYSA_AUTOMATION_ENABLED", "false").lower() == "true":
         try:
             from app.services.scheduler import stop_automation_services
             await stop_automation_services()
@@ -719,12 +777,35 @@ async def root():
     }
 
 
+# =============================================================================
+# CLOUD RUN HEALTH ENDPOINTS
+# =============================================================================
+# /startup - Lightweight probe for Cloud Run startup (no external dependencies)
+# /health  - Full health check with DB status (for monitoring dashboards)
+# =============================================================================
+
+# Track startup completion for health checks
+_startup_complete = False
+
+@app.get("/startup")
+async def startup_probe():
+    """
+    Lightweight startup probe for Cloud Run.
+    Returns immediately without checking DB or external services.
+    Cloud Run uses this to determine when container is ready to receive traffic.
+    """
+    return {"status": "ready", "service": "followupai-backend"}
+
+
 @app.get("/health")
 async def health_check():
     """
-    Health check endpoint for Cloud Run and load balancers.
-    Returns detailed status for debugging while keeping response fast.
+    Full health check endpoint for monitoring dashboards.
+    Includes database connectivity and service status.
+    Note: Use /startup for Cloud Run probes to avoid cold start delays.
     """
+    global _startup_complete
+    
     db_status = "unknown"
     try:
         from app.database import engine
@@ -741,7 +822,8 @@ async def health_check():
         "database": db_status,
         "stytch": stytch_status,
         "environment": settings.ENVIRONMENT,
-        "version": "2.0.0"
+        "version": "2.0.0",
+        "startup_complete": _startup_complete
     }
 
 
