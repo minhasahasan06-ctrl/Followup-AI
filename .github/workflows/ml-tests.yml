@@ -99,6 +99,21 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit-tests
     
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: followup_perf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
     steps:
       - uses: actions/checkout@v4
       
@@ -115,6 +130,8 @@ jobs:
           if [ -f python_backend/requirements.txt ]; then pip install -r python_backend/requirements.txt; fi
       
       - name: Run performance tests
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/followup_perf_test
         run: |
           python -m pytest tests/python/test_performance.py -v --tb=short
 
@@ -193,6 +210,21 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit-tests
     
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: followup_governance_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
     steps:
       - uses: actions/checkout@v4
       
@@ -213,7 +245,7 @@ jobs:
       
       - name: Run governance tests
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+          DATABASE_URL: postgresql://test:test@localhost:5432/followup_governance_test
         run: |
           python -m pytest tests/python/test_governance_service.py -v
 
