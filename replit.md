@@ -58,6 +58,25 @@ The FastAPI backend supports deployment to GCP Cloud Run with features like scal
   - `GOOGLE_CLOUD_RUN_URL` - Cloud Run service URL
 - **Security**: No auto-user-creation, fail-safe when misconfigured, existing users only
 
+### Vercel Deployment
+The frontend is deployed to Vercel as a static SPA with Edge Middleware for password protection.
+
+**HTTP Basic Auth (Password Protection)**:
+- Implemented via Vercel Edge Middleware (`middleware.ts` at repo root)
+- Triggers browser login popup when credentials are required
+- Protects all HTML routes while excluding static assets and API calls
+- **Environment Variables** (set in Vercel Project Settings):
+  - `BASIC_AUTH_USER` - Username for site access
+  - `BASIC_AUTH_PASSWORD` - Password for site access
+  - Leave both empty to disable password protection
+- **Excluded Paths**: `/api/*`, `/assets/*`, static files (js/css/map), images, fonts, favicon, robots.txt, sitemap.xml, manifest
+- **Security Features**: Constant-time string comparison, Base64 decoding with error handling
+
+**Frontend Environment Variables**:
+- `VITE_EXPRESS_BACKEND_URL` - Express backend URL for API calls
+- `VITE_PYTHON_BACKEND_URL` - Python FastAPI backend URL
+- `VITE_USE_CLOUD_RUN_PROXY=false` - Direct backend calls (no Express proxy)
+
 ## External Dependencies
 
 - **Authentication**: Stytch (Magic Links, SMS OTP, M2M)
