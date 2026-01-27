@@ -35,8 +35,13 @@ class Settings(BaseSettings):
     # ML Model Paths
     ML_MODELS_DIR: str = os.getenv("ML_MODELS_DIR", "./ml_models")
     
-    # CORS
-    CORS_ORIGINS: list = ["http://localhost:5000", "http://localhost:3000"]
+    # CORS - configurable via environment variable (comma-separated list)
+    # In production, set CORS_ORIGINS to your frontend domain(s)
+    CORS_ORIGINS: list = [
+        origin.strip() 
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5000,http://localhost:3000").split(",")
+        if origin.strip()
+    ]
     
     class Config:
         env_file = ".env"

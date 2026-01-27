@@ -21547,7 +21547,7 @@ Provide:
     // Validate and sanitize days parameter (1-90)
     const rawDays = parseInt(req.query.days as string, 10);
     const days = (!isNaN(rawDays) && rawDays >= 1 && rawDays <= 90) ? rawDays : 30;
-    const url = new URL(`/api/v1/followup-autopilot/patients/${encodeURIComponent(req.params.patientId)}/history`, 'http://localhost:8000');
+    const url = new URL(`/api/v1/followup-autopilot/patients/${encodeURIComponent(req.params.patientId)}/history`, getPythonBackendUrl());
     url.searchParams.set('days', String(days));
     await automationProxy(req, res, url.pathname + url.search, 'GET');
   });
@@ -21561,7 +21561,7 @@ Provide:
     const allowedSeverities = ['info', 'warning', 'alert'];
     const severity = allowedSeverities.includes(req.query.severity as string) ? req.query.severity as string : null;
     
-    const url = new URL(`/api/v1/followup-autopilot/patients/${encodeURIComponent(req.params.patientId)}/triggers`, 'http://localhost:8000');
+    const url = new URL(`/api/v1/followup-autopilot/patients/${encodeURIComponent(req.params.patientId)}/triggers`, getPythonBackendUrl());
     url.searchParams.set('days', String(days));
     if (severity) {
       url.searchParams.set('severity', severity);
@@ -21646,7 +21646,7 @@ Provide:
   app.get('/api/v1/hitl/history', isAuthenticated, async (req: any, res) => {
     const limit = parseInt(req.query.limit as string, 10) || 50;
     const offset = parseInt(req.query.offset as string, 10) || 0;
-    const url = new URL('/api/v1/hitl/history', 'http://localhost:8000');
+    const url = new URL('/api/v1/hitl/history', getPythonBackendUrl());
     url.searchParams.set('limit', String(limit));
     url.searchParams.set('offset', String(offset));
     await automationProxy(req, res, url.pathname + url.search, 'GET');
@@ -21669,7 +21669,7 @@ Provide:
   // Patient engagement analytics
   app.get('/api/autopilot/admin/engagement', isAuthenticated, async (req: any, res) => {
     const days = parseInt(req.query.days as string, 10) || 30;
-    const url = new URL('/api/autopilot/admin/engagement', 'http://localhost:8000');
+    const url = new URL('/api/autopilot/admin/engagement', getPythonBackendUrl());
     url.searchParams.set('days', String(days));
     await automationProxy(req, res, url.pathname + url.search, 'GET');
   });
@@ -21678,7 +21678,7 @@ Provide:
   app.get('/api/autopilot/admin/models/performance', isAuthenticated, async (req: any, res) => {
     const days = parseInt(req.query.days as string, 10) || 30;
     const modelName = req.query.model_name as string;
-    const url = new URL('/api/autopilot/admin/models/performance', 'http://localhost:8000');
+    const url = new URL('/api/autopilot/admin/models/performance', getPythonBackendUrl());
     url.searchParams.set('days', String(days));
     if (modelName) url.searchParams.set('model_name', modelName);
     await automationProxy(req, res, url.pathname + url.search, 'GET');
@@ -21692,7 +21692,7 @@ Provide:
   // Trigger analytics
   app.get('/api/autopilot/admin/triggers', isAuthenticated, async (req: any, res) => {
     const days = parseInt(req.query.days as string, 10) || 30;
-    const url = new URL('/api/autopilot/admin/triggers', 'http://localhost:8000');
+    const url = new URL('/api/autopilot/admin/triggers', getPythonBackendUrl());
     url.searchParams.set('days', String(days));
     await automationProxy(req, res, url.pathname + url.search, 'GET');
   });
@@ -21700,7 +21700,7 @@ Provide:
   // Configuration management
   app.get('/api/autopilot/admin/configurations', isAuthenticated, async (req: any, res) => {
     const category = req.query.category as string;
-    const url = new URL('/api/autopilot/admin/configurations', 'http://localhost:8000');
+    const url = new URL('/api/autopilot/admin/configurations', getPythonBackendUrl());
     if (category) url.searchParams.set('category', category);
     await automationProxy(req, res, url.pathname + url.search, 'GET');
   });

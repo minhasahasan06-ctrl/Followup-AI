@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import * as faceLandmarksDetection from "@tensorflow-models/face-landmarks-detection";
+import type * as FaceLandmarksDetection from "@tensorflow-models/face-landmarks-detection";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -134,12 +134,14 @@ export default function PainDetection() {
     },
   });
 
-  // Initialize face detector
+  // Initialize face detector with dynamic import to reduce bundle size
   useEffect(() => {
     const loadModel = async () => {
       try {
+        // Dynamic import to avoid loading TensorFlow in initial bundle
+        const faceLandmarksDetection = await import("@tensorflow-models/face-landmarks-detection");
         const model = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
-        const detectorConfig: faceLandmarksDetection.MediaPipeFaceMeshMediaPipeModelConfig = {
+        const detectorConfig: FaceLandmarksDetection.MediaPipeFaceMeshMediaPipeModelConfig = {
           runtime: "mediapipe",
           solutionPath: "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh",
           refineLandmarks: true,

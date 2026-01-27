@@ -4,8 +4,29 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 // The Express proxy handles: Stytch auth verification -> Google ID token generation -> Cloud Run forwarding
 const USE_CLOUD_RUN_PROXY = import.meta.env.VITE_USE_CLOUD_RUN_PROXY === "true";
 
-// Python backend URL (FastAPI on port 8000) - Used for direct development
+// Python backend URL (FastAPI on port 8000) - Used for direct development or direct Vercel calls
 const PYTHON_BACKEND_URL = import.meta.env.VITE_PYTHON_BACKEND_URL || "http://localhost:8000";
+
+// Express backend URL - For Vercel deployments where frontend is separate from backend
+// When set, all Express API calls use absolute URLs to this backend
+// In development (same-origin), leave empty to use relative URLs
+const EXPRESS_BACKEND_URL = import.meta.env.VITE_EXPRESS_BACKEND_URL || "";
+
+// Production safety check: warn if backend URLs are not configured for external deployments
+// This helps catch misconfigurations early
+if (typeof window !== 'undefined' && import.meta.env.PROD) {
+  const isExternalDeployment = !window.location.hostname.includes('localhost') && 
+                                !window.location.hostname.includes('127.0.0.1') &&
+                                !window.location.hostname.includes('.replit');
+  
+  if (isExternalDeployment && !EXPRESS_BACKEND_URL) {
+    console.warn(
+      '[API Config] VITE_EXPRESS_BACKEND_URL not set for production deployment. ' +
+      'API calls to Express backend will use relative URLs and may fail. ' +
+      'Set VITE_EXPRESS_BACKEND_URL in your environment variables.'
+    );
+  }
+}
 
 // Routes that should go to Python FastAPI backend (directly or via Cloud Run proxy)
 const PYTHON_BACKEND_ROUTES = [
@@ -58,6 +79,12 @@ function getApiUrl(url: string): string {
     return `${PYTHON_BACKEND_URL}${normalizedUrl}`;
   }
 
+  // For Express backend routes: use absolute URL if configured (Vercel deployment)
+  // Otherwise use relative URL (same-origin development)
+  if (EXPRESS_BACKEND_URL) {
+    return `${EXPRESS_BACKEND_URL}${normalizedUrl}`;
+  }
+  
   return normalizedUrl;
 }
 
