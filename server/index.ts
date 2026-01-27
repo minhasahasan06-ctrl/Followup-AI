@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { spawn, ChildProcess } from "child_process";
 import cookieParser from "cookie-parser";
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedDatabase } from "./seed";
@@ -110,6 +111,39 @@ async function initializePythonBackend(): Promise<void> {
 const app = express();
 // Trust the first proxy so secure cookies are set correctly when running behind a load balancer
 app.set("trust proxy", 1);
+
+// CORS configuration for cross-origin requests (Vercel frontend -> Cloud Run backend)
+// Set CORS_ORIGINS env var to comma-separated list of allowed origins
+// Example: CORS_ORIGINS=https://your-app.vercel.app,https://custom-domain.com
+const corsOrigins = process.env.CORS_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || [];
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (same-origin, mobile apps, curl, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+    // Allow configured origins
+    if (corsOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    // In development, allow localhost and Replit domains
+    if (isDevelopment) {
+      if (origin.includes('localhost') || origin.includes('127.0.0.1') || 
+          origin.includes('.replit.dev') || origin.includes('.replit.app') ||
+          origin.includes('.repl.co')) {
+        return callback(null, true);
+      }
+    }
+    // Block other origins in production
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true, // Allow cookies for authentication
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+}));
+
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
