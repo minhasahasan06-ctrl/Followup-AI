@@ -110,7 +110,7 @@ steps:
       # ENVIRONMENT VARIABLES (non-secret)
       # =====================================================================
       - '--set-env-vars'
-      - 'GCP_PROJECT_ID=$PROJECT_ID,NODE_ENV=production,LOG_LEVEL=info,WORKERS=2,OPENAI_BAA_SIGNED=true,OPENAI_ZDR_ENABLED=true,CORS_ORIGINS=https://followupai.io'
+      - 'GCP_PROJECT_ID=$PROJECT_ID,NODE_ENV=production,LOG_LEVEL=info,WORKERS=2,OPENAI_BAA_SIGNED=true,OPENAI_ZDR_ENABLED=true,CORS_ALLOWED_ORIGINS=https://followupai.io'
 
   # Step 4: Output service URL for frontend configuration
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
