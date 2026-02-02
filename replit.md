@@ -31,7 +31,11 @@ The backend comprises a Node.js Express server (Port 5000) for chat, appointment
 - **ML Training Infrastructure**: Production-grade system with patient consent controls and a data extraction pipeline.
 - **Background Scheduler**: APScheduler-based jobs for tasks like risk scoring and ETL.
 - **Analytics & Research**: Epidemiology Analytics Platform and a Research Center with medical NLP capabilities.
-- **Authentication**: Stytch-based passwordless authentication (Magic Links, SMS OTP) and M2M Client Credentials.
+- **Authentication**: Stytch-based passwordless authentication with the following flows:
+  - **Magic Links (Email)**: User enters email → Backend sends magic link → User clicks link → `/auth/magic-link/callback` exchanges token → Session created
+  - **SMS OTP (Phone)**: User enters phone → Backend sends code → User enters code on `/auth/sms/verify` → Session created
+  - **M2M Client Credentials**: Service-to-service authentication for internal APIs
+  - **Key Files**: `client/src/pages/Login.tsx`, `client/src/pages/MagicLinkCallback.tsx`, `client/src/pages/SmsOtpVerify.tsx`, `client/src/lib/api.ts`, `server/stytch/authMiddleware.ts`
 - **Conversational AI**: Production-grade voice conversation pipeline with real-time ASR/TTS, and a medical emergency detection system.
 - **Telemedicine**: Daily.co integration for video consultations and a communication preferences system.
 
@@ -73,9 +77,15 @@ The frontend is deployed to Vercel as a static SPA with Edge Middleware for pass
 - **Security Features**: Constant-time string comparison, Base64 decoding with error handling
 
 **Frontend Environment Variables**:
-- `VITE_EXPRESS_BACKEND_URL` - Express backend URL for API calls
+- `VITE_EXPRESS_BACKEND_URL` - Express backend URL for API calls (required for Vercel deployment)
 - `VITE_PYTHON_BACKEND_URL` - Python FastAPI backend URL
 - `VITE_USE_CLOUD_RUN_PROXY=false` - Direct backend calls (no Express proxy)
+
+**Cross-Domain Authentication**:
+- When `CORS_ORIGINS` is configured on Express backend, cookies use `SameSite=None; Secure` for cross-domain support
+- Frontend uses `credentials: 'include'` for all auth API calls via `client/src/lib/api.ts`
+- The `getExpressApiUrl()` utility handles URL construction for both same-origin and cross-origin requests
+- Stytch callback URLs must be configured in Stytch dashboard to match your deployment domain
 
 ## External Dependencies
 

@@ -54,9 +54,8 @@ export function getExpressApiUrl(path: string): string {
 // Create axios instance with proper configuration
 const api = axios.create({
   // Don't set baseURL - we'll handle URL construction in the interceptor
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  // Don't set Content-Type here - let axios set it automatically
+  // This allows FormData uploads to use multipart/form-data with proper boundaries
   withCredentials: true, // Always include credentials for session cookies
 });
 

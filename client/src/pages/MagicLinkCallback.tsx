@@ -22,15 +22,26 @@ export default function MagicLinkCallback() {
   useEffect(() => {
     const authenticateMagicLink = async () => {
       // Extract token from URL query params
+      // Stytch sends the token in different ways depending on configuration:
+      // - Standard: ?token=xxx
+      // - EML redirect: ?stytch_token_type=magic_links&token=xxx
+      // - Hash-based: #token=xxx (older configs)
       const params = new URLSearchParams(search);
-      const token = params.get('token') || params.get('stytch_token_type') ? params.get('token') : null;
       
-      // Stytch might use different param names
-      const stytchToken = params.get('token') || 
-                          window.location.hash.replace('#', '').split('&')
-                            .find(p => p.startsWith('token='))?.split('=')[1];
+      // Try query params first (most common)
+      let finalToken = params.get('token');
       
-      const finalToken = token || stytchToken;
+      // Check hash fragment as fallback (older Stytch configurations)
+      if (!finalToken && window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
+        finalToken = hashParams.get('token');
+      }
+      
+      // Also check for full URL token in case of redirect
+      if (!finalToken) {
+        const fullUrlParams = new URLSearchParams(window.location.search);
+        finalToken = fullUrlParams.get('token');
+      }
       
       if (!finalToken) {
         setState('error');
