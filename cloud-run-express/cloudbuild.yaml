@@ -1,14 +1,5 @@
 steps:
-  # Create Artifact Registry repository if it doesn't exist
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        gcloud artifacts repositories describe followupai-express --location=us-central1 2>/dev/null || \
-        gcloud artifacts repositories create followupai-express --repository-format=docker --location=us-central1 --description="Express backend images"
-
-  # Build the Express container (use SHORT_SHA or 'latest' as fallback)
+  # Build the Express container
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
