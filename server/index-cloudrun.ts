@@ -13,10 +13,20 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import session from "express-session";
 import { registerRoutes } from "./routes";
-import { log } from "./vite";
 import { seedDatabase } from "./seed";
 import { isStytchConfigured } from "./stytch";
 import { runConfigGuard } from "./config_guard";
+
+// Simple log function (standalone, no Vite dependency)
+function log(message: string, source = "express") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
 
 // HIPAA Config Guard
 try {
