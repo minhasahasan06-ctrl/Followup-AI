@@ -87,6 +87,35 @@ The frontend is deployed to Vercel as a static SPA with Edge Middleware for pass
 - The `getExpressApiUrl()` utility handles URL construction for both same-origin and cross-origin requests
 - Stytch callback URLs must be configured in Stytch dashboard to match your deployment domain
 
+### Deployment Checklist
+
+**Vercel Environment Variables** (set in Vercel Project Settings → Environment Variables):
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_EXPRESS_BACKEND_URL` | Yes | Express backend URL (e.g., `https://your-express-backend.com`) |
+| `BASIC_AUTH_USER` | No | Username for HTTP Basic Auth protection |
+| `BASIC_AUTH_PASSWORD` | No | Password for HTTP Basic Auth protection |
+
+**Stytch Dashboard Configuration**:
+1. Go to Stytch Dashboard → Redirect URLs
+2. Add your production frontend URLs:
+   - Magic Link Callback: `https://your-domain.com/auth/magic-link/callback`
+   - SMS OTP Verify: `https://your-domain.com/auth/sms/verify`
+
+**Express Backend Environment Variables**:
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CORS_ORIGINS` | Yes | Comma-separated list of allowed origins (e.g., `https://followupai.io`) |
+| `STYTCH_PROJECT_ID` | Yes | Stytch project ID |
+| `STYTCH_SECRET` | Yes | Stytch secret key |
+
+**Post-Deployment Verification**:
+1. Test HTTP Basic Auth by accessing the site (should prompt for password if configured)
+2. Test patient signup with magic link (no password fields)
+3. Test doctor signup with KYC file upload
+4. Verify magic link callback redirects correctly
+5. Test SMS OTP flow if configured
+
 ## External Dependencies
 
 - **Authentication**: Stytch (Magic Links, SMS OTP, M2M)

@@ -68,11 +68,8 @@ export default function DoctorSignup() {
         formData.append("kycPhoto", selectedFile);
       }
 
-      await api.post("/auth/signup/doctor", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      // Don't set Content-Type manually - axios will set it with the correct multipart boundary
+      await api.post("/auth/signup/doctor", formData);
 
       // Step 2: Send magic link for authentication
       await api.post("/auth/magic-link/send", {
