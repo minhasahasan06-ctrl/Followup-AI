@@ -8,12 +8,10 @@ steps:
         gcloud artifacts repositories describe followupai-express --location=us-central1 2>/dev/null || \
         gcloud artifacts repositories create followupai-express --repository-format=docker --location=us-central1 --description="Express backend images"
 
-  # Build the Express container
+  # Build the Express container (use SHORT_SHA or 'latest' as fallback)
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
-      - '-t'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-express/followupai-express:$COMMIT_SHA'
       - '-t'
       - 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-express/followupai-express:latest'
       - '-f'
@@ -22,11 +20,6 @@ steps:
     timeout: '1200s'
 
   # Push to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-express/followupai-express:$COMMIT_SHA'
-
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
@@ -40,7 +33,7 @@ steps:
       - 'deploy'
       - 'followupai-express'
       - '--image'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-express/followupai-express:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-express/followupai-express:latest'
       - '--region'
       - 'us-central1'
       - '--platform'
@@ -65,7 +58,7 @@ steps:
     timeout: '600s'
 
 images:
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-express/followupai-express:$COMMIT_SHA'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/followupai-express/followupai-express:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY
