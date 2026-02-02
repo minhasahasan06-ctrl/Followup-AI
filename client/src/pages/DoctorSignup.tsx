@@ -9,45 +9,38 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Stethoscope, Upload } from "lucide-react";
+import { Stethoscope, Upload, Mail, CheckCircle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
-import axios from "axios";
+import api from "@/lib/api";
 
 const signupSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number"),
-  confirmPassword: z.string(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number (use international format, e.g., +1234567890)"),
   organization: z.string().min(1, "Organization is required"),
   medicalLicenseNumber: z.string().min(1, "Medical license number is required"),
   licenseCountry: z.string().min(1, "Please select your country"),
-  kycPhoto: z.any().optional(),
   termsAccepted: z.boolean().refine(val => val === true, "You must accept the terms and conditions"),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
 });
 
 type SignupFormData = z.infer<typeof signupSchema>;
+
+type SignupStep = 'form' | 'magic-link-sent';
 
 export default function DoctorSignup() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [step, setStep] = useState<SignupStep>('form');
+  const [submittedEmail, setSubmittedEmail] = useState('');
 
   const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
     defaultValues: {
       email: "",
-      password: "",
-      confirmPassword: "",
       firstName: "",
       lastName: "",
       phoneNumber: "",
@@ -61,37 +54,68 @@ export default function DoctorSignup() {
   const onSubmit = async (data: SignupFormData) => {
     setIsSubmitting(true);
     try {
+      // Step 1: Store doctor profile data with KYC document
       const formData = new FormData();
       formData.append("email", data.email);
-      formData.append("password", data.password);
       formData.append("firstName", data.firstName);
       formData.append("lastName", data.lastName);
       formData.append("phoneNumber", data.phoneNumber);
       formData.append("organization", data.organization);
       formData.append("medicalLicenseNumber", data.medicalLicenseNumber);
       formData.append("licenseCountry", data.licenseCountry);
-      formData.append("termsAccepted", "true");
       
       if (selectedFile) {
         formData.append("kycPhoto", selectedFile);
       }
 
-      const response = await axios.post("/api/auth/signup/doctor", formData, {
+      await api.post("/auth/signup/doctor", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
       });
 
-      toast({
-        title: "Account created successfully!",
-        description: response.data.message || "Please check your email to verify your account.",
+      // Step 2: Send magic link for authentication
+      await api.post("/auth/magic-link/send", {
+        email: data.email,
+        role: "doctor",
       });
 
-      setTimeout(() => setLocation("/verify-email"), 2000);
+      setSubmittedEmail(data.email);
+      setStep('magic-link-sent');
+      
+      toast({
+        title: "Check your email!",
+        description: "We've sent you a magic link to complete your registration.",
+      });
     } catch (error: any) {
       toast({
         title: "Signup failed",
-        description: error.response?.data?.message || "An error occurred during signup",
+        description: error.response?.data?.error || error.response?.data?.message || "An error occurred during signup",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const resendMagicLink = async () => {
+    if (!submittedEmail) return;
+    
+    setIsSubmitting(true);
+    try {
+      await api.post("/auth/magic-link/send", {
+        email: submittedEmail,
+        role: "doctor",
+      });
+      
+      toast({
+        title: "Magic link resent!",
+        description: "Check your email for the new link.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to resend",
+        description: error.response?.data?.error || "Please try again later",
         variant: "destructive",
       });
     } finally {
@@ -104,6 +128,69 @@ export default function DoctorSignup() {
       setSelectedFile(e.target.files[0]);
     }
   };
+
+  if (step === 'magic-link-sent') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted flex items-center justify-center p-6">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Mail className="h-8 w-8" />
+              </div>
+            </div>
+            <CardTitle className="text-2xl">Check Your Email</CardTitle>
+            <CardDescription>
+              We've sent a magic link to <strong>{submittedEmail}</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                <p className="text-sm">Click the link in your email to complete registration</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                <p className="text-sm">The link expires in 30 minutes</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <Clock className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-sm">Your license will be verified within 2-3 business days</p>
+              </div>
+            </div>
+            
+            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                <strong>Note:</strong> Your account will be activated after our team verifies your medical license against your country's professional registry.
+              </p>
+            </div>
+            
+            <div className="text-center space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Didn't receive the email? Check your spam folder or
+              </p>
+              <Button
+                variant="outline"
+                onClick={resendMagicLink}
+                disabled={isSubmitting}
+                data-testid="button-resend-magic-link"
+              >
+                {isSubmitting ? "Sending..." : "Resend Magic Link"}
+              </Button>
+            </div>
+            
+            <p className="text-center text-sm text-muted-foreground pt-4">
+              Already have an account?{" "}
+              <Link href="/login" className="text-primary hover:underline font-medium">
+                Log in
+              </Link>
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted flex items-center justify-center p-6">
@@ -179,35 +266,6 @@ export default function DoctorSignup() {
                 )}
               />
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="••••••••" {...field} data-testid="input-password" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Confirm Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="••••••••" {...field} data-testid="input-confirm-password" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
               <FormField
                 control={form.control}
                 name="organization"
@@ -270,40 +328,33 @@ export default function DoctorSignup() {
                 </p>
               </div>
 
-              <FormField
-                control={form.control}
-                name="kycPhoto"
-                render={() => (
-                  <FormItem>
-                    <FormLabel>KYC Document/Photo (Optional)</FormLabel>
-                    <FormControl>
-                      <div className="flex items-center gap-4">
-                        <Input
-                          type="file"
-                          accept=".jpg,.jpeg,.png,.pdf"
-                          onChange={handleFileChange}
-                          data-testid="input-kyc-photo"
-                          className="hidden"
-                          id="kyc-upload"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => document.getElementById('kyc-upload')?.click()}
-                          data-testid="button-upload-kyc"
-                        >
-                          <Upload className="h-4 w-4 mr-2" />
-                          {selectedFile ? selectedFile.name : "Upload File"}
-                        </Button>
-                      </div>
-                    </FormControl>
-                    <p className="text-xs text-muted-foreground">
-                      Upload your medical license or identification document (JPG, PNG, or PDF, max 5MB)
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormItem>
+                <FormLabel>KYC Document/Photo (Optional)</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-4">
+                    <Input
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.pdf"
+                      onChange={handleFileChange}
+                      data-testid="input-kyc-photo"
+                      className="hidden"
+                      id="kyc-upload"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => document.getElementById('kyc-upload')?.click()}
+                      data-testid="button-upload-kyc"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {selectedFile ? selectedFile.name : "Upload File"}
+                    </Button>
+                  </div>
+                </FormControl>
+                <p className="text-xs text-muted-foreground">
+                  Upload your medical license or identification document (JPG, PNG, or PDF, max 5MB)
+                </p>
+              </FormItem>
 
               <FormField
                 control={form.control}

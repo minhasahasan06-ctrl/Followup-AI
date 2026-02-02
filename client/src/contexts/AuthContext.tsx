@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import type { User } from '@shared/schema';
+import { getExpressApiUrl } from '@/lib/api';
 
 interface AuthTokens {
   idToken: string;
@@ -11,8 +12,9 @@ interface AuthContextType {
   user: User | null;
   tokens: AuthTokens | null;
   isLoading: boolean;
+  isAuthenticated: boolean;
   setTokens: (tokens: AuthTokens | null) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshSession: () => Promise<User | null>;
 }
 
@@ -23,20 +25,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tokens, setTokensState] = useState<AuthTokens | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Validate session with server - this is the ONLY way to set user/role
-  const validateSession = async (): Promise<User | null> => {
+  const validateSession = useCallback(async (): Promise<User | null> => {
     try {
-      const response = await fetch('/api/auth/user', {
+      const response = await fetch(getExpressApiUrl('/api/auth/session/me'), {
         credentials: 'include',
       });
       
       if (response.ok) {
-        const serverUser = await response.json();
-        // User and role can ONLY come from server - never from client
+        const data = await response.json();
+        const serverUser = data.user;
         setUser(serverUser);
         return serverUser;
       } else {
-        // Server session invalid - clear everything
         setUser(null);
         setTokensState(null);
         localStorage.removeItem('authTokens');
@@ -44,7 +44,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Session validation error:', error);
-      // On error, clear auth state for safety
       setUser(null);
       setTokensState(null);
       localStorage.removeItem('authTokens');
@@ -52,48 +51,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    // Always validate with server on mount - user/role ONLY comes from server
     validateSession();
 
-    // Listen for logout events from api interceptor
     const handleLogout = () => {
-      setTokensState(null);
       setUser(null);
+      setTokensState(null);
       localStorage.removeItem('authTokens');
     };
 
     window.addEventListener('auth:logout', handleLogout);
     return () => window.removeEventListener('auth:logout', handleLogout);
-  }, []);
+  }, [validateSession]);
 
-  // Token setter for flows that use JWT tokens (e.g., Cognito auth)
-  // NOTE: This only sets tokens, NOT user. User must come from refreshSession()
-  const setTokens = (newTokens: AuthTokens | null) => {
+  // Token setter for backward compatibility with token-based auth flows
+  const setTokens = useCallback((newTokens: AuthTokens | null) => {
     setTokensState(newTokens);
     if (newTokens) {
       localStorage.setItem('authTokens', JSON.stringify(newTokens));
     } else {
       localStorage.removeItem('authTokens');
     }
-  };
+  }, []);
 
-  const logout = () => {
-    setTokensState(null);
+  const logout = useCallback(async () => {
+    try {
+      await fetch(getExpressApiUrl('/api/auth/logout'), { 
+        method: 'POST', 
+        credentials: 'include' 
+      });
+    } catch {
+      // Ignore logout errors
+    }
     setUser(null);
+    setTokensState(null);
     localStorage.removeItem('authTokens');
-    // Also call server logout to invalidate session
-    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
-  };
+  }, []);
 
-  const refreshSession = async (): Promise<User | null> => {
+  const refreshSession = useCallback(async (): Promise<User | null> => {
     return await validateSession();
-  };
+  }, [validateSession]);
 
   return (
-    <AuthContext.Provider value={{ user, tokens, isLoading, setTokens, logout, refreshSession }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      tokens,
+      isLoading, 
+      isAuthenticated: !!user,
+      setTokens,
+      logout, 
+      refreshSession 
+    }}>
       {children}
     </AuthContext.Provider>
   );

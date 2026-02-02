@@ -5,77 +5,127 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Stethoscope, AlertCircle, Zap } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Stethoscope, Mail, Smartphone, Loader2, Zap, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 
-const loginSchema = z.object({
+const emailSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  rememberMe: z.boolean().default(false),
 });
 
-type LoginFormData = z.infer<typeof loginSchema>;
+const phoneSchema = z.object({
+  phone: z.string().regex(/^\+[1-9]\d{1,14}$/, "Use international format (e.g., +1234567890)"),
+});
+
+type EmailFormData = z.infer<typeof emailSchema>;
+type PhoneFormData = z.infer<typeof phoneSchema>;
+
+type LoginState = 'form' | 'magic-link-sent' | 'sms-sent';
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { setTokens, refreshSession } = useAuth();
+  const { refreshSession } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [needsVerification, setNeedsVerification] = useState(false);
+  const [loginState, setLoginState] = useState<LoginState>('form');
+  const [submittedEmail, setSubmittedEmail] = useState('');
+  const [submittedPhone, setSubmittedPhone] = useState('');
 
-  const form = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
+  const emailForm = useForm<EmailFormData>({
+    resolver: zodResolver(emailSchema),
     defaultValues: {
       email: "",
-      password: "",
-      rememberMe: false,
     },
   });
 
-  const onSubmit = async (data: LoginFormData) => {
+  const phoneForm = useForm<PhoneFormData>({
+    resolver: zodResolver(phoneSchema),
+    defaultValues: {
+      phone: "",
+    },
+  });
+
+  const onEmailSubmit = async (data: EmailFormData) => {
     setIsSubmitting(true);
-    setNeedsVerification(false);
-    
     try {
-      const response = await api.post("/auth/login", {
+      await api.post("/auth/magic-link/send", {
         email: data.email,
-        password: data.password,
       });
 
-      const { tokens } = response.data;
-
-      // Store tokens if provided
-      if (tokens) {
-        setTokens(tokens);
-      }
+      setSubmittedEmail(data.email);
+      setLoginState('magic-link-sent');
       
-      // Refresh session from server to get validated user
-      await refreshSession();
-
       toast({
-        title: "Login successful",
-        description: "Welcome back!",
+        title: "Magic link sent!",
+        description: "Check your email to log in.",
       });
-
-      setLocation("/");
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || error.message;
+      toast({
+        title: "Failed to send magic link",
+        description: error.response?.data?.error || "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onPhoneSubmit = async (data: PhoneFormData) => {
+    setIsSubmitting(true);
+    try {
+      await api.post("/auth/sms-otp/send", {
+        phone_number: data.phone,
+      });
+
+      // Store phone for verification page
+      sessionStorage.setItem('smsVerificationPhone', data.phone);
       
-      if (errorMessage.includes("verify your email")) {
-        setNeedsVerification(true);
-      }
+      setSubmittedPhone(data.phone);
+      setLoginState('sms-sent');
       
       toast({
-        title: "Login failed",
-        description: errorMessage || "Invalid email or password",
+        title: "Code sent!",
+        description: "Check your phone for the verification code.",
+      });
+
+      // Redirect to SMS verification page
+      setTimeout(() => {
+        setLocation('/auth/sms/verify');
+      }, 1500);
+    } catch (error: any) {
+      toast({
+        title: "Failed to send code",
+        description: error.response?.data?.error || "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const resendMagicLink = async () => {
+    if (!submittedEmail) return;
+    
+    setIsSubmitting(true);
+    try {
+      await api.post("/auth/magic-link/send", {
+        email: submittedEmail,
+      });
+      
+      toast({
+        title: "Magic link resent!",
+        description: "Check your email for the new link.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to resend",
+        description: error.response?.data?.error || "Please try again later",
         variant: "destructive",
       });
     } finally {
@@ -85,10 +135,7 @@ export default function Login() {
 
   const devLoginAsPatient = async () => {
     try {
-      // Dev login sets session cookie on server
       await api.post("/dev/login-as-patient");
-      
-      // Refresh session from server to get the validated user
       await refreshSession();
       
       toast({
@@ -109,10 +156,7 @@ export default function Login() {
 
   const devLoginAsDoctor = async () => {
     try {
-      // Dev login sets session cookie on server
       await api.post("/dev/login-as-doctor");
-      
-      // Refresh session from server to get the validated user
       await refreshSession();
       
       toast({
@@ -131,6 +175,96 @@ export default function Login() {
     }
   };
 
+  // Magic link sent state
+  if (loginState === 'magic-link-sent') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted flex items-center justify-center p-6">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Mail className="h-8 w-8" />
+              </div>
+            </div>
+            <CardTitle className="text-2xl">Check Your Email</CardTitle>
+            <CardDescription>
+              We've sent a magic link to <strong>{submittedEmail}</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                <p className="text-sm">Click the link in your email to log in</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                <p className="text-sm">The link expires in 30 minutes</p>
+              </div>
+            </div>
+            
+            <div className="text-center space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Didn't receive the email?
+              </p>
+              <Button
+                variant="outline"
+                onClick={resendMagicLink}
+                disabled={isSubmitting}
+                data-testid="button-resend-magic-link"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  "Resend Magic Link"
+                )}
+              </Button>
+            </div>
+            
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={() => setLoginState('form')}
+              data-testid="button-try-different-method"
+            >
+              Try a different method
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // SMS sent state
+  if (loginState === 'sms-sent') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted flex items-center justify-center p-6">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Smartphone className="h-8 w-8" />
+              </div>
+            </div>
+            <CardTitle className="text-2xl">Check Your Phone</CardTitle>
+            <CardDescription>
+              We've sent a code to <strong>****{submittedPhone.slice(-4)}</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-center gap-2">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">Redirecting to verification...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted flex items-center justify-center p-6">
       <Card className="w-full max-w-md">
@@ -148,96 +282,138 @@ export default function Login() {
           </div>
         </CardHeader>
         <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="your@email.com" {...field} data-testid="input-email" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <Tabs defaultValue="email" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="email" data-testid="tab-email">
+                <Mail className="h-4 w-4 mr-2" />
+                Email
+              </TabsTrigger>
+              <TabsTrigger value="phone" data-testid="tab-phone">
+                <Smartphone className="h-4 w-4 mr-2" />
+                Phone
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="email" className="space-y-4 mt-4">
+              <Form {...emailForm}>
+                <form onSubmit={emailForm.handleSubmit(onEmailSubmit)} className="space-y-4">
+                  <FormField
+                    control={emailForm.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="email" 
+                            placeholder="your@email.com" 
+                            {...field} 
+                            data-testid="input-email" 
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          We'll send you a magic link to log in - no password needed!
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="••••••••" {...field} data-testid="input-password" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isSubmitting}
+                    data-testid="button-send-magic-link"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="mr-2 h-4 w-4" />
+                        Send Magic Link
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </Form>
+            </TabsContent>
+            
+            <TabsContent value="phone" className="space-y-4 mt-4">
+              <Form {...phoneForm}>
+                <form onSubmit={phoneForm.handleSubmit(onPhoneSubmit)} className="space-y-4">
+                  <FormField
+                    control={phoneForm.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone Number</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="tel" 
+                            placeholder="+12025551234" 
+                            {...field} 
+                            data-testid="input-phone" 
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Include country code. We'll send you a verification code via SMS.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              <div className="flex items-center justify-between">
-                <FormField
-                  control={form.control}
-                  name="rememberMe"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center space-x-2 space-y-0">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                          data-testid="checkbox-remember-me"
-                        />
-                      </FormControl>
-                      <FormLabel className="text-sm font-normal cursor-pointer">
-                        Remember me
-                      </FormLabel>
-                    </FormItem>
-                  )}
-                />
-                <Link href="/forgot-password" className="text-sm text-primary hover:underline" data-testid="link-forgot-password">
-                  Forgot password?
-                </Link>
-              </div>
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isSubmitting}
+                    data-testid="button-send-sms"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Smartphone className="mr-2 h-4 w-4" />
+                        Send Verification Code
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </Form>
+            </TabsContent>
+          </Tabs>
 
+          <div className="mt-6 text-center space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Don't have an account?
+            </p>
+            <div className="flex gap-2">
               <Button
-                type="submit"
-                className="w-full"
-                disabled={isSubmitting}
-                data-testid="button-login"
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setLocation("/signup/patient")}
+                data-testid="button-patient-signup"
               >
-                {isSubmitting ? "Logging in..." : "Log In"}
+                Sign up as Patient
               </Button>
-
-              <div className="text-center space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Don't have an account?
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => setLocation("/signup/patient")}
-                    data-testid="button-patient-signup"
-                  >
-                    Sign up as Patient
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => setLocation("/signup/doctor")}
-                    data-testid="button-doctor-signup"
-                  >
-                    Sign up as Doctor
-                  </Button>
-                </div>
-              </div>
-            </form>
-          </Form>
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setLocation("/signup/doctor")}
+                data-testid="button-doctor-signup"
+              >
+                Sign up as Doctor
+              </Button>
+            </div>
+          </div>
 
           {/* Dev-only quick login buttons */}
           {import.meta.env.DEV && (

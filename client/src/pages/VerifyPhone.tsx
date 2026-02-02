@@ -1,85 +1,36 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { CheckCircle, Smartphone } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import api from "@/lib/api";
+import { Smartphone, ArrowRight } from "lucide-react";
+import { Link } from "wouter";
 
-const verifySchema = z.object({
-  code: z.string().length(6, "Verification code must be exactly 6 digits"),
-});
-
-type VerifyFormData = z.infer<typeof verifySchema>;
-
+/**
+ * Legacy VerifyPhone page - redirects to new Stytch SMS OTP flow
+ * 
+ * With Stytch authentication, phone verification is handled through
+ * the SMS OTP flow. This page now serves as a redirect for any old
+ * bookmarks or links.
+ */
 export default function VerifyPhone() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isComplete, setIsComplete] = useState(false);
-  const [email, setEmail] = useState<string | null>(null);
-  const [requiresAdminApproval, setRequiresAdminApproval] = useState(false);
-
-  const form = useForm<VerifyFormData>({
-    resolver: zodResolver(verifySchema),
-    defaultValues: {
-      code: "",
-    },
-  });
 
   useEffect(() => {
-    // Get email from session storage (set by VerifyEmail page)
-    const storedEmail = sessionStorage.getItem("verificationEmail");
-    if (!storedEmail) {
-      toast({
-        title: "Email required",
-        description: "Please verify your email first",
-        variant: "destructive",
-      });
-      setLocation("/verify-email");
+    // Check if we came from the SMS OTP flow
+    const storedPhone = sessionStorage.getItem('smsVerificationPhone');
+    if (storedPhone) {
+      // Redirect to the new SMS verification page
+      setLocation("/auth/sms/verify");
       return;
     }
-    setEmail(storedEmail);
-  }, [setLocation, toast]);
-
-  const onSubmit = async (data: VerifyFormData) => {
-    if (!email) return;
-
-    setIsSubmitting(true);
-    try {
-      const response = await api.post("/auth/verify-phone", {
-        email,
-        code: data.code,
-      });
-
-      setIsComplete(true);
-      setRequiresAdminApproval(response.data.requiresAdminApproval || false);
-
-      toast({
-        title: "Success!",
-        description: response.data.message || "Phone verified successfully!",
-      });
-
-      // Clear stored email
-      sessionStorage.removeItem("verificationEmail");
-
-      // Redirect to login after delay
-      setTimeout(() => setLocation("/login"), 3000);
-    } catch (error: any) {
-      toast({
-        title: "Verification failed",
-        description: error.response?.data?.message || "Invalid verification code",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+    
+    // Auto-redirect to login after a brief delay
+    const timer = setTimeout(() => {
+      setLocation("/login");
+    }, 5000);
+    
+    return () => clearTimeout(timer);
+  }, [setLocation]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted flex items-center justify-center p-6">
@@ -90,66 +41,41 @@ export default function VerifyPhone() {
               <Smartphone className="h-7 w-7" />
             </div>
             <div>
-              <CardTitle className="text-2xl">Verify Your Phone</CardTitle>
-              <CardDescription>Enter the 6-digit code sent via SMS</CardDescription>
+              <CardTitle className="text-2xl">Phone Verification</CardTitle>
+              <CardDescription>Our verification process has been updated</CardDescription>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          {isComplete ? (
-            <div className="flex flex-col items-center gap-4 py-6">
-              <CheckCircle className="h-16 w-16 text-green-500" />
-              <p className="text-center font-semibold">Verification Complete!</p>
-              {requiresAdminApproval ? (
-                <p className="text-center text-muted-foreground text-sm">
-                  Your doctor application is under review. You'll receive an email when your account is activated.
-                </p>
-              ) : (
-                <p className="text-center text-muted-foreground text-sm">
-                  Redirecting to login...
-                </p>
-              )}
-            </div>
-          ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>SMS Verification Code</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="123456" 
-                          maxLength={6}
-                          {...field} 
-                          data-testid="input-sms-code" 
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Check your phone for a text message with a 6-digit code
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isSubmitting}
-                  data-testid="button-verify-phone"
-                >
-                  {isSubmitting ? "Verifying..." : "Verify Phone Number"}
-                </Button>
-
-                <p className="text-center text-sm text-muted-foreground">
-                  Didn't receive a code? Check your spam folder or contact support.
-                </p>
-              </form>
-            </Form>
-          )}
+        <CardContent className="space-y-4">
+          <div className="bg-muted/50 rounded-lg p-4">
+            <p className="text-sm">
+              We now use <strong>SMS verification codes</strong> for secure authentication. 
+              When you log in with your phone number, we'll send a 6-digit code that 
+              verifies your identity and signs you in.
+            </p>
+          </div>
+          
+          <div className="space-y-2">
+            <Button
+              className="w-full"
+              onClick={() => setLocation("/login")}
+              data-testid="button-go-to-login"
+            >
+              Go to Login
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+            
+            <p className="text-center text-sm text-muted-foreground">
+              Don't have an account?{" "}
+              <Link href="/signup/patient" className="text-primary hover:underline font-medium">
+                Sign up
+              </Link>
+            </p>
+          </div>
+          
+          <p className="text-center text-xs text-muted-foreground">
+            Redirecting to login in 5 seconds...
+          </p>
         </CardContent>
       </Card>
     </div>

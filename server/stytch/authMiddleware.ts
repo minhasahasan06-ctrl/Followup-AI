@@ -35,11 +35,28 @@ declare global {
 const SESSION_COOKIE_NAME = "stytch_session_token";
 const SESSION_DURATION_MINUTES = 60 * 24;
 
+/**
+ * Get cookie options for session tokens
+ * 
+ * Cross-domain auth (Vercel → Cloud Run):
+ * - SameSite=None + Secure required for cross-origin cookies
+ * - Only use SameSite=None when CORS_ORIGINS is configured (indicates cross-domain setup)
+ * 
+ * Same-origin auth (development):
+ * - SameSite=Lax for CSRF protection
+ * - Secure only in production (localhost doesn't use HTTPS)
+ */
 export function getSessionCookieOptions(isProduction: boolean) {
+  // Check if cross-domain auth is configured
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || [];
+  const isCrossDomain = corsOrigins.length > 0;
+  
   return {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: "lax" as const,
+    // SameSite=None requires Secure=true, and is needed for cross-domain cookies
+    secure: isProduction || isCrossDomain,
+    // Use None for cross-domain, Lax for same-origin (better CSRF protection)
+    sameSite: isCrossDomain ? "none" as const : "lax" as const,
     maxAge: SESSION_DURATION_MINUTES * 60 * 1000,
     path: "/",
   };

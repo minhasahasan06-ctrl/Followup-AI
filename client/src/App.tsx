@@ -82,6 +82,8 @@ import AdminMLTrainingHub from "@/pages/AdminMLTrainingHub";
 import MedicalNLPDashboard from "@/pages/MedicalNLPDashboard";
 import TinkerDashboard from "@/pages/TinkerDashboard";
 import PatientPrivacyResearch from "@/pages/PatientPrivacyResearch";
+import MagicLinkCallback from "@/pages/MagicLinkCallback";
+import SmsOtpVerify from "@/pages/SmsOtpVerify";
 import { DevLogin } from "@/components/DevLogin";
 
 function PatientRouter() {
@@ -187,8 +189,8 @@ function AuthenticatedApp() {
   };
 
   // Public routes that don't require auth
-  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/verify-phone", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/contact"];
-  const isPublicRoute = publicRoutes.includes(location) || (!user && location === "/");
+  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/verify-phone", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/contact", "/auth/magic-link/callback", "/auth/sms/verify"];
+  const isPublicRoute = publicRoutes.includes(location) || location.startsWith("/auth/") || (!user && location === "/");
 
   // Show loading while checking auth
   if (isLoading) {
@@ -211,6 +213,8 @@ function AuthenticatedApp() {
         <Route path="/signup/patient" component={PatientSignup} />
         <Route path="/verify-email" component={VerifyEmail} />
         <Route path="/verify-phone" component={VerifyPhone} />
+        <Route path="/auth/magic-link/callback" component={MagicLinkCallback} />
+        <Route path="/auth/sms/verify" component={SmsOtpVerify} />
         <Route path="/forgot-password" component={ForgotPassword} />
         <Route path="/reset-password" component={ResetPassword} />
         <Route path="/doctor-portal" component={DoctorPortal} />

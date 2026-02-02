@@ -10,18 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Heart } from "lucide-react";
+import { Heart, Mail, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import api from "@/lib/api";
 
 const signupSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number"),
-  confirmPassword: z.string(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number (use international format, e.g., +1234567890)"),
@@ -31,24 +26,23 @@ const signupSchema = z.object({
   ehrPlatform: z.string().optional(),
   termsAccepted: z.boolean().refine(val => val === true, "You must accept the terms and conditions"),
   researchConsent: z.boolean().optional().default(false),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
 });
 
 type SignupFormData = z.infer<typeof signupSchema>;
+
+type SignupStep = 'form' | 'magic-link-sent';
 
 export default function PatientSignup() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [step, setStep] = useState<SignupStep>('form');
+  const [submittedEmail, setSubmittedEmail] = useState('');
 
   const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
     defaultValues: {
       email: "",
-      password: "",
-      confirmPassword: "",
       firstName: "",
       lastName: "",
       phoneNumber: "",
@@ -64,24 +58,122 @@ export default function PatientSignup() {
   const onSubmit = async (data: SignupFormData) => {
     setIsSubmitting(true);
     try {
-      const response = await api.post("/auth/signup/patient", data);
-
-      toast({
-        title: "Account created successfully!",
-        description: response.data.message || "Please check your email to verify your account. Your 7-day free trial has started!",
+      // Step 1: Store profile data in backend
+      await api.post("/auth/signup/patient", {
+        email: data.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phoneNumber: data.phoneNumber,
+        ehrImportMethod: data.ehrImportMethod,
+        ehrPlatform: data.ehrPlatform,
+        researchConsent: data.researchConsent,
       });
 
-      setTimeout(() => setLocation("/verify-email"), 2000);
+      // Step 2: Send magic link for authentication
+      await api.post("/auth/magic-link/send", {
+        email: data.email,
+        role: "patient",
+      });
+
+      setSubmittedEmail(data.email);
+      setStep('magic-link-sent');
+      
+      toast({
+        title: "Check your email!",
+        description: "We've sent you a magic link to complete your signup.",
+      });
     } catch (error: any) {
       toast({
         title: "Signup failed",
-        description: error.response?.data?.message || "An error occurred during signup",
+        description: error.response?.data?.error || error.response?.data?.message || "An error occurred during signup",
         variant: "destructive",
       });
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const resendMagicLink = async () => {
+    if (!submittedEmail) return;
+    
+    setIsSubmitting(true);
+    try {
+      await api.post("/auth/magic-link/send", {
+        email: submittedEmail,
+        role: "patient",
+      });
+      
+      toast({
+        title: "Magic link resent!",
+        description: "Check your email for the new link.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to resend",
+        description: error.response?.data?.error || "Please try again later",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (step === 'magic-link-sent') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted flex items-center justify-center p-6">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Mail className="h-8 w-8" />
+              </div>
+            </div>
+            <CardTitle className="text-2xl">Check Your Email</CardTitle>
+            <CardDescription>
+              We've sent a magic link to <strong>{submittedEmail}</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                <p className="text-sm">Click the link in your email to complete signup</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                <p className="text-sm">The link expires in 30 minutes</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                <p className="text-sm">Your 7-day free trial starts when you sign in</p>
+              </div>
+            </div>
+            
+            <div className="text-center space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Didn't receive the email? Check your spam folder or
+              </p>
+              <Button
+                variant="outline"
+                onClick={resendMagicLink}
+                disabled={isSubmitting}
+                data-testid="button-resend-magic-link"
+              >
+                {isSubmitting ? "Sending..." : "Resend Magic Link"}
+              </Button>
+            </div>
+            
+            <p className="text-center text-sm text-muted-foreground pt-4">
+              Already have an account?{" "}
+              <Link href="/login" className="text-primary hover:underline font-medium">
+                Log in
+              </Link>
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted flex items-center justify-center p-6">
@@ -138,6 +230,9 @@ export default function PatientSignup() {
                     <FormControl>
                       <Input type="email" placeholder="patient@example.com" {...field} data-testid="input-email" />
                     </FormControl>
+                    <FormDescription>
+                      We'll send a magic link to this email to complete signup - no password needed!
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -153,41 +248,12 @@ export default function PatientSignup() {
                       <Input type="tel" placeholder="+12025551234" {...field} data-testid="input-phone-number" />
                     </FormControl>
                     <FormDescription>
-                      Include country code (e.g., +1 for US). This will be used for SMS verification.
+                      Include country code (e.g., +1 for US). Used for SMS notifications and 2FA.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="••••••••" {...field} data-testid="input-password" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Confirm Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="••••••••" {...field} data-testid="input-confirm-password" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
 
               <FormField
                 control={form.control}
