@@ -415,38 +415,34 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Dev-only quick login buttons */}
-          {import.meta.env.DEV && (
-            <>
-              <Separator className="my-4" />
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
-                  <Zap className="w-3 h-3" />
-                  Development Only
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={devLoginAsPatient}
-                    data-testid="button-dev-login-patient"
-                  >
-                    Test Patient
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={devLoginAsDoctor}
-                    data-testid="button-dev-login-doctor"
-                  >
-                    Test Doctor
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
+          {/* Dev-only quick login buttons - always shown, backend protects endpoints */}
+          <Separator className="my-4" />
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+              <Zap className="w-3 h-3" />
+              Quick Login (Development)
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={devLoginAsPatient}
+                data-testid="button-dev-login-patient"
+              >
+                Test Patient
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={devLoginAsDoctor}
+                data-testid="button-dev-login-doctor"
+              >
+                Test Doctor
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
