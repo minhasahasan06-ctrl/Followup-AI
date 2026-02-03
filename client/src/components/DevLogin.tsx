@@ -2,15 +2,14 @@ import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UserCircle, Stethoscope, Shield, Loader2 } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export function DevLogin() {
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState<string | null>(null);
   const { toast } = useToast();
 
   const loginAs = async (role: 'patient' | 'doctor' | 'admin') => {
-    setIsLoggingIn(true);
+    setIsLoggingIn(role);
     try {
       const endpoints = {
         patient: '/api/dev/login-as-patient',
@@ -18,11 +17,24 @@ export function DevLogin() {
         admin: '/api/dev/login-as-admin'
       };
       
-      // Call dev login endpoint - this sets the session cookie on the server
-      await apiRequest(endpoints[role], { method: 'POST' });
+      const redirects = {
+        patient: '/dashboard',
+        doctor: '/doctor',
+        admin: '/admin'
+      };
       
-      // Force full page reload to pick up new session
-      window.location.href = '/dashboard';
+      const response = await fetch(endpoints[role], {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Login failed');
+      }
+      
+      window.location.href = redirects[role];
     } catch (error: any) {
       console.error(`Error logging in as ${role}:`, error);
       toast({
@@ -30,8 +42,7 @@ export function DevLogin() {
         description: error.message || `Failed to login as ${role}`,
         variant: "destructive",
       });
-    } finally {
-      setIsLoggingIn(false);
+      setIsLoggingIn(null);
     }
   };
 
@@ -46,12 +57,12 @@ export function DevLogin() {
           <div className="space-y-3">
             <Button
               onClick={() => loginAs('patient')}
-              disabled={isLoggingIn}
+              disabled={isLoggingIn !== null}
               className="w-full gap-2"
               size="lg"
               data-testid="button-login-patient"
             >
-              {isLoggingIn ? (
+              {isLoggingIn === 'patient' ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
                 <UserCircle className="h-5 w-5" />
@@ -61,13 +72,13 @@ export function DevLogin() {
             
             <Button
               onClick={() => loginAs('doctor')}
-              disabled={isLoggingIn}
+              disabled={isLoggingIn !== null}
               variant="outline"
               className="w-full gap-2"
               size="lg"
               data-testid="button-login-doctor"
             >
-              {isLoggingIn ? (
+              {isLoggingIn === 'doctor' ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
                 <Stethoscope className="h-5 w-5" />
@@ -77,13 +88,13 @@ export function DevLogin() {
             
             <Button
               onClick={() => loginAs('admin')}
-              disabled={isLoggingIn}
+              disabled={isLoggingIn !== null}
               variant="outline"
               className="w-full gap-2"
               size="lg"
               data-testid="button-login-admin"
             >
-              {isLoggingIn ? (
+              {isLoggingIn === 'admin' ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
                 <Shield className="h-5 w-5" />
