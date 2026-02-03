@@ -1427,16 +1427,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastName: testPatient.lastName,
       };
       
-      console.log(`[DEV] Logged in as test patient: ${testPatient.email}`);
-      res.json({ 
-        success: true, 
-        user: {
-          id: testPatient.id,
-          email: testPatient.email,
-          role: 'patient',
-          firstName: testPatient.firstName,
-          lastName: testPatient.lastName,
+      // Save session explicitly before responding
+      req.session.save((err: any) => {
+        if (err) {
+          console.error("[DEV] Session save error:", err);
+          return res.status(500).json({ error: "Failed to save session" });
         }
+        
+        console.log(`[DEV] Logged in as test patient: ${testPatient.email}`);
+        res.json({ 
+          success: true, 
+          user: {
+            id: testPatient.id,
+            email: testPatient.email,
+            role: 'patient',
+            firstName: testPatient.firstName,
+            lastName: testPatient.lastName,
+          }
+        });
       });
     } catch (error: any) {
       console.error("[DEV] Patient login error:", error);
@@ -1480,16 +1488,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastName: testDoctor.lastName,
       };
       
-      console.log(`[DEV] Logged in as test doctor: ${testDoctor.email}`);
-      res.json({ 
-        success: true, 
-        user: {
-          id: testDoctor.id,
-          email: testDoctor.email,
-          role: 'doctor',
-          firstName: testDoctor.firstName,
-          lastName: testDoctor.lastName,
+      // Save session explicitly before responding
+      req.session.save((err: any) => {
+        if (err) {
+          console.error("[DEV] Session save error:", err);
+          return res.status(500).json({ error: "Failed to save session" });
         }
+        
+        console.log(`[DEV] Logged in as test doctor: ${testDoctor.email}`);
+        res.json({ 
+          success: true, 
+          user: {
+            id: testDoctor.id,
+            email: testDoctor.email,
+            role: 'doctor',
+            firstName: testDoctor.firstName,
+            lastName: testDoctor.lastName,
+          }
+        });
       });
     } catch (error: any) {
       console.error("[DEV] Doctor login error:", error);
@@ -1531,16 +1547,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastName: testAdmin.lastName,
       };
       
-      console.log(`[DEV] Logged in as test admin: ${testAdmin.email}`);
-      res.json({ 
-        success: true, 
-        user: {
-          id: testAdmin.id,
-          email: testAdmin.email,
-          role: 'admin',
-          firstName: testAdmin.firstName,
-          lastName: testAdmin.lastName,
+      // Save session explicitly before responding
+      req.session.save((err: any) => {
+        if (err) {
+          console.error("[DEV] Session save error:", err);
+          return res.status(500).json({ error: "Failed to save session" });
         }
+        
+        console.log(`[DEV] Logged in as test admin: ${testAdmin.email}`);
+        res.json({ 
+          success: true, 
+          user: {
+            id: testAdmin.id,
+            email: testAdmin.email,
+            role: 'admin',
+            firstName: testAdmin.firstName,
+            lastName: testAdmin.lastName,
+          }
+        });
       });
     } catch (error: any) {
       console.error("[DEV] Admin login error:", error);

@@ -63,6 +63,21 @@ export function getSessionCookieOptions(isProduction: boolean) {
 }
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
+  // Check for Express session-based auth first (dev login)
+  if ((req as any).session?.user && (req as any).session?.userId) {
+    const sessionUser = (req as any).session.user;
+    (req as any).stytchUser = {
+      id: sessionUser.id,
+      email: sessionUser.email,
+      phone: sessionUser.phone,
+      role: sessionUser.role || 'patient',
+      firstName: sessionUser.firstName,
+      lastName: sessionUser.lastName,
+    };
+    (req as any).user = sessionUser;
+    return next();
+  }
+
   if (!isStytchConfigured()) {
     console.warn("[STYTCH] Auth not configured, allowing request in dev mode");
     if (process.env.NODE_ENV !== "production") {
