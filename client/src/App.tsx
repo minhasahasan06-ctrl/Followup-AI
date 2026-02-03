@@ -189,7 +189,7 @@ function AuthenticatedApp() {
   };
 
   // Public routes that don't require auth
-  const publicRoutes = ["/login", "/signup/doctor", "/signup/patient", "/verify-email", "/verify-phone", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/contact", "/auth/magic-link/callback", "/auth/sms/verify"];
+  const publicRoutes = ["/login", "/dev-login", "/signup/doctor", "/signup/patient", "/verify-email", "/verify-phone", "/forgot-password", "/reset-password", "/doctor-portal", "/coming-soon", "/terms", "/privacy", "/hipaa", "/enterprise-contact", "/assistant-lysa", "/agent-clona", "/pricing", "/faq", "/documentation", "/api", "/blog", "/contact", "/auth/magic-link/callback", "/auth/sms/verify"];
   const isPublicRoute = publicRoutes.includes(location) || location.startsWith("/auth/") || (!user && location === "/");
 
   // Show loading while checking auth
@@ -209,6 +209,7 @@ function AuthenticatedApp() {
     return (
       <Switch>
         <Route path="/login" component={Login} />
+        <Route path="/dev-login" component={DevLogin} />
         <Route path="/signup/doctor" component={DoctorSignup} />
         <Route path="/signup/patient" component={PatientSignup} />
         <Route path="/verify-email" component={VerifyEmail} />

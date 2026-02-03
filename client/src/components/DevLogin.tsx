@@ -40,8 +40,8 @@ export function DevLogin() {
       // Navigate to appropriate dashboard based on role
       const dashboards = {
         patient: '/dashboard',
-        doctor: '/doctor-dashboard',
-        admin: '/ml-training'
+        doctor: '/dashboard',
+        admin: '/dashboard'
       };
       
       // Use wouter's setLocation for client-side navigation
