@@ -143,7 +143,7 @@ export default function Login() {
         description: "Logged in as test patient",
       });
       
-      setLocation("/");
+      setLocation("/dashboard");
     } catch (error: any) {
       console.error("Dev login error:", error);
       toast({
@@ -164,7 +164,7 @@ export default function Login() {
         description: "Logged in as test doctor",
       });
       
-      setLocation("/");
+      setLocation("/dashboard");
     } catch (error: any) {
       console.error("Dev login error:", error);
       toast({
