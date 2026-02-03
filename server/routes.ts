@@ -1389,6 +1389,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Logged out successfully" });
     });
   });
+
+  // Developer login endpoints - Only available in development mode
+  const DEV_MODE_SECRET = process.env.DEV_MODE_SECRET;
+  
+  app.post('/api/dev/login-as-patient', async (req: any, res) => {
+    if (process.env.NODE_ENV === 'production' && !DEV_MODE_SECRET) {
+      return res.status(403).json({ error: "Dev login not available in production" });
+    }
+    
+    try {
+      // Find or create a test patient user
+      let testPatient = await storage.getUserByEmail('test.patient@followupai.dev');
+      
+      if (!testPatient) {
+        testPatient = await storage.createUser({
+          id: `dev-patient-${crypto.randomUUID()}`,
+          email: 'test.patient@followupai.dev',
+          firstName: 'Test',
+          lastName: 'Patient',
+          role: 'patient',
+          phoneNumber: '+15551234567',
+        });
+      }
+      
+      if (!testPatient) {
+        return res.status(500).json({ error: "Failed to create test patient" });
+      }
+      
+      // Set up session
+      req.session.userId = testPatient.id;
+      req.session.user = {
+        id: testPatient.id,
+        email: testPatient.email,
+        role: 'patient',
+        firstName: testPatient.firstName,
+        lastName: testPatient.lastName,
+      };
+      
+      console.log(`[DEV] Logged in as test patient: ${testPatient.email}`);
+      res.json({ 
+        success: true, 
+        user: {
+          id: testPatient.id,
+          email: testPatient.email,
+          role: 'patient',
+          firstName: testPatient.firstName,
+          lastName: testPatient.lastName,
+        }
+      });
+    } catch (error: any) {
+      console.error("[DEV] Patient login error:", error);
+      res.status(500).json({ error: "Failed to login as test patient" });
+    }
+  });
+
+  app.post('/api/dev/login-as-doctor', async (req: any, res) => {
+    if (process.env.NODE_ENV === 'production' && !DEV_MODE_SECRET) {
+      return res.status(403).json({ error: "Dev login not available in production" });
+    }
+    
+    try {
+      // Find or create a test doctor user
+      let testDoctor = await storage.getUserByEmail('test.doctor@followupai.dev');
+      
+      if (!testDoctor) {
+        testDoctor = await storage.createUser({
+          id: `dev-doctor-${crypto.randomUUID()}`,
+          email: 'test.doctor@followupai.dev',
+          firstName: 'Dr. Test',
+          lastName: 'Doctor',
+          role: 'doctor',
+          phoneNumber: '+15557654321',
+          medicalLicenseNumber: 'TEST-MD-12345',
+          licenseCountry: 'US',
+        });
+      }
+      
+      if (!testDoctor) {
+        return res.status(500).json({ error: "Failed to create test doctor" });
+      }
+      
+      // Set up session
+      req.session.userId = testDoctor.id;
+      req.session.user = {
+        id: testDoctor.id,
+        email: testDoctor.email,
+        role: 'doctor',
+        firstName: testDoctor.firstName,
+        lastName: testDoctor.lastName,
+      };
+      
+      console.log(`[DEV] Logged in as test doctor: ${testDoctor.email}`);
+      res.json({ 
+        success: true, 
+        user: {
+          id: testDoctor.id,
+          email: testDoctor.email,
+          role: 'doctor',
+          firstName: testDoctor.firstName,
+          lastName: testDoctor.lastName,
+        }
+      });
+    } catch (error: any) {
+      console.error("[DEV] Doctor login error:", error);
+      res.status(500).json({ error: "Failed to login as test doctor" });
+    }
+  });
+
+  app.post('/api/dev/login-as-admin', async (req: any, res) => {
+    if (process.env.NODE_ENV === 'production' && !DEV_MODE_SECRET) {
+      return res.status(403).json({ error: "Dev login not available in production" });
+    }
+    
+    try {
+      // Find or create a test admin user
+      let testAdmin = await storage.getUserByEmail('test.admin@followupai.dev');
+      
+      if (!testAdmin) {
+        testAdmin = await storage.createUser({
+          id: `dev-admin-${crypto.randomUUID()}`,
+          email: 'test.admin@followupai.dev',
+          firstName: 'Test',
+          lastName: 'Admin',
+          role: 'admin',
+          phoneNumber: '+15559876543',
+        });
+      }
+      
+      if (!testAdmin) {
+        return res.status(500).json({ error: "Failed to create test admin" });
+      }
+      
+      // Set up session
+      req.session.userId = testAdmin.id;
+      req.session.user = {
+        id: testAdmin.id,
+        email: testAdmin.email,
+        role: 'admin',
+        firstName: testAdmin.firstName,
+        lastName: testAdmin.lastName,
+      };
+      
+      console.log(`[DEV] Logged in as test admin: ${testAdmin.email}`);
+      res.json({ 
+        success: true, 
+        user: {
+          id: testAdmin.id,
+          email: testAdmin.email,
+          role: 'admin',
+          firstName: testAdmin.firstName,
+          lastName: testAdmin.lastName,
+        }
+      });
+    } catch (error: any) {
+      console.error("[DEV] Admin login error:", error);
+      res.status(500).json({ error: "Failed to login as test admin" });
+    }
+  });
+  
+  console.log('[DEV] Developer login endpoints registered at /api/dev/login-as-*');
   
   // Update user role and profile (used after login for role-specific setup)
   app.post('/api/auth/set-role', isAuthenticated, async (req: any, res) => {
