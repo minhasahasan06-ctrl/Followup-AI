@@ -19,7 +19,7 @@ export function DevLogin() {
       };
       
       const redirects = {
-        patient: '/dashboard',
+        patient: '/profile',
         doctor: '/doctor',
         admin: '/admin'
       };
