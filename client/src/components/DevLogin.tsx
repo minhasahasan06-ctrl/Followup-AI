@@ -2,16 +2,12 @@ import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UserCircle, Stethoscope, Shield, Loader2 } from "lucide-react";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
-import { useLocation } from "wouter";
 
 export function DevLogin() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const { toast } = useToast();
-  const { refreshSession } = useAuth();
-  const [, setLocation] = useLocation();
 
   const loginAs = async (role: 'patient' | 'doctor' | 'admin') => {
     setIsLoggingIn(true);
@@ -25,27 +21,8 @@ export function DevLogin() {
       // Call dev login endpoint - this sets the session cookie on the server
       await apiRequest(endpoints[role], { method: 'POST' });
       
-      // Refresh session from server to get the authenticated user
-      // This validates the session with the server and updates AuthContext
-      await refreshSession();
-      
-      // Invalidate all queries to refresh with authenticated user
-      await queryClient.invalidateQueries();
-      
-      toast({
-        title: "Logged In",
-        description: `Successfully logged in as test ${role}`,
-      });
-      
-      // Navigate to appropriate dashboard based on role
-      const dashboards = {
-        patient: '/dashboard',
-        doctor: '/dashboard',
-        admin: '/dashboard'
-      };
-      
-      // Use wouter's setLocation for client-side navigation
-      setLocation(dashboards[role]);
+      // Force full page reload to pick up new session
+      window.location.href = '/dashboard';
     } catch (error: any) {
       console.error(`Error logging in as ${role}:`, error);
       toast({
