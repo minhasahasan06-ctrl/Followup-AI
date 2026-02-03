@@ -42,6 +42,14 @@ The backend comprises a Node.js Express server (Port 5000) for chat, appointment
 ### Development Environment Guardrails
 The development environment includes HIPAA compliance guardrails such as a Config Guard for production identifier checks, a Safe Logger for PHI redaction, and CI/CD security for secret scanning and dependency auditing.
 
+### Developer Login Feature
+For rapid development and testing, the platform includes dev login endpoints that bypass Stytch authentication:
+- **Endpoints**: `/api/dev/login-as-patient`, `/api/dev/login-as-doctor`, `/api/dev/login-as-admin`
+- **Availability**: Only in development mode (NODE_ENV !== 'production') or when DEV_MODE_SECRET is set
+- **Test Users**: Creates users with `@followupai.dev` emails (e.g., `test.patient@followupai.dev`)
+- **UI**: Login page shows "Test Patient" and "Test Doctor" buttons in development mode
+- **Key Files**: `server/routes.ts` (endpoints), `client/src/pages/Login.tsx` (UI buttons)
+
 ### Cloud Run Deployment
 The FastAPI backend supports deployment to GCP Cloud Run with features like scale-to-zero, cold start optimization, Secret Manager integration, and LangGraph persistence for HIPAA-compliant production environments.
 
