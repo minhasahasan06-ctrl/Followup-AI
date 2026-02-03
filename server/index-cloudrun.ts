@@ -12,7 +12,8 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import session from "express-session";
 import { createServer } from "http";
-import { stytchAuthRoutes, isStytchConfigured } from "./stytch";
+import { isStytchConfigured } from "./stytch/stytchClient";
+import { stytchAuthRoutesCloudRun } from "./stytch/authRoutesCloudRun";
 
 console.log('[STARTUP] Starting minimal Express server for Cloud Run...');
 
@@ -89,8 +90,8 @@ app.get('/', (_req: Request, res: Response) => {
   });
 });
 
-// Register Stytch auth routes
-app.use('/api/auth', stytchAuthRoutes);
+// Register Stytch auth routes (Cloud Run version with minimal dependencies)
+app.use('/api/auth', stytchAuthRoutesCloudRun);
 console.log('[AUTH] Stytch authentication routes registered at /api/auth/*');
 
 // Error handler
