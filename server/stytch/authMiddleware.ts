@@ -64,8 +64,12 @@ export function getSessionCookieOptions(isProduction: boolean) {
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
   // Check for Express session-based auth first (dev login)
-  if ((req as any).session?.user && (req as any).session?.userId) {
-    const sessionUser = (req as any).session.user;
+  const session = (req as any).session;
+  console.log(`[AUTH] Session check - hasSession: ${!!session}, userId: ${session?.userId}, hasUser: ${!!session?.user}`);
+  
+  if (session?.user && session?.userId) {
+    const sessionUser = session.user;
+    console.log(`[AUTH] Dev session found for: ${sessionUser.email}`);
     (req as any).stytchUser = {
       id: sessionUser.id,
       email: sessionUser.email,
