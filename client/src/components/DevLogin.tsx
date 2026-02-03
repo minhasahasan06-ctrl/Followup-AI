@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { UserCircle, Stethoscope, Shield, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { getExpressApiUrl } from "@/lib/api";
 
 export function DevLogin() {
   const [isLoggingIn, setIsLoggingIn] = useState<string | null>(null);
@@ -23,7 +24,7 @@ export function DevLogin() {
         admin: '/admin'
       };
       
-      const response = await fetch(endpoints[role], {
+      const response = await fetch(getExpressApiUrl(endpoints[role]), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' }
@@ -33,6 +34,9 @@ export function DevLogin() {
         const data = await response.json();
         throw new Error(data.error || 'Login failed');
       }
+      
+      const result = await response.json();
+      console.log(`[DevLogin] Logged in as ${role}:`, result.user?.email);
       
       window.location.href = redirects[role];
     } catch (error: any) {

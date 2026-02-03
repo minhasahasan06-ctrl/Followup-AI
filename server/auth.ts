@@ -57,6 +57,12 @@ export function getSession(maxAge?: number) {
     store = new session.MemoryStore();
   }
 
+  // Cross-domain cookie config (mirrors Stytch cookie config in authMiddleware.ts)
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || [];
+  const isCrossDomain = corsOrigins.length > 0;
+  const secureCookie = isProduction || isCrossDomain;
+  const sameSiteCookie = isCrossDomain ? "none" as const : "lax" as const;
+
   const sessionConfig = session({
     secret: configuredSecret,
     store,
@@ -66,15 +72,15 @@ export function getSession(maxAge?: number) {
     proxy: true,
     cookie: {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: "lax",
+      secure: secureCookie,
+      sameSite: sameSiteCookie,
       maxAge: sessionTtl,
       domain: undefined,
       path: '/',
     },
   });
   
-  console.log(`[SESSION] Session configured - secure: ${isProduction}, sameSite: lax, store: ${store ? store.constructor.name : 'none'}`);
+  console.log(`[SESSION] Session configured - secure: ${secureCookie}, sameSite: ${sameSiteCookie}, crossDomain: ${isCrossDomain}, store: ${store ? store.constructor.name : 'none'}`);
   
   return sessionConfig;
 }
